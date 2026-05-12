@@ -4,6 +4,7 @@ const { requireAuth } = require('../middleware/auth');
 const { calculateWithholding, getTaxPeriod } = require('../services/taxCalculator');
 const { submitToEFTPS } = require('../services/eftpsAutomation');
 const { decrypt } = require('../services/cryptoService');
+const bridgeManager = require('../ws/bridge');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -237,6 +238,73 @@ router.post('/:id/submit', async (req, res) => {
     db.prepare("UPDATE submissions SET eftps_status = 'failed', submission_error = ? WHERE id = ?")
       .run(err.message, sub.id);
     res.status(500).json({ error: 'EFTPS automation error', details: err.message });
+  }
+});
+
+// POST /api/submissions/:id/submit-bridge — send job to local ACH bridge
+router.post('/:id/submit-bridge', async (req, res) => {
+  if (!bridgeManager.isConnected) {
+    return res.status(503).json({ error: 'ACH Bridge is not connected. Start the bridge service on Computer 2.' });
+  }
+
+  const db = getDb();
+  const sub = db
+    .prepare(`SELECT s.*, c.ein, c.business_name,
+                     c.bank_routing_number, c.bank_account_number, c.bank_account_type,
+                     c.eftps_enrollment_number
+              FROM submissions s
+              JOIN clients c ON s.client_id = c.id
+              WHERE s.id = ? AND c.user_id = ?`)
+    .get(req.params.id, req.user.id);
+
+  if (!sub) return res.status(404).json({ error: 'Submission not found' });
+  if (sub.eftps_status === 'submitted') return res.status(400).json({ error: 'Already submitted' });
+  if (!sub.bank_routing_number || !sub.bank_account_number) {
+    return res.status(400).json({ error: 'Bank account details not configured for this client' });
+  }
+  if (!sub.settlement_date) {
+    return res.status(400).json({ error: 'Settlement date is required for ACH bridge submission' });
+  }
+
+  db.prepare("UPDATE submissions SET eftps_status = 'processing' WHERE id = ?").run(sub.id);
+
+  try {
+    const result = await bridgeManager.sendJob({
+      submissionId:      sub.id,
+      ein:               sub.ein,
+      businessName:      sub.business_name,
+      bankRoutingNumber: sub.bank_routing_number,
+      bankAccountNumber: sub.bank_account_number,
+      bankAccountType:   sub.bank_account_type || 'checking',
+      settlementDate:    sub.settlement_date,
+      taxYear:           sub.tax_year,
+      taxQuarter:        sub.tax_quarter,
+      taxData: {
+        fitWithholding:   sub.fit_withholding,
+        employeeSS:       sub.employee_ss,
+        employeeMedicare: sub.employee_medicare,
+        employerSS:       sub.employer_ss,
+        employerMedicare: sub.employer_medicare,
+        totalDeposit:     sub.total_deposit,
+      },
+    });
+
+    db.prepare(`
+      UPDATE submissions SET
+        eftps_status = 'submitted',
+        eftps_confirmation = ?,
+        eftps_submitted_at = CURRENT_TIMESTAMP,
+        submission_error = NULL
+      WHERE id = ?
+    `).run(result.confirmation || result.achFilePath, sub.id);
+
+    const updated = db.prepare('SELECT * FROM submissions WHERE id = ?').get(sub.id);
+    res.json({ submission: updated, bridgeResult: result });
+
+  } catch (err) {
+    db.prepare("UPDATE submissions SET eftps_status = 'failed', submission_error = ? WHERE id = ?")
+      .run(err.message, sub.id);
+    res.status(500).json({ error: 'ACH bridge error', details: err.message });
   }
 });
 

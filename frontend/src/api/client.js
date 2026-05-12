@@ -55,6 +55,10 @@ const api = {
   getSubmission: (id) => request(`/submissions/${id}`),
   createSubmission: (data) => request('/submissions', { method: 'POST', body: JSON.stringify(data) }),
   submitToEFTPS: (id) => request(`/submissions/${id}/submit`, { method: 'POST' }),
+  submitViaBridge: (id) => request(`/submissions/${id}/submit-bridge`, { method: 'POST' }),
+
+  // ACH Bridge
+  getBridgeStatus: () => request('/bridge/status'),
 
   // Reports
   get941: (clientId, year, quarter) => request(`/reports/941?clientId=${clientId}&year=${year}&quarter=${quarter}`),

@@ -363,14 +363,20 @@ export default function PayrollEntry() {
   const [calcError,   setCalcError]   = useState('');
 
   // Submission state
-  const [submission,   setSubmission]   = useState(null);
-  const [saving,       setSaving]       = useState(false);
-  const [submitting,   setSubmitting]   = useState(false);
-  const [submitResult, setSubmitResult] = useState(null);
+  const [submission,      setSubmission]      = useState(null);
+  const [saving,          setSaving]          = useState(false);
+  const [submitting,      setSubmitting]      = useState(false);
+  const [submitResult,    setSubmitResult]    = useState(null);
+  const [bridgeConnected, setBridgeConnected] = useState(false);
 
   useEffect(() => {
     api.getClient(id).then(setClient).catch(() => navigate('/'));
     api.getEmployees(id).then(setEmployees).catch(() => {});
+    // Poll bridge status every 10s
+    const checkBridge = () => api.getBridgeStatus().then((d) => setBridgeConnected(d.connected)).catch(() => {});
+    checkBridge();
+    const t = setInterval(checkBridge, 10000);
+    return () => clearInterval(t);
   }, [id]);
 
   // When employee is selected, prefill W-4 defaults
@@ -465,6 +471,19 @@ export default function PayrollEntry() {
     setSubmitting(true);
     try {
       const result = await api.submitToEFTPS(submission.id);
+      setSubmitResult(result);
+    } catch (err) {
+      setSubmitResult({ error: err.message });
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleBridgeSubmit() {
+    if (!submission) return;
+    setSubmitting(true);
+    try {
+      const result = await api.submitViaBridge(submission.id);
       setSubmitResult(result);
     } catch (err) {
       setSubmitResult({ error: err.message });
@@ -792,17 +811,37 @@ export default function PayrollEntry() {
 
             {!submitResult && (
               <>
-                <div className="alert alert-info" style={{ marginBottom: 16 }}>
-                  <span>ℹ</span>
-                  <div>
-                    Clicking Submit launches a Playwright browser session to log into <strong>eftps.gov</strong> and file this deposit.{' '}
-                    <strong>EFTPS_DRY_RUN=true</strong> is currently set — set to <code>false</code> in <code>backend/.env</code> for live submissions.
+                {bridgeConnected ? (
+                  <div className="alert" style={{ marginBottom: 16, background: 'rgba(16,185,129,.08)', border: '1px solid rgba(16,185,129,.3)', color: 'var(--text-primary)' }}>
+                    <span style={{ color: '#10b981' }}>●</span>
+                    <div>
+                      <strong style={{ color: '#10b981' }}>ACH Bridge connected</strong> — Computer 2 is online.
+                      Use <em>Submit via ACH Bridge</em> to generate and deliver an ACH CCD+ file directly to EFTPS Batch Provider.
+                    </div>
                   </div>
-                </div>
-                <div style={{ display: 'flex', gap: 12 }}>
+                ) : (
+                  <div className="alert alert-info" style={{ marginBottom: 16 }}>
+                    <span>ℹ</span>
+                    <div>
+                      Clicking Submit launches a Playwright browser session to log into <strong>eftps.gov</strong> and file this deposit.
+                      To use ACH Batch Provider instead, start the bridge service on Computer 2.
+                    </div>
+                  </div>
+                )}
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                   <Link to={`/clients/${id}/submissions`} className="btn btn-secondary">Save for Later</Link>
-                  <button className="btn btn-success btn-lg" onClick={handleEFTPSSubmit} disabled={submitting} style={{ flex: 1, justifyContent: 'center' }}>
-                    {submitting ? <><span className="spinner" /> Submitting to EFTPS…</> : '⟳ Submit to EFTPS Now'}
+                  {bridgeConnected && (
+                    <button className="btn btn-success btn-lg" onClick={handleBridgeSubmit} disabled={submitting} style={{ flex: 1, justifyContent: 'center' }}>
+                      {submitting ? <><span className="spinner" /> Submitting via Bridge…</> : '⟳ Submit via ACH Bridge'}
+                    </button>
+                  )}
+                  <button
+                    className="btn btn-lg"
+                    onClick={handleEFTPSSubmit}
+                    disabled={submitting}
+                    style={{ flex: 1, justifyContent: 'center', background: bridgeConnected ? 'var(--bg-secondary)' : 'var(--success)', color: bridgeConnected ? 'var(--text-secondary)' : '#fff', border: '1px solid var(--border)' }}
+                  >
+                    {submitting ? <><span className="spinner" /> Submitting to EFTPS…</> : '⟳ Submit via EFTPS.gov'}
                   </button>
                 </div>
               </>
@@ -815,8 +854,13 @@ export default function PayrollEntry() {
               >
                 {(submitResult.submission?.eftps_status === 'submitted' || submitResult.submission?.eftps_status === 'dry_run') ? (
                   <>
-                    <strong>✓ {submitResult.submission.eftps_status === 'dry_run' ? 'Dry Run Complete' : 'Successfully Submitted to EFTPS'}</strong>
+                    <strong>✓ {submitResult.submission.eftps_status === 'dry_run' ? 'Dry Run Complete' : 'Successfully Submitted'}</strong>
                     <div>Confirmation: <span style={{ fontFamily: 'monospace' }}>{submitResult.submission.eftps_confirmation || '—'}</span></div>
+                    {submitResult.bridgeResult?.achFilePath && (
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        ACH file: <span style={{ fontFamily: 'monospace' }}>{submitResult.bridgeResult.achFilePath.split(/[\\/]/).pop()}</span>
+                      </div>
+                    )}
                   </>
                 ) : (
                   <>

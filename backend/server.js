@@ -1,4 +1,5 @@
 require('dotenv').config();
+const http    = require('http');
 const express = require('express');
 const cors    = require('cors');
 const helmet  = require('helmet');
@@ -6,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 const path    = require('path');
 const fs      = require('fs');
 const { getDb } = require('./src/database/db');
+const bridgeManager = require('./src/ws/bridge');
 
 const authRoutes       = require('./src/routes/auth');
 const clientRoutes     = require('./src/routes/clients');
@@ -46,6 +48,16 @@ app.use('/api/submissions', submissionRoutes);
 app.use('/api/employees',   employeeRoutes);
 app.use('/api/reports',     reportRoutes);
 app.get('/api/health',      (req, res) => res.json({ status: 'ok', env: process.env.NODE_ENV }));
+app.get('/api/bridge/status', (req, res) => res.json({ connected: bridgeManager.isConnected }));
+
+// ── WebSocket bridge guard ────────────────────────────────────────────────────
+// If a plain HTTP request arrives at /ws/bridge (e.g. proxy didn't upgrade),
+// return 426 so the client gets a clear signal instead of a 200/HTML response.
+app.get('/ws/bridge', (req, res) => {
+  res.set('Upgrade', 'websocket').status(426).json({
+    error: 'This endpoint requires a WebSocket upgrade (Upgrade: websocket)',
+  });
+});
 
 // ── Serve React frontend (production) ────────────────────────────────────────
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -63,8 +75,12 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
-app.listen(PORT, () => {
+const httpServer = http.createServer(app);
+bridgeManager.attach(httpServer);
+
+httpServer.listen(PORT, () => {
   console.log(`PayrollTax Pro server on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
   console.log(`EFTPS dry-run: ${process.env.EFTPS_DRY_RUN !== 'false'} | headless: ${process.env.EFTPS_HEADLESS !== 'false'}`);
   console.log(`DB: ${process.env.DB_PATH || 'default (local data/)'}`);
+  if (!process.env.BRIDGE_SECRET) console.warn('[Bridge WS] WARNING: BRIDGE_SECRET not set — bridge connections will be rejected');
 });
