@@ -53,7 +53,14 @@ app.use('/api/submissions', submissionRoutes);
 app.use('/api/employees',   employeeRoutes);
 app.use('/api/reports',     reportRoutes);
 app.get('/api/health',      (req, res) => res.json({ status: 'ok', env: process.env.NODE_ENV }));
-app.get('/api/bridge/status', (req, res) => res.json({ connected: bridgeManager.isConnected }));
+app.get('/api/bridge/status', (req, res) => {
+  const connected = bridgeManager.isConnected;
+  // Log every poll in dev so Railway's log stream shows the real-time state
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`[Bridge WS] /api/bridge/status → connected=${connected}`);
+  }
+  res.json({ connected });
+});
 
 // ── WebSocket bridge guard ────────────────────────────────────────────────────
 // If a plain HTTP request arrives at /ws/bridge (e.g. proxy didn't upgrade),
