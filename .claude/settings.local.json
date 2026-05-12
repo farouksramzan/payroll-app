@@ -1,0 +1,20 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(node -e \"require\\('./src/services/taxCalculator'\\); console.log\\('taxCalculator OK'\\)\")",
+      "Bash(node -e \"require\\('./src/services/cryptoService'\\); console.log\\('cryptoService OK'\\)\")",
+      "Bash(node -e ' *)",
+      "Bash(node server.js)",
+      "Bash(curl -s http://localhost:3001/api/health)",
+      "Bash(curl -s -X POST http://localhost:3001/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"admin\",\"password\":\"admin123\"}')",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('Login OK, user:', d.get\\('user',{}\\).get\\('username'\\), 'token:', d.get\\('token',''\\)[:30]+'...'\\)\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('FIT:', d.get\\('fitWithholding'\\), 'SS:', d.get\\('employeeSS'\\), 'Total Deposit:', d.get\\('totalDeposit'\\)\\)\")",
+      "Bash(pkill -f \"node server.js\")",
+      "Bash(npm run *)",
+      "Bash(npx playwright *)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('Sub ID:', d.get\\('id'\\), '| Status:', d.get\\('eftps_status'\\), '| Step3Credits:', d.get\\('step3_credits'\\), '| Step4c:', d.get\\('step4c'\\)\\)\")",
+      "Bash(docker info *)"
+    ]
+  }
+}

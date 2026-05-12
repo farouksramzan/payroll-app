@@ -1,0 +1,67 @@
+const BASE = '/api';
+
+function getToken() {
+  return localStorage.getItem('token');
+}
+
+async function request(path, options = {}) {
+  const token = getToken();
+  const res = await fetch(`${BASE}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...options.headers,
+    },
+  });
+
+  if (res.status === 401) {
+    localStorage.removeItem('token');
+    window.location.href = '/login';
+    return;
+  }
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
+}
+
+const api = {
+  // Auth
+  login: (username, password) => request('/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
+  me: () => request('/auth/me'),
+  changePassword: (currentPassword, newPassword) =>
+    request('/auth/change-password', { method: 'POST', body: JSON.stringify({ currentPassword, newPassword }) }),
+
+  // Clients
+  getClients: () => request('/clients'),
+  getClient: (id) => request(`/clients/${id}`),
+  createClient: (data) => request('/clients', { method: 'POST', body: JSON.stringify(data) }),
+  updateClient: (id, data) => request(`/clients/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteClient: (id) => request(`/clients/${id}`, { method: 'DELETE' }),
+
+  // Employees
+  getEmployees: (clientId) => request(`/employees?clientId=${clientId}`),
+  getEmployee: (id) => request(`/employees/${id}`),
+  createEmployee: (data) => request('/employees', { method: 'POST', body: JSON.stringify(data) }),
+  updateEmployee: (id, data) => request(`/employees/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteEmployee: (id) => request(`/employees/${id}`, { method: 'DELETE' }),
+
+  // Payroll calculator
+  calculate: (data) => request('/payroll/calculate', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Submissions
+  getSubmissions: (clientId) => request(`/submissions${clientId ? `?clientId=${clientId}` : ''}`),
+  getSubmission: (id) => request(`/submissions/${id}`),
+  createSubmission: (data) => request('/submissions', { method: 'POST', body: JSON.stringify(data) }),
+  submitToEFTPS: (id) => request(`/submissions/${id}/submit`, { method: 'POST' }),
+
+  // Reports
+  get941: (clientId, year, quarter) => request(`/reports/941?clientId=${clientId}&year=${year}&quarter=${quarter}`),
+  get940: (clientId, year) => request(`/reports/940?clientId=${clientId}&year=${year}`),
+  getTWC: (clientId, year, quarter) => request(`/reports/twc?clientId=${clientId}&year=${year}&quarter=${quarter}`),
+  getW2: (clientId, year) => request(`/reports/w2?clientId=${clientId}&year=${year}`),
+  getW3: (clientId, year) => request(`/reports/w3?clientId=${clientId}&year=${year}`),
+};
+
+export default api;

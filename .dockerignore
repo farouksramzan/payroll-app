@@ -1,0 +1,22 @@
+# Node modules — rebuilt inside Docker
+node_modules
+frontend/node_modules
+backend/node_modules
+
+# Local dev/build artifacts
+frontend/dist
+backend/data
+data
+
+# Secrets — never bake into image
+backend/.env
+.env
+
+# Git / editor noise
+.git
+.gitignore
+*.md
+
+# OS noise
+.DS_Store
+Thumbs.db
