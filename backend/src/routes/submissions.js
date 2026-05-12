@@ -250,7 +250,7 @@ router.post('/:id/submit-bridge', async (req, res) => {
   const db = getDb();
   const sub = db
     .prepare(`SELECT s.*, c.ein, c.business_name,
-                     c.bank_routing_number, c.bank_account_number, c.bank_account_type,
+                     c.bank_routing_number, c.bank_account_number_encrypted, c.bank_account_type,
                      c.eftps_enrollment_number
               FROM submissions s
               JOIN clients c ON s.client_id = c.id
@@ -259,7 +259,11 @@ router.post('/:id/submit-bridge', async (req, res) => {
 
   if (!sub) return res.status(404).json({ error: 'Submission not found' });
   if (sub.eftps_status === 'submitted') return res.status(400).json({ error: 'Already submitted' });
-  if (!sub.bank_routing_number || !sub.bank_account_number) {
+
+  const bankAccountNumber = sub.bank_account_number_encrypted
+    ? decrypt(sub.bank_account_number_encrypted) : null;
+
+  if (!sub.bank_routing_number || !bankAccountNumber) {
     return res.status(400).json({ error: 'Bank account details not configured for this client' });
   }
   if (!sub.settlement_date) {
@@ -274,7 +278,7 @@ router.post('/:id/submit-bridge', async (req, res) => {
       ein:               sub.ein,
       businessName:      sub.business_name,
       bankRoutingNumber: sub.bank_routing_number,
-      bankAccountNumber: sub.bank_account_number,
+      bankAccountNumber: bankAccountNumber,
       bankAccountType:   sub.bank_account_type || 'checking',
       settlementDate:    sub.settlement_date,
       taxYear:           sub.tax_year,

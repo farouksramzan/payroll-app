@@ -19,6 +19,11 @@ const reportRoutes     = require('./src/routes/reports');
 const app  = express();
 const PORT = process.env.PORT || 3001;
 
+// ── Proxy trust (Railway / any reverse proxy) ─────────────────────────────────
+// Required for express-rate-limit to read the real client IP from
+// X-Forwarded-For instead of throwing ERR_ERL_UNEXPECTED_X_FORWARDED_FOR.
+app.set('trust proxy', 1);
+
 // ── CORS ─────────────────────────────────────────────────────────────────────
 // In production the backend serves the frontend (same origin), so CORS is only
 // needed for local dev. CORS_ORIGIN env var overrides the default.
