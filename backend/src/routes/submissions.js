@@ -249,9 +249,7 @@ router.post('/:id/submit-bridge', async (req, res) => {
 
   const db = getDb();
   const sub = db
-    .prepare(`SELECT s.*, c.ein, c.business_name,
-                     c.bank_routing_number, c.bank_account_number_encrypted, c.bank_account_type,
-                     c.eftps_enrollment_number
+    .prepare(`SELECT s.*, c.ein, c.eftps_pin_encrypted
               FROM submissions s
               JOIN clients c ON s.client_id = c.id
               WHERE s.id = ? AND c.user_id = ?`)
@@ -260,12 +258,9 @@ router.post('/:id/submit-bridge', async (req, res) => {
   if (!sub) return res.status(404).json({ error: 'Submission not found' });
   if (sub.eftps_status === 'submitted') return res.status(400).json({ error: 'Already submitted' });
 
-  const bankAccountNumber = sub.bank_account_number_encrypted
-    ? decrypt(sub.bank_account_number_encrypted) : null;
+  const pin = sub.eftps_pin_encrypted ? decrypt(sub.eftps_pin_encrypted) : null;
+  if (!pin) return res.status(400).json({ error: 'EFTPS PIN not configured for this client' });
 
-  if (!sub.bank_routing_number || !bankAccountNumber) {
-    return res.status(400).json({ error: 'Bank account details not configured for this client' });
-  }
   if (!sub.settlement_date) {
     return res.status(400).json({ error: 'Settlement date is required for ACH bridge submission' });
   }
@@ -273,25 +268,19 @@ router.post('/:id/submit-bridge', async (req, res) => {
   db.prepare("UPDATE submissions SET eftps_status = 'processing' WHERE id = ?").run(sub.id);
 
   try {
-    const result = await bridgeManager.sendJob({
-      submissionId:      sub.id,
-      ein:               sub.ein,
-      businessName:      sub.business_name,
-      bankRoutingNumber: sub.bank_routing_number,
-      bankAccountNumber: bankAccountNumber,
-      bankAccountType:   sub.bank_account_type || 'checking',
-      settlementDate:    sub.settlement_date,
-      taxYear:           sub.tax_year,
-      taxQuarter:        sub.tax_quarter,
+    const jobPayload = {
+      submissionId:   sub.id,
+      ein:            sub.ein,
+      pin,
+      taxYear:        sub.tax_year,
+      taxQuarter:     sub.tax_quarter,
+      settlementDate: sub.settlement_date,
       taxData: {
-        fitWithholding:   sub.fit_withholding,
-        employeeSS:       sub.employee_ss,
-        employeeMedicare: sub.employee_medicare,
-        employerSS:       sub.employer_ss,
-        employerMedicare: sub.employer_medicare,
-        totalDeposit:     sub.total_deposit,
+        totalDeposit: sub.total_deposit,
       },
-    });
+    };
+    console.log('[submit-bridge] job payload:', JSON.stringify(jobPayload));
+    const result = await bridgeManager.sendJob(jobPayload);
 
     db.prepare(`
       UPDATE submissions SET

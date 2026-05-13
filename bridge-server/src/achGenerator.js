@@ -1,321 +1,149 @@
 /**
- * ACH CCD+ File Generator — EFTPS Federal Tax Deposit Format
+ * EFTPS Batch Provider Import Record Generator
  *
- * Generates NACHA-compliant CCD+ files with TXP addenda records for
- * submission to the EFTPS Batch Provider software.
+ * Generates records in the EFTPS Batch Provider proprietary fixed-width format.
+ * This is NOT NACHA ACH — the Batch Provider uses its own 77-character format.
  *
- * Reference: IRS Publication 3112 (EFTPS Payment Instruction Booklet)
- *            NACHA Operating Rules — CCD+ with TXP Addenda
+ * Field layout verified against a real exported payment record and the
+ * Batch Provider Payment Inquiry screen:
  *
- * File structure for a single 941 payment (10 records, 940 bytes total):
- *   1 × File Header     (Record Type 1)
- *   1 × Batch Header    (Record Type 5)
- *   1 × Entry Detail    (Record Type 6) — debit from company bank account
- *   1 × Addenda         (Record Type 7) — TXP tax breakdown
- *   1 × Batch Control   (Record Type 8)
- *   1 × File Control    (Record Type 9)
- *   4 × Padding         (Record Type 9, all 9s) — pad to 10-record block
+ *   Sample:  890048906    202605120030001P3317849935161B9410520260620260515000000000142380
+ *   Screen:  EIN=331784993  Type=Business  Payment=May 15 2026  Form=941
+ *            Created=May 12 2026  Period=202606  Amount=$1,423.80
  *
- * Each record is exactly 94 characters, terminated with \r\n (CRLF).
+ *   Pos  1– 9 ( 9)  Registration ID    EFTPS Batch Provider enrollment number
+ *   Pos 10–13 ( 4)  Spaces             fixed filler
+ *   Pos 14–21 ( 8)  Created Date       YYYYMMDD (UTC — date file is generated)
+ *   Pos 22–28 ( 7)  Sequence Number    zero-padded integer
+ *   Pos 29    ( 1)  Record Type        'P' = Payment
+ *   Pos 30–38 ( 9)  EIN                9 digits, zero-padded, no dashes
+ *   Pos 39–42 ( 4)  EFTPS PIN          4 digits, zero-padded
+ *   Pos 43    ( 1)  Taxpayer Type      'B' = Business
+ *   Pos 44–48 ( 5)  Tax Type Code      e.g. '94105' (Form 941 quarterly)
+ *   Pos 49–54 ( 6)  Tax Period         YYYYMM — last month of the tax quarter
+ *   Pos 55–62 ( 8)  Settlement Date    YYYYMMDD — when EFTPS debits the account
+ *   Pos 63–77 (15)  Amount             total deposit in cents, zero-padded
+ *                                                                       = 77
  */
 
 'use strict';
 
-// ── Padding helpers ───────────────────────────────────────────────────────────
-// Right-pad with spaces, truncate if longer than n
-const rs = (s, n) => String(s ?? '').slice(0, n).padEnd(n, ' ');
-// Left-pad with zeros, keep last n digits if longer
-const lz = (s, n) => String(s ?? '').padStart(n, '0').slice(-n);
-// Strip non-digits
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
 const digits = (s) => String(s ?? '').replace(/\D/g, '');
+const lz     = (s, n) => String(s ?? '').padStart(n, '0').slice(-n);
 
-// ── Date helpers ─────────────────────────────────────────────────────────────
-function yymmdd(dateStr) {
+// ISO date string → YYYYMMDD (UTC, avoids timezone rollback on date-only strings)
+function yyyymmdd(dateStr) {
   const d = new Date(dateStr);
-  const yy = String(d.getFullYear()).slice(-2);
-  const mm = String(d.getMonth() + 1).padStart(2, '0');
-  const dd = String(d.getDate()).padStart(2, '0');
-  return `${yy}${mm}${dd}`;
+  if (isNaN(d.getTime())) throw new Error(`yyyymmdd: invalid date "${dateStr}"`);
+  const yyyy = String(d.getUTCFullYear());
+  const mm   = String(d.getUTCMonth() + 1).padStart(2, '0');
+  const dd   = String(d.getUTCDate()).padStart(2, '0');
+  return `${yyyy}${mm}${dd}`;  // exactly 8 chars
 }
 
-function hhmm() {
-  const now = new Date();
-  return String(now.getHours()).padStart(2, '0') + String(now.getMinutes()).padStart(2, '0');
+// Quarter number (1–4) → 2-digit end-month string ('03','06','09','12')
+function quarterEndMonth(quarter) {
+  const months = { 1: '03', 2: '06', 3: '09', 4: '12' };
+  const m = months[quarter];
+  if (!m) throw new Error(`Invalid tax quarter: ${quarter} (must be 1–4)`);
+  return m;
 }
 
-// Quarter-end date in YYMMDD for TXP period field
-function quarterEndDate(year, quarter) {
-  const ends = ['0331', '0630', '0930', '1231'];
-  const yy = String(year).slice(-2);
-  return `${yy}${ends[quarter - 1]}`;
-}
-
-// ACH routing check digit validation (mod-10 weighted sum)
-function routingCheckDigit(routing9) {
-  const d = digits(routing9).slice(0, 9);
-  const w = [3, 7, 1, 3, 7, 1, 3, 7, 1];
-  const sum = d.split('').reduce((acc, n, i) => acc + parseInt(n) * w[i], 0);
-  return String(sum % 10);
-}
-
-// Amount in cents as a 10-digit zero-padded string (no decimal point)
-function centsStr(dollarAmount, width = 10) {
+// Dollar amount → 15-digit zero-padded cents string
+function centsStr(dollarAmount) {
   const cents = Math.round(parseFloat(dollarAmount || 0) * 100);
-  return lz(cents, width);
+  return lz(cents, 15);
 }
 
-// ── Record builders (each returns exactly 94 chars) ──────────────────────────
+// ── Record builder ────────────────────────────────────────────────────────────
 
 /**
- * Record Type 1 — File Header
- * Immediate Destination: Federal Reserve / EFTPS operator routing
- * Immediate Origin:      Company's bank routing
- */
-function fileHeader({ destRouting, originRouting, destName, originName, date }) {
-  const dest   = (' ' + digits(destRouting).slice(0, 9)).padEnd(10);
-  const origin = (' ' + digits(originRouting).slice(0, 9)).padEnd(10);
-  const rec = [
-    '1',           // Record Type
-    '01',          // Priority Code
-    dest,          // Immediate Destination (10)
-    origin,        // Immediate Origin (10)
-    date || yymmdd(new Date().toISOString()),  // File Creation Date YYMMDD (6)
-    hhmm(),        // File Creation Time HHMM (4)
-    'A',           // File ID Modifier (1)
-    '094',         // Record Size (3)
-    '10',          // Blocking Factor (2)
-    '1',           // Format Code (1)
-    rs(destName || 'EFTPS', 23),    // Immediate Destination Name (23)
-    rs(originName || 'COMPANY', 23),// Immediate Origin Name (23)
-    '        ',    // Reference Code (8)
-  ].join('');
-  if (rec.length !== 94) throw new Error(`File Header length ${rec.length} ≠ 94`);
-  return rec;
-}
-
-/**
- * Record Type 5 — Batch Header
- * Service Class 225 = debits only (money leaving company account → IRS)
- */
-function batchHeader({ companyName, ein, settlementDate, originRouting, batchNum = 1 }) {
-  const einClean = digits(ein).slice(0, 9);
-  const rec = [
-    '5',           // Record Type
-    '225',         // Service Class Code: debits only
-    rs(companyName, 16),          // Company Name (16)
-    rs('', 20),                   // Company Discretionary Data (20)
-    '1' + rs(einClean, 9),        // Company ID: "1" + EIN (10)
-    'CCD',         // Standard Entry Class Code (3)
-    rs('TAX PMT', 10),            // Company Entry Description (10)
-    rs('', 6),                    // Company Descriptive Date (6)
-    yymmdd(settlementDate),       // Effective Entry Date YYMMDD (6)
-    '   ',         // Settlement Date — filled by ODFI/bank (3)
-    '1',           // Originator Status Code (1)
-    digits(originRouting).slice(0, 8), // Originating DFI ID (8)
-    lz(batchNum, 7),              // Batch Number (7)
-  ].join('');
-  if (rec.length !== 94) throw new Error(`Batch Header length ${rec.length} ≠ 94`);
-  return rec;
-}
-
-/**
- * Record Type 6 — Entry Detail (CCD debit from company's bank account)
- * Transaction Code 27 = checking debit, 37 = savings debit
- */
-function entryDetail({ bankRouting, bankAccountNumber, bankAccountType, amount, ein, companyName, sequence = 1, originRouting }) {
-  const routing9  = digits(bankRouting).slice(0, 9);
-  const rdfi8     = routing9.slice(0, 8);
-  const checkDig  = routing9[8] || routingCheckDigit(routing9);
-  const txnCode   = (bankAccountType || 'checking').toLowerCase() === 'savings' ? '37' : '27';
-  const traceODFI = digits(originRouting).slice(0, 8);
-  const rec = [
-    '6',           // Record Type
-    txnCode,       // Transaction Code (2)
-    rdfi8,         // Receiving DFI Routing (8) — company's bank
-    checkDig,      // Check Digit (1)
-    rs(bankAccountNumber, 17),    // DFI Account Number (17)
-    centsStr(amount, 10),         // Amount in cents (10)
-    rs(digits(ein).slice(0, 9), 15), // Individual ID (EIN, 15)
-    rs(companyName, 22),          // Individual Name (22)
-    '  ',          // Discretionary Data (2)
-    '1',           // Addenda Record Indicator (1)
-    traceODFI + lz(sequence, 7), // Trace Number (15)
-  ].join('');
-  if (rec.length !== 94) throw new Error(`Entry Detail length ${rec.length} ≠ 94`);
-  return rec;
-}
-
-/**
- * Record Type 7 — Addenda (TXP Tax Payment)
+ * Build one 77-character Batch Provider payment record.
  *
- * TXP format (IRS Publication 3112):
- *   TXP*EIN*TAX-TYPE-CODE*PERIOD-END*AMT-TYPE*AMOUNT\
- *
- * Tax type codes:
- *   94105 — Form 941, quarterly federal tax deposit
- *   94007 — Form 940, FUTA annual
- *
- * Amount type 1 = total federal tax deposit (FIT + SS + Medicare, all components)
- *
- * Amounts: integer cents, 10 digits, zero-padded (no decimal point)
- * Period:  YYMMDD of the last day of the tax quarter
- * Field:   positions 4–83 (80 chars), left-justified, space-padded
+ * @param {object} p
+ * @param {string} p.registrationId   EFTPS Batch Provider registration number (9 digits)
+ * @param {string} p.ein              Taxpayer EIN (any format)
+ * @param {string} p.pin              EFTPS PIN (4 digits)
+ * @param {number} p.taxYear          e.g. 2026
+ * @param {number} p.taxQuarter       1–4
+ * @param {string} p.settlementDate   ISO date — when EFTPS debits the account
+ * @param {number} p.totalDeposit     Total tax deposit in dollars
+ * @param {string} [p.taxTypeCode]    Default '94105' (Form 941)
+ * @param {string} [p.createdDate]    ISO date for pos 14-21 (default: today UTC)
+ * @param {number} [p.sequenceNumber] 7-digit sequence (default: 1 → '0000001')
+ * @returns {string} Exactly 77 characters
  */
-function addenda({ ein, taxTypeCode = '94105', taxYear, taxQuarter, amount, sequence = 1 }) {
-  const einClean = digits(ein).slice(0, 9);
-  const period   = quarterEndDate(taxYear, taxQuarter);
-  const amt      = centsStr(amount, 10);
-  const txp      = `TXP*${einClean}*${taxTypeCode}*${period}*1*${amt}\\`;
+function buildRecord(p) {
+  const regId   = digits(p.registrationId).slice(0, 9).padStart(9, '0');
+  const ein     = digits(p.ein).slice(0, 9).padStart(9, '0');
+  const pin     = digits(p.pin).slice(0, 4).padStart(4, '0');
+  const taxCode = String(p.taxTypeCode || '94105').slice(0, 5).padEnd(5, ' ');
+  const created = yyyymmdd(p.createdDate || new Date().toISOString().slice(0, 10));
+  const seq     = lz(p.sequenceNumber ?? 1, 7);
+  const period  = String(p.taxYear) + quarterEndMonth(p.taxQuarter);  // YYYYMM
+  const settle  = yyyymmdd(p.settlementDate);                          // YYYYMMDD
+  const amount  = centsStr(p.totalDeposit);
 
-  if (txp.length > 80) throw new Error(`TXP string (${txp.length} chars) exceeds 80-char field limit: ${txp}`);
+  const rec = regId + '    ' + created + seq + 'P' + ein + pin + 'B' + taxCode + period + settle + amount;
 
-  const rec = [
-    '7',           // Record Type
-    '05',          // Addenda Type Code — payment-related info
-    rs(txp, 80),   // Payment Related Information (80) — left-justified
-    lz(1, 4),      // Sequence Number (4)
-    lz(sequence, 7), // Entry Detail Sequence Number (7)
-  ].join('');
-  if (rec.length !== 94) throw new Error(`Addenda length ${rec.length} ≠ 94`);
+  if (rec.length !== 77) throw new Error(`Record length ${rec.length} ≠ 77`);
   return rec;
 }
-
-/**
- * Record Type 8 — Batch Control
- */
-function batchControl({ entryCount, entryHash, totalDebitAmount, ein, originRouting, batchNum = 1 }) {
-  const einClean = digits(ein).slice(0, 9);
-  // Entry hash = sum of first 8 digits of each RDFI routing, take last 10 digits
-  const rec = [
-    '8',           // Record Type
-    '225',         // Service Class Code
-    lz(entryCount, 6),            // Entry/Addenda Count (6)
-    lz(entryHash, 10),            // Entry Hash (10)
-    centsStr(totalDebitAmount, 12), // Total Debit Amount (12)
-    lz(0, 12),                    // Total Credit Amount (12) — zero for debit-only
-    '1' + rs(einClean, 9),        // Company ID (10)
-    rs('', 19),                   // Message Authentication Code (19)
-    rs('', 6),                    // Reserved (6)
-    digits(originRouting).slice(0, 8), // Originating DFI ID (8)
-    lz(batchNum, 7),              // Batch Number (7)
-  ].join('');
-  if (rec.length !== 94) throw new Error(`Batch Control length ${rec.length} ≠ 94`);
-  return rec;
-}
-
-/**
- * Record Type 9 — File Control
- */
-function fileControl({ blockCount, entryAddendaCount, entryHash, totalDebitAmount }) {
-  const rec = [
-    '9',           // Record Type
-    lz(blockCount, 6),             // Block Count (6)
-    lz(entryAddendaCount, 8),      // Entry/Addenda Count (8)
-    lz(entryHash, 10),             // Entry Hash (10)
-    centsStr(totalDebitAmount, 12),// Total Debit Amount (12)
-    lz(0, 12),                     // Total Credit Amount (12)
-    rs('', 39),                    // Reserved (39)
-  ].join('');
-  if (rec.length !== 94) throw new Error(`File Control length ${rec.length} ≠ 94`);
-  return rec;
-}
-
-// Padding record — all 9s (fills block to multiple of 10 records)
-const PADDING = '9'.repeat(94);
 
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
- * Generate a complete ACH CCD+ file for a single EFTPS 941 federal tax deposit.
+ * Generate a complete EFTPS Batch Provider import file for a single payment.
  *
  * @param {object} params
- * @param {string} params.ein                  EIN (any format)
- * @param {string} params.businessName         Company name
- * @param {string} params.bankRoutingNumber    Company's bank ABA routing (9 digits)
- * @param {string} params.bankAccountNumber    Company's bank account number
- * @param {string} params.bankAccountType      'checking' | 'savings'
- * @param {string} params.settlementDate       ISO date — when EFTPS debits the account
- * @param {number} params.taxYear              e.g. 2026
- * @param {number} params.taxQuarter           1–4
- * @param {object} params.taxData              { fitWithholding, employeeSS, employerSS, employeeMedicare, employerMedicare, totalDeposit }
- * @param {string} [params.destRouting]        Federal Reserve / EFTPS operator routing (default: env EFTPS_FED_ROUTING)
- * @param {string} [params.taxTypeCode]        Default '94105' (Form 941)
- * @returns {string}                           Complete ACH file contents (CRLF line endings)
+ * @param {string} params.ein              Taxpayer EIN
+ * @param {string} params.pin              EFTPS PIN (4 digits)
+ * @param {number} params.taxYear          e.g. 2026
+ * @param {number} params.taxQuarter       1–4
+ * @param {string} params.settlementDate   ISO date — when EFTPS debits the account
+ * @param {object} params.taxData          Must include { totalDeposit }
+ * @param {string} [params.registrationId] EFTPS registration ID (default: env EFTPS_REGISTRATION_ID)
+ * @param {string} [params.taxTypeCode]    Default '94105' (Form 941 quarterly)
+ * @param {number} [params.sequenceNumber] Record sequence (default: 1)
+ * @returns {string} File contents — one 77-char record followed by CRLF
  */
-function generateACH(params) {
+function generateBatchProviderFile(params) {
   const {
     ein,
-    businessName,
-    bankRoutingNumber,
-    bankAccountNumber,
-    bankAccountType,
-    settlementDate,
+    pin,
     taxYear,
     taxQuarter,
+    settlementDate,
     taxData,
-    destRouting   = process.env.EFTPS_FED_ROUTING || bankRoutingNumber,
-    taxTypeCode   = '94105',
+    registrationId  = process.env.EFTPS_REGISTRATION_ID || '',
+    taxTypeCode     = '94105',
+    sequenceNumber  = 1,
   } = params;
 
-  const totalDeposit    = parseFloat(taxData.totalDeposit);
-  const bankRouting9    = digits(bankRoutingNumber).slice(0, 9);
-  const originRouting   = bankRouting9; // ODFI = company's bank
-  const entryHash       = parseInt(bankRouting9.slice(0, 8), 10);
-  const today           = new Date().toISOString().slice(0, 10);
+  if (!registrationId) {
+    throw new Error('EFTPS Registration ID is required. Set EFTPS_REGISTRATION_ID in .env or pass registrationId.');
+  }
+  if (!pin)            throw new Error('EFTPS PIN is required.');
+  if (!taxYear)        throw new Error('taxYear is required.');
+  if (!taxQuarter)     throw new Error('taxQuarter is required (1–4).');
+  if (!settlementDate) throw new Error('settlementDate is required.');
+  if (taxData?.totalDeposit == null) throw new Error('taxData.totalDeposit is required.');
 
-  const records = [
-    fileHeader({
-      destRouting:  destRouting,
-      originRouting: originRouting,
-      destName:    'EFTPS',
-      originName:   businessName,
-      date:         yymmdd(today),
-    }),
-    batchHeader({
-      companyName:    businessName,
-      ein,
-      settlementDate,
-      originRouting,
-      batchNum:       1,
-    }),
-    entryDetail({
-      bankRouting:       bankRoutingNumber,
-      bankAccountNumber,
-      bankAccountType,
-      amount:           totalDeposit,
-      ein,
-      companyName:      businessName,
-      sequence:         1,
-      originRouting,
-    }),
-    addenda({
-      ein,
-      taxTypeCode,
-      taxYear,
-      taxQuarter,
-      amount: totalDeposit,
-      sequence: 1,
-    }),
-    batchControl({
-      entryCount:        2,   // entry detail + addenda
-      entryHash,
-      totalDebitAmount:  totalDeposit,
-      ein,
-      originRouting,
-      batchNum:          1,
-    }),
-    fileControl({
-      blockCount:        1,   // one 10-record block
-      entryAddendaCount: 2,
-      entryHash,
-      totalDebitAmount:  totalDeposit,
-    }),
-  ];
+  const record = buildRecord({
+    registrationId,
+    ein,
+    pin,
+    taxYear,
+    taxQuarter,
+    taxTypeCode,
+    settlementDate,
+    totalDeposit: taxData.totalDeposit,
+    sequenceNumber,
+  });
 
-  // Pad to 10 records per block
-  while (records.length % 10 !== 0) records.push(PADDING);
-
-  return records.join('\r\n') + '\r\n';
+  return record + '\r\n';
 }
 
-module.exports = { generateACH, yymmdd, quarterEndDate, centsStr };
+module.exports = { generateBatchProviderFile, buildRecord, yyyymmdd, quarterEndMonth, centsStr };

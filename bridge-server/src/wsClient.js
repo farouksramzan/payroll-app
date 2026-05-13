@@ -15,7 +15,7 @@
 
 const WebSocket = require('ws');
 const EventEmitter = require('events');
-const { generateACH } = require('./achGenerator');
+const { generateBatchProviderFile } = require('./achGenerator');
 const { submitACH }   = require('./batchProvider');
 
 const RAILWAY_URL      = process.env.RAILWAY_WS_URL || '';
@@ -155,17 +155,17 @@ class BridgeClient extends EventEmitter {
     this.emit('jobStart', job);
 
     try {
-      // 1. Generate ACH CCD+ file
-      const achContent = generateACH({
-        ein:               job.ein,
-        businessName:      job.businessName,
-        bankRoutingNumber: job.bankRoutingNumber,
-        bankAccountNumber: job.bankAccountNumber,
-        bankAccountType:   job.bankAccountType,
-        settlementDate:    job.settlementDate,
-        taxYear:           job.taxYear,
-        taxQuarter:        job.taxQuarter,
-        taxData:           job.taxData,
+      // 1. Generate Batch Provider import record
+      const achContent = generateBatchProviderFile({
+        ein:            job.ein,
+        pin:            job.pin,
+        taxYear:        job.taxYear,
+        taxQuarter:     job.taxQuarter,
+        settlementDate: job.settlementDate,
+        taxData:        job.taxData,
+        taxTypeCode:    job.taxTypeCode || '94105',
+        sequenceNumber: job.sequenceNumber || 1,
+        // registrationId sourced from EFTPS_REGISTRATION_ID env var
       });
 
       // 2. Submit via Batch Provider
