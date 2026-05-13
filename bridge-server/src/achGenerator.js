@@ -125,7 +125,7 @@ function generateBatchProviderFile(params) {
   if (!registrationId) {
     throw new Error('EFTPS Registration ID is required. Set EFTPS_REGISTRATION_ID in .env or pass registrationId.');
   }
-  if (!pin)            throw new Error('EFTPS PIN is required.');
+  if (!pin)            throw new Error('Batch Provider PIN is required.');
   if (!taxYear)        throw new Error('taxYear is required.');
   if (!taxQuarter)     throw new Error('taxQuarter is required (1–4).');
   if (!settlementDate) throw new Error('settlementDate is required.');

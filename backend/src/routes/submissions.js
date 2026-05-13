@@ -181,7 +181,7 @@ router.post('/', (req, res) => {
 router.post('/:id/submit', async (req, res) => {
   const db = getDb();
   const sub = db
-    .prepare(`SELECT s.*, c.ein, c.eftps_pin_encrypted, c.eftps_internet_password_encrypted,
+    .prepare(`SELECT s.*, c.ein, c.batch_provider_pin_encrypted, c.eftps_internet_password_encrypted,
                      c.eftps_enrollment_number, c.deposit_schedule
               FROM submissions s
               JOIN clients c ON s.client_id = c.id
@@ -191,8 +191,8 @@ router.post('/:id/submit', async (req, res) => {
   if (!sub) return res.status(404).json({ error: 'Submission not found' });
   if (sub.eftps_status === 'submitted') return res.status(400).json({ error: 'Already submitted to EFTPS' });
 
-  const pin = decrypt(sub.eftps_pin_encrypted);
-  if (!pin) return res.status(400).json({ error: 'EFTPS PIN not configured for this client' });
+  const pin = decrypt(sub.batch_provider_pin_encrypted);
+  if (!pin) return res.status(400).json({ error: 'Batch Provider PIN not configured for this client' });
 
   const internetPassword = sub.eftps_internet_password_encrypted
     ? decrypt(sub.eftps_internet_password_encrypted) : null;
@@ -249,7 +249,7 @@ router.post('/:id/submit-bridge', async (req, res) => {
 
   const db = getDb();
   const sub = db
-    .prepare(`SELECT s.*, c.ein, c.eftps_pin_encrypted
+    .prepare(`SELECT s.*, c.ein, c.batch_provider_pin_encrypted
               FROM submissions s
               JOIN clients c ON s.client_id = c.id
               WHERE s.id = ? AND c.user_id = ?`)
@@ -258,8 +258,8 @@ router.post('/:id/submit-bridge', async (req, res) => {
   if (!sub) return res.status(404).json({ error: 'Submission not found' });
   if (sub.eftps_status === 'submitted') return res.status(400).json({ error: 'Already submitted' });
 
-  const pin = sub.eftps_pin_encrypted ? decrypt(sub.eftps_pin_encrypted) : null;
-  if (!pin) return res.status(400).json({ error: 'EFTPS PIN not configured for this client' });
+  const pin = sub.batch_provider_pin_encrypted ? decrypt(sub.batch_provider_pin_encrypted) : null;
+  if (!pin) return res.status(400).json({ error: 'Batch Provider PIN not configured for this client' });
 
   if (!sub.settlement_date) {
     return res.status(400).json({ error: 'Settlement date is required for ACH bridge submission' });

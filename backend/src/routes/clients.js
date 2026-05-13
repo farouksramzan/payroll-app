@@ -22,12 +22,12 @@ function sanitizeClient(client, includeSecrets = false) {
     contactPhone: client.contact_phone,
     createdAt: client.created_at,
     updatedAt: client.updated_at,
-    hasPin: !!client.eftps_pin_encrypted,
+    hasBatchProviderPin: !!client.batch_provider_pin_encrypted,
     hasBankAccount: !!client.bank_account_number_encrypted,
     hasInternetPassword: !!client.eftps_internet_password_encrypted,
   };
   if (includeSecrets) {
-    out.eftpsPin = decrypt(client.eftps_pin_encrypted);
+    out.batchProviderPin = decrypt(client.batch_provider_pin_encrypted);
     out.bankAccountNumber = decrypt(client.bank_account_number_encrypted);
     out.eftpsInternetPassword = client.eftps_internet_password_encrypted
       ? decrypt(client.eftps_internet_password_encrypted) : null;
@@ -67,24 +67,24 @@ router.get('/:id', (req, res) => {
 
 // POST /api/clients
 router.post('/', (req, res) => {
-  const { businessName, ein, bankAccountNumber, bankRoutingNumber, bankAccountType, eftpsPin,
+  const { businessName, ein, bankAccountNumber, bankRoutingNumber, bankAccountType, batchProviderPin,
     eftpsInternetPassword, eftpsEnrollmentNumber, depositSchedule, sutaRate,
     contactName, contactEmail, contactPhone } = req.body;
 
-  if (!businessName || !ein || !eftpsPin) {
-    return res.status(400).json({ error: 'Business name, EIN, and EFTPS PIN are required' });
+  if (!businessName || !ein || !batchProviderPin) {
+    return res.status(400).json({ error: 'Business name, EIN, and Batch Provider PIN are required' });
   }
   if (!/^\d{2}-?\d{7}$/.test(ein)) {
     return res.status(400).json({ error: 'EIN must be in format XX-XXXXXXX' });
   }
-  if (!/^\d{4}$/.test(eftpsPin)) {
-    return res.status(400).json({ error: 'EFTPS PIN must be exactly 4 digits' });
+  if (!/^\d{4}$/.test(batchProviderPin)) {
+    return res.status(400).json({ error: 'Batch Provider PIN must be exactly 4 digits' });
   }
 
   const db = getDb();
   const result = db.prepare(`
     INSERT INTO clients (user_id, business_name, ein, bank_account_number_encrypted, bank_routing_number,
-      bank_account_type, eftps_pin_encrypted, eftps_internet_password_encrypted, eftps_enrollment_number,
+      bank_account_type, batch_provider_pin_encrypted, eftps_internet_password_encrypted, eftps_enrollment_number,
       deposit_schedule, suta_rate, contact_name, contact_email, contact_phone)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
@@ -94,7 +94,7 @@ router.post('/', (req, res) => {
     encrypt(bankAccountNumber),
     bankRoutingNumber || null,
     bankAccountType || 'checking',
-    encrypt(eftpsPin),
+    encrypt(batchProviderPin),
     eftpsInternetPassword ? encrypt(eftpsInternetPassword) : null,
     eftpsEnrollmentNumber || null,
     depositSchedule || 'monthly',
@@ -114,12 +114,12 @@ router.put('/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
   if (!existing) return res.status(404).json({ error: 'Client not found' });
 
-  const { businessName, ein, bankAccountNumber, bankRoutingNumber, bankAccountType, eftpsPin,
+  const { businessName, ein, bankAccountNumber, bankRoutingNumber, bankAccountType, batchProviderPin,
     eftpsInternetPassword, eftpsEnrollmentNumber, depositSchedule, sutaRate,
     contactName, contactEmail, contactPhone } = req.body;
 
   if (ein && !/^\d{2}-?\d{7}$/.test(ein)) return res.status(400).json({ error: 'EIN must be in format XX-XXXXXXX' });
-  if (eftpsPin && !/^\d{4}$/.test(eftpsPin)) return res.status(400).json({ error: 'EFTPS PIN must be exactly 4 digits' });
+  if (batchProviderPin && !/^\d{4}$/.test(batchProviderPin)) return res.status(400).json({ error: 'Batch Provider PIN must be exactly 4 digits' });
 
   db.prepare(`
     UPDATE clients SET
@@ -128,7 +128,7 @@ router.put('/:id', (req, res) => {
       bank_account_number_encrypted = ?,
       bank_routing_number = ?,
       bank_account_type = ?,
-      eftps_pin_encrypted = ?,
+      batch_provider_pin_encrypted = ?,
       eftps_internet_password_encrypted = ?,
       eftps_enrollment_number = ?,
       deposit_schedule = ?,
@@ -144,7 +144,7 @@ router.put('/:id', (req, res) => {
     bankAccountNumber ? encrypt(bankAccountNumber) : existing.bank_account_number_encrypted,
     bankRoutingNumber !== undefined ? bankRoutingNumber : existing.bank_routing_number,
     bankAccountType || existing.bank_account_type,
-    eftpsPin ? encrypt(eftpsPin) : existing.eftps_pin_encrypted,
+    batchProviderPin ? encrypt(batchProviderPin) : existing.batch_provider_pin_encrypted,
     eftpsInternetPassword ? encrypt(eftpsInternetPassword) : existing.eftps_internet_password_encrypted,
     eftpsEnrollmentNumber !== undefined ? eftpsEnrollmentNumber : existing.eftps_enrollment_number,
     depositSchedule || existing.deposit_schedule,

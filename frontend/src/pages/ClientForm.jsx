@@ -3,7 +3,7 @@ import { useNavigate, useParams, Link } from 'react-router-dom';
 import api from '../api/client';
 
 const EMPTY = {
-  businessName: '', ein: '', eftpsPin: '', eftpsInternetPassword: '', eftpsEnrollmentNumber: '',
+  businessName: '', ein: '', batchProviderPin: '', eftpsInternetPassword: '', eftpsEnrollmentNumber: '',
   depositSchedule: 'monthly', sutaRate: '2.7',
   bankAccountNumber: '', bankRoutingNumber: '', bankAccountType: 'checking',
   contactName: '', contactEmail: '', contactPhone: '',
@@ -25,7 +25,7 @@ export default function ClientForm() {
       setForm({
         businessName: c.businessName || '',
         ein: c.ein || '',
-        eftpsPin: '',
+        batchProviderPin: '',
         eftpsInternetPassword: '',
         eftpsEnrollmentNumber: c.eftpsEnrollmentNumber || '',
         depositSchedule: c.depositSchedule || 'monthly',
@@ -52,8 +52,8 @@ export default function ClientForm() {
     if (!form.businessName.trim()) e.businessName = 'Required';
     if (!form.ein.trim()) e.ein = 'Required';
     else if (!/^\d{2}-?\d{7}$/.test(form.ein.trim())) e.ein = 'Format: XX-XXXXXXX';
-    if (!isEdit && !form.eftpsPin) e.eftpsPin = 'Required';
-    if (form.eftpsPin && !/^\d{4}$/.test(form.eftpsPin)) e.eftpsPin = 'Must be exactly 4 digits';
+    if (!isEdit && !form.batchProviderPin) e.batchProviderPin = 'Required';
+    if (form.batchProviderPin && !/^\d{4}$/.test(form.batchProviderPin)) e.batchProviderPin = 'Must be exactly 4 digits';
     if (form.bankRoutingNumber && !/^\d{9}$/.test(form.bankRoutingNumber)) e.bankRoutingNumber = 'Must be 9 digits';
     return e;
   }
@@ -67,7 +67,7 @@ export default function ClientForm() {
     try {
       const payload = { ...form, sutaRate: parseFloat(form.sutaRate || 2.7) / 100 };
       if (!payload.bankAccountNumber) delete payload.bankAccountNumber;
-      if (!payload.eftpsPin) delete payload.eftpsPin;
+      if (!payload.batchProviderPin) delete payload.batchProviderPin;
       if (!payload.eftpsInternetPassword) delete payload.eftpsInternetPassword;
       if (isEdit) {
         await api.updateClient(id, payload);
@@ -137,16 +137,16 @@ export default function ClientForm() {
             <p className="form-section-title">EFTPS Credentials</p>
 
             <div className="form-group">
-              <label className="form-label">EFTPS PIN {!isEdit && <span>*</span>}</label>
+              <label className="form-label">Batch Provider PIN {!isEdit && <span>*</span>}</label>
               <input
                 className="form-input mono"
                 type="password"
-                value={form.eftpsPin}
-                onChange={set('eftpsPin')}
+                value={form.batchProviderPin}
+                onChange={set('batchProviderPin')}
                 placeholder={isEdit ? '••••  (leave blank to keep current)' : '4-digit PIN'}
                 maxLength={4}
               />
-              {errors.eftpsPin && <p className="form-error-msg">{errors.eftpsPin}</p>}
+              {errors.batchProviderPin && <p className="form-error-msg">{errors.batchProviderPin}</p>}
               <p className="form-hint">Stored encrypted with AES-256. Never stored in plaintext.</p>
             </div>
 

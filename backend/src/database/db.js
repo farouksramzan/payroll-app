@@ -50,7 +50,7 @@ function initSchema() {
         bank_account_number_encrypted     TEXT,
         bank_routing_number               TEXT,
         bank_account_type                 TEXT DEFAULT 'checking',
-        eftps_pin_encrypted               TEXT NOT NULL,
+        batch_provider_pin_encrypted      TEXT NOT NULL,
         eftps_internet_password_encrypted TEXT,
         eftps_enrollment_number           TEXT,
         suta_rate                         REAL DEFAULT 0.027,
@@ -166,6 +166,12 @@ function migrate() {
     { name: 'eftps_enrollment_number',           def: 'TEXT' },
     { name: 'suta_rate',                         def: 'REAL DEFAULT 0.027' },
   ]);
+
+  // Rename eftps_pin_encrypted → batch_provider_pin_encrypted on existing databases
+  const clientCols = db.prepare('PRAGMA table_info(clients)').all().map((c) => c.name);
+  if (clientCols.includes('eftps_pin_encrypted') && !clientCols.includes('batch_provider_pin_encrypted')) {
+    db.exec('ALTER TABLE clients RENAME COLUMN eftps_pin_encrypted TO batch_provider_pin_encrypted');
+  }
 
   // submissions columns added after v1
   addCols('submissions', [
