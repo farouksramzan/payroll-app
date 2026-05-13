@@ -1,82 +1,66 @@
-; ══════════════════════════════════════════════════════════════════════════════
-; EFTPS Bridge Watcher — AutoHotkey v2
+; ==============================================================================
+; EFTPS Bridge Watcher -- AutoHotkey v2
 ;
-; Watches the ach-out folder for .ach files written by the bridge server,
-; imports each one into EFTPS Batch Provider automatically, then moves it
-; to ach-processed.
+; Watches ach-out for .ach files, imports each into EFTPS Batch Provider,
+; moves to ach-processed. Runs as a system-tray app.
 ;
 ; HOW TO CALIBRATE:
-;   Run the script, right-click the tray icon → "Window Spy".
-;   Hover over each button/tab in Batch Provider while "Freeze" is checked.
-;   Update the coordinate constants in the CONFIG section below.
-; ══════════════════════════════════════════════════════════════════════════════
+;   Right-click tray icon -> Window Spy. Hover over the Import button in
+;   Batch Provider with "Freeze" checked. Read "Client X/Y". Update
+;   BTN_IMPORT_X / BTN_IMPORT_Y below.
+; ==============================================================================
 
 #Requires AutoHotkey v2.0
 #SingleInstance Force
-SendMode "Event"          ; most compatible with Java Swing apps
+SendMode "Event"        ; most reliable for Java Swing apps
 SetWorkingDir A_ScriptDir
 
-; ── CONFIG ────────────────────────────────────────────────────────────────────
+; -- CONFIG --------------------------------------------------------------------
 
 WATCH_FOLDER     := "C:\Users\mramz\OneDrive\Desktop\bridge-server\data\ach-out"
 PROCESSED_FOLDER := "C:\Users\mramz\OneDrive\Desktop\bridge-server\data\ach-processed"
 LOG_FILE         := "C:\Users\mramz\OneDrive\Desktop\bridge-server\logs\ahk-eftps.log"
 
-; Partial window title — enough to uniquely identify Batch Provider
+; Partial match -- adjust if your window has a different title
 BP_TITLE := "EFTPS Batch Provider"
 
-; How often to check the watch folder (milliseconds)
-POLL_INTERVAL_MS := 3000
+POLL_INTERVAL_MS := 3000   ; folder poll frequency
+COOLDOWN_MS      := 5000   ; minimum gap between imports
 
-; Minimum milliseconds between imports (prevents rapid re-processing)
-COOLDOWN_MS := 5000
+; Fallback coordinate offsets from window top-left (used only when control
+; enumeration cannot find Import by text). Calibrate with Window Spy.
+BTN_IMPORT_X := 100
+BTN_IMPORT_Y := 220
 
-; ── COORDINATE OFFSETS (relative to Batch Provider window top-left corner) ───
-; Use Window Spy to find these. Right-click tray → Window Spy, hover over each
-; element in Batch Provider with "Freeze" checked. Read "Client X/Y".
-
-TAB_PAYMENTS_X  := 530   ; "Payments" tab in the top navigation bar
-TAB_PAYMENTS_Y  := 58
-
-SUBTAB_SEND_X   := 72    ; "Send Payments" sub-tab
-SUBTAB_SEND_Y   := 100
-
-BTN_IMPORT_X    := 100   ; "Import" button on the Send Payments screen
-BTN_IMPORT_Y    := 220
-
-; ── STARTUP ───────────────────────────────────────────────────────────────────
+; -- TRAY SETUP ---------------------------------------------------------------
 
 DirCreate(WATCH_FOLDER)
 DirCreate(PROCESSED_FOLDER)
 DirCreate("C:\Users\mramz\OneDrive\Desktop\bridge-server\logs")
 
-; Tray icon setup
 TraySetIcon("shell32.dll", 147)
-A_IconTip := "EFTPS Bridge Watcher — running"
+A_IconTip := "EFTPS Bridge Watcher -- running"
 
 A_TrayMenu.Delete()
 A_TrayMenu.Add("EFTPS Bridge Watcher", (*) => "")
 A_TrayMenu.Disable("EFTPS Bridge Watcher")
 A_TrayMenu.Add()
-A_TrayMenu.Add("Open Log",              MenuOpenLog)
-A_TrayMenu.Add("Open Watch Folder",     MenuOpenWatch)
-A_TrayMenu.Add("Open Processed Folder", MenuOpenProcessed)
+A_TrayMenu.Add("Open Log",               MenuOpenLog)
+A_TrayMenu.Add("Open Watch Folder",      MenuOpenWatch)
+A_TrayMenu.Add("Open Processed Folder",  MenuOpenProcessed)
 A_TrayMenu.Add()
 A_TrayMenu.Add("Window Spy (calibrate)", MenuWindowSpy)
 A_TrayMenu.Add()
 A_TrayMenu.Add("Exit", MenuExit)
 A_TrayMenu.Default := "Open Log"
 
-; ── STATE ─────────────────────────────────────────────────────────────────────
+; -- STATE --------------------------------------------------------------------
 
-; Files that existed when the script started — never process these.
-; Also used to permanently remember every file we've ever touched so a
-; restart can't cause a re-run.
-global seenFiles     := Map()
-global lastImportTick := 0   ; A_TickCount of the last import attempt
+global seenFiles      := Map()
+global lastImportTick := 0
 
-; Snapshot every .ach file already in the folder right now so we skip them.
-AppLog("═══ EFTPS Bridge Watcher started ═══")
+; Snapshot files already in the folder so we never process pre-existing files
+AppLog("=== EFTPS Bridge Watcher started ===")
 AppLog("Watching: " WATCH_FOLDER)
 existingCount := 0
 Loop Files, WATCH_FOLDER "\*.ach" {
@@ -84,234 +68,275 @@ Loop Files, WATCH_FOLDER "\*.ach" {
     existingCount++
 }
 if existingCount > 0
-    AppLog("Skipping " existingCount " pre-existing file(s) already in watch folder")
+    AppLog("Skipping " existingCount " pre-existing file(s)")
 
 SetTimer(PollFolder, POLL_INTERVAL_MS)
 Persistent
 
-; ── FOLDER POLLER ─────────────────────────────────────────────────────────────
+; -- FOLDER POLLER ------------------------------------------------------------
 
 PollFolder() {
     global seenFiles, lastImportTick, WATCH_FOLDER, COOLDOWN_MS
 
-    ; Don't start a new import until the cooldown has elapsed
     if A_TickCount - lastImportTick < COOLDOWN_MS
         return
 
     Loop Files, WATCH_FOLDER "\*.ach" {
         fp := A_LoopFileFullPath
-        if seenFiles.Has(fp)   ; already processed or pre-existing — skip
+        if seenFiles.Has(fp)
             continue
 
-        ; Mark seen immediately — this is the ONLY place we add to seenFiles.
-        ; Doing it here (before ProcessFile runs) means a second poll firing
-        ; during the Sleep(2000) in ProcessFile cannot queue the same file again.
+        ; Mark seen NOW -- before ProcessFile runs, so re-polls can't queue it again
         seenFiles[fp] := true
         lastImportTick := A_TickCount
-
-        ; -1 = one-shot timer, fires after this call returns
-        SetTimer(() => ProcessFile(fp), -1)
-
-        ; Process one file per poll cycle — next file waits for the next poll
-        break
+        SetTimer(() => ProcessFile(fp), -1)   ; -1 = one-shot, fires after this returns
+        break   ; one file per poll cycle
     }
 }
 
-; ── FILE PROCESSOR ────────────────────────────────────────────────────────────
+; -- FILE PROCESSOR -----------------------------------------------------------
 
 ProcessFile(filePath) {
-    global PROCESSED_FOLDER, BP_TITLE
-    global TAB_PAYMENTS_X, TAB_PAYMENTS_Y
-    global SUBTAB_SEND_X,  SUBTAB_SEND_Y
-    global BTN_IMPORT_X,   BTN_IMPORT_Y
+    global PROCESSED_FOLDER, BP_TITLE, BTN_IMPORT_X, BTN_IMPORT_Y
 
     SplitPath(filePath, &fileName,, &ext, &nameNoExt)
-    AppLog("───────────────────────────────────────")
+    AppLog("--------------------------------------")
     AppLog("New file: " fileName)
-    AppLog("Waiting 2s for write to complete…")
+    AppLog("Waiting 2s for write to finish...")
     Sleep(2000)
 
     if !FileExist(filePath) {
-        AppLog("SKIP: file disappeared before processing — " fileName)
+        AppLog("SKIP: file disappeared -- " fileName)
         return
     }
 
-    ; ── Move the file to ach-processed IMMEDIATELY ────────────────────────────
-    ; Moving it now means it can NEVER be detected again, even if the script
-    ; crashes mid-import and restarts.  We import from the processed location.
-    destPath := PROCESSED_FOLDER "\" nameNoExt "_" FormatTime(, "yyyyMMdd_HHmmss") "." ext
+    ; Move to ach-processed BEFORE touching Batch Provider.
+    ; This ensures the file can never be re-detected even if the script restarts.
+    destPath  := PROCESSED_FOLDER "\" nameNoExt "_" FormatTime(, "yyyyMMdd_HHmmss") "." ext
     try {
         FileMove(filePath, destPath)
-        AppLog("Moved to processed (pre-import): " destPath)
+        AppLog("Pre-import move OK -> " destPath)
     } catch as err {
-        AppLog("ERROR: Could not move file before import — " err.Message)
+        AppLog("ERROR: Could not move file -- " err.Message)
         return
     }
-
-    ; From here on, importPath is the file we hand to Batch Provider
     importPath := destPath
 
-    ; ── STEP 1: Find and activate Batch Provider ──────────────────────────────
-    AppLog("Looking for Batch Provider window…")
+    ; === STEP 1: Locate window ===============================================
+    AppLog("[STEP 1] Locating Batch Provider window...")
     if !WinExist(BP_TITLE) {
-        AppLog("ERROR: No window matching [" BP_TITLE "] — is Batch Provider open?")
+        AppLog("ERROR: No window matching [" BP_TITLE "]. Is Batch Provider running?")
         return
     }
-
-    ; Log the EXACT title so the user can adjust BP_TITLE if needed
     exactTitle := WinGetTitle(BP_TITLE)
-    AppLog("Found window: [" exactTitle "]")
+    winClass   := WinGetClass(BP_TITLE)
+    winPID     := WinGetPID(BP_TITLE)
+    AppLog("  Exact title : [" exactTitle "]")
+    AppLog("  Window class: [" winClass "]")
+    AppLog("  PID         : " winPID)
+    WinGetPos(&wx, &wy, &ww, &wh, BP_TITLE)
+    AppLog("  Geometry    : x=" wx " y=" wy " w=" ww " h=" wh)
+    MouseGetPos(&mx, &my)
+    AppLog("  Mouse before activate: x=" mx " y=" my)
 
-    try {
+    ; === STEP 2: Activate and wait for focus =================================
+    AppLog("[STEP 2] Activating window...")
+    WinActivate(BP_TITLE)
+    Sleep(1000)   ; Java Swing needs ~1s to repaint focus decorations
+
+    activeNow := WinGetTitle("A")
+    AppLog("  Active window after activate: [" activeNow "]")
+    if !WinActive(BP_TITLE) {
+        AppLog("  WARNING: still not active -- retrying once")
         WinActivate(BP_TITLE)
-        if !WinWaitActive(BP_TITLE,, 8) {
-            AppLog("ERROR: Window did not come to foreground within 8s")
-            return
+        Sleep(1000)
+        AppLog("  Active window (retry): [" WinGetTitle("A") "]")
+    }
+
+    ; Re-read geometry after activate (window may have un-minimised / moved)
+    WinGetPos(&wx, &wy, &ww, &wh, BP_TITLE)
+    AppLog("  Geometry after activate: x=" wx " y=" wy " w=" ww " h=" wh)
+    MouseGetPos(&mx, &my)
+    AppLog("  Mouse after activate: x=" mx " y=" my)
+
+    ; === STEP 3: Enumerate controls ==========================================
+    ; Java Swing controls are SunAwtXxx classes; standard control names usually
+    ; won't work, but we log every control that has text so you can identify
+    ; the Import button's class name and position for calibration.
+    AppLog("[STEP 3] Enumerating controls...")
+    importCtrl := ""
+    importCtrlX := 0
+    importCtrlY := 0
+    importCtrlW := 0
+    importCtrlH := 0
+    try {
+        ctrls := WinGetControls(BP_TITLE)
+        AppLog("  Total controls: " ctrls.Length)
+        for ctrl in ctrls {
+            ctrlText  := ""
+            ctrlClass := ""
+            cx := 0 , cy := 0 , cw := 0 , ch := 0
+            try ctrlText  := ControlGetText(ctrl, BP_TITLE)
+            try ctrlClass := ControlGetClassNN(ctrl, BP_TITLE)
+            try ControlGetPos(&cx, &cy, &cw, &ch, ctrl, BP_TITLE)
+            if ctrlText != ""
+                AppLog("  ctrl=[" ctrl "] class=[" ctrlClass "] text=[" ctrlText "] pos=(" cx "," cy ") size=" cw "x" ch)
+            if importCtrl = "" and InStr(ctrlText, "Import", false) {
+                importCtrl  := ctrl
+                importCtrlX := cx
+                importCtrlY := cy
+                importCtrlW := cw
+                importCtrlH := ch
+                AppLog("  ** Import control found: [" ctrl "] at (" cx "," cy ")")
+            }
         }
     } catch as err {
-        AppLog("ERROR: WinActivate failed — " err.Message)
-        return
+        AppLog("  WARN: control enumeration error -- " err.Message)
     }
-    Sleep(700)
 
-    ; ── STEP 2: Click the Payments tab ───────────────────────────────────────
-    AppLog("Clicking Payments tab…")
-    WinGetPos(&wx, &wy,, , BP_TITLE)
-    Click(wx + TAB_PAYMENTS_X, wy + TAB_PAYMENTS_Y)
-    Sleep(800)
+    ; === STEP 4: Click Import ================================================
+    AppLog("[STEP 4] Clicking Import button...")
+    SetMouseDelay(100)   ; slower mouse = more reliable in Java Swing
 
-    ; ── STEP 3: Click the Send Payments sub-tab ───────────────────────────────
-    AppLog("Clicking Send Payments sub-tab…")
-    Click(wx + SUBTAB_SEND_X, wy + SUBTAB_SEND_Y)
-    Sleep(600)
-
-    ; ── STEP 4: Click Import ──────────────────────────────────────────────────
-    AppLog("Clicking Import…")
-    importCtrl := FindControlByText(BP_TITLE, "Import")
+    clickedViaControl := false
     if importCtrl != "" {
-        ControlClick(importCtrl, BP_TITLE)
-    } else {
-        Click(wx + BTN_IMPORT_X, wy + BTN_IMPORT_Y)
+        ; Strategy A: ControlClick by handle (works for native Win32 buttons)
+        AppLog("  Strategy A -- ControlClick handle [" importCtrl "]")
+        try {
+            ControlClick(importCtrl, BP_TITLE,, "left", 1, "NA")
+            clickedViaControl := true
+            AppLog("  ControlClick sent")
+        } catch as err {
+            AppLog("  ControlClick failed: " err.Message)
+        }
+        Sleep(800)
     }
-    Sleep(1200)
 
-    ; ── STEP 5: Handle the file Open dialog ───────────────────────────────────
-    AppLog("Waiting for Open dialog…")
-    openDlg := "ahk_class #32770"
-    if !WinWait(openDlg,, 10) {
-        AppLog("ERROR: Open dialog did not appear within 10s")
+    ; Check whether the file dialog already opened after Strategy A
+    if WinExist("ahk_class #32770") {
+        AppLog("  File dialog appeared after Strategy A -- skipping Strategy B")
+    } else {
+        ; Strategy B: absolute MouseClick at button centre
+        if importCtrl != "" {
+            ; Use the control's position relative to the window
+            absX := wx + importCtrlX + (importCtrlW // 2)
+            absY := wy + importCtrlY + (importCtrlH // 2)
+            AppLog("  Strategy B -- MouseClick at control centre: absX=" absX " absY=" absY)
+        } else {
+            ; Last resort: configured offsets (calibrate BTN_IMPORT_X/Y with Window Spy)
+            absX := wx + BTN_IMPORT_X
+            absY := wy + BTN_IMPORT_Y
+            AppLog("  Strategy B -- MouseClick at config offset: absX=" absX " absY=" absY)
+            AppLog("  (if wrong, open log, find 'Geometry after activate', adjust BTN_IMPORT_X/Y)")
+        }
+        MouseMove(absX, absY, 5)
+        Sleep(400)
+        MouseGetPos(&mx, &my)
+        AppLog("  Mouse after move: x=" mx " y=" my)
+        MouseClick("left", absX, absY, 1, 5)
+        AppLog("  MouseClick sent")
+        Sleep(1200)
+    }
+
+    ; === STEP 5: File Open dialog ============================================
+    AppLog("[STEP 5] Waiting for Open dialog (12s)...")
+    if !WinWait("ahk_class #32770",, 12) {
+        AppLog("ERROR: File Open dialog did not appear within 12s")
+        AppLog("  The Import click probably missed. Check the geometry log above,")
+        AppLog("  then adjust BTN_IMPORT_X/Y or use Window Spy to recalibrate.")
         return
     }
+    openTitle := WinGetTitle("ahk_class #32770")
+    AppLog("  Open dialog title: [" openTitle "]")
+    WinActivate("ahk_class #32770")
+    Sleep(500)
 
-    ; Log the dialog title too — useful for debugging Batch Provider versions
-    openTitle := WinGetTitle(openDlg)
-    AppLog("Open dialog title: [" openTitle "]")
-
-    WinActivate(openDlg)
-    Sleep(400)
-
+    ; Set file path and click Open
     try {
-        ControlSetText(importPath, "Edit1", openDlg)
+        ControlSetText(importPath, "Edit1", "ahk_class #32770")
         Sleep(300)
-        ControlClick("Button1", openDlg)   ; "Open" button
+        AppLog("  Set filename field: " importPath)
+        ControlClick("Button1", "ahk_class #32770",, "left", 1, "NA")
+        AppLog("  Clicked Open")
     } catch {
-        ; Fallback: paste the path
+        AppLog("  ControlSetText failed -- using clipboard fallback")
         A_Clipboard := importPath
+        Sleep(200)
         Send("^a")
         Sleep(100)
         Send("^v")
-        Sleep(300)
+        Sleep(400)
         Send("{Enter}")
     }
     Sleep(1500)
 
-    ; ── STEP 6: Confirm "Fixed Width Field Format" dialog ─────────────────────
-    AppLog("Checking for format dialog…")
+    ; === STEP 6: Fixed Width Field Format dialog ==============================
+    AppLog("[STEP 6] Checking for format dialog...")
     if WinExist("ahk_class #32770") {
-        fmtDlg := "ahk_class #32770"
-        fmtTitle := WinGetTitle(fmtDlg)
-        AppLog("Format dialog title: [" fmtTitle "]")
-        dlgText := ""
-        try dlgText := WinGetText(fmtDlg)
-        AppLog("Format dialog text: " SubStr(Trim(dlgText), 1, 120))
-
-        WinActivate(fmtDlg)
+        fmtTitle := WinGetTitle("ahk_class #32770")
+        fmtText  := ""
+        try fmtText := WinGetText("ahk_class #32770")
+        AppLog("  Format dialog: [" fmtTitle "] text=[" SubStr(Trim(fmtText), 1, 200) "]")
+        WinActivate("ahk_class #32770")
         Sleep(400)
-
-        try ControlClick("Button1", fmtDlg)   ; click OK / first button
+        try ControlClick("Button1", "ahk_class #32770",, "left", 1, "NA")
         Sleep(300)
-        if WinExist(fmtDlg)
-            Send("{Enter}")   ; still open — press Enter as fallback
+        if WinExist("ahk_class #32770")
+            Send("{Enter}")
         Sleep(1000)
+        AppLog("  Format dialog dismissed")
+    } else {
+        AppLog("  No format dialog")
     }
 
-    ; ── STEP 7: Wait for result ───────────────────────────────────────────────
-    AppLog("Waiting for result (4s)…")
-    Sleep(4000)
+    ; === STEP 7: Wait for result =============================================
+    AppLog("[STEP 7] Waiting for result (5s)...")
+    Sleep(5000)
 
     success := false
     if WinExist("ahk_class #32770") {
-        resDlg    := "ahk_class #32770"
-        resTitle  := WinGetTitle(resDlg)
-        resText   := ""
-        try resText := WinGetText(resDlg)
+        resTitle := WinGetTitle("ahk_class #32770")
+        resText  := ""
+        try resText := WinGetText("ahk_class #32770")
         resText := Trim(resText)
-        AppLog("Result dialog [" resTitle "]: " SubStr(resText, 1, 200))
+        AppLog("  Result dialog: [" resTitle "] text=[" SubStr(resText, 1, 300) "]")
 
-        if InStr(resText, "success", false)
-            or InStr(resText, "complet", false)
-            or InStr(resText, "imported", false)
-            or InStr(resText, "scheduled", false) {
+        if InStr(resText, "success", false) or InStr(resText, "complet", false)
+            or InStr(resText, "imported", false) or InStr(resText, "scheduled", false)
             success := true
-        } else if InStr(resText, "error", false)
-            or InStr(resText, "fail", false)
-            or InStr(resText, "invalid", false)
-            or InStr(resText, "reject", false) {
-            AppLog("ERROR: Batch Provider rejected — " SubStr(resText, 1, 300))
-        } else {
-            success := true   ; unknown dialog — assume OK, manual review via log
-        }
+        else if InStr(resText, "error", false) or InStr(resText, "fail", false)
+            or InStr(resText, "invalid", false) or InStr(resText, "reject", false)
+            AppLog("  ERROR: Batch Provider rejected the import")
+        else
+            success := true   ; unrecognised text -- treat as OK, review log
 
         Send("{Enter}")
         Sleep(500)
     } else {
-        AppLog("No result dialog — assuming silent success")
+        AppLog("  No result dialog -- assuming silent success")
         success := true
     }
 
-    ; ── Rename processed file to mark outcome ─────────────────────────────────
-    ; Already moved to ach-processed with a timestamp; optionally append _FAILED
+    ; Rename to mark outcome
     if !success {
         failedPath := PROCESSED_FOLDER "\" nameNoExt "_FAILED_" FormatTime(, "yyyyMMdd_HHmmss") "." ext
         try FileMove(destPath, failedPath)
-        AppLog("Renamed to: " failedPath)
+        AppLog("  Renamed to: " failedPath)
     }
 
-    outcome := success ? "SUCCESS ✓" : "FAILED ✗"
-    AppLog(outcome " — " fileName)
+    outcome := success ? "SUCCESS" : "FAILED"
+    AppLog(outcome " -- " fileName)
     A_IconTip := "EFTPS: " outcome " (" fileName ")"
 }
 
-; ── HELPERS ───────────────────────────────────────────────────────────────────
-
-FindControlByText(winTitle, btnText) {
-    try {
-        for ctrl in WinGetControls(winTitle) {
-            try {
-                if InStr(ControlGetText(ctrl, winTitle), btnText, false)
-                    return ctrl
-            }
-        }
-    }
-    return ""
-}
+; -- HELPERS ------------------------------------------------------------------
 
 AppLog(msg) {
     global LOG_FILE
     FileAppend(FormatTime(, "yyyy-MM-dd HH:mm:ss") "  " msg "`n", LOG_FILE)
 }
 
-; ── TRAY MENU HANDLERS ────────────────────────────────────────────────────────
+; -- TRAY MENU HANDLERS -------------------------------------------------------
 
 MenuOpenLog(*) {
     global LOG_FILE
