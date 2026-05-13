@@ -2,34 +2,18 @@
 ; EFTPS Bridge Watcher -- AutoHotkey v2
 ;
 ; Watches ach-out for .ach files, imports each into EFTPS Batch Provider
-; via Java Access Bridge (MSAA/IAccessible), then moves to ach-processed.
+; using absolute screen coordinates, then moves the file to ach-processed.
 ;
-; ONE-TIME SETUP (Computer 2 only):
-;   1. Enable Java Access Bridge so Java UI is exposed to Windows accessibility:
-;        jabswitch -enable
-;      Run that in PowerShell (no admin needed). Then restart Batch Provider.
-;      jabswitch is in C:\Program Files\Java\jre<version>\bin\ or on PATH.
-;
-;   2. Download Acc.ahk (v2) -- the IAccessible wrapper for AHK v2:
-;        https://github.com/Descolada/Acc-v2/blob/main/Lib/Acc.ahk
-;      Save Acc.ahk in the SAME FOLDER as this script.
-;
-;   3. Double-click EFTPSBridgeWatcher.ahk to start. Tray icon appears.
-;
-; HOW IT WORKS:
-;   jabswitch bridges Java Swing's accessibility tree into Windows MSAA.
-;   Acc.ahk lets AHK walk that tree and invoke buttons by their text label
-;   ("Import") without needing pixel coordinates at all.
-;   Coordinate click is kept as a fallback in case JAB is not active.
+; HOW TO UPDATE COORDINATES:
+;   Right-click tray icon -> Window Spy. Maximize Batch Provider first,
+;   then hover over the Import button with "Freeze" checked.
+;   Read "Screen X/Y" and update BTN_IMPORT_SCREEN_X/Y below.
 ; ==============================================================================
 
 #Requires AutoHotkey v2.0
 #SingleInstance Force
-SendMode "Event"        ; most reliable for Java Swing
+SendMode "Event"
 SetWorkingDir A_ScriptDir
-
-; Acc.ahk must be in the same folder as this script (see setup above)
-#Include Acc.ahk
 
 ; -- CONFIG -------------------------------------------------------------------
 
@@ -42,9 +26,9 @@ BP_TITLE         := "EFTPS Batch Provider"   ; partial window title match
 POLL_INTERVAL_MS := 3000
 COOLDOWN_MS      := 5000
 
-; Absolute screen coordinates of the Import button measured with Window Spy.
-; These are used when JAB/Acc cannot find the button by name.
-; The window is maximized before clicking so the button is always at this position.
+; Absolute screen coordinates of the Import button measured with Window Spy
+; after maximizing Batch Provider. Do NOT add window offsets -- these are
+; screen coordinates, not window-relative.
 BTN_IMPORT_SCREEN_X := 421
 BTN_IMPORT_SCREEN_Y := 970
 
@@ -78,7 +62,6 @@ global lastImportTick := 0
 AppLog("=== EFTPS Bridge Watcher started ===")
 AppLog("Watching: " WATCH_FOLDER)
 
-; Snapshot pre-existing files so they are never processed
 existingCount := 0
 Loop Files, WATCH_FOLDER "\*.ach" {
     seenFiles[A_LoopFileFullPath] := true
@@ -100,10 +83,10 @@ PollFolder() {
         fp := A_LoopFileFullPath
         if seenFiles.Has(fp)
             continue
-        seenFiles[fp]  := true          ; mark before queuing -- re-polls can't re-add
+        seenFiles[fp]  := true
         lastImportTick := A_TickCount
-        SetTimer(() => ProcessFile(fp), -1)   ; one-shot, fires after this returns
-        break                           ; one file per poll cycle
+        SetTimer(() => ProcessFile(fp), -1)
+        break
     }
 }
 
@@ -123,9 +106,8 @@ ProcessFile(filePath) {
         return
     }
 
-    ; Move to ach-processed BEFORE touching Batch Provider.
-    ; File is gone from ach-out immediately -- can never be re-detected.
-    destPath  := PROCESSED_FOLDER "\" nameNoExt "_" FormatTime(, "yyyyMMdd_HHmmss") "." ext
+    ; Move to ach-processed immediately so the file can never be re-detected
+    destPath := PROCESSED_FOLDER "\" nameNoExt "_" FormatTime(, "yyyyMMdd_HHmmss") "." ext
     try {
         FileMove(filePath, destPath)
         AppLog("Pre-import move OK -> " destPath)
@@ -141,117 +123,47 @@ ProcessFile(filePath) {
         AppLog("ERROR: No window matching [" BP_TITLE "]. Is Batch Provider running?")
         return
     }
-    hWnd := WinExist(BP_TITLE)
     AppLog("  Exact title : [" WinGetTitle(BP_TITLE) "]")
     AppLog("  Class       : [" WinGetClass(BP_TITLE) "]")
-    AppLog("  PID/hWnd    : " WinGetPID(BP_TITLE) " / " hWnd)
     WinGetPos(&wx, &wy, &ww, &wh, BP_TITLE)
     AppLog("  Geometry    : x=" wx " y=" wy " w=" ww " h=" wh)
 
-    ; === STEP 2: Activate, maximize, and wait for focus ======================
-    AppLog("[STEP 2] Activating and maximizing window...")
+    ; === STEP 2: Activate, maximize, wait ====================================
+    AppLog("[STEP 2] Activating and maximizing...")
     WinActivate(BP_TITLE)
     Sleep(500)
     if !WinActive(BP_TITLE) {
-        AppLog("  Not active yet -- retrying")
+        AppLog("  Not active -- retrying")
         WinActivate(BP_TITLE)
         Sleep(500)
     }
-    ; Maximize so the Import button is always at the same screen position
     WinMaximize(BP_TITLE)
     Sleep(1000)     ; wait for maximize animation and Java Swing repaint
-    AppLog("  Active window: [" WinGetTitle("A") "]")
+    AppLog("  Active window : [" WinGetTitle("A") "]")
     WinGetPos(&wx, &wy, &ww, &wh, BP_TITLE)
     AppLog("  Geometry after maximize: x=" wx " y=" wy " w=" ww " h=" wh)
 
-    ; === STEP 3: Walk JAB accessibility tree =================================
-    ; jabswitch -enable bridges Java Swing -> Windows MSAA (IAccessible).
-    ; Acc.ahk lets us walk that tree and find buttons by their text label.
-    AppLog("[STEP 3] Walking Java accessibility tree via Acc (JAB)...")
-    importEl := 0
-    jabWorking := false
-    try {
-        oRoot := Acc.ObjectFromWindow(hWnd)
-        ; Log the top-level accessible name and role so we can confirm JAB is active
-        AppLog("  Root accessible name : [" oRoot.Name "]")
-        AppLog("  Root accessible role : [" oRoot.RoleText "]")
-
-        ; Walk the full tree and log every element that has a name -- this lets
-        ; you see exactly what Batch Provider exposes through accessibility.
-        AppLog("  --- Accessible elements with names ---")
-        LogAccTree(oRoot, 0)
-        AppLog("  --- End of tree ---")
-
-        ; Find the Import push-button by name
-        importEl := oRoot.FindFirst(IsImportButton)
-        if importEl {
-            jabWorking := true
-            AppLog("  JAB FOUND: name=[" importEl.Name "] role=[" importEl.RoleText "]")
-        } else {
-            AppLog("  JAB: no element named 'Import' with role 'push button' found")
-            AppLog("  Hint: check the tree dump above for the actual button name")
-        }
-    } catch as err {
-        AppLog("  JAB/Acc error: " err.Message)
-        AppLog("  Is Java Access Bridge enabled? Run: jabswitch -enable  then restart Batch Provider")
-    }
-
-    ; === STEP 4: Click Import ================================================
-    AppLog("[STEP 4] Clicking Import...")
+    ; === STEP 3: Click Import at absolute screen coordinates =================
+    AppLog("[STEP 3] Clicking Import button...")
+    AppLog("  Target: x=" BTN_IMPORT_SCREEN_X " y=" BTN_IMPORT_SCREEN_Y)
     SetMouseDelay(100)
-    clicked := false
+    MouseMove(BTN_IMPORT_SCREEN_X, BTN_IMPORT_SCREEN_Y, 5)
+    Sleep(300)
+    MouseGetPos(&mx, &my)
+    AppLog("  Mouse landed at: x=" mx " y=" my)
+    MouseClick("left", BTN_IMPORT_SCREEN_X, BTN_IMPORT_SCREEN_Y, 1, 5)
+    AppLog("  Click sent")
+    Sleep(1200)
 
-    ; Strategy A: JAB DoDefaultAction -- no coordinates needed
-    if importEl {
-        AppLog("  Strategy A -- JAB DoDefaultAction on Import button")
-        try {
-            importEl.DoDefaultAction()
-            AppLog("  DoDefaultAction() sent")
-            clicked := true
-        } catch as err {
-            AppLog("  DoDefaultAction failed: " err.Message)
-            ; Try using the element's location to mouse-click it
-            try {
-                loc := importEl.Location   ; {x, y, w, h} in screen coordinates
-                AppLog("  Element screen location: x=" loc.x " y=" loc.y " w=" loc.w " h=" loc.h)
-                cx := loc.x + (loc.w // 2)
-                cy := loc.y + (loc.h // 2)
-                AppLog("  Strategy A2 -- MouseClick at element centre: x=" cx " y=" cy)
-                MouseClick("left", cx, cy, 1, 5)
-                clicked := true
-            } catch as err2 {
-                AppLog("  Element location click also failed: " err2.Message)
-            }
-        }
-        Sleep(800)
-    }
-
-    ; Strategy B: absolute screen coordinate fallback (only if JAB did not click)
-    if !clicked or !WinExist("ahk_class #32770") {
-        if clicked
-            AppLog("  (JAB clicked but no dialog -- trying coordinate fallback too)")
-        ; Use absolute screen coordinates measured with Window Spy after maximizing.
-        ; Do NOT add wx/wy -- these are screen coords, not window-relative offsets.
-        absX := BTN_IMPORT_SCREEN_X
-        absY := BTN_IMPORT_SCREEN_Y
-        AppLog("  Strategy B -- MouseClick at absolute screen coords: x=" absX " y=" absY)
-        MouseMove(absX, absY, 5)
-        Sleep(300)
-        MouseGetPos(&mx, &my)
-        AppLog("  Mouse landed at: x=" mx " y=" my)
-        MouseClick("left", absX, absY, 1, 5)
-        Sleep(1200)
-    }
-
-    ; === STEP 5: File Open dialog ============================================
-    AppLog("[STEP 5] Waiting for Open dialog (12s)...")
+    ; === STEP 4: File Open dialog ============================================
+    AppLog("[STEP 4] Waiting for Open dialog (12s)...")
     if !WinWait("ahk_class #32770",, 12) {
         AppLog("ERROR: Open dialog did not appear within 12s")
-        AppLog("  Import click missed. Check geometry log above and adjust BTN_IMPORT_SCREEN_X/Y.")
+        AppLog("  Click may have missed. Re-measure with Window Spy (maximize first)")
+        AppLog("  and update BTN_IMPORT_SCREEN_X/Y in the CONFIG section.")
         return
     }
-    openTitle := WinGetTitle("ahk_class #32770")
-    AppLog("  Open dialog: [" openTitle "]")
+    AppLog("  Open dialog: [" WinGetTitle("ahk_class #32770") "]")
     WinActivate("ahk_class #32770")
     Sleep(500)
 
@@ -273,8 +185,8 @@ ProcessFile(filePath) {
     }
     Sleep(1500)
 
-    ; === STEP 6: Fixed Width Field Format dialog ==============================
-    AppLog("[STEP 6] Checking for format dialog...")
+    ; === STEP 5: Fixed Width Field Format dialog ==============================
+    AppLog("[STEP 5] Checking for format dialog...")
     if WinExist("ahk_class #32770") {
         fmtTitle := WinGetTitle("ahk_class #32770")
         fmtText  := ""
@@ -292,8 +204,8 @@ ProcessFile(filePath) {
         AppLog("  No format dialog")
     }
 
-    ; === STEP 7: Wait for result =============================================
-    AppLog("[STEP 7] Waiting for result (5s)...")
+    ; === STEP 6: Wait for result =============================================
+    AppLog("[STEP 6] Waiting for result (5s)...")
     Sleep(5000)
 
     success := false
@@ -311,7 +223,7 @@ ProcessFile(filePath) {
             or InStr(resText, "invalid", false) or InStr(resText, "reject", false)
             AppLog("  ERROR: Batch Provider rejected the import")
         else
-            success := true   ; unrecognised -- treat as OK, review log
+            success := true   ; unrecognised text -- treat as OK, review log
 
         Send("{Enter}")
         Sleep(500)
@@ -329,40 +241,6 @@ ProcessFile(filePath) {
     outcome := success ? "SUCCESS" : "FAILED"
     AppLog(outcome " -- " fileName)
     A_IconTip := "EFTPS: " outcome " (" fileName ")"
-}
-
-; -- JAB HELPERS --------------------------------------------------------------
-
-; Predicate for FindFirst: push button whose name contains "Import"
-IsImportButton(el) {
-    try return InStr(el.Name, "Import", false) && el.RoleText = "push button"
-    return false
-}
-
-; Recursively log every accessible element that has a non-empty name.
-; Indent level makes the tree structure readable in the log.
-LogAccTree(el, depth) {
-    if depth > 8   ; cap depth to avoid runaway recursion in large UIs
-        return
-    try {
-        nm   := el.Name
-        role := el.RoleText
-        if nm != ""
-            AppLog("  " StrRepeat("  ", depth) "[" role "] " nm)
-    }
-    try {
-        childCount := el.ChildCount
-        Loop childCount {
-            try LogAccTree(el.GetChild(A_Index), depth + 1)
-        }
-    }
-}
-
-StrRepeat(s, n) {
-    out := ""
-    Loop n
-        out .= s
-    return out
 }
 
 ; -- HELPERS ------------------------------------------------------------------
