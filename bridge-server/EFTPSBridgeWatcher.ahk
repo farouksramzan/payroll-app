@@ -1,36 +1,51 @@
 ; ==============================================================================
 ; EFTPS Bridge Watcher -- AutoHotkey v2
 ;
-; Watches ach-out for .ach files, imports each into EFTPS Batch Provider,
-; moves to ach-processed. Runs as a system-tray app.
+; Watches ach-out for .ach files, imports each into EFTPS Batch Provider
+; via Java Access Bridge (MSAA/IAccessible), then moves to ach-processed.
 ;
-; HOW TO CALIBRATE:
-;   Right-click tray icon -> Window Spy. Hover over the Import button in
-;   Batch Provider with "Freeze" checked. Read "Client X/Y". Update
-;   BTN_IMPORT_X / BTN_IMPORT_Y below.
+; ONE-TIME SETUP (Computer 2 only):
+;   1. Enable Java Access Bridge so Java UI is exposed to Windows accessibility:
+;        jabswitch -enable
+;      Run that in PowerShell (no admin needed). Then restart Batch Provider.
+;      jabswitch is in C:\Program Files\Java\jre<version>\bin\ or on PATH.
+;
+;   2. Download Acc.ahk (v2) -- the IAccessible wrapper for AHK v2:
+;        https://github.com/Descolada/Acc-v2/blob/main/Lib/Acc.ahk
+;      Save Acc.ahk in the SAME FOLDER as this script.
+;
+;   3. Double-click EFTPSBridgeWatcher.ahk to start. Tray icon appears.
+;
+; HOW IT WORKS:
+;   jabswitch bridges Java Swing's accessibility tree into Windows MSAA.
+;   Acc.ahk lets AHK walk that tree and invoke buttons by their text label
+;   ("Import") without needing pixel coordinates at all.
+;   Coordinate click is kept as a fallback in case JAB is not active.
 ; ==============================================================================
 
 #Requires AutoHotkey v2.0
 #SingleInstance Force
-SendMode "Event"        ; most reliable for Java Swing apps
+SendMode "Event"        ; most reliable for Java Swing
 SetWorkingDir A_ScriptDir
 
-; -- CONFIG --------------------------------------------------------------------
+; Acc.ahk must be in the same folder as this script (see setup above)
+#Include Acc.ahk
+
+; -- CONFIG -------------------------------------------------------------------
 
 WATCH_FOLDER     := "C:\Users\mramz\OneDrive\Desktop\bridge-server\data\ach-out"
 PROCESSED_FOLDER := "C:\Users\mramz\OneDrive\Desktop\bridge-server\data\ach-processed"
 LOG_FILE         := "C:\Users\mramz\OneDrive\Desktop\bridge-server\logs\ahk-eftps.log"
 
-; Partial match -- adjust if your window has a different title
-BP_TITLE := "EFTPS Batch Provider"
+BP_TITLE         := "EFTPS Batch Provider"   ; partial window title match
 
-POLL_INTERVAL_MS := 3000   ; folder poll frequency
-COOLDOWN_MS      := 5000   ; minimum gap between imports
+POLL_INTERVAL_MS := 3000
+COOLDOWN_MS      := 5000
 
-; Fallback coordinate offsets from window top-left (used only when control
-; enumeration cannot find Import by text). Calibrate with Window Spy.
-BTN_IMPORT_X := 100
-BTN_IMPORT_Y := 220
+; Coordinate fallback (used only if JAB/Acc cannot find the Import button).
+; Calibrate with Window Spy if the fallback ever triggers.
+BTN_IMPORT_X     := 100
+BTN_IMPORT_Y     := 220
 
 ; -- TRAY SETUP ---------------------------------------------------------------
 
@@ -59,9 +74,10 @@ A_TrayMenu.Default := "Open Log"
 global seenFiles      := Map()
 global lastImportTick := 0
 
-; Snapshot files already in the folder so we never process pre-existing files
 AppLog("=== EFTPS Bridge Watcher started ===")
 AppLog("Watching: " WATCH_FOLDER)
+
+; Snapshot pre-existing files so they are never processed
 existingCount := 0
 Loop Files, WATCH_FOLDER "\*.ach" {
     seenFiles[A_LoopFileFullPath] := true
@@ -77,20 +93,16 @@ Persistent
 
 PollFolder() {
     global seenFiles, lastImportTick, WATCH_FOLDER, COOLDOWN_MS
-
     if A_TickCount - lastImportTick < COOLDOWN_MS
         return
-
     Loop Files, WATCH_FOLDER "\*.ach" {
         fp := A_LoopFileFullPath
         if seenFiles.Has(fp)
             continue
-
-        ; Mark seen NOW -- before ProcessFile runs, so re-polls can't queue it again
-        seenFiles[fp] := true
+        seenFiles[fp]  := true          ; mark before queuing -- re-polls can't re-add
         lastImportTick := A_TickCount
-        SetTimer(() => ProcessFile(fp), -1)   ; -1 = one-shot, fires after this returns
-        break   ; one file per poll cycle
+        SetTimer(() => ProcessFile(fp), -1)   ; one-shot, fires after this returns
+        break                           ; one file per poll cycle
     }
 }
 
@@ -111,7 +123,7 @@ ProcessFile(filePath) {
     }
 
     ; Move to ach-processed BEFORE touching Batch Provider.
-    ; This ensures the file can never be re-detected even if the script restarts.
+    ; File is gone from ach-out immediately -- can never be re-detected.
     destPath  := PROCESSED_FOLDER "\" nameNoExt "_" FormatTime(, "yyyyMMdd_HHmmss") "." ext
     try {
         FileMove(filePath, destPath)
@@ -128,138 +140,124 @@ ProcessFile(filePath) {
         AppLog("ERROR: No window matching [" BP_TITLE "]. Is Batch Provider running?")
         return
     }
-    exactTitle := WinGetTitle(BP_TITLE)
-    winClass   := WinGetClass(BP_TITLE)
-    winPID     := WinGetPID(BP_TITLE)
-    AppLog("  Exact title : [" exactTitle "]")
-    AppLog("  Window class: [" winClass "]")
-    AppLog("  PID         : " winPID)
+    hWnd := WinExist(BP_TITLE)
+    AppLog("  Exact title : [" WinGetTitle(BP_TITLE) "]")
+    AppLog("  Class       : [" WinGetClass(BP_TITLE) "]")
+    AppLog("  PID/hWnd    : " WinGetPID(BP_TITLE) " / " hWnd)
     WinGetPos(&wx, &wy, &ww, &wh, BP_TITLE)
     AppLog("  Geometry    : x=" wx " y=" wy " w=" ww " h=" wh)
-    MouseGetPos(&mx, &my)
-    AppLog("  Mouse before activate: x=" mx " y=" my)
 
     ; === STEP 2: Activate and wait for focus =================================
     AppLog("[STEP 2] Activating window...")
     WinActivate(BP_TITLE)
-    Sleep(1000)   ; Java Swing needs ~1s to repaint focus decorations
-
-    activeNow := WinGetTitle("A")
-    AppLog("  Active window after activate: [" activeNow "]")
+    Sleep(1000)     ; Java Swing needs ~1s to repaint focus decorations
     if !WinActive(BP_TITLE) {
-        AppLog("  WARNING: still not active -- retrying once")
+        AppLog("  Not active yet -- retrying")
         WinActivate(BP_TITLE)
         Sleep(1000)
-        AppLog("  Active window (retry): [" WinGetTitle("A") "]")
     }
-
-    ; Re-read geometry after activate (window may have un-minimised / moved)
+    AppLog("  Active window: [" WinGetTitle("A") "]")
     WinGetPos(&wx, &wy, &ww, &wh, BP_TITLE)
     AppLog("  Geometry after activate: x=" wx " y=" wy " w=" ww " h=" wh)
-    MouseGetPos(&mx, &my)
-    AppLog("  Mouse after activate: x=" mx " y=" my)
 
-    ; === STEP 3: Enumerate controls ==========================================
-    ; Java Swing controls are SunAwtXxx classes; standard control names usually
-    ; won't work, but we log every control that has text so you can identify
-    ; the Import button's class name and position for calibration.
-    AppLog("[STEP 3] Enumerating controls...")
-    importCtrl := ""
-    importCtrlX := 0
-    importCtrlY := 0
-    importCtrlW := 0
-    importCtrlH := 0
+    ; === STEP 3: Walk JAB accessibility tree =================================
+    ; jabswitch -enable bridges Java Swing -> Windows MSAA (IAccessible).
+    ; Acc.ahk lets us walk that tree and find buttons by their text label.
+    AppLog("[STEP 3] Walking Java accessibility tree via Acc (JAB)...")
+    importEl := 0
+    jabWorking := false
     try {
-        ctrls := WinGetControls(BP_TITLE)
-        AppLog("  Total controls: " ctrls.Length)
-        for ctrl in ctrls {
-            ctrlText  := ""
-            ctrlClass := ""
-            cx := 0 , cy := 0 , cw := 0 , ch := 0
-            try ctrlText  := ControlGetText(ctrl, BP_TITLE)
-            try ctrlClass := ControlGetClassNN(ctrl, BP_TITLE)
-            try ControlGetPos(&cx, &cy, &cw, &ch, ctrl, BP_TITLE)
-            if ctrlText != ""
-                AppLog("  ctrl=[" ctrl "] class=[" ctrlClass "] text=[" ctrlText "] pos=(" cx "," cy ") size=" cw "x" ch)
-            if importCtrl = "" and InStr(ctrlText, "Import", false) {
-                importCtrl  := ctrl
-                importCtrlX := cx
-                importCtrlY := cy
-                importCtrlW := cw
-                importCtrlH := ch
-                AppLog("  ** Import control found: [" ctrl "] at (" cx "," cy ")")
-            }
+        oRoot := Acc.ObjectFromWindow(hWnd)
+        ; Log the top-level accessible name and role so we can confirm JAB is active
+        AppLog("  Root accessible name : [" oRoot.Name "]")
+        AppLog("  Root accessible role : [" oRoot.RoleText "]")
+
+        ; Walk the full tree and log every element that has a name -- this lets
+        ; you see exactly what Batch Provider exposes through accessibility.
+        AppLog("  --- Accessible elements with names ---")
+        LogAccTree(oRoot, 0)
+        AppLog("  --- End of tree ---")
+
+        ; Find the Import push-button by name
+        importEl := oRoot.FindFirst(IsImportButton)
+        if importEl {
+            jabWorking := true
+            AppLog("  JAB FOUND: name=[" importEl.Name "] role=[" importEl.RoleText "]")
+        } else {
+            AppLog("  JAB: no element named 'Import' with role 'push button' found")
+            AppLog("  Hint: check the tree dump above for the actual button name")
         }
     } catch as err {
-        AppLog("  WARN: control enumeration error -- " err.Message)
+        AppLog("  JAB/Acc error: " err.Message)
+        AppLog("  Is Java Access Bridge enabled? Run: jabswitch -enable  then restart Batch Provider")
     }
 
     ; === STEP 4: Click Import ================================================
-    AppLog("[STEP 4] Clicking Import button...")
-    SetMouseDelay(100)   ; slower mouse = more reliable in Java Swing
+    AppLog("[STEP 4] Clicking Import...")
+    SetMouseDelay(100)
+    clicked := false
 
-    clickedViaControl := false
-    if importCtrl != "" {
-        ; Strategy A: ControlClick by handle (works for native Win32 buttons)
-        AppLog("  Strategy A -- ControlClick handle [" importCtrl "]")
+    ; Strategy A: JAB DoDefaultAction -- no coordinates needed
+    if importEl {
+        AppLog("  Strategy A -- JAB DoDefaultAction on Import button")
         try {
-            ControlClick(importCtrl, BP_TITLE,, "left", 1, "NA")
-            clickedViaControl := true
-            AppLog("  ControlClick sent")
+            importEl.DoDefaultAction()
+            AppLog("  DoDefaultAction() sent")
+            clicked := true
         } catch as err {
-            AppLog("  ControlClick failed: " err.Message)
+            AppLog("  DoDefaultAction failed: " err.Message)
+            ; Try using the element's location to mouse-click it
+            try {
+                loc := importEl.Location   ; {x, y, w, h} in screen coordinates
+                AppLog("  Element screen location: x=" loc.x " y=" loc.y " w=" loc.w " h=" loc.h)
+                cx := loc.x + (loc.w // 2)
+                cy := loc.y + (loc.h // 2)
+                AppLog("  Strategy A2 -- MouseClick at element centre: x=" cx " y=" cy)
+                MouseClick("left", cx, cy, 1, 5)
+                clicked := true
+            } catch as err2 {
+                AppLog("  Element location click also failed: " err2.Message)
+            }
         }
         Sleep(800)
     }
 
-    ; Check whether the file dialog already opened after Strategy A
-    if WinExist("ahk_class #32770") {
-        AppLog("  File dialog appeared after Strategy A -- skipping Strategy B")
-    } else {
-        ; Strategy B: absolute MouseClick at button centre
-        if importCtrl != "" {
-            ; Use the control's position relative to the window
-            absX := wx + importCtrlX + (importCtrlW // 2)
-            absY := wy + importCtrlY + (importCtrlH // 2)
-            AppLog("  Strategy B -- MouseClick at control centre: absX=" absX " absY=" absY)
-        } else {
-            ; Last resort: configured offsets (calibrate BTN_IMPORT_X/Y with Window Spy)
-            absX := wx + BTN_IMPORT_X
-            absY := wy + BTN_IMPORT_Y
-            AppLog("  Strategy B -- MouseClick at config offset: absX=" absX " absY=" absY)
-            AppLog("  (if wrong, open log, find 'Geometry after activate', adjust BTN_IMPORT_X/Y)")
-        }
+    ; Strategy B: coordinate fallback (only if JAB did not click)
+    if !clicked or !WinExist("ahk_class #32770") {
+        if clicked
+            AppLog("  (JAB clicked but no dialog -- trying coordinate fallback too)")
+        absX := wx + BTN_IMPORT_X
+        absY := wy + BTN_IMPORT_Y
+        AppLog("  Strategy B -- MouseClick at config offset: absX=" absX " absY=" absY)
+        AppLog("  (if wrong, adjust BTN_IMPORT_X/Y using Window Spy)")
         MouseMove(absX, absY, 5)
-        Sleep(400)
+        Sleep(300)
         MouseGetPos(&mx, &my)
-        AppLog("  Mouse after move: x=" mx " y=" my)
+        AppLog("  Mouse landed at: x=" mx " y=" my)
         MouseClick("left", absX, absY, 1, 5)
-        AppLog("  MouseClick sent")
         Sleep(1200)
     }
 
     ; === STEP 5: File Open dialog ============================================
     AppLog("[STEP 5] Waiting for Open dialog (12s)...")
     if !WinWait("ahk_class #32770",, 12) {
-        AppLog("ERROR: File Open dialog did not appear within 12s")
-        AppLog("  The Import click probably missed. Check the geometry log above,")
-        AppLog("  then adjust BTN_IMPORT_X/Y or use Window Spy to recalibrate.")
+        AppLog("ERROR: Open dialog did not appear within 12s")
+        AppLog("  Import click missed. Check geometry log above and adjust BTN_IMPORT_X/Y.")
         return
     }
     openTitle := WinGetTitle("ahk_class #32770")
-    AppLog("  Open dialog title: [" openTitle "]")
+    AppLog("  Open dialog: [" openTitle "]")
     WinActivate("ahk_class #32770")
     Sleep(500)
 
-    ; Set file path and click Open
     try {
         ControlSetText(importPath, "Edit1", "ahk_class #32770")
         Sleep(300)
-        AppLog("  Set filename field: " importPath)
+        AppLog("  Set filename: " importPath)
         ControlClick("Button1", "ahk_class #32770",, "left", 1, "NA")
         AppLog("  Clicked Open")
     } catch {
-        AppLog("  ControlSetText failed -- using clipboard fallback")
+        AppLog("  ControlSetText failed -- clipboard fallback")
         A_Clipboard := importPath
         Sleep(200)
         Send("^a")
@@ -299,7 +297,7 @@ ProcessFile(filePath) {
         resText  := ""
         try resText := WinGetText("ahk_class #32770")
         resText := Trim(resText)
-        AppLog("  Result dialog: [" resTitle "] text=[" SubStr(resText, 1, 300) "]")
+        AppLog("  Result: [" resTitle "] text=[" SubStr(resText, 1, 300) "]")
 
         if InStr(resText, "success", false) or InStr(resText, "complet", false)
             or InStr(resText, "imported", false) or InStr(resText, "scheduled", false)
@@ -308,7 +306,7 @@ ProcessFile(filePath) {
             or InStr(resText, "invalid", false) or InStr(resText, "reject", false)
             AppLog("  ERROR: Batch Provider rejected the import")
         else
-            success := true   ; unrecognised text -- treat as OK, review log
+            success := true   ; unrecognised -- treat as OK, review log
 
         Send("{Enter}")
         Sleep(500)
@@ -317,16 +315,49 @@ ProcessFile(filePath) {
         success := true
     }
 
-    ; Rename to mark outcome
     if !success {
         failedPath := PROCESSED_FOLDER "\" nameNoExt "_FAILED_" FormatTime(, "yyyyMMdd_HHmmss") "." ext
         try FileMove(destPath, failedPath)
-        AppLog("  Renamed to: " failedPath)
+        AppLog("  Renamed to FAILED: " failedPath)
     }
 
     outcome := success ? "SUCCESS" : "FAILED"
     AppLog(outcome " -- " fileName)
     A_IconTip := "EFTPS: " outcome " (" fileName ")"
+}
+
+; -- JAB HELPERS --------------------------------------------------------------
+
+; Predicate for FindFirst: push button whose name contains "Import"
+IsImportButton(el) {
+    try return InStr(el.Name, "Import", false) && el.RoleText = "push button"
+    return false
+}
+
+; Recursively log every accessible element that has a non-empty name.
+; Indent level makes the tree structure readable in the log.
+LogAccTree(el, depth) {
+    if depth > 8   ; cap depth to avoid runaway recursion in large UIs
+        return
+    try {
+        nm   := el.Name
+        role := el.RoleText
+        if nm != ""
+            AppLog("  " StrRepeat("  ", depth) "[" role "] " nm)
+    }
+    try {
+        childCount := el.ChildCount
+        Loop childCount {
+            try LogAccTree(el.GetChild(A_Index), depth + 1)
+        }
+    }
+}
+
+StrRepeat(s, n) {
+    out := ""
+    Loop n
+        out .= s
+    return out
 }
 
 ; -- HELPERS ------------------------------------------------------------------
