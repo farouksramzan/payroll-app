@@ -28,20 +28,20 @@ BP_TITLE := "EFTPS Batch Provider"
 ; How often to check the watch folder (milliseconds)
 POLL_INTERVAL_MS := 3000
 
+; Minimum milliseconds between imports (prevents rapid re-processing)
+COOLDOWN_MS := 5000
+
 ; ── COORDINATE OFFSETS (relative to Batch Provider window top-left corner) ───
 ; Use Window Spy to find these. Right-click tray → Window Spy, hover over each
 ; element in Batch Provider with "Freeze" checked. Read "Client X/Y".
 
-; "Payments" tab in the top navigation bar
-TAB_PAYMENTS_X  := 530
+TAB_PAYMENTS_X  := 530   ; "Payments" tab in the top navigation bar
 TAB_PAYMENTS_Y  := 58
 
-; "Send Payments" sub-tab (shown after clicking the Payments tab)
-SUBTAB_SEND_X   := 72
+SUBTAB_SEND_X   := 72    ; "Send Payments" sub-tab
 SUBTAB_SEND_Y   := 100
 
-; "Import" button on the Send Payments screen
-BTN_IMPORT_X    := 100
+BTN_IMPORT_X    := 100   ; "Import" button on the Send Payments screen
 BTN_IMPORT_Y    := 220
 
 ; ── STARTUP ───────────────────────────────────────────────────────────────────
@@ -51,83 +51,125 @@ DirCreate(PROCESSED_FOLDER)
 DirCreate("C:\Users\mramz\OneDrive\Desktop\bridge-server\logs")
 
 ; Tray icon setup
-TraySetIcon("shell32.dll", 147)   ; green-ish icon; change to any shell32 index
+TraySetIcon("shell32.dll", 147)
 A_IconTip := "EFTPS Bridge Watcher — running"
 
 A_TrayMenu.Delete()
 A_TrayMenu.Add("EFTPS Bridge Watcher", (*) => "")
 A_TrayMenu.Disable("EFTPS Bridge Watcher")
 A_TrayMenu.Add()
-A_TrayMenu.Add("Open Log",           MenuOpenLog)
-A_TrayMenu.Add("Open Watch Folder",  MenuOpenWatch)
+A_TrayMenu.Add("Open Log",              MenuOpenLog)
+A_TrayMenu.Add("Open Watch Folder",     MenuOpenWatch)
 A_TrayMenu.Add("Open Processed Folder", MenuOpenProcessed)
 A_TrayMenu.Add()
 A_TrayMenu.Add("Window Spy (calibrate)", MenuWindowSpy)
 A_TrayMenu.Add()
-A_TrayMenu.Add("Exit",               MenuExit)
+A_TrayMenu.Add("Exit", MenuExit)
 A_TrayMenu.Default := "Open Log"
 
-SetTimer(PollFolder, POLL_INTERVAL_MS)
+; ── STATE ─────────────────────────────────────────────────────────────────────
+
+; Files that existed when the script started — never process these.
+; Also used to permanently remember every file we've ever touched so a
+; restart can't cause a re-run.
+global seenFiles     := Map()
+global lastImportTick := 0   ; A_TickCount of the last import attempt
+
+; Snapshot every .ach file already in the folder right now so we skip them.
 AppLog("═══ EFTPS Bridge Watcher started ═══")
 AppLog("Watching: " WATCH_FOLDER)
+existingCount := 0
+Loop Files, WATCH_FOLDER "\*.ach" {
+    seenFiles[A_LoopFileFullPath] := true
+    existingCount++
+}
+if existingCount > 0
+    AppLog("Skipping " existingCount " pre-existing file(s) already in watch folder")
 
-Persistent   ; keep script alive with no hotkeys
+SetTimer(PollFolder, POLL_INTERVAL_MS)
+Persistent
 
 ; ── FOLDER POLLER ─────────────────────────────────────────────────────────────
 
-global inFlight := Map()   ; tracks files currently being processed
-
 PollFolder() {
-    global inFlight, WATCH_FOLDER
+    global seenFiles, lastImportTick, WATCH_FOLDER, COOLDOWN_MS
+
+    ; Don't start a new import until the cooldown has elapsed
+    if A_TickCount - lastImportTick < COOLDOWN_MS
+        return
+
     Loop Files, WATCH_FOLDER "\*.ach" {
         fp := A_LoopFileFullPath
-        if !inFlight.Has(fp) {
-            inFlight[fp] := true
-            ; -1 = one-shot timer, runs once after the current thread yields
-            SetTimer(() => ProcessFile(fp), -1)
-        }
+        if seenFiles.Has(fp)   ; already processed or pre-existing — skip
+            continue
+
+        ; Mark seen immediately — this is the ONLY place we add to seenFiles.
+        ; Doing it here (before ProcessFile runs) means a second poll firing
+        ; during the Sleep(2000) in ProcessFile cannot queue the same file again.
+        seenFiles[fp] := true
+        lastImportTick := A_TickCount
+
+        ; -1 = one-shot timer, fires after this call returns
+        SetTimer(() => ProcessFile(fp), -1)
+
+        ; Process one file per poll cycle — next file waits for the next poll
+        break
     }
 }
 
 ; ── FILE PROCESSOR ────────────────────────────────────────────────────────────
 
 ProcessFile(filePath) {
-    global inFlight, PROCESSED_FOLDER, BP_TITLE
+    global PROCESSED_FOLDER, BP_TITLE
     global TAB_PAYMENTS_X, TAB_PAYMENTS_Y
     global SUBTAB_SEND_X,  SUBTAB_SEND_Y
     global BTN_IMPORT_X,   BTN_IMPORT_Y
 
-    SplitPath(filePath, &fileName)
+    SplitPath(filePath, &fileName,, &ext, &nameNoExt)
     AppLog("───────────────────────────────────────")
-    AppLog("Detected:  " fileName)
+    AppLog("New file: " fileName)
     AppLog("Waiting 2s for write to complete…")
     Sleep(2000)
 
-    ; Confirm file still exists after the wait
     if !FileExist(filePath) {
-        AppLog("SKIP: file disappeared — " fileName)
-        inFlight.Delete(filePath)
+        AppLog("SKIP: file disappeared before processing — " fileName)
         return
     }
 
-    ; ── STEP 1: Activate Batch Provider ──────────────────────────────────────
-    AppLog("Activating EFTPS Batch Provider…")
-    if !WinExist(BP_TITLE) {
-        AppLog("ERROR: Batch Provider window not found. Is it open?")
-        inFlight.Delete(filePath)
+    ; ── Move the file to ach-processed IMMEDIATELY ────────────────────────────
+    ; Moving it now means it can NEVER be detected again, even if the script
+    ; crashes mid-import and restarts.  We import from the processed location.
+    destPath := PROCESSED_FOLDER "\" nameNoExt "_" FormatTime(, "yyyyMMdd_HHmmss") "." ext
+    try {
+        FileMove(filePath, destPath)
+        AppLog("Moved to processed (pre-import): " destPath)
+    } catch as err {
+        AppLog("ERROR: Could not move file before import — " err.Message)
         return
     }
+
+    ; From here on, importPath is the file we hand to Batch Provider
+    importPath := destPath
+
+    ; ── STEP 1: Find and activate Batch Provider ──────────────────────────────
+    AppLog("Looking for Batch Provider window…")
+    if !WinExist(BP_TITLE) {
+        AppLog("ERROR: No window matching [" BP_TITLE "] — is Batch Provider open?")
+        return
+    }
+
+    ; Log the EXACT title so the user can adjust BP_TITLE if needed
+    exactTitle := WinGetTitle(BP_TITLE)
+    AppLog("Found window: [" exactTitle "]")
 
     try {
         WinActivate(BP_TITLE)
         if !WinWaitActive(BP_TITLE,, 8) {
-            AppLog("ERROR: Batch Provider did not come to foreground")
-            inFlight.Delete(filePath)
+            AppLog("ERROR: Window did not come to foreground within 8s")
             return
         }
     } catch as err {
         AppLog("ERROR: WinActivate failed — " err.Message)
-        inFlight.Delete(filePath)
         return
     }
     Sleep(700)
@@ -143,42 +185,38 @@ ProcessFile(filePath) {
     Click(wx + SUBTAB_SEND_X, wy + SUBTAB_SEND_Y)
     Sleep(600)
 
-    ; ── STEP 4: Click the Import button ──────────────────────────────────────
+    ; ── STEP 4: Click Import ──────────────────────────────────────────────────
     AppLog("Clicking Import…")
-    ; Try to find the button by its text first (works if controls are standard Win32)
     importCtrl := FindControlByText(BP_TITLE, "Import")
     if importCtrl != "" {
         ControlClick(importCtrl, BP_TITLE)
     } else {
-        ; Fallback: click at calibrated coordinates
         Click(wx + BTN_IMPORT_X, wy + BTN_IMPORT_Y)
     }
     Sleep(1200)
 
-    ; ── STEP 5: Handle the Windows file Open dialog ───────────────────────────
-    AppLog("Waiting for file dialog…")
+    ; ── STEP 5: Handle the file Open dialog ───────────────────────────────────
+    AppLog("Waiting for Open dialog…")
     openDlg := "ahk_class #32770"
-
-    ; Batch Provider may title it "Open", "Import", or similar — match by class
     if !WinWait(openDlg,, 10) {
-        AppLog("ERROR: File Open dialog did not appear within 10s")
-        inFlight.Delete(filePath)
+        AppLog("ERROR: Open dialog did not appear within 10s")
         return
     }
+
+    ; Log the dialog title too — useful for debugging Batch Provider versions
+    openTitle := WinGetTitle(openDlg)
+    AppLog("Open dialog title: [" openTitle "]")
 
     WinActivate(openDlg)
     Sleep(400)
 
-    ; Type the full path into the filename field and click Open
-    ; Edit1 is the filename field in a standard Windows Open dialog
     try {
-        ControlSetText(filePath, "Edit1", openDlg)
+        ControlSetText(importPath, "Edit1", openDlg)
         Sleep(300)
-        ; "Button1" is the Open/OK button in a standard dialog
-        ControlClick("Button1", openDlg)
+        ControlClick("Button1", openDlg)   ; "Open" button
     } catch {
-        ; Fallback: paste into active field and press Enter
-        A_Clipboard := filePath
+        ; Fallback: paste the path
+        A_Clipboard := importPath
         Send("^a")
         Sleep(100)
         Send("^v")
@@ -187,100 +225,78 @@ ProcessFile(filePath) {
     }
     Sleep(1500)
 
-    ; ── STEP 6: Confirm "Fixed Width Field Format" dialog (if it appears) ─────
-    ; Some Batch Provider versions prompt for the file format.
-    AppLog("Checking for format confirmation dialog…")
+    ; ── STEP 6: Confirm "Fixed Width Field Format" dialog ─────────────────────
+    AppLog("Checking for format dialog…")
     if WinExist("ahk_class #32770") {
-        formatDlg := "ahk_class #32770"
-        WinActivate(formatDlg)
-        Sleep(400)
+        fmtDlg := "ahk_class #32770"
+        fmtTitle := WinGetTitle(fmtDlg)
+        AppLog("Format dialog title: [" fmtTitle "]")
         dlgText := ""
-        try dlgText := WinGetText(formatDlg)
+        try dlgText := WinGetText(fmtDlg)
+        AppLog("Format dialog text: " SubStr(Trim(dlgText), 1, 120))
 
-        if InStr(dlgText, "Fixed", false) or InStr(dlgText, "Width", false) or InStr(dlgText, "Format", false) {
-            AppLog("Format dialog found — confirming Fixed Width…")
-            ; Select the "Fixed Width" radio if visible, then click OK
-            try ControlClick("Button1", formatDlg)  ; first button = OK in most layouts
-            Sleep(300)
-            if WinExist(formatDlg) {
-                ; If dialog still open, just press Enter
-                Send("{Enter}")
-            }
-        } else {
-            ; Some other dialog appeared — press Enter to accept default
-            Send("{Enter}")
-        }
+        WinActivate(fmtDlg)
+        Sleep(400)
+
+        try ControlClick("Button1", fmtDlg)   ; click OK / first button
+        Sleep(300)
+        if WinExist(fmtDlg)
+            Send("{Enter}")   ; still open — press Enter as fallback
         Sleep(1000)
     }
 
-    ; ── STEP 7: Wait for Batch Provider to process the file ───────────────────
-    AppLog("Waiting for import result…")
+    ; ── STEP 7: Wait for result ───────────────────────────────────────────────
+    AppLog("Waiting for result (4s)…")
     Sleep(4000)
 
-    ; Check if a result dialog appeared
     success := false
     if WinExist("ahk_class #32770") {
-        resultDlg := "ahk_class #32770"
-        WinActivate(resultDlg)
-        resultText := ""
-        try resultText := WinGetText(resultDlg)
-        resultText := Trim(resultText)
+        resDlg    := "ahk_class #32770"
+        resTitle  := WinGetTitle(resDlg)
+        resText   := ""
+        try resText := WinGetText(resDlg)
+        resText := Trim(resText)
+        AppLog("Result dialog [" resTitle "]: " SubStr(resText, 1, 200))
 
-        if InStr(resultText, "success", false)
-            or InStr(resultText, "complet", false)
-            or InStr(resultText, "imported", false)
-            or InStr(resultText, "scheduled", false) {
-            AppLog("SUCCESS: Import confirmed — " SubStr(resultText, 1, 120))
+        if InStr(resText, "success", false)
+            or InStr(resText, "complet", false)
+            or InStr(resText, "imported", false)
+            or InStr(resText, "scheduled", false) {
             success := true
-        } else if InStr(resultText, "error", false)
-            or InStr(resultText, "fail", false)
-            or InStr(resultText, "invalid", false)
-            or InStr(resultText, "reject", false) {
-            AppLog("ERROR: Batch Provider rejected import — " SubStr(resultText, 1, 300))
+        } else if InStr(resText, "error", false)
+            or InStr(resText, "fail", false)
+            or InStr(resText, "invalid", false)
+            or InStr(resText, "reject", false) {
+            AppLog("ERROR: Batch Provider rejected — " SubStr(resText, 1, 300))
         } else {
-            ; Unknown dialog text — log it and treat as success (manual review)
-            AppLog("INFO: Result dialog: " SubStr(resultText, 1, 200))
-            success := true
+            success := true   ; unknown dialog — assume OK, manual review via log
         }
 
-        Send("{Enter}")   ; dismiss the result dialog
+        Send("{Enter}")
         Sleep(500)
     } else {
-        ; No dialog — import may have silently succeeded (status updated in grid)
-        AppLog("SUCCESS: No result dialog — import likely accepted")
+        AppLog("No result dialog — assuming silent success")
         success := true
     }
 
-    ; ── STEP 8: Move file to processed folder ────────────────────────────────
-    SplitPath(fileName,, , &ext, &nameNoExt)
-    destName := success
-        ? nameNoExt "_" FormatTime(, "yyyyMMdd_HHmmss") "." ext
-        : nameNoExt "_FAILED_" FormatTime(, "yyyyMMdd_HHmmss") "." ext
-    destPath := PROCESSED_FOLDER "\" destName
-
-    try {
-        FileMove(filePath, destPath)
-        AppLog("Moved to: " destPath)
-    } catch as err {
-        AppLog("WARN: Could not move file — " err.Message)
+    ; ── Rename processed file to mark outcome ─────────────────────────────────
+    ; Already moved to ach-processed with a timestamp; optionally append _FAILED
+    if !success {
+        failedPath := PROCESSED_FOLDER "\" nameNoExt "_FAILED_" FormatTime(, "yyyyMMdd_HHmmss") "." ext
+        try FileMove(destPath, failedPath)
+        AppLog("Renamed to: " failedPath)
     }
 
-    AppLog(success ? "Done ✓" : "Done (with errors — check log)")
-    A_IconTip := success
-        ? "EFTPS: last import OK (" fileName ")"
-        : "EFTPS: last import FAILED (" fileName ")"
-
-    inFlight.Delete(filePath)
+    outcome := success ? "SUCCESS ✓" : "FAILED ✗"
+    AppLog(outcome " — " fileName)
+    A_IconTip := "EFTPS: " outcome " (" fileName ")"
 }
 
 ; ── HELPERS ───────────────────────────────────────────────────────────────────
 
-; Scan window controls for one whose text matches btnText.
-; Returns the control hwnd string on match, "" if not found.
 FindControlByText(winTitle, btnText) {
     try {
-        ctrls := WinGetControls(winTitle)
-        for ctrl in ctrls {
+        for ctrl in WinGetControls(winTitle) {
             try {
                 if InStr(ControlGetText(ctrl, winTitle), btnText, false)
                     return ctrl
@@ -292,8 +308,7 @@ FindControlByText(winTitle, btnText) {
 
 AppLog(msg) {
     global LOG_FILE
-    line := FormatTime(, "yyyy-MM-dd HH:mm:ss") "  " msg
-    FileAppend(line "`n", LOG_FILE)
+    FileAppend(FormatTime(, "yyyy-MM-dd HH:mm:ss") "  " msg "`n", LOG_FILE)
 }
 
 ; ── TRAY MENU HANDLERS ────────────────────────────────────────────────────────
@@ -317,18 +332,11 @@ MenuOpenProcessed(*) {
 }
 
 MenuWindowSpy(*) {
-    ; Launch AHK's built-in Window Spy to help with coordinate calibration
-    spyPath := A_AhkPath "\..\WindowSpy.ahk"
+    spyPath := A_ProgramFiles "\AutoHotkey\UX\WindowSpy.ahk"
     if FileExist(spyPath)
         Run(A_AhkPath ' "' spyPath '"')
-    else {
-        ; AHK v2 installer puts it here
-        spyPath := A_ProgramFiles "\AutoHotkey\UX\WindowSpy.ahk"
-        if FileExist(spyPath)
-            Run(A_AhkPath ' "' spyPath '"')
-        else
-            MsgBox("Window Spy not found.`nLook for WindowSpy.ahk in your AutoHotkey install folder.", "EFTPS Bridge Watcher", 48)
-    }
+    else
+        MsgBox("Window Spy not found.`nLook for WindowSpy.ahk in your AutoHotkey install folder.", "EFTPS Bridge Watcher", 48)
 }
 
 MenuExit(*) {
