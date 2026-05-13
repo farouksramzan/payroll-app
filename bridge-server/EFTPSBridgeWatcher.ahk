@@ -42,10 +42,11 @@ BP_TITLE         := "EFTPS Batch Provider"   ; partial window title match
 POLL_INTERVAL_MS := 3000
 COOLDOWN_MS      := 5000
 
-; Coordinate fallback (used only if JAB/Acc cannot find the Import button).
-; Calibrate with Window Spy if the fallback ever triggers.
-BTN_IMPORT_X     := 100
-BTN_IMPORT_Y     := 220
+; Absolute screen coordinates of the Import button measured with Window Spy.
+; These are used when JAB/Acc cannot find the button by name.
+; The window is maximized before clicking so the button is always at this position.
+BTN_IMPORT_SCREEN_X := 421
+BTN_IMPORT_SCREEN_Y := 970
 
 ; -- TRAY SETUP ---------------------------------------------------------------
 
@@ -109,7 +110,7 @@ PollFolder() {
 ; -- FILE PROCESSOR -----------------------------------------------------------
 
 ProcessFile(filePath) {
-    global PROCESSED_FOLDER, BP_TITLE, BTN_IMPORT_X, BTN_IMPORT_Y
+    global PROCESSED_FOLDER, BP_TITLE, BTN_IMPORT_SCREEN_X, BTN_IMPORT_SCREEN_Y
 
     SplitPath(filePath, &fileName,, &ext, &nameNoExt)
     AppLog("--------------------------------------")
@@ -147,18 +148,21 @@ ProcessFile(filePath) {
     WinGetPos(&wx, &wy, &ww, &wh, BP_TITLE)
     AppLog("  Geometry    : x=" wx " y=" wy " w=" ww " h=" wh)
 
-    ; === STEP 2: Activate and wait for focus =================================
-    AppLog("[STEP 2] Activating window...")
+    ; === STEP 2: Activate, maximize, and wait for focus ======================
+    AppLog("[STEP 2] Activating and maximizing window...")
     WinActivate(BP_TITLE)
-    Sleep(1000)     ; Java Swing needs ~1s to repaint focus decorations
+    Sleep(500)
     if !WinActive(BP_TITLE) {
         AppLog("  Not active yet -- retrying")
         WinActivate(BP_TITLE)
-        Sleep(1000)
+        Sleep(500)
     }
+    ; Maximize so the Import button is always at the same screen position
+    WinMaximize(BP_TITLE)
+    Sleep(1000)     ; wait for maximize animation and Java Swing repaint
     AppLog("  Active window: [" WinGetTitle("A") "]")
     WinGetPos(&wx, &wy, &ww, &wh, BP_TITLE)
-    AppLog("  Geometry after activate: x=" wx " y=" wy " w=" ww " h=" wh)
+    AppLog("  Geometry after maximize: x=" wx " y=" wy " w=" ww " h=" wh)
 
     ; === STEP 3: Walk JAB accessibility tree =================================
     ; jabswitch -enable bridges Java Swing -> Windows MSAA (IAccessible).
@@ -222,14 +226,15 @@ ProcessFile(filePath) {
         Sleep(800)
     }
 
-    ; Strategy B: coordinate fallback (only if JAB did not click)
+    ; Strategy B: absolute screen coordinate fallback (only if JAB did not click)
     if !clicked or !WinExist("ahk_class #32770") {
         if clicked
             AppLog("  (JAB clicked but no dialog -- trying coordinate fallback too)")
-        absX := wx + BTN_IMPORT_X
-        absY := wy + BTN_IMPORT_Y
-        AppLog("  Strategy B -- MouseClick at config offset: absX=" absX " absY=" absY)
-        AppLog("  (if wrong, adjust BTN_IMPORT_X/Y using Window Spy)")
+        ; Use absolute screen coordinates measured with Window Spy after maximizing.
+        ; Do NOT add wx/wy -- these are screen coords, not window-relative offsets.
+        absX := BTN_IMPORT_SCREEN_X
+        absY := BTN_IMPORT_SCREEN_Y
+        AppLog("  Strategy B -- MouseClick at absolute screen coords: x=" absX " y=" absY)
         MouseMove(absX, absY, 5)
         Sleep(300)
         MouseGetPos(&mx, &my)
@@ -242,7 +247,7 @@ ProcessFile(filePath) {
     AppLog("[STEP 5] Waiting for Open dialog (12s)...")
     if !WinWait("ahk_class #32770",, 12) {
         AppLog("ERROR: Open dialog did not appear within 12s")
-        AppLog("  Import click missed. Check geometry log above and adjust BTN_IMPORT_X/Y.")
+        AppLog("  Import click missed. Check geometry log above and adjust BTN_IMPORT_SCREEN_X/Y.")
         return
     }
     openTitle := WinGetTitle("ahk_class #32770")
