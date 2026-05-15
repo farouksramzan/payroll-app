@@ -16,6 +16,7 @@
     "express-rate-limit": "^7.2.0",
     "helmet": "^7.1.0",
     "jsonwebtoken": "^9.0.2",
+    "pdfkit": "^0.15.2",
     "playwright": "^1.42.1",
     "uuid": "^9.0.1",
     "ws": "^8.20.1"
