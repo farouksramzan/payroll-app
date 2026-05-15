@@ -17,12 +17,17 @@ export default function ClientDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [client, setClient] = useState(null);
-  const [recentSubs, setRecentSubs] = useState([]);
+  const [recentSubs,    setRecentSubs]    = useState([]);
+  const [pendingStubs,  setPendingStubs]  = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    Promise.all([api.getClient(id), api.getSubmissions(id)])
-      .then(([c, subs]) => { setClient(c); setRecentSubs(subs.slice(0, 5)); })
+    Promise.all([api.getClient(id), api.getSubmissions(id), api.getPaystubs(id)])
+      .then(([c, subs, stubs]) => {
+        setClient(c);
+        setRecentSubs(subs.slice(0, 5));
+        setPendingStubs(stubs.filter((s) => s.status === 'pending' || s.status === 'failed'));
+      })
       .catch((err) => { alert(err.message); navigate('/'); })
       .finally(() => setLoading(false));
   }, [id]);
@@ -64,6 +69,7 @@ export default function ClientDetail() {
             <Link to={`/clients/${id}/payroll/new`} className="btn btn-primary">
               + New Payroll Entry
             </Link>
+            <Link to={`/clients/${id}/paystubs`} className="btn btn-secondary">Paystubs{pendingStubs.length > 0 ? ` (${pendingStubs.length} pending)` : ''}</Link>
             <Link to={`/clients/${id}/employees`} className="btn btn-secondary">Employees</Link>
             <Link to={`/clients/${id}/edit`} className="btn btn-secondary">Edit</Link>
           </div>
@@ -96,6 +102,37 @@ export default function ClientDetail() {
           <InfoRow label="Phone" value={client.contactPhone} />
           <InfoRow label="Added" value={client.createdAt ? new Date(client.createdAt).toLocaleDateString() : '—'} />
           <InfoRow label="Last Updated" value={client.updatedAt ? new Date(client.updatedAt).toLocaleDateString() : '—'} />
+        </div>
+
+        {/* Paystubs quick card */}
+        <div className="card" style={{ gridColumn: '1 / -1' }}>
+          <div className="card-header">
+            <span className="card-title">Paystubs</span>
+            <Link to={`/clients/${id}/paystubs`} className="btn btn-secondary btn-sm">View All</Link>
+          </div>
+          {pendingStubs.length === 0 ? (
+            <div style={{ padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>No pending paystubs. Save a payroll entry as a paystub to build a batch queue.</span>
+              <Link to={`/clients/${id}/payroll/new`} className="btn btn-secondary btn-sm">New Payroll Entry</Link>
+            </div>
+          ) : (
+            <div style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+              <div>
+                <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--warning)', fontFamily: 'JetBrains Mono, monospace', marginRight: 8 }}>
+                  {pendingStubs.length}
+                </span>
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                  pending paystub{pendingStubs.length !== 1 ? 's' : ''} · total deposit{' '}
+                  <strong style={{ color: 'var(--accent)' }}>
+                    {fmtAmt(pendingStubs.reduce((s, p) => s + (p.total_deposit || 0), 0))}
+                  </strong>
+                </span>
+              </div>
+              <Link to={`/clients/${id}/paystubs`} className="btn btn-success btn-sm">
+                Submit All Pending →
+              </Link>
+            </div>
+          )}
         </div>
 
         {/* Recent submissions */}

@@ -59,6 +59,14 @@ const api = {
   submitToEFTPS: (id) => request(`/submissions/${id}/submit`, { method: 'POST' }),
   submitViaBridge: (id) => request(`/submissions/${id}/submit-bridge`, { method: 'POST' }),
 
+  // Paystubs
+  getPaystubs: (clientId) => request(`/paystubs?clientId=${clientId}`),
+  getPaystub: (id) => request(`/paystubs/${id}`),
+  createPaystub: (data) => request('/paystubs', { method: 'POST', body: JSON.stringify(data) }),
+  deletePaystub: (id) => request(`/paystubs/${id}`, { method: 'DELETE' }),
+  submitPaystub: (id) => request(`/paystubs/${id}/submit`, { method: 'POST' }),
+  batchSubmitPaystubs: (data) => request('/paystubs/batch-submit', { method: 'POST', body: JSON.stringify(data) }),
+
   // ACH Bridge
   getBridgeStatus: () => request('/bridge/status'),
 

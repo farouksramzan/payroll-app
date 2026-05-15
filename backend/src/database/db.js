@@ -153,6 +153,59 @@ function initSchema() {
     `);
 
     db.exec(`
+      CREATE TABLE IF NOT EXISTS paystubs (
+        id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_id           INTEGER NOT NULL,
+        employee_id         INTEGER,
+        employee_name       TEXT,
+        pay_period_start    TEXT NOT NULL,
+        pay_period_end      TEXT NOT NULL,
+        settlement_date     TEXT,
+        pay_frequency       TEXT NOT NULL,
+        filing_status       TEXT DEFAULT 'single',
+        step2_checkbox      INTEGER DEFAULT 0,
+        step3_credits       REAL DEFAULT 0,
+        work_state          TEXT,
+        gross_wages         REAL NOT NULL,
+        fit_withholding     REAL DEFAULT 0,
+        employee_ss         REAL DEFAULT 0,
+        employee_medicare   REAL DEFAULT 0,
+        additional_medicare REAL DEFAULT 0,
+        employer_ss         REAL DEFAULT 0,
+        employer_medicare   REAL DEFAULT 0,
+        state_income_tax    REAL DEFAULT 0,
+        futa_tax            REAL DEFAULT 0,
+        suta_tax            REAL DEFAULT 0,
+        total_deposit       REAL NOT NULL,
+        net_pay             REAL DEFAULT 0,
+        ytd_wages_before    REAL DEFAULT 0,
+        tax_year            INTEGER,
+        tax_quarter         INTEGER,
+        status              TEXT DEFAULT 'pending',
+        submitted_at        TEXT,
+        eftps_confirmation  TEXT,
+        submission_error    TEXT,
+        notes               TEXT,
+        created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (client_id)   REFERENCES clients(id)   ON DELETE CASCADE,
+        FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE SET NULL
+      )
+    `);
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS paystub_line_items (
+        id          INTEGER PRIMARY KEY AUTOINCREMENT,
+        paystub_id  INTEGER NOT NULL,
+        pay_type    TEXT NOT NULL,
+        description TEXT,
+        hours       REAL,
+        rate        REAL,
+        amount      REAL NOT NULL,
+        FOREIGN KEY (paystub_id) REFERENCES paystubs(id) ON DELETE CASCADE
+      )
+    `);
+
+    db.exec(`
       CREATE TABLE IF NOT EXISTS pay_line_items (
         id            INTEGER PRIMARY KEY AUTOINCREMENT,
         submission_id INTEGER NOT NULL,

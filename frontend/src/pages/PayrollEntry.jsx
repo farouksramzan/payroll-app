@@ -430,6 +430,7 @@ export default function PayrollEntry() {
   // Submission state
   const [submission,      setSubmission]      = useState(null);
   const [saving,          setSaving]          = useState(false);
+  const [savingPaystub,   setSavingPaystub]   = useState(false);
   const [submitting,      setSubmitting]      = useState(false);
   const [submitResult,    setSubmitResult]    = useState(null);
   const [bridgeConnected, setBridgeConnected] = useState(false);
@@ -559,6 +560,38 @@ export default function PayrollEntry() {
     }
   }
 
+  async function handleSaveAsPaystub() {
+    if (!taxes) { alert('Complete pay line items to generate a tax calculation.'); return; }
+    if (!payPeriodStart || !payPeriodEnd) { alert('Enter the pay period start and end dates.'); return; }
+    setSavingPaystub(true);
+    try {
+      const items = lineItems.filter((li) => parseFloat(li.amount || 0) > 0);
+      await api.createPaystub({
+        clientId: id,
+        employeeId: employeeId || null,
+        payPeriodStart,
+        payPeriodEnd,
+        settlementDate: settlementDate || null,
+        filingStatus,
+        payFrequency,
+        step2Checkbox,
+        step3Children,
+        step3Other,
+        step4a: parseFloat(step4a || 0),
+        step4b: parseFloat(step4b || 0),
+        step4c: parseFloat(step4c || 0),
+        lineItems: items,
+        workState: workState || null,
+        ytdGross:  parseFloat(ytdGross || 0),
+      });
+      navigate(`/clients/${id}/paystubs`);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setSavingPaystub(false);
+    }
+  }
+
   async function handleBridgeSubmit() {
     if (!submission) return;
     setSubmitting(true);
@@ -592,9 +625,14 @@ export default function PayrollEntry() {
             <p>{client.businessName} — EIN: {client.ein}</p>
           </div>
           {step === 1 && taxes && (
-            <button className="btn btn-primary btn-lg" onClick={handleSave} disabled={saving || !payPeriodStart || !payPeriodEnd}>
-              {saving ? <><span className="spinner" /> Saving…</> : 'Save & Continue →'}
-            </button>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button className="btn btn-secondary btn-lg" onClick={handleSaveAsPaystub} disabled={savingPaystub || !payPeriodStart || !payPeriodEnd}>
+                {savingPaystub ? <><span className="spinner" /> Saving…</> : 'Save as Paystub'}
+              </button>
+              <button className="btn btn-primary btn-lg" onClick={handleSave} disabled={saving || !payPeriodStart || !payPeriodEnd}>
+                {saving ? <><span className="spinner" /> Saving…</> : 'Review & Submit to EFTPS →'}
+              </button>
+            </div>
           )}
         </div>
       </div>
@@ -828,11 +866,15 @@ export default function PayrollEntry() {
               </W4Step>
 
               {/* Save bottom */}
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20, gap: 12 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 20, gap: 12, flexWrap: 'wrap' }}>
                 <Link to={`/clients/${id}`} className="btn btn-secondary">Cancel</Link>
+                <button className="btn btn-secondary btn-lg" onClick={handleSaveAsPaystub}
+                  disabled={savingPaystub || !taxes || !payPeriodStart || !payPeriodEnd}>
+                  {savingPaystub ? <><span className="spinner" /> Saving…</> : 'Save as Paystub'}
+                </button>
                 <button className="btn btn-primary btn-lg" onClick={handleSave}
                   disabled={saving || !taxes || !payPeriodStart || !payPeriodEnd}>
-                  {saving ? <><span className="spinner" /> Saving…</> : 'Save & Continue to EFTPS →'}
+                  {saving ? <><span className="spinner" /> Saving…</> : 'Review & Submit to EFTPS →'}
                 </button>
               </div>
             </div>
