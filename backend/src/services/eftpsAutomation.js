@@ -98,13 +98,18 @@ async function submitToEFTPS(p) {
     return sd.toISOString().slice(0, 10);
   })();
 
+  // taxForm determines which EFTPS form to file ('941' quarterly or '940' annual FUTA)
+  const taxForm = (p.taxForm || '941').toString();
+  const is940   = taxForm === '940';
+
   // EFTPS takes COMBINED SS and Medicare (employer + employee each)
-  const { fitWithholding, employeeSS, employeeMedicare, employerSS, employerMedicare } = p.taxData;
-  const totalSS       = round2(employeeSS + employerSS);
-  const totalMedicare = round2(employeeMedicare + employerMedicare);
+  const { fitWithholding, employeeSS, employeeMedicare, employerSS, employerMedicare } = p.taxData || {};
+  const futaTax       = p.taxData?.futaTax || p.taxData?.totalDeposit || 0;
+  const totalSS       = round2((employeeSS || 0) + (employerSS || 0));
+  const totalMedicare = round2((employeeMedicare || 0) + (employerMedicare || 0));
   const einClean      = p.ein.replace(/-/g, '');
 
-  step(`Starting EFTPS session | EIN: ${p.ein} | Period: Q${taxQuarter} ${taxYear} | Settlement: ${settlementDate} | DryRun: ${isDryRun}`);
+  step(`Starting EFTPS session | Form: ${taxForm} | EIN: ${p.ein} | Period: ${is940 ? taxYear : `Q${taxQuarter} ${taxYear}`} | Settlement: ${settlementDate} | DryRun: ${isDryRun}`);
 
   const browser = await chromium.launch({ headless: isHeadless, args: ['--no-sandbox'] });
   const context = await browser.newContext({
@@ -223,39 +228,40 @@ async function submitToEFTPS(p) {
     }
     await page.screenshot({ path: snap('05_payment_nav') });
 
-    // ── 6. Select tax form — 941 ─────────────────────────────────────────────
-    step('Selecting Form 941');
+    // ── 6. Select tax form (941 quarterly or 940 annual FUTA) ───────────────────
+    step(`Selecting Form ${taxForm}`);
     const formSel = await tryLocators(page, [
       'select[name*="taxType" i]', 'select[name*="form" i]',
       'select[id*="taxType" i]',  'select[id*="form" i]',
       'select[name*="type" i]',
     ], 8000);
     if (formSel) {
-      // Try selecting 941 by value or label
-      await formSel.selectOption({ label: /941/ }).catch(() =>
-        formSel.selectOption({ value: /941/ }).catch(() =>
-          formSel.selectOption('941')
+      const formPattern = new RegExp(taxForm);
+      await formSel.selectOption({ label: formPattern }).catch(() =>
+        formSel.selectOption({ value: formPattern }).catch(() =>
+          formSel.selectOption(taxForm)
         )
       );
     } else {
-      // Fallback: click a radio/checkbox for 941
-      const form941 = await tryLocators(page, [
-        'input[value*="941"]', 'label:has-text("941")',
+      const formInput = await tryLocators(page, [
+        `input[value*="${taxForm}"]`, `label:has-text("${taxForm}")`,
       ], 3000);
-      if (form941) await form941.click();
+      if (formInput) await formInput.click();
     }
-    await page.screenshot({ path: snap('06_form_941') });
+    await page.screenshot({ path: snap(`06_form_${taxForm}`) });
 
-    // ── 7. Tax period — quarter + year ───────────────────────────────────────
-    step(`Setting tax period Q${taxQuarter} ${taxYear}`);
-    const qSel = await tryLocators(page, [
-      'select[name*="quarter" i]', 'select[id*="quarter" i]',
-      'select[name*="period" i]',  'select[id*="period" i]',
-    ], 5000);
-    if (qSel) {
-      await qSel.selectOption({ label: new RegExp(quarterLabel(taxQuarter), 'i') }).catch(() =>
-        qSel.selectOption(String(taxQuarter))
-      );
+    // ── 7. Tax period — 941 uses quarter+year; 940 is annual (year only) ────────
+    step(`Setting tax period ${is940 ? taxYear : `Q${taxQuarter} ${taxYear}`}`);
+    if (!is940) {
+      const qSel = await tryLocators(page, [
+        'select[name*="quarter" i]', 'select[id*="quarter" i]',
+        'select[name*="period" i]',  'select[id*="period" i]',
+      ], 5000);
+      if (qSel) {
+        await qSel.selectOption({ label: new RegExp(quarterLabel(taxQuarter), 'i') }).catch(() =>
+          qSel.selectOption(String(taxQuarter))
+        );
+      }
     }
 
     const yrSel = await tryLocators(page, [
@@ -289,33 +295,45 @@ async function submitToEFTPS(p) {
     await page.screenshot({ path: snap('07_period_date') });
 
     // ── 9. Enter tax amounts ─────────────────────────────────────────────────
-    step(`Entering amounts: FIT=${fitWithholding} SS=${totalSS} Medicare=${totalMedicare}`);
+    if (is940) {
+      step(`Entering 940 FUTA amount: ${futaTax}`);
+      // Form 940 has a single FUTA deposit amount field
+      const futaSel = await tryLocators(page, [
+        'input[name*="futa" i]',   'input[id*="futa" i]',
+        'input[name*="940" i]',    'input[id*="940" i]',
+        'input[name*="amount" i]', 'input[id*="amount" i]',
+        'input[name*="total" i]',  'input[id*="total" i]',
+      ], 5000);
+      if (futaSel) await futaSel.fill(Number(futaTax).toFixed(2));
+    } else {
+      step(`Entering 941 amounts: FIT=${fitWithholding} SS=${totalSS} Medicare=${totalMedicare}`);
 
-    // Federal Income Tax withheld (Line 3 on 941)
-    const fitSel = await tryLocators(page, [
-      'input[name*="income" i]', 'input[id*="income" i]',
-      'input[name*="fit" i]',    'input[id*="fit" i]',
-      'input[name*="line3" i]',  'input[id*="line3" i]',
-      'input[name*="withhold" i]',
-    ], 5000);
-    if (fitSel) await fitSel.fill(fitWithholding.toFixed(2));
+      // Federal Income Tax withheld (Line 3 on 941)
+      const fitSel = await tryLocators(page, [
+        'input[name*="income" i]', 'input[id*="income" i]',
+        'input[name*="fit" i]',    'input[id*="fit" i]',
+        'input[name*="line3" i]',  'input[id*="line3" i]',
+        'input[name*="withhold" i]',
+      ], 5000);
+      if (fitSel) await fitSel.fill(Number(fitWithholding || 0).toFixed(2));
 
-    // Social Security — combined employer + employee (Line 5a col 2 on 941)
-    const ssSel = await tryLocators(page, [
-      'input[name*="social" i]',  'input[id*="social" i]',
-      'input[name*="ss" i]',      'input[id*="ss" i]',
-      'input[name*="line5a" i]',  'input[id*="line5a" i]',
-      'input[name*="fica" i]',
-    ], 5000);
-    if (ssSel) await ssSel.fill(totalSS.toFixed(2));
+      // Social Security — combined employer + employee (Line 5a col 2 on 941)
+      const ssSel = await tryLocators(page, [
+        'input[name*="social" i]',  'input[id*="social" i]',
+        'input[name*="ss" i]',      'input[id*="ss" i]',
+        'input[name*="line5a" i]',  'input[id*="line5a" i]',
+        'input[name*="fica" i]',
+      ], 5000);
+      if (ssSel) await ssSel.fill(totalSS.toFixed(2));
 
-    // Medicare — combined (Line 5c col 2 on 941)
-    const medSel = await tryLocators(page, [
-      'input[name*="medicare" i]', 'input[id*="medicare" i]',
-      'input[name*="med" i]',      'input[id*="med" i]',
-      'input[name*="line5c" i]',   'input[id*="line5c" i]',
-    ], 5000);
-    if (medSel) await medSel.fill(totalMedicare.toFixed(2));
+      // Medicare — combined (Line 5c col 2 on 941)
+      const medSel = await tryLocators(page, [
+        'input[name*="medicare" i]', 'input[id*="medicare" i]',
+        'input[name*="med" i]',      'input[id*="med" i]',
+        'input[name*="line5c" i]',   'input[id*="line5c" i]',
+      ], 5000);
+      if (medSel) await medSel.fill(totalMedicare.toFixed(2));
+    }
 
     await page.screenshot({ path: snap('08_amounts') });
 

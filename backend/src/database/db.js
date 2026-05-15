@@ -274,6 +274,13 @@ function migrate() {
   addCols('employees', [
     { name: 'work_state', def: 'TEXT' },
   ]);
+
+  // paystubs 940 tracking columns (status / eftps_confirmation track 941)
+  addCols('paystubs', [
+    { name: 'status_940',             def: "TEXT DEFAULT 'pending'" },
+    { name: 'eftps_940_confirmation', def: 'TEXT' },
+    { name: 'eftps_940_submitted_at', def: 'TEXT' },
+  ]);
 }
 
 function addCols(table, cols) {

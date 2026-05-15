@@ -63,8 +63,9 @@ const api = {
   getPaystubs: (clientId) => request(`/paystubs?clientId=${clientId}`),
   getPaystub: (id) => request(`/paystubs/${id}`),
   createPaystub: (data) => request('/paystubs', { method: 'POST', body: JSON.stringify(data) }),
+  updatePaystub: (id, data) => request(`/paystubs/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deletePaystub: (id) => request(`/paystubs/${id}`, { method: 'DELETE' }),
-  submitPaystub: (id) => request(`/paystubs/${id}/submit`, { method: 'POST' }),
+  submitPaystub: (id, taxType = '941') => request(`/paystubs/${id}/submit`, { method: 'POST', body: JSON.stringify({ taxType }) }),
   batchSubmitPaystubs: (data) => request('/paystubs/batch-submit', { method: 'POST', body: JSON.stringify(data) }),
 
   // ACH Bridge
