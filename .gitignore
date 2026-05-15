@@ -2,6 +2,9 @@ node_modules/
 .env
 data/
 dist/
+# Allow source data files (tax rate tables etc.)
+!backend/src/data/
+!backend/src/data/*
 *.db
 *.db-shm
 *.db-wal

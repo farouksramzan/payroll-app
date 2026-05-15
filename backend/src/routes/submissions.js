@@ -79,8 +79,10 @@ router.post('/', (req, res) => {
     step4a,
     step4b,
     step4c,
-    lineItems,     // array of { payType, description, hours, rate, amount }
-    grossWages,    // fallback if no lineItems
+    lineItems,
+    grossWages,
+    workState,
+    ytdGross,
   } = req.body;
 
   if (!clientId || !payPeriodStart || !payPeriodEnd || !filingStatus || !payFrequency) {
@@ -91,14 +93,30 @@ router.post('/', (req, res) => {
   const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
   if (!client) return res.status(404).json({ error: 'Client not found' });
 
-  // Gross wages = sum of line items or explicit value
   const items = Array.isArray(lineItems) && lineItems.length > 0 ? lineItems : null;
   const computedGross = items
     ? items.reduce((sum, li) => sum + parseFloat(li.amount || 0), 0)
     : parseFloat(grossWages || 0);
 
   if (!computedGross || computedGross <= 0) {
-    return res.status(400).json({ error: 'Gross wages must be greater than 0 (add pay line items or set grossWages)' });
+    return res.status(400).json({ error: 'Gross wages must be greater than 0' });
+  }
+
+  // Determine work state: explicit → employee's work_state → employee's address state → client state
+  let effectiveWorkState = workState;
+  if (!effectiveWorkState && employeeId) {
+    const emp = db.prepare('SELECT work_state, state FROM employees WHERE id = ?').get(employeeId);
+    effectiveWorkState = emp?.work_state || emp?.state;
+  }
+  if (!effectiveWorkState) effectiveWorkState = client.state || 'TX';
+  effectiveWorkState = effectiveWorkState.toUpperCase();
+
+  // YTD wages before this period (from employee_ytd_wages or passed directly)
+  const { quarter, year } = getTaxPeriod(payPeriodEnd);
+  let ytdGrossBefore = parseFloat(ytdGross || 0);
+  if (!ytdGrossBefore && employeeId) {
+    const ytdRow = db.prepare('SELECT ytd_gross FROM employee_ytd_wages WHERE employee_id = ? AND tax_year = ?').get(employeeId, year);
+    ytdGrossBefore = ytdRow?.ytd_gross || 0;
   }
 
   const taxes = calculateWithholding({
@@ -111,10 +129,12 @@ router.post('/', (req, res) => {
     step4a: parseFloat(step4a || 0),
     step4b: parseFloat(step4b || 0),
     step4c: parseFloat(step4c || 0),
+    workState:  effectiveWorkState,
+    ytdGross:   ytdGrossBefore,
+    sutaRate:   client.suta_rate || null,
   });
 
   const step3Credits = (parseInt(step3Children || 0, 10) * 2200) + (parseInt(step3Other || 0, 10) * 500);
-  const { quarter, year } = getTaxPeriod(payPeriodEnd);
 
   const result = db.prepare(`
     INSERT INTO submissions (
@@ -123,8 +143,9 @@ router.post('/', (req, res) => {
       step2_checkbox, step3_children, step3_other, step3_credits,
       step4a, step4b, step4c,
       fit_withholding, employee_ss, employee_medicare, employer_ss, employer_medicare,
+      state_income_tax, futa_tax, suta_tax, work_state, ytd_wages_before,
       total_deposit, net_pay, tax_year, tax_quarter, eftps_status
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending')
   `).run(
     clientId,
     employeeId || null,
@@ -146,6 +167,11 @@ router.post('/', (req, res) => {
     taxes.employeeMedicare,
     taxes.employerSS,
     taxes.employerMedicare,
+    taxes.stateIncomeTax,
+    taxes.futaTax,
+    taxes.sutaTax,
+    effectiveWorkState,
+    ytdGrossBefore,
     taxes.totalDeposit,
     taxes.netPay,
     year,
@@ -154,7 +180,6 @@ router.post('/', (req, res) => {
 
   const subId = result.lastInsertRowid;
 
-  // Save line items
   if (items) {
     const insertItem = db.prepare(`
       INSERT INTO pay_line_items (submission_id, pay_type, description, hours, rate, amount)
@@ -170,6 +195,26 @@ router.post('/', (req, res) => {
         parseFloat(li.amount || 0),
       );
     }
+  }
+
+  // Update YTD wage tracking for the employee
+  if (employeeId) {
+    db.prepare(`
+      INSERT INTO employee_ytd_wages (employee_id, tax_year, ytd_gross, ytd_ss_wages, ytd_futa_wages, ytd_suta_wages)
+      VALUES (?, ?, ?, ?, ?, ?)
+      ON CONFLICT(employee_id, tax_year) DO UPDATE SET
+        ytd_gross      = ytd_gross      + excluded.ytd_gross,
+        ytd_ss_wages   = ytd_ss_wages   + excluded.ytd_ss_wages,
+        ytd_futa_wages = ytd_futa_wages + excluded.ytd_futa_wages,
+        ytd_suta_wages = ytd_suta_wages + excluded.ytd_suta_wages,
+        updated_at     = CURRENT_TIMESTAMP
+    `).run(
+      employeeId, year,
+      computedGross,
+      taxes.ssWagesThisPeriod,
+      taxes.futaTaxable,
+      taxes.sutaTaxable,
+    );
   }
 
   const submission = db.prepare('SELECT * FROM submissions WHERE id = ?').get(subId);

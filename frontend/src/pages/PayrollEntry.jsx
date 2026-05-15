@@ -5,6 +5,8 @@ import api from '../api/client';
 const CHILD_CREDIT     = 2200;
 const DEPENDENT_CREDIT = 500;
 
+const NO_SIT_STATES = new Set(['AK','FL','NV','NH','SD','TN','TX','WA','WY']);
+
 const PAY_FREQ_LABELS = {
   weekly:      'Weekly (52×/yr)',
   biweekly:    'Bi-weekly (26×/yr)',
@@ -61,7 +63,20 @@ function W4Step({ number, title, subtitle, children, optional }) {
 }
 
 // ── Tax Breakdown Panel ───────────────────────────────────────────────────────
+function SectionHeader({ label }) {
+  return (
+    <div style={{ padding: '6px 18px 4px', fontSize: 10, fontWeight: 700, letterSpacing: '0.8px', textTransform: 'uppercase', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-light)', background: 'var(--bg-primary)' }}>
+      {label}
+    </div>
+  );
+}
+
 function TaxPanel({ taxes, loading, error }) {
+  const hasAdditionalMedicare = taxes?.additionalMedicare > 0;
+  const hasSIT = taxes?.stateIncomeTax > 0;
+  const hasFUTA = taxes?.futaTax > 0;
+  const hasSUTA = taxes?.sutaTax > 0;
+
   return (
     <div style={{
       background: 'var(--bg-secondary)',
@@ -70,10 +85,13 @@ function TaxPanel({ taxes, loading, error }) {
       overflow: 'hidden',
       position: 'sticky',
       top: 24,
+      maxHeight: 'calc(100vh - 48px)',
+      overflowY: 'auto',
     }}>
       <div style={{
         padding: '14px 18px', borderBottom: '1px solid var(--border)',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        position: 'sticky', top: 0, background: 'var(--bg-secondary)', zIndex: 1,
       }}>
         <span style={{ fontWeight: 700, fontSize: 13 }}>Tax Breakdown</span>
         {loading && <div className="spinner spinner-dark" style={{ width: 16, height: 16 }} />}
@@ -93,27 +111,42 @@ function TaxPanel({ taxes, loading, error }) {
 
       {taxes && (
         <>
-          {/* Gross wages header */}
-          <div style={{
-            padding: '12px 18px',
-            background: 'var(--bg-primary)',
-            borderBottom: '1px solid var(--border)',
-          }}>
+          {/* Gross wages */}
+          <div style={{ padding: '12px 18px', background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)' }}>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Gross Wages</div>
             <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace' }}>
               {fmtAmt(taxes.grossWages)}
             </div>
+            {taxes.workState && (
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                Work state: <strong>{taxes.workState}</strong>
+                {taxes.ytdGrossBefore > 0 && <> · YTD before: <strong>{fmtAmt(taxes.ytdGrossBefore)}</strong></>}
+              </div>
+            )}
           </div>
 
           {/* Employee withholdings */}
-          <div style={{ padding: '8px 18px 4px', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.7px', textTransform: 'uppercase', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-light)' }}>
-            Employee Withholdings
-          </div>
+          <SectionHeader label="Employee Withholdings" />
           <BreakRow label="Federal Income Tax" sub="W-4 Percentage Method" amount={taxes.fitWithholding} />
-          <BreakRow label="Social Security" sub="6.2% of gross wages" amount={taxes.employeeSS} />
-          <BreakRow label="Medicare" sub="1.45% of gross wages" amount={taxes.employeeMedicare} />
+          <BreakRow
+            label={`Social Security${taxes.ssWagesThisPeriod < taxes.grossWages ? ' (partial — wage base)' : ''}`}
+            sub={`6.2% · base $${(taxes.ssWageBase || 176100).toLocaleString()}`}
+            amount={taxes.employeeSS}
+            dimmed={taxes.ssWagesThisPeriod === 0}
+          />
+          <BreakRow label="Medicare" sub="1.45% — no wage limit" amount={taxes.employeeMedicare} />
+          {hasAdditionalMedicare && (
+            <BreakRow label="Additional Medicare" sub="0.9% on wages over $200K" amount={taxes.additionalMedicare} />
+          )}
+          {hasSIT && (
+            <BreakRow
+              label={`${taxes.workState} Income Tax`}
+              sub="State withholding"
+              amount={taxes.stateIncomeTax}
+            />
+          )}
 
-          {/* Net pay highlight */}
+          {/* Net pay */}
           <div style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
             padding: '12px 18px',
@@ -123,39 +156,65 @@ function TaxPanel({ taxes, loading, error }) {
           }}>
             <div>
               <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--success)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Net Pay to Employee</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>After employee deductions</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>After all employee deductions</div>
             </div>
             <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 18, fontWeight: 700, color: 'var(--success)' }}>
               {fmtAmt(taxes.netPay)}
             </div>
           </div>
 
-          {/* Employer contributions */}
-          <div style={{ padding: '8px 18px 4px', fontSize: 10.5, fontWeight: 700, letterSpacing: '0.7px', textTransform: 'uppercase', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-light)' }}>
-            Employer Contributions
-          </div>
+          {/* Employer FICA */}
+          <SectionHeader label="Employer FICA (EFTPS)" />
           <BreakRow label="SS Match" sub="6.2% employer share" amount={taxes.employerSS} />
           <BreakRow label="Medicare Match" sub="1.45% employer share" amount={taxes.employerMedicare} />
 
           {/* Total EFTPS deposit */}
           <div style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            padding: '14px 18px',
+            padding: '13px 18px',
             background: 'var(--bg-tertiary)',
             borderTop: '2px solid var(--border)',
           }}>
             <div>
-              <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 14 }}>Total EFTPS Deposit</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>All withholdings combined</div>
+              <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 13.5 }}>Total EFTPS Deposit</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>FIT + FICA (employee + employer)</div>
             </div>
-            <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 20, fontWeight: 700, color: 'var(--accent)' }}>
+            <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 19, fontWeight: 700, color: 'var(--accent)' }}>
               {fmtAmt(taxes.totalDeposit)}
             </div>
           </div>
 
+          {/* Employer-only state/federal taxes (not part of EFTPS 941 deposit) */}
+          {(hasFUTA || hasSUTA) && (
+            <>
+              <SectionHeader label="Employer-Only Taxes (not in 941 deposit)" />
+              {hasFUTA && (
+                <BreakRow
+                  label={`FUTA${taxes.futaTaxable < taxes.grossWages ? ' (partial — wage base)' : ''}`}
+                  sub={`0.6% net · $7,000 wage base${taxes.futaTaxable === 0 ? ' — wage base reached' : ''}`}
+                  amount={taxes.futaTax}
+                  dimmed={taxes.futaTaxable === 0}
+                />
+              )}
+              {hasSUTA && (
+                <BreakRow
+                  label={`SUI — ${taxes.workState}${taxes.sutaTaxable < taxes.grossWages ? ' (partial)' : ''}`}
+                  sub={`${((taxes.sutaRate || 0) * 100).toFixed(2)}% · $${(taxes.suiWageBase || 0).toLocaleString()} base`}
+                  amount={taxes.sutaTax}
+                  dimmed={taxes.sutaTaxable === 0}
+                />
+              )}
+            </>
+          )}
+          {!hasFUTA && !hasSUTA && taxes.ytdGrossBefore >= 7000 && (
+            <div style={{ padding: '10px 18px', fontSize: 11.5, color: 'var(--text-muted)', borderTop: '1px solid var(--border-light)', background: 'var(--bg-primary)' }}>
+              FUTA/SUI wage bases reached — no additional liability this period.
+            </div>
+          )}
+
           {taxes.credits > 0 && (
             <div style={{ padding: '10px 18px', fontSize: 11.5, color: 'var(--text-muted)', borderTop: '1px solid var(--border-light)', background: 'var(--bg-primary)' }}>
-              Step 3 credits applied: <strong style={{ color: 'var(--success)' }}>{fmtAmt(taxes.credits)}</strong> reduced annual withholding
+              Step 3 credits: <strong style={{ color: 'var(--success)' }}>{fmtAmt(taxes.credits)}</strong> applied against annual FIT
             </div>
           )}
         </>
@@ -164,17 +223,18 @@ function TaxPanel({ taxes, loading, error }) {
   );
 }
 
-function BreakRow({ label, sub, amount }) {
+function BreakRow({ label, sub, amount, dimmed }) {
   return (
     <div style={{
       display: 'flex', justifyContent: 'space-between', alignItems: 'center',
       padding: '10px 18px', borderBottom: '1px solid var(--border-light)',
+      opacity: dimmed ? 0.5 : 1,
     }}>
       <div>
         <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{label}</div>
         <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{sub}</div>
       </div>
-      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13.5, fontWeight: 600, color: 'var(--text-primary)' }}>
+      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13.5, fontWeight: 600, color: dimmed ? 'var(--text-muted)' : 'var(--text-primary)' }}>
         {fmtAmt(amount)}
       </div>
     </div>
@@ -343,6 +403,11 @@ export default function PayrollEntry() {
   const [settlementDate, setSettlementDate] = useState('');
   const [payFrequency,   setPayFrequency]   = useState('biweekly');
 
+  // State tax params
+  const [workState,  setWorkState]  = useState('');
+  const [ytdGross,   setYtdGross]   = useState('');
+  const [ytdLoading, setYtdLoading] = useState(false);
+
   // Pay line items
   const [lineItems, setLineItems] = useState([
     { payType: 'regular', description: '', hours: '', rate: '', amount: '' },
@@ -370,18 +435,21 @@ export default function PayrollEntry() {
   const [bridgeConnected, setBridgeConnected] = useState(false);
 
   useEffect(() => {
-    api.getClient(id).then(setClient).catch(() => navigate('/'));
+    api.getClient(id).then((c) => { setClient(c); setWorkState(c.state || 'TX'); }).catch(() => navigate('/'));
     api.getEmployees(id).then(setEmployees).catch(() => {});
-    // Poll bridge status every 10s
     const checkBridge = () => api.getBridgeStatus().then((d) => setBridgeConnected(d.connected)).catch(() => {});
     checkBridge();
     const t = setInterval(checkBridge, 10000);
     return () => clearInterval(t);
   }, [id]);
 
-  // When employee is selected, prefill W-4 defaults
+  // When employee is selected, prefill W-4 defaults + fetch YTD wages
   useEffect(() => {
-    if (!employeeId) return;
+    if (!employeeId) {
+      setWorkState(client?.state || 'TX');
+      setYtdGross('');
+      return;
+    }
     const emp = employees.find((e) => String(e.id) === String(employeeId));
     if (!emp) return;
     setFilingStatus(emp.filingStatus || 'single');
@@ -392,7 +460,7 @@ export default function PayrollEntry() {
     setStep4b(emp.step4b > 0 ? String(emp.step4b) : '');
     setStep4c(emp.step4c > 0 ? String(emp.step4c) : '');
     setPayFrequency(emp.payFrequency || 'biweekly');
-    // Prefill a line item from employee's pay rate
+    setWorkState(emp.workState || client?.state || 'TX');
     if (emp.payType === 'hourly' && emp.hourlyRate > 0) {
       setLineItems([{ payType: 'regular', description: '', hours: '', rate: String(emp.hourlyRate), amount: '' }]);
     } else if (emp.payType === 'salary' && emp.annualSalary > 0) {
@@ -400,6 +468,13 @@ export default function PayrollEntry() {
       const perPeriod = round2(emp.annualSalary / (periods[emp.payFrequency] || 26));
       setLineItems([{ payType: 'salary', description: 'Salary', hours: '', rate: '', amount: String(perPeriod) }]);
     }
+    // Fetch YTD wages for current tax year
+    const year = new Date().getFullYear();
+    setYtdLoading(true);
+    api.getEmployeeYTD(emp.id, year)
+      .then((ytd) => { setYtdGross(ytd.ytd_gross > 0 ? String(ytd.ytd_gross) : ''); })
+      .catch(() => {})
+      .finally(() => setYtdLoading(false));
   }, [employeeId, employees]);
 
   const grossWages = round2(lineItems.reduce((s, li) => s + parseFloat(li.amount || 0), 0));
@@ -420,6 +495,9 @@ export default function PayrollEntry() {
         step4a: parseFloat(step4a || 0),
         step4b: parseFloat(step4b || 0),
         step4c: parseFloat(step4c || 0),
+        workState: workState || 'TX',
+        ytdGross:  parseFloat(ytdGross || 0),
+        sutaRate:  client?.sutaRate ?? null,
       });
       setTaxes(result);
     } catch (err) {
@@ -428,7 +506,7 @@ export default function PayrollEntry() {
     } finally {
       setCalcLoading(false);
     }
-  }, [grossWages, payFrequency, filingStatus, step2Checkbox, step3Children, step3Other, step4a, step4b, step4c]);
+  }, [grossWages, payFrequency, filingStatus, step2Checkbox, step3Children, step3Other, step4a, step4b, step4c, workState, ytdGross, client]);
 
   useEffect(() => {
     const t = setTimeout(calculate, 350);
@@ -456,6 +534,8 @@ export default function PayrollEntry() {
         step4b: parseFloat(step4b || 0),
         step4c: parseFloat(step4c || 0),
         lineItems: items,
+        workState: workState || null,
+        ytdGross:  parseFloat(ytdGross || 0),
       });
       setSubmission(sub);
       setStep(3);
@@ -567,6 +647,31 @@ export default function PayrollEntry() {
                           <option key={v} value={v}>{l}</option>
                         ))}
                       </select>
+                    </div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginTop: 4, marginBottom: 4 }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">Work State <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(for state taxes)</span></label>
+                      <select className="form-select" value={workState} onChange={(e) => setWorkState(e.target.value)}>
+                        {[['AL','Alabama'],['AK','Alaska'],['AZ','Arizona'],['AR','Arkansas'],['CA','California'],['CO','Colorado'],['CT','Connecticut'],['DE','Delaware'],['FL','Florida'],['GA','Georgia'],['HI','Hawaii'],['ID','Idaho'],['IL','Illinois'],['IN','Indiana'],['IA','Iowa'],['KS','Kansas'],['KY','Kentucky'],['LA','Louisiana'],['ME','Maine'],['MD','Maryland'],['MA','Massachusetts'],['MI','Michigan'],['MN','Minnesota'],['MS','Mississippi'],['MO','Missouri'],['MT','Montana'],['NE','Nebraska'],['NV','Nevada'],['NH','New Hampshire'],['NJ','New Jersey'],['NM','New Mexico'],['NY','New York'],['NC','North Carolina'],['ND','North Dakota'],['OH','Ohio'],['OK','Oklahoma'],['OR','Oregon'],['PA','Pennsylvania'],['RI','Rhode Island'],['SC','South Carolina'],['SD','South Dakota'],['TN','Tennessee'],['TX','Texas'],['UT','Utah'],['VT','Vermont'],['VA','Virginia'],['WA','Washington'],['WV','West Virginia'],['WI','Wisconsin'],['WY','Wyoming'],['DC','D.C.']].map(([code, name]) => (
+                          <option key={code} value={code}>{code} — {name}</option>
+                        ))}
+                      </select>
+                      {NO_SIT_STATES.has(workState) && (
+                        <p className="form-hint">{workState} has no state income tax.</p>
+                      )}
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">
+                        YTD Gross Wages (before this period)
+                        {ytdLoading && <span className="spinner spinner-dark" style={{ width: 12, height: 12, marginLeft: 6 }} />}
+                      </label>
+                      <div style={{ position: 'relative' }}>
+                        <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontFamily: 'monospace' }}>$</span>
+                        <input className="form-input mono" type="number" min="0" step="0.01" value={ytdGross}
+                          onChange={(e) => setYtdGross(e.target.value)} placeholder="0.00" style={{ paddingLeft: 24 }} />
+                      </div>
+                      <p className="form-hint">Used to apply SS ($176,100), FUTA ($7,000), and SUI wage base caps correctly.</p>
                     </div>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginTop: 4 }}>
@@ -750,7 +855,7 @@ export default function PayrollEntry() {
                 {[
                   { label: 'Filing Status', value: { single: 'Single / MFS', married: 'Married / QSS', hoh: 'Head of Household' }[submission.filing_status] },
                   { label: 'Pay Frequency', value: submission.pay_frequency.charAt(0).toUpperCase() + submission.pay_frequency.slice(1) },
-                  { label: 'Step 2 Checkbox', value: submission.step2_checkbox ? 'Yes' : 'No' },
+                  { label: 'Work State', value: submission.work_state || '—' },
                   { label: 'Step 3 Credits', value: fmtAmt(submission.step3_credits) },
                   { label: 'Settlement Date', value: submission.settlement_date || '(not set)' },
                   { label: 'Tax Period', value: `Q${submission.tax_quarter} ${submission.tax_year}` },
@@ -785,8 +890,9 @@ export default function PayrollEntry() {
               {[
                 { label: 'Gross Wages', amount: submission.gross_wages },
                 { label: 'Federal Income Tax Withholding', amount: submission.fit_withholding, accent: true },
-                { label: 'Social Security (employee + employer)', amount: submission.employee_ss + submission.employer_ss },
-                { label: 'Medicare (employee + employer)', amount: submission.employee_medicare + submission.employer_medicare },
+                { label: 'Social Security (employee + employer)', amount: (submission.employee_ss || 0) + (submission.employer_ss || 0) },
+                { label: 'Medicare (employee + employer)', amount: (submission.employee_medicare || 0) + (submission.employer_medicare || 0) },
+                ...(submission.state_income_tax > 0 ? [{ label: `${submission.work_state || ''} State Income Tax`, amount: submission.state_income_tax }] : []),
                 { label: 'Net Pay to Employee', amount: submission.net_pay, success: true },
               ].map(({ label, amount, accent, success }) => (
                 <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 20px', borderBottom: '1px solid var(--border-light)' }}>
@@ -796,6 +902,24 @@ export default function PayrollEntry() {
                   </span>
                 </div>
               ))}
+              {/* Employer-only taxes */}
+              {((submission.futa_tax || 0) > 0 || (submission.suta_tax || 0) > 0) && (
+                <div style={{ padding: '8px 20px', background: 'var(--bg-primary)', borderBottom: '1px solid var(--border-light)' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 6 }}>Employer-Only Taxes (not in 941 deposit)</div>
+                  {(submission.futa_tax || 0) > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>FUTA (0.6% net)</span>
+                      <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--text-muted)' }}>{fmtAmt(submission.futa_tax)}</span>
+                    </div>
+                  )}
+                  {(submission.suta_tax || 0) > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>SUI — {submission.work_state || ''}</span>
+                      <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--text-muted)' }}>{fmtAmt(submission.suta_tax)}</span>
+                    </div>
+                  )}
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '15px 20px', background: 'var(--bg-tertiary)', borderTop: '2px solid var(--border)' }}>
                 <span style={{ fontSize: 15, fontWeight: 700 }}>Total EFTPS Deposit</span>
                 <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 20, color: 'var(--accent)' }}>

@@ -47,6 +47,7 @@ function initSchema() {
         user_id                           INTEGER NOT NULL,
         business_name                     TEXT NOT NULL,
         ein                               TEXT NOT NULL,
+        state                             TEXT DEFAULT 'TX',
         bank_account_number_encrypted     TEXT,
         bank_routing_number               TEXT,
         bank_account_type                 TEXT DEFAULT 'checking',
@@ -75,6 +76,7 @@ function initSchema() {
         city           TEXT,
         state          TEXT DEFAULT 'TX',
         zip            TEXT,
+        work_state     TEXT,
         filing_status  TEXT DEFAULT 'single',
         step2_checkbox INTEGER DEFAULT 0,
         step3_children INTEGER DEFAULT 0,
@@ -95,38 +97,58 @@ function initSchema() {
 
     db.exec(`
       CREATE TABLE IF NOT EXISTS submissions (
-        id                 INTEGER PRIMARY KEY AUTOINCREMENT,
-        client_id          INTEGER NOT NULL,
-        employee_id        INTEGER,
-        pay_period_start   TEXT NOT NULL,
-        pay_period_end     TEXT NOT NULL,
-        settlement_date    TEXT,
-        gross_wages        REAL NOT NULL,
-        filing_status      TEXT NOT NULL,
-        pay_frequency      TEXT NOT NULL,
-        step2_checkbox     INTEGER DEFAULT 0,
-        step3_children     INTEGER DEFAULT 0,
-        step3_other        INTEGER DEFAULT 0,
-        step3_credits      REAL DEFAULT 0,
-        step4a             REAL DEFAULT 0,
-        step4b             REAL DEFAULT 0,
-        step4c             REAL DEFAULT 0,
-        fit_withholding    REAL NOT NULL,
-        employee_ss        REAL NOT NULL,
-        employee_medicare  REAL NOT NULL,
-        employer_ss        REAL NOT NULL,
-        employer_medicare  REAL NOT NULL,
-        total_deposit      REAL NOT NULL,
-        net_pay            REAL,
-        tax_year           INTEGER,
-        tax_quarter        INTEGER,
-        eftps_status       TEXT DEFAULT 'pending',
-        eftps_confirmation TEXT,
-        eftps_submitted_at TEXT,
-        submission_error   TEXT,
-        created_at         DATETIME DEFAULT CURRENT_TIMESTAMP,
-        FOREIGN KEY (client_id)  REFERENCES clients(id)   ON DELETE CASCADE,
+        id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+        client_id            INTEGER NOT NULL,
+        employee_id          INTEGER,
+        pay_period_start     TEXT NOT NULL,
+        pay_period_end       TEXT NOT NULL,
+        settlement_date      TEXT,
+        gross_wages          REAL NOT NULL,
+        filing_status        TEXT NOT NULL,
+        pay_frequency        TEXT NOT NULL,
+        step2_checkbox       INTEGER DEFAULT 0,
+        step3_children       INTEGER DEFAULT 0,
+        step3_other          INTEGER DEFAULT 0,
+        step3_credits        REAL DEFAULT 0,
+        step4a               REAL DEFAULT 0,
+        step4b               REAL DEFAULT 0,
+        step4c               REAL DEFAULT 0,
+        fit_withholding      REAL NOT NULL,
+        employee_ss          REAL NOT NULL,
+        employee_medicare    REAL NOT NULL,
+        employer_ss          REAL NOT NULL,
+        employer_medicare    REAL NOT NULL,
+        state_income_tax     REAL DEFAULT 0,
+        futa_tax             REAL DEFAULT 0,
+        suta_tax             REAL DEFAULT 0,
+        work_state           TEXT,
+        ytd_wages_before     REAL DEFAULT 0,
+        total_deposit        REAL NOT NULL,
+        net_pay              REAL,
+        tax_year             INTEGER,
+        tax_quarter          INTEGER,
+        eftps_status         TEXT DEFAULT 'pending',
+        eftps_confirmation   TEXT,
+        eftps_submitted_at   TEXT,
+        submission_error     TEXT,
+        created_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (client_id)   REFERENCES clients(id)   ON DELETE CASCADE,
         FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE SET NULL
+      )
+    `);
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS employee_ytd_wages (
+        id              INTEGER PRIMARY KEY AUTOINCREMENT,
+        employee_id     INTEGER NOT NULL,
+        tax_year        INTEGER NOT NULL,
+        ytd_gross       REAL DEFAULT 0,
+        ytd_ss_wages    REAL DEFAULT 0,
+        ytd_futa_wages  REAL DEFAULT 0,
+        ytd_suta_wages  REAL DEFAULT 0,
+        updated_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(employee_id, tax_year),
+        FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
       )
     `);
 
@@ -165,6 +187,7 @@ function migrate() {
     { name: 'eftps_internet_password_encrypted', def: 'TEXT' },
     { name: 'eftps_enrollment_number',           def: 'TEXT' },
     { name: 'suta_rate',                         def: 'REAL DEFAULT 0.027' },
+    { name: 'state',                             def: "TEXT DEFAULT 'TX'" },
   ]);
 
   // Rename eftps_pin_encrypted → batch_provider_pin_encrypted on existing databases
@@ -175,18 +198,28 @@ function migrate() {
 
   // submissions columns added after v1
   addCols('submissions', [
-    { name: 'step2_checkbox',  def: 'INTEGER DEFAULT 0' },
-    { name: 'step3_children',  def: 'INTEGER DEFAULT 0' },
-    { name: 'step3_other',     def: 'INTEGER DEFAULT 0' },
-    { name: 'step3_credits',   def: 'REAL DEFAULT 0' },
-    { name: 'step4a',          def: 'REAL DEFAULT 0' },
-    { name: 'step4b',          def: 'REAL DEFAULT 0' },
-    { name: 'step4c',          def: 'REAL DEFAULT 0' },
-    { name: 'employee_id',     def: 'INTEGER' },
-    { name: 'net_pay',         def: 'REAL' },
-    { name: 'tax_year',        def: 'INTEGER' },
-    { name: 'tax_quarter',     def: 'INTEGER' },
-    { name: 'settlement_date', def: 'TEXT' },
+    { name: 'step2_checkbox',    def: 'INTEGER DEFAULT 0' },
+    { name: 'step3_children',    def: 'INTEGER DEFAULT 0' },
+    { name: 'step3_other',       def: 'INTEGER DEFAULT 0' },
+    { name: 'step3_credits',     def: 'REAL DEFAULT 0' },
+    { name: 'step4a',            def: 'REAL DEFAULT 0' },
+    { name: 'step4b',            def: 'REAL DEFAULT 0' },
+    { name: 'step4c',            def: 'REAL DEFAULT 0' },
+    { name: 'employee_id',       def: 'INTEGER' },
+    { name: 'net_pay',           def: 'REAL' },
+    { name: 'tax_year',          def: 'INTEGER' },
+    { name: 'tax_quarter',       def: 'INTEGER' },
+    { name: 'settlement_date',   def: 'TEXT' },
+    { name: 'state_income_tax',  def: 'REAL DEFAULT 0' },
+    { name: 'futa_tax',          def: 'REAL DEFAULT 0' },
+    { name: 'suta_tax',          def: 'REAL DEFAULT 0' },
+    { name: 'work_state',        def: 'TEXT' },
+    { name: 'ytd_wages_before',  def: 'REAL DEFAULT 0' },
+  ]);
+
+  // employees columns added after v1
+  addCols('employees', [
+    { name: 'work_state', def: 'TEXT' },
   ]);
 }
 

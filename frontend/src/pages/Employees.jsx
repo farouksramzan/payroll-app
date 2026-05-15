@@ -80,7 +80,7 @@ export default function Employees() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)' }}>
-                  {['Employee', 'Pay Type', 'Rate', 'Frequency', 'Filing Status', 'Hire Date', 'Status', ''].map((h) => (
+                  {['Employee', 'Work State', 'Pay Type', 'Rate', 'Frequency', 'Filing Status', 'Hire Date', 'Status', ''].map((h) => (
                     <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -92,6 +92,7 @@ export default function Employees() {
                       <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: 14 }}>{emp.fullName}</div>
                       {emp.hasSSN && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>SSN on file</div>}
                     </td>
+                    <td style={{ padding: '12px 16px', fontSize: 13, fontFamily: 'JetBrains Mono, monospace' }}>{emp.workState || '—'}</td>
                     <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{emp.payType}</td>
                     <td style={{ padding: '12px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>
                       {emp.payType === 'hourly'

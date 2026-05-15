@@ -12,6 +12,7 @@ function sanitizeClient(client, includeSecrets = false) {
     id: client.id,
     businessName: client.business_name,
     ein: client.ein,
+    state: client.state || 'TX',
     bankRoutingNumber: client.bank_routing_number,
     bankAccountType: client.bank_account_type,
     depositSchedule: client.deposit_schedule,
@@ -67,7 +68,7 @@ router.get('/:id', (req, res) => {
 
 // POST /api/clients
 router.post('/', (req, res) => {
-  const { businessName, ein, bankAccountNumber, bankRoutingNumber, bankAccountType, batchProviderPin,
+  const { businessName, ein, state, bankAccountNumber, bankRoutingNumber, bankAccountType, batchProviderPin,
     eftpsInternetPassword, eftpsEnrollmentNumber, depositSchedule, sutaRate,
     contactName, contactEmail, contactPhone } = req.body;
 
@@ -83,14 +84,15 @@ router.post('/', (req, res) => {
 
   const db = getDb();
   const result = db.prepare(`
-    INSERT INTO clients (user_id, business_name, ein, bank_account_number_encrypted, bank_routing_number,
+    INSERT INTO clients (user_id, business_name, ein, state, bank_account_number_encrypted, bank_routing_number,
       bank_account_type, batch_provider_pin_encrypted, eftps_internet_password_encrypted, eftps_enrollment_number,
       deposit_schedule, suta_rate, contact_name, contact_email, contact_phone)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     req.user.id,
     businessName.trim(),
     ein.trim(),
+    (state || 'TX').toUpperCase(),
     encrypt(bankAccountNumber),
     bankRoutingNumber || null,
     bankAccountType || 'checking',
@@ -114,7 +116,7 @@ router.put('/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
   if (!existing) return res.status(404).json({ error: 'Client not found' });
 
-  const { businessName, ein, bankAccountNumber, bankRoutingNumber, bankAccountType, batchProviderPin,
+  const { businessName, ein, state, bankAccountNumber, bankRoutingNumber, bankAccountType, batchProviderPin,
     eftpsInternetPassword, eftpsEnrollmentNumber, depositSchedule, sutaRate,
     contactName, contactEmail, contactPhone } = req.body;
 
@@ -125,6 +127,7 @@ router.put('/:id', (req, res) => {
     UPDATE clients SET
       business_name = ?,
       ein = ?,
+      state = ?,
       bank_account_number_encrypted = ?,
       bank_routing_number = ?,
       bank_account_type = ?,
@@ -141,6 +144,7 @@ router.put('/:id', (req, res) => {
   `).run(
     businessName || existing.business_name,
     ein || existing.ein,
+    state ? state.toUpperCase() : existing.state,
     bankAccountNumber ? encrypt(bankAccountNumber) : existing.bank_account_number_encrypted,
     bankRoutingNumber !== undefined ? bankRoutingNumber : existing.bank_routing_number,
     bankAccountType || existing.bank_account_type,

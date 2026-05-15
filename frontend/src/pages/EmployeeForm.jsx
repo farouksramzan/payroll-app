@@ -2,9 +2,24 @@ import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../api/client';
 
+const US_STATES = [
+  ['AL','Alabama'],['AK','Alaska'],['AZ','Arizona'],['AR','Arkansas'],['CA','California'],
+  ['CO','Colorado'],['CT','Connecticut'],['DE','Delaware'],['FL','Florida'],['GA','Georgia'],
+  ['HI','Hawaii'],['ID','Idaho'],['IL','Illinois'],['IN','Indiana'],['IA','Iowa'],
+  ['KS','Kansas'],['KY','Kentucky'],['LA','Louisiana'],['ME','Maine'],['MD','Maryland'],
+  ['MA','Massachusetts'],['MI','Michigan'],['MN','Minnesota'],['MS','Mississippi'],['MO','Missouri'],
+  ['MT','Montana'],['NE','Nebraska'],['NV','Nevada'],['NH','New Hampshire'],['NJ','New Jersey'],
+  ['NM','New Mexico'],['NY','New York'],['NC','North Carolina'],['ND','North Dakota'],['OH','Ohio'],
+  ['OK','Oklahoma'],['OR','Oregon'],['PA','Pennsylvania'],['RI','Rhode Island'],['SC','South Carolina'],
+  ['SD','South Dakota'],['TN','Tennessee'],['TX','Texas'],['UT','Utah'],['VT','Vermont'],
+  ['VA','Virginia'],['WA','Washington'],['WV','West Virginia'],['WI','Wisconsin'],['WY','Wyoming'],
+  ['DC','Washington D.C.'],
+];
+
 const EMPTY = {
   firstName: '', lastName: '', ssn: '',
   address: '', city: '', state: 'TX', zip: '',
+  workState: '',
   filingStatus: 'single', step2Checkbox: false,
   step3Children: 0, step3Other: 0,
   step4a: '', step4b: '', step4c: '',
@@ -41,6 +56,7 @@ export default function EmployeeForm() {
             ssn: '',
             address: emp.address || '', city: emp.city || '',
             state: emp.state || 'TX', zip: emp.zip || '',
+            workState: emp.workState || '',
             filingStatus: emp.filingStatus || 'single',
             step2Checkbox: !!emp.step2Checkbox,
             step3Children: emp.step3Children || 0,
@@ -180,13 +196,28 @@ export default function EmployeeForm() {
                 <input className="form-input" value={form.city} onChange={set('city')} placeholder="Austin" />
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">State</label>
-                <input className="form-input" value={form.state} onChange={set('state')} placeholder="TX" maxLength={2} />
+                <label className="form-label">State (Address)</label>
+                <select className="form-select" value={form.state} onChange={set('state')}>
+                  {US_STATES.map(([code, name]) => (
+                    <option key={code} value={code}>{code}</option>
+                  ))}
+                </select>
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">ZIP</label>
                 <input className="form-input mono" value={form.zip} onChange={set('zip')} placeholder="78701" maxLength={10} />
               </div>
+            </div>
+
+            <div className="form-group" style={{ marginTop: 16, maxWidth: 320 }}>
+              <label className="form-label">State of Work <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(for tax withholding)</span></label>
+              <select className="form-select" value={form.workState} onChange={set('workState')}>
+                <option value="">— Use client's state default —</option>
+                {US_STATES.map(([code, name]) => (
+                  <option key={code} value={code}>{code} — {name}</option>
+                ))}
+              </select>
+              <p className="form-hint">Override if this employee works in a different state than the business. Determines SUI wage base and state income tax.</p>
             </div>
 
             <div className="form-group" style={{ marginTop: 16, maxWidth: 200 }}>

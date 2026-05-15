@@ -43,12 +43,14 @@ const api = {
   // Employees
   getEmployees: (clientId) => request(`/employees?clientId=${clientId}`),
   getEmployee: (id) => request(`/employees/${id}`),
+  getEmployeeYTD: (id, year) => request(`/employees/${id}/ytd?year=${year}`),
   createEmployee: (data) => request('/employees', { method: 'POST', body: JSON.stringify(data) }),
   updateEmployee: (id, data) => request(`/employees/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteEmployee: (id) => request(`/employees/${id}`, { method: 'DELETE' }),
 
   // Payroll calculator
   calculate: (data) => request('/payroll/calculate', { method: 'POST', body: JSON.stringify(data) }),
+  getStates: () => request('/payroll/states'),
 
   // Submissions
   getSubmissions: (clientId) => request(`/submissions${clientId ? `?clientId=${clientId}` : ''}`),

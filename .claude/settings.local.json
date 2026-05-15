@@ -16,7 +16,20 @@
       "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('Sub ID:', d.get\\('id'\\), '| Status:', d.get\\('eftps_status'\\), '| Step3Credits:', d.get\\('step3_credits'\\), '| Step4c:', d.get\\('step4c'\\)\\)\")",
       "Bash(docker info *)",
       "Bash(node -e \"require\\('./src/ws/bridge'\\)\")",
-      "Bash(node -e \"require\\('./src/routes/submissions'\\)\")"
+      "Bash(node -e \"require\\('./src/routes/submissions'\\)\")",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(sips -s format jpeg -s formatOptions 60 \"/Users/faroukramzan/Desktop/IMG_0269.HEIC\" --out /tmp/bp_screen.jpg)",
+      "Bash(git -C \"/Users/faroukramzan/Desktop/Payroll App\" status)",
+      "Bash(git -C \"/Users/faroukramzan/Desktop/Payroll App\" diff --stat)",
+      "Bash(git -C \"/Users/faroukramzan/Desktop/Payroll App\" add backend/src/routes/submissions.js bridge-server/.env.example bridge-server/src/achGenerator.js bridge-server/src/wsClient.js)",
+      "Bash(git -C '/Users/faroukramzan/Desktop/Payroll App' commit -m ' *)",
+      "Bash(git -C \"/Users/faroukramzan/Desktop/Payroll App\" add backend/src/database/db.js backend/src/routes/clients.js backend/src/routes/submissions.js frontend/src/pages/ClientForm.jsx frontend/src/pages/ClientDetail.jsx bridge-server/src/achGenerator.js)",
+      "Bash(git -C \"/Users/faroukramzan/Desktop/Payroll App\" push origin main)",
+      "Bash(git -C \"/Users/faroukramzan/Desktop/Payroll App\" add bridge-server/EFTPSBridgeWatcher.ahk)",
+      "Bash(node -e \"require\\('./src/services/taxCalculator'\\)\")",
+      "Bash(npx vite *)"
     ]
   }
 }

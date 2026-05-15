@@ -2,8 +2,22 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import api from '../api/client';
 
+const US_STATES = [
+  ['AL','Alabama'],['AK','Alaska'],['AZ','Arizona'],['AR','Arkansas'],['CA','California'],
+  ['CO','Colorado'],['CT','Connecticut'],['DE','Delaware'],['FL','Florida'],['GA','Georgia'],
+  ['HI','Hawaii'],['ID','Idaho'],['IL','Illinois'],['IN','Indiana'],['IA','Iowa'],
+  ['KS','Kansas'],['KY','Kentucky'],['LA','Louisiana'],['ME','Maine'],['MD','Maryland'],
+  ['MA','Massachusetts'],['MI','Michigan'],['MN','Minnesota'],['MS','Mississippi'],['MO','Missouri'],
+  ['MT','Montana'],['NE','Nebraska'],['NV','Nevada'],['NH','New Hampshire'],['NJ','New Jersey'],
+  ['NM','New Mexico'],['NY','New York'],['NC','North Carolina'],['ND','North Dakota'],['OH','Ohio'],
+  ['OK','Oklahoma'],['OR','Oregon'],['PA','Pennsylvania'],['RI','Rhode Island'],['SC','South Carolina'],
+  ['SD','South Dakota'],['TN','Tennessee'],['TX','Texas'],['UT','Utah'],['VT','Vermont'],
+  ['VA','Virginia'],['WA','Washington'],['WV','West Virginia'],['WI','Wisconsin'],['WY','Wyoming'],
+  ['DC','Washington D.C.'],
+];
+
 const EMPTY = {
-  businessName: '', ein: '', batchProviderPin: '', eftpsInternetPassword: '', eftpsEnrollmentNumber: '',
+  businessName: '', ein: '', state: 'TX', batchProviderPin: '', eftpsInternetPassword: '', eftpsEnrollmentNumber: '',
   depositSchedule: 'monthly', sutaRate: '2.7',
   bankAccountNumber: '', bankRoutingNumber: '', bankAccountType: 'checking',
   contactName: '', contactEmail: '', contactPhone: '',
@@ -25,6 +39,7 @@ export default function ClientForm() {
       setForm({
         businessName: c.businessName || '',
         ein: c.ein || '',
+        state: c.state || 'TX',
         batchProviderPin: '',
         eftpsInternetPassword: '',
         eftpsEnrollmentNumber: c.eftpsEnrollmentNumber || '',
@@ -134,6 +149,16 @@ export default function ClientForm() {
               </div>
             </div>
 
+            <div className="form-group" style={{ maxWidth: 280 }}>
+              <label className="form-label">State of Business</label>
+              <select className="form-select" value={form.state} onChange={set('state')}>
+                {US_STATES.map(([code, name]) => (
+                  <option key={code} value={code}>{code} — {name}</option>
+                ))}
+              </select>
+              <p className="form-hint">Used for SUI wage base and state income tax calculations. Employees can override individually.</p>
+            </div>
+
             <p className="form-section-title">EFTPS Credentials</p>
 
             <div className="form-group">
@@ -174,13 +199,13 @@ export default function ClientForm() {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Texas TWC (SUTA) Rate (%)</label>
+              <label className="form-label">SUI (State Unemployment) Rate (%)</label>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <input
                   className="form-input mono"
                   type="number"
                   min="0"
-                  max="10"
+                  max="20"
                   step="0.01"
                   value={form.sutaRate}
                   onChange={set('sutaRate')}
@@ -188,7 +213,7 @@ export default function ClientForm() {
                 />
                 <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>%</span>
               </div>
-              <p className="form-hint">New employer default is 2.7%. Check your TWC notice for your assigned rate.</p>
+              <p className="form-hint">New employer default is 2.7% (varies by state). Check your state unemployment notice for your assigned rate.</p>
             </div>
 
             <p className="form-section-title">Bank Account</p>

@@ -1,8 +1,11 @@
 /**
- * Federal payroll tax engine — 2020+ W-4 Percentage Method
- * 2026 values: standard deductions from W-4 (2026) Deductions Worksheet page 4.
- * Brackets are 2026 estimates; verify against IRS Pub 15-T 2026 when published.
+ * Federal & state payroll tax engine — 2026
+ *
+ * Federal: 2020+ W-4 Percentage Method (IRS Pub 15-T 2026)
+ * State: Per-state SUI + SIT from stateTaxRates.js
  */
+
+const STATE_TAX_RATES = require('../data/stateTaxRates');
 
 const STANDARD_DEDUCTION = { single: 16100, married: 32200, hoh: 24150 };
 
@@ -36,27 +39,24 @@ const BRACKETS = {
   ],
 };
 
-// 2026 W-4 Step 3 credit amounts (from page 1 of the 2026 W-4)
 const CHILD_CREDIT     = 2200;
 const DEPENDENT_CREDIT = 500;
 
 const PAY_PERIODS = { weekly: 52, biweekly: 26, semimonthly: 24, monthly: 12 };
 
-// 2026 SS wage base (estimated; verify with SSA announcement)
-const SS_WAGE_BASE  = 180000;
+// 2026 SS wage base (SSA announced $176,100 for 2025; estimated same or $180,000 for 2026)
+const SS_WAGE_BASE  = 176100;
 const SS_RATE       = 0.062;
 const MEDICARE_RATE = 0.0145;
+const ADD_MEDICARE_RATE = 0.009;   // Additional Medicare on wages > $200,000
+const ADD_MEDICARE_THRESHOLD = 200000;
 
-// FUTA: 6% gross, 0.6% net after full state credit; $7,000 wage base per employee
 const FUTA_WAGE_BASE    = 7000;
-const FUTA_RATE_NET     = 0.006;  // after 5.4% SUTA credit
+const FUTA_RATE_NET     = 0.006;   // after 5.4% state credit
 const FUTA_RATE_GROSS   = 0.06;
 
-// Texas TWC (SUTA): $9,000 wage base; new-employer rate 2.7%
-const SUTA_WAGE_BASE    = 9000;
-
 /**
- * Calculate per-period FIT withholding using 2020+ W-4 Percentage Method.
+ * Calculate per-period FIT withholding using 2026 W-4 Percentage Method.
  */
 function calculateWithholding({
   grossWages,
@@ -68,20 +68,19 @@ function calculateWithholding({
   step4a = 0,
   step4b = 0,
   step4c = 0,
+  // State tax params
+  workState     = null,
+  ytdGross      = 0,   // YTD gross wages before this period (for SS/FUTA/SUTA caps)
+  sutaRate      = null, // override; falls back to state's new-employer rate
 }) {
   const periods = PAY_PERIODS[payFrequency] || 26;
 
-  // Annualize + add Step 4(a) other income
+  // ── Federal Income Tax ────────────────────────────────────────────────────────
   const adjustedAnnual = grossWages * periods + (step4a || 0);
-
-  // Standard deduction, halved when Step 2(c) checkbox is checked
   let stdDed = STANDARD_DEDUCTION[filingStatus] || STANDARD_DEDUCTION.single;
   if (step2Checkbox) stdDed /= 2;
-
-  // Step 4(b) subtracts additional deductions on top of standard deduction
   const taxableAnnual = Math.max(0, adjustedAnnual - stdDed - (step4b || 0));
 
-  // Tax brackets, halved thresholds when Step 2(c) is checked
   let brackets = (BRACKETS[filingStatus] || BRACKETS.single).map((b) => ({ ...b }));
   if (step2Checkbox) {
     brackets = brackets.map((b) => ({
@@ -98,44 +97,109 @@ function calculateWithholding({
     if (taxableAnnual <= b.max) break;
   }
 
-  // Subtract Step 3 credits
   const credits = (step3Children || 0) * CHILD_CREDIT + (step3Other || 0) * DEPENDENT_CREDIT;
   const annualWithholding = Math.max(0, annualTax - credits);
+  const fitWithholding = round2(Math.max(0, annualWithholding / periods + (step4c || 0)));
 
-  // Per-period FIT + Step 4(c) extra withholding
-  const fitWithholding = Math.max(0, annualWithholding / periods + (step4c || 0));
+  // ── FICA — Social Security (wage base cap via YTD) ────────────────────────────
+  const ssWagesThisPeriod = Math.max(0, Math.min(grossWages, SS_WAGE_BASE - Math.min(ytdGross, SS_WAGE_BASE)));
+  const employeeSS   = round2(ssWagesThisPeriod * SS_RATE);
+  const employerSS   = employeeSS;
 
-  // FICA — Social Security
-  const annualSSWages = Math.min(grossWages * periods, SS_WAGE_BASE);
-  const employeeSS    = round2((annualSSWages / periods) * SS_RATE);
-  const employerSS    = employeeSS;
-
-  // FICA — Medicare (no wage base limit)
+  // ── FICA — Medicare ───────────────────────────────────────────────────────────
   const employeeMedicare = round2(grossWages * MEDICARE_RATE);
-  const employerMedicare  = employeeMedicare;
+  const employerMedicare = employeeMedicare;
 
-  const totalDeposit = round2(fitWithholding + employeeSS + employeeMedicare + employerSS + employerMedicare);
+  // Additional Medicare (employee only, on wages over $200K/yr)
+  const ytdAfter = ytdGross + grossWages;
+  const addMedBase = Math.max(0, Math.min(grossWages, ytdAfter - ADD_MEDICARE_THRESHOLD));
+  const additionalMedicare = round2(addMedBase * ADD_MEDICARE_RATE);
 
-  // Net pay to employee
-  const netPay = round2(grossWages - fitWithholding - employeeSS - employeeMedicare);
+  // ── FUTA ──────────────────────────────────────────────────────────────────────
+  const futaResult = calculateFUTA(grossWages, ytdGross);
+
+  // ── SUTA ──────────────────────────────────────────────────────────────────────
+  const state = (workState || 'TX').toUpperCase();
+  const stateData = STATE_TAX_RATES[state];
+  const suiWageBase   = stateData?.sui?.wageBase ?? 9000;
+  const effectiveSutaRate = sutaRate != null ? sutaRate : (stateData?.sui?.newEmployerRate ?? 0.027);
+  const sutaResult = calculateSUTA(grossWages, ytdGross, effectiveSutaRate, suiWageBase);
+
+  // ── State Income Tax ──────────────────────────────────────────────────────────
+  const stateIncomeTax = calculateStateSIT(grossWages, periods, state, filingStatus);
+
+  // ── Totals ────────────────────────────────────────────────────────────────────
+  // EFTPS deposit = FIT + employee FICA + employer FICA (+ additional medicare if applicable)
+  const totalDeposit = round2(
+    fitWithholding + employeeSS + employeeMedicare + additionalMedicare +
+    employerSS + employerMedicare
+  );
+
+  const netPay = round2(grossWages - fitWithholding - employeeSS - employeeMedicare - additionalMedicare - stateIncomeTax);
 
   return {
-    grossWages:        round2(grossWages),
-    fitWithholding:    round2(fitWithholding),
+    grossWages:          round2(grossWages),
+    fitWithholding,
     employeeSS,
     employeeMedicare,
+    additionalMedicare,
     employerSS,
     employerMedicare,
+    stateIncomeTax,
+    futaTax:             futaResult.futaTax,
+    futaTaxable:         futaResult.taxableWages,
+    sutaTax:             sutaResult.sutaTax,
+    sutaTaxable:         sutaResult.taxableWages,
+    sutaRate:            effectiveSutaRate,
+    suiWageBase,
+    workState:           state,
     totalDeposit,
     netPay,
-    credits:           round2(credits),
-    annualTaxable:     round2(taxableAnnual),
+    credits:             round2(credits),
+    annualTaxable:       round2(taxableAnnual),
+    ssWageBase:          SS_WAGE_BASE,
+    ssWagesThisPeriod,
+    ytdGrossBefore:      ytdGross,
   };
 }
 
 /**
+ * State income tax per pay period using state brackets or flat rate.
+ */
+function calculateStateSIT(grossWages, periods, state, filingStatus = 'single') {
+  const stateData = STATE_TAX_RATES[state?.toUpperCase()];
+  if (!stateData?.sit) return 0;
+
+  const sit = stateData.sit;
+
+  if (sit.type === 'flat') {
+    return round2(grossWages * sit.rate);
+  }
+
+  if (sit.type === 'brackets') {
+    const fs = filingStatus === 'hoh' ? 'hoh' : (filingStatus === 'married' ? 'married' : 'single');
+    const brackets = sit.brackets?.[fs] || sit.brackets?.single || [];
+    const stdDed = sit.standardDeduction?.[fs] || 0;
+
+    const annualGross  = grossWages * periods;
+    const taxableAnnual = Math.max(0, annualGross - stdDed);
+
+    let annualTax = 0;
+    for (const b of brackets) {
+      if (taxableAnnual <= b.min) break;
+      annualTax += (Math.min(taxableAnnual, b.max) - b.min) * b.rate;
+      if (taxableAnnual <= b.max) break;
+    }
+
+    return round2(annualTax / periods);
+  }
+
+  return 0;
+}
+
+/**
  * FUTA liability for a single pay period.
- * ytdWages = YTD wages BEFORE this period (to apply $7,000 wage base correctly).
+ * ytdWages = YTD gross wages BEFORE this period.
  */
 function calculateFUTA(grossWages, ytdWages = 0) {
   const taxable = Math.max(0, Math.min(grossWages, FUTA_WAGE_BASE - Math.min(ytdWages, FUTA_WAGE_BASE)));
@@ -147,10 +211,12 @@ function calculateFUTA(grossWages, ytdWages = 0) {
 }
 
 /**
- * Texas TWC SUTA liability for a single pay period.
+ * State SUI liability for a single pay period.
+ * sutaRate defaults to the state's new-employer rate if not provided.
+ * ytdWages = YTD gross wages BEFORE this period.
  */
-function calculateSUTA(grossWages, ytdWages = 0, sutaRate = 0.027) {
-  const taxable = Math.max(0, Math.min(grossWages, SUTA_WAGE_BASE - Math.min(ytdWages, SUTA_WAGE_BASE)));
+function calculateSUTA(grossWages, ytdWages = 0, sutaRate = 0.027, sutaWageBase = 9000) {
+  const taxable = Math.max(0, Math.min(grossWages, sutaWageBase - Math.min(ytdWages, sutaWageBase)));
   return {
     taxableWages: round2(taxable),
     sutaTax:      round2(taxable * sutaRate),
@@ -165,7 +231,6 @@ function calcNextDueDate(depositSchedule, payPeriodEnd) {
   if (depositSchedule === 'monthly') {
     return new Date(base.getFullYear(), base.getMonth() + 1, 15).toISOString().slice(0, 10);
   }
-  // Semi-weekly: Wed/Thu paydays → next Monday; Fri–Tue → next Wednesday
   const day = base.getDay();
   const daysUntil = (day === 3 || day === 4)
     ? (1 + 7 - day) % 7 || 7
@@ -199,14 +264,16 @@ function round2(n) {
 
 module.exports = {
   calculateWithholding,
+  calculateStateSIT,
   calculateFUTA,
   calculateSUTA,
   calcNextDueDate,
   getTaxPeriod,
   nextBankingDay,
+  STATE_TAX_RATES,
   CHILD_CREDIT,
   DEPENDENT_CREDIT,
   FUTA_WAGE_BASE,
   FUTA_RATE_NET,
-  SUTA_WAGE_BASE,
+  SS_WAGE_BASE,
 };

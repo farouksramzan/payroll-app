@@ -78,6 +78,7 @@ export default function ClientDetail() {
           </div>
           <InfoRow label="Business Name" value={client.businessName} />
           <InfoRow label="EIN" value={client.ein} mono />
+          <InfoRow label="State" value={client.state || 'TX'} />
           <InfoRow label="Deposit Schedule" value={client.depositSchedule.charAt(0).toUpperCase() + client.depositSchedule.slice(1)} />
           <InfoRow label="Batch Provider PIN" value={client.hasBatchProviderPin ? '••••  (encrypted)' : 'Not set'} />
           <InfoRow label="Bank Account" value={client.hasBankAccount ? '••••••  (encrypted)' : 'Not set'} />
