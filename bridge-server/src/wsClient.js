@@ -15,8 +15,84 @@
 
 const WebSocket = require('ws');
 const EventEmitter = require('events');
-const { generateBatchProviderFile } = require('./achGenerator');
-const { submitACH }   = require('./batchProvider');
+const { execFile }                   = require('child_process');
+const fs                             = require('fs');
+const path                           = require('path');
+const { generateBatchProviderFile }  = require('./achGenerator');
+const { generateEnrollmentFile }     = require('./enrollmentGenerator');
+const { saveACHFile, WATCHED_FOLDER } = require('./batchProvider');
+
+const BP_SCRIPT          = path.join(__dirname, '..', 'bp_automation.py');
+const BP_ENROLL_SCRIPT   = path.join(__dirname, '..', 'bp_enrollment.py');
+const ENROLLED_JSON      = path.join(__dirname, '..', 'enrolled_clients.json');
+const ENROLL_FOLDER      = path.join(__dirname, '..', 'data', 'enroll-out');
+
+// ── Enrollment tracking ───────────────────────────────────────────────────────
+
+function cleanEin(ein) {
+  return String(ein || '').replace(/\D/g, '');
+}
+
+function isEnrolled(ein) {
+  try {
+    const list = JSON.parse(fs.readFileSync(ENROLLED_JSON, 'utf8'));
+    return list.includes(cleanEin(ein));
+  } catch {
+    return false;
+  }
+}
+
+function markEnrolled(ein) {
+  let list = [];
+  try { list = JSON.parse(fs.readFileSync(ENROLLED_JSON, 'utf8')); } catch {}
+  const normalized = cleanEin(ein);
+  if (!list.includes(normalized)) {
+    list.push(normalized);
+    fs.writeFileSync(ENROLLED_JSON, JSON.stringify(list, null, 2));
+  }
+}
+
+function saveEnrollmentFile(enrollContent, ein) {
+  fs.mkdirSync(ENROLL_FOLDER, { recursive: true });
+  const filename = `ENROLL_${cleanEin(ein)}_${Date.now()}.ach`;
+  const filepath = path.join(ENROLL_FOLDER, filename);
+  fs.writeFileSync(filepath, enrollContent, { encoding: 'ascii' });
+  return filepath;
+}
+
+// ── Python automation runners ─────────────────────────────────────────────────
+
+function runPython(script, args, logFn, { timeout = 180000, successToken, failToken } = {}) {
+  return new Promise((resolve, reject) => {
+    execFile('python', [script, ...args], { windowsHide: true, timeout },
+      (err, stdout, stderr) => {
+        if (stdout) stdout.split('\n').filter(Boolean).forEach((l) => logFn(l));
+        if (stderr) stderr.split('\n').filter(Boolean).forEach((l) => logFn(`[stderr] ${l}`));
+        if (err) return reject(new Error(`${path.basename(script)} error: ${err.message}`));
+        if (stdout.includes(successToken)) return resolve(stdout);
+        const reason = stdout.match(new RegExp(failToken + ':\\s*(.+)'))?.[1] || 'Unknown — check bridge logs';
+        reject(new Error(reason));
+      }
+    );
+  });
+}
+
+function runPaymentAutomation(achFilePath, logFn) {
+  logFn(`[BP] Launching payment automation for: ${achFilePath}`);
+  return runPython(BP_SCRIPT, [achFilePath], logFn, {
+    successToken: 'IMPORT_COMPLETE',
+    failToken:    'IMPORT_FAILED',
+  }).then(() => ({ success: true, confirmation: 'BP_AUTOMATION_OK', achFilePath }));
+}
+
+function runEnrollmentAutomation(enrollFilePath, logFn) {
+  logFn(`[ENROLL] Launching enrollment automation for: ${enrollFilePath}`);
+  return runPython(BP_ENROLL_SCRIPT, [enrollFilePath], logFn, {
+    timeout:      120000,
+    successToken: 'ENROLLMENT_COMPLETE',
+    failToken:    'ENROLLMENT_FAILED',
+  });
+}
 
 const RAILWAY_URL      = process.env.RAILWAY_WS_URL || '';
 const SECRET           = process.env.WEBSOCKET_SECRET || '';
@@ -155,7 +231,32 @@ class BridgeClient extends EventEmitter {
     this.emit('jobStart', job);
 
     try {
-      // 1. Generate Batch Provider import record
+      const log = (msg) => this.emit('log', msg);
+
+      // 1. Enroll client if not already enrolled
+      if (!isEnrolled(job.ein)) {
+        log(`EIN ${cleanEin(job.ein)} not in enrolled_clients.json — running enrollment first`);
+
+        const enrollContent = generateEnrollmentFile({
+          ein:           job.ein,
+          pin:           job.pin,
+          businessName:  job.businessName,
+          routingNumber: job.routingNumber,
+          accountNumber: job.accountNumber,
+          accountType:   job.accountType || 'checking',
+        });
+        const enrollFilePath = saveEnrollmentFile(enrollContent, job.ein);
+        log(`Enrollment file saved: ${enrollFilePath}`);
+
+        await runEnrollmentAutomation(enrollFilePath, log);
+
+        markEnrolled(job.ein);
+        log(`EIN ${cleanEin(job.ein)} added to enrolled_clients.json`);
+      } else {
+        log(`EIN ${cleanEin(job.ein)} already enrolled — skipping enrollment`);
+      }
+
+      // 2. Generate Batch Provider payment record
       const achContent = generateBatchProviderFile({
         ein:            job.ein,
         pin:            job.pin,
@@ -165,11 +266,14 @@ class BridgeClient extends EventEmitter {
         taxData:        job.taxData,
         taxTypeCode:    job.taxTypeCode || '94105',
         sequenceNumber: job.sequenceNumber || 1,
-        // registrationId sourced from EFTPS_REGISTRATION_ID env var
       });
 
-      // 2. Submit via Batch Provider
-      const result = await submitACH(achContent, submissionId);
+      // 3. Save payment ACH file to disk
+      const achFilePath = saveACHFile(achContent, submissionId);
+      log(`ACH file saved: ${achFilePath}`);
+
+      // 4. Run payment automation
+      const result = await runPaymentAutomation(achFilePath, log);
 
       this.stats.jobsSucceeded++;
       this.emit('log', `Job ${submissionId} succeeded — confirmation: ${result.confirmation}`);
