@@ -11,28 +11,52 @@ function fmtDate(d) {
   return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-function Badge941({ status }) {
-  const map = {
-    pending:    ['badge-neutral',  'Pending'],
-    processing: ['badge-warning',  'Processing'],
-    submitted:  ['badge-success',  'Submitted'],
-    failed:     ['badge-error',    'Failed'],
-    dry_run:    ['badge-accent',   'Dry Run'],
-  };
-  const [cls, label] = map[status] || ['badge-neutral', status];
-  return <span className={`badge ${cls}`} title="Form 941 status" style={{ fontSize: 10 }}>941 {label}</span>;
-}
+// Single status line for one tax form — icon + label + amount + confirmation number
+function StatusLine({ form, status, amount, confirmation, submittedAt }) {
+  const isSubmitted  = status === 'submitted' || status === 'dry_run';
+  const isDryRun     = status === 'dry_run';
+  const isFailed     = status === 'failed';
+  const isProcessing = status === 'processing';
 
-function Badge940({ status, hasFUTA }) {
-  if (!hasFUTA) return null;
-  const map = {
-    pending:    ['badge-neutral',  'Pending'],
-    processing: ['badge-warning',  'Processing'],
-    submitted:  ['badge-success',  'Submitted'],
-    failed:     ['badge-error',    'Failed'],
-  };
-  const [cls, label] = map[status] || ['badge-neutral', 'Pending'];
-  return <span className={`badge ${cls}`} title="Form 940 FUTA status" style={{ fontSize: 10 }}>940 {label}</span>;
+  const iconBg    = isSubmitted ? '#10b981' : isFailed ? 'var(--error)' : isProcessing ? 'var(--warning)' : 'transparent';
+  const iconBdr   = isSubmitted ? '#10b981' : isFailed ? 'var(--error)' : isProcessing ? 'var(--warning)' : 'var(--border)';
+  const iconColor = (isSubmitted || isFailed) ? '#fff' : 'var(--text-muted)';
+  const icon      = isSubmitted ? '✓' : isFailed ? '✕' : isProcessing ? '…' : '·';
+
+  const labelColor = isSubmitted ? '#10b981' : isFailed ? 'var(--error)' : 'var(--text-muted)';
+  const labelText  = isSubmitted
+    ? (isDryRun ? 'Dry Run' : 'Filed')
+    : isFailed ? 'Failed' : isProcessing ? 'Processing' : 'Pending';
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 7, padding: '4px 0' }}>
+      <div style={{
+        width: 18, height: 18, borderRadius: '50%', flexShrink: 0, marginTop: 1,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 10, fontWeight: 800,
+        background: iconBg, border: `1.5px solid ${iconBdr}`, color: iconColor,
+      }}>
+        {icon}
+      </div>
+      <div>
+        <div style={{ fontSize: 12, lineHeight: 1.3 }}>
+          <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Form {form}</span>
+          <span style={{ color: labelColor, fontWeight: 600 }}> — {labelText}</span>
+          <span style={{ color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', marginLeft: 4, fontSize: 11 }}>{fmtAmt(amount)}</span>
+        </div>
+        {confirmation && (
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', marginTop: 2, wordBreak: 'break-all' }}>
+            Conf# {confirmation}
+          </div>
+        )}
+        {submittedAt && isSubmitted && !isDryRun && (
+          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>
+            {new Date(submittedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }
 
 async function downloadPDF(id, payPeriodEnd) {
@@ -204,7 +228,7 @@ export default function Paystubs() {
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)' }}>
-            {['Employee', 'Pay Period', 'Gross', '941 Deposit', 'FUTA (940)', 'SUI', '941 Status', '940 Status', ''].map((h) => (
+            {['Employee', 'Pay Period', 'Gross', '941 Deposit', 'FUTA (940)', 'SUI', 'Submission Status', ''].map((h) => (
               <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>{h}</th>
             ))}
           </tr>
@@ -239,13 +263,23 @@ export default function Paystubs() {
                 <td style={{ padding: '10px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: hasSUI ? 'var(--text-primary)' : 'var(--text-muted)' }}>
                   {hasSUI ? fmtAmt(stub.suta_tax) : '—'}
                 </td>
-                <td style={{ padding: '10px 12px' }}>
-                  <Badge941 status={stub.status} />
-                  {stub.eftps_confirmation && <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2, fontFamily: 'monospace' }}>{stub.eftps_confirmation.slice(0, 18)}…</div>}
-                </td>
-                <td style={{ padding: '10px 12px' }}>
-                  <Badge940 status={stub.status_940 || 'pending'} hasFUTA={hasFUTA} />
-                  {stub.eftps_940_confirmation && <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 2, fontFamily: 'monospace' }}>{stub.eftps_940_confirmation.slice(0, 18)}…</div>}
+                <td style={{ padding: '10px 12px', minWidth: 220 }}>
+                  <StatusLine
+                    form="941"
+                    status={stub.status}
+                    amount={stub.total_deposit}
+                    confirmation={stub.eftps_confirmation}
+                    submittedAt={stub.submitted_at}
+                  />
+                  {hasFUTA && (
+                    <StatusLine
+                      form="940"
+                      status={stub.status_940 || 'pending'}
+                      amount={stub.futa_tax}
+                      confirmation={stub.eftps_940_confirmation}
+                      submittedAt={stub.eftps_940_submitted_at}
+                    />
+                  )}
                 </td>
                 <td style={{ padding: '10px 12px', whiteSpace: 'nowrap' }}>
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>

@@ -75,6 +75,85 @@ function TaxPreview({ taxes, loading }) {
   );
 }
 
+function SubmissionCard({ form, label, code, detail, amount, isSubmitted, confirmation, submittedAt, onSubmit, submitting, anySubmitting }) {
+  const fmtSubmittedAt = submittedAt
+    ? new Date(submittedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
+    : null;
+
+  return (
+    <div style={{
+      border: `1.5px solid ${isSubmitted ? '#10b981' : 'var(--border)'}`,
+      borderRadius: 'var(--radius)',
+      overflow: 'hidden',
+      background: isSubmitted ? 'rgba(16,185,129,0.04)' : 'var(--bg-secondary)',
+    }}>
+      {/* Header row */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 16px', borderBottom: `1px solid ${isSubmitted ? 'rgba(16,185,129,0.2)' : 'var(--border-light)'}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {/* Status icon */}
+          <div style={{
+            width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: 12, fontWeight: 800,
+            background: isSubmitted ? '#10b981' : 'transparent',
+            border: `2px solid ${isSubmitted ? '#10b981' : 'var(--border)'}`,
+            color: isSubmitted ? '#fff' : 'var(--text-muted)',
+          }}>
+            {isSubmitted ? '✓' : '·'}
+          </div>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
+              Form {form} — {label}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+              EFTPS code {code} · {detail}
+            </div>
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 15, color: isSubmitted ? '#10b981' : 'var(--accent)' }}>
+            {amount}
+          </span>
+          <button
+            className={`btn btn-sm ${isSubmitted ? 'btn-secondary' : 'btn-primary'}`}
+            onClick={onSubmit}
+            disabled={anySubmitting || isSubmitted}
+            style={isSubmitted ? { opacity: 0.6, cursor: 'default' } : {}}
+          >
+            {submitting ? <span className="spinner" /> : isSubmitted ? '✓ Filed' : `Submit ${form}`}
+          </button>
+        </div>
+      </div>
+
+      {/* Confirmation panel — shown when submitted */}
+      {isSubmitted && confirmation && (
+        <div style={{ padding: '10px 16px', background: 'rgba(16,185,129,0.06)' }}>
+          <div style={{ fontSize: 11, color: '#10b981', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>
+            EFTPS Confirmation Number
+          </div>
+          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 15, fontWeight: 700, color: '#065f46', letterSpacing: '0.5px', wordBreak: 'break-all' }}>
+            {confirmation}
+          </div>
+          {fmtSubmittedAt && (
+            <div style={{ fontSize: 11, color: '#10b981', marginTop: 4 }}>
+              Filed {fmtSubmittedAt}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Pending prompt */}
+      {!isSubmitted && (
+        <div style={{ padding: '8px 16px', background: 'var(--bg-primary)' }}>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+            Not yet submitted — click "Submit {form}" to file this deposit with EFTPS.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function PaystubEdit() {
   const { id: clientId, stubId } = useParams();
   const navigate = useNavigate();
@@ -442,59 +521,57 @@ export default function PaystubEdit() {
               </div>
             </div>
 
-            {/* Submit buttons */}
+            {/* Submit to EFTPS */}
             <div className="card">
-              <div className="card-header"><span className="card-title">Submit to EFTPS</span></div>
+              <div className="card-header"><span className="card-title">EFTPS Submissions</span></div>
               <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {/* 941 */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: is941Submitted ? 'var(--bg-primary)' : 'var(--bg-secondary)' }}>
-                  <div>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>Form 941 — Federal Payroll Taxes</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                      FIT + SS + Medicare · EFTPS code 94105 · {is941Submitted ? <span style={{ color: 'var(--success)' }}>✓ Submitted</span> : <span style={{ color: 'var(--warning)' }}>Pending</span>}
-                    </div>
-                    {stub?.eftps_confirmation && <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 2 }}>Conf: {stub.eftps_confirmation}</div>}
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--accent)', fontSize: 15 }}>{fmtAmt(taxes?.totalDeposit ?? stub?.total_deposit)}</span>
-                    <button className="btn btn-primary btn-sm" onClick={() => handleSubmit('941')} disabled={submitting !== null || is941Submitted}>
-                      {submitting === '941' ? <span className="spinner" /> : is941Submitted ? 'Submitted' : 'Submit 941'}
-                    </button>
-                  </div>
-                </div>
 
-                {/* 940 */}
+                {/* Form 941 */}
+                <SubmissionCard
+                  form="941"
+                  label="Federal Payroll Taxes"
+                  code="94105"
+                  detail="FIT + SS + Medicare (quarterly)"
+                  amount={fmtAmt(taxes?.totalDeposit ?? stub?.total_deposit)}
+                  isSubmitted={is941Submitted}
+                  confirmation={stub?.eftps_confirmation}
+                  submittedAt={stub?.submitted_at}
+                  onSubmit={() => handleSubmit('941')}
+                  submitting={submitting === '941'}
+                  anySubmitting={submitting !== null}
+                />
+
+                {/* Form 940 */}
                 {hasFUTA && (
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: is940Submitted ? 'var(--bg-primary)' : 'var(--bg-secondary)' }}>
-                    <div>
-                      <div style={{ fontWeight: 600, fontSize: 13 }}>Form 940 — FUTA Tax</div>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                        Federal Unemployment · EFTPS code 94007 · {is940Submitted ? <span style={{ color: 'var(--success)' }}>✓ Submitted</span> : <span style={{ color: 'var(--warning)' }}>Pending</span>}
-                      </div>
-                      {stub?.eftps_940_confirmation && <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'monospace', marginTop: 2 }}>Conf: {stub.eftps_940_confirmation}</div>}
+                  <SubmissionCard
+                    form="940"
+                    label="FUTA Tax"
+                    code="94007"
+                    detail="Federal Unemployment (annual)"
+                    amount={fmtAmt(taxes?.futaTax ?? stub?.futa_tax)}
+                    isSubmitted={is940Submitted}
+                    confirmation={stub?.eftps_940_confirmation}
+                    submittedAt={stub?.eftps_940_submitted_at}
+                    onSubmit={() => handleSubmit('940')}
+                    submitting={submitting === '940'}
+                    anySubmitting={submitting !== null}
+                  />
+                )}
+
+                {/* SUI */}
+                {((taxes?.sutaTax || stub?.suta_tax) || 0) > 0 && (
+                  <div style={{ padding: '12px 16px', border: '1px solid #fde68a', borderRadius: 'var(--radius)', background: '#fefce8' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: '#fff', flexShrink: 0 }}>!</div>
+                      <span style={{ fontWeight: 700, fontSize: 13, color: '#92400e' }}>SUI — State Unemployment Insurance</span>
+                      <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 14, color: '#92400e', marginLeft: 'auto' }}>{fmtAmt(taxes?.sutaTax ?? stub?.suta_tax)}</span>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 15 }}>{fmtAmt(taxes?.futaTax ?? stub?.futa_tax)}</span>
-                      <button className="btn btn-secondary btn-sm" onClick={() => handleSubmit('940')} disabled={submitting !== null || is940Submitted}>
-                        {submitting === '940' ? <span className="spinner" /> : is940Submitted ? 'Submitted' : 'Submit 940'}
-                      </button>
+                    <div style={{ fontSize: 12, color: '#78350f', lineHeight: 1.6 }}>
+                      <strong>Not submitted via EFTPS.</strong> Your {stub?.work_state || workState} SUI is due through your state unemployment agency (TWC in TX, EDD in CA, etc.). File directly through their online portal.
                     </div>
                   </div>
                 )}
 
-                {/* SUI info */}
-                {((taxes?.sutaTax || stub?.suta_tax) || 0) > 0 && (
-                  <div style={{ padding: '12px 16px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--bg-primary)' }}>
-                    <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>SUI — State Unemployment Insurance</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                      <strong style={{ color: 'var(--warning)' }}>SUI is NOT submitted via EFTPS.</strong>{' '}
-                      Your {stub?.work_state || workState} SUI of{' '}
-                      <strong>{fmtAmt(taxes?.sutaTax ?? stub?.suta_tax)}</strong>{' '}
-                      is due through your state's own unemployment agency (TWC in TX, EDD in CA, etc.).
-                      File and pay directly through your state agency's online portal.
-                    </div>
-                  </div>
-                )}
               </div>
             </div>
 
