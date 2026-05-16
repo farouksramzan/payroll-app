@@ -44,6 +44,33 @@ router.get('/', (req, res) => {
   res.json(attachLineItems(db, db.prepare(sql).all(...params)));
 });
 
+// ── GET /api/paystubs/pay-periods?clientId=X ─────────────────────────────────
+router.get('/pay-periods', (req, res) => {
+  const db = getDb();
+  const { clientId } = req.query;
+  if (!clientId) return res.status(400).json({ error: 'clientId required' });
+  const client = db.prepare('SELECT id FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+
+  const periods = db.prepare(`
+    SELECT
+      pay_period_start, pay_period_end, tax_year, tax_quarter,
+      COUNT(*)          AS employee_count,
+      SUM(gross_wages)  AS total_gross,
+      SUM(total_deposit) AS total_deposit_941,
+      SUM(futa_tax)     AS total_futa,
+      SUM(net_pay)      AS total_net,
+      MIN(check_number) AS first_check,
+      MAX(check_number) AS last_check
+    FROM paystubs
+    WHERE client_id = ?
+    GROUP BY pay_period_start, pay_period_end
+    ORDER BY pay_period_end DESC
+  `).all(clientId);
+
+  res.json(periods);
+});
+
 // ── GET /api/paystubs/:id ─────────────────────────────────────────────────────
 router.get('/:id', (req, res) => {
   const db = getDb();
@@ -121,65 +148,63 @@ router.post('/', (req, res) => {
     if (emp) employeeName = `${emp.first_name} ${emp.last_name}`;
   }
 
-  const result = db.prepare(`
-    INSERT INTO paystubs (
-      client_id, employee_id, employee_name,
-      pay_period_start, pay_period_end, settlement_date, pay_frequency,
-      filing_status, step2_checkbox, step3_credits, work_state,
-      gross_wages, fit_withholding, employee_ss, employee_medicare,
-      additional_medicare, employer_ss, employer_medicare,
-      state_income_tax, futa_tax, suta_tax,
-      total_deposit, net_pay, ytd_wages_before,
-      tax_year, tax_quarter, notes
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-  `).run(
-    clientId, employeeId || null, employeeName,
-    payPeriodStart, payPeriodEnd, settlementDate || null, payFrequency,
-    filingStatus || 'single', step2Checkbox ? 1 : 0, step3Credits, effectiveWorkState,
-    taxes.grossWages, taxes.fitWithholding, taxes.employeeSS, taxes.employeeMedicare,
-    taxes.additionalMedicare || 0, taxes.employerSS, taxes.employerMedicare,
-    taxes.stateIncomeTax, taxes.futaTax, taxes.sutaTax,
-    taxes.totalDeposit, taxes.netPay, ytdBefore,
-    year, quarter, notes || null,
-  );
+  // Atomically assign a check number and write all rows
+  const { stubId } = db.transaction(() => {
+    const clientRow = db.prepare('SELECT next_check_number FROM clients WHERE id = ?').get(clientId);
+    const checkNum  = clientRow.next_check_number || 1001;
+    db.prepare('UPDATE clients SET next_check_number = next_check_number + 1 WHERE id = ?').run(clientId);
 
-  const stubId = result.lastInsertRowid;
-
-  if (items) {
-    const insertItem = db.prepare(`
-      INSERT INTO paystub_line_items (paystub_id, pay_type, description, hours, rate, amount)
-      VALUES (?,?,?,?,?,?)
-    `);
-    for (const li of items) {
-      insertItem.run(
-        stubId,
-        li.payType || 'regular',
-        li.description || null,
-        li.hours ? parseFloat(li.hours) : null,
-        li.rate  ? parseFloat(li.rate)  : null,
-        parseFloat(li.amount || 0),
-      );
-    }
-  }
-
-  if (employeeId) {
-    db.prepare(`
-      INSERT INTO employee_ytd_wages (employee_id, tax_year, ytd_gross, ytd_ss_wages, ytd_futa_wages, ytd_suta_wages)
-      VALUES (?,?,?,?,?,?)
-      ON CONFLICT(employee_id, tax_year) DO UPDATE SET
-        ytd_gross      = ytd_gross      + excluded.ytd_gross,
-        ytd_ss_wages   = ytd_ss_wages   + excluded.ytd_ss_wages,
-        ytd_futa_wages = ytd_futa_wages + excluded.ytd_futa_wages,
-        ytd_suta_wages = ytd_suta_wages + excluded.ytd_suta_wages,
-        updated_at     = CURRENT_TIMESTAMP
+    const r = db.prepare(`
+      INSERT INTO paystubs (
+        client_id, employee_id, employee_name,
+        pay_period_start, pay_period_end, settlement_date, pay_frequency,
+        filing_status, step2_checkbox, step3_credits, work_state,
+        gross_wages, fit_withholding, employee_ss, employee_medicare,
+        additional_medicare, employer_ss, employer_medicare,
+        state_income_tax, futa_tax, suta_tax,
+        total_deposit, net_pay, ytd_wages_before,
+        tax_year, tax_quarter, notes, check_number
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(
-      employeeId, year,
-      computedGross,
-      taxes.ssWagesThisPeriod,
-      taxes.futaTaxable,
-      taxes.sutaTaxable,
+      clientId, employeeId || null, employeeName,
+      payPeriodStart, payPeriodEnd, settlementDate || null, payFrequency,
+      filingStatus || 'single', step2Checkbox ? 1 : 0, step3Credits, effectiveWorkState,
+      taxes.grossWages, taxes.fitWithholding, taxes.employeeSS, taxes.employeeMedicare,
+      taxes.additionalMedicare || 0, taxes.employerSS, taxes.employerMedicare,
+      taxes.stateIncomeTax, taxes.futaTax, taxes.sutaTax,
+      taxes.totalDeposit, taxes.netPay, ytdBefore,
+      year, quarter, notes || null, checkNum,
     );
-  }
+
+    const sid = r.lastInsertRowid;
+
+    if (items) {
+      const insertItem = db.prepare(`
+        INSERT INTO paystub_line_items (paystub_id, pay_type, description, hours, rate, amount)
+        VALUES (?,?,?,?,?,?)
+      `);
+      for (const li of items) {
+        insertItem.run(sid, li.payType || 'regular', li.description || null,
+          li.hours ? parseFloat(li.hours) : null, li.rate ? parseFloat(li.rate) : null,
+          parseFloat(li.amount || 0));
+      }
+    }
+
+    if (employeeId) {
+      db.prepare(`
+        INSERT INTO employee_ytd_wages (employee_id, tax_year, ytd_gross, ytd_ss_wages, ytd_futa_wages, ytd_suta_wages)
+        VALUES (?,?,?,?,?,?)
+        ON CONFLICT(employee_id, tax_year) DO UPDATE SET
+          ytd_gross      = ytd_gross      + excluded.ytd_gross,
+          ytd_ss_wages   = ytd_ss_wages   + excluded.ytd_ss_wages,
+          ytd_futa_wages = ytd_futa_wages + excluded.ytd_futa_wages,
+          ytd_suta_wages = ytd_suta_wages + excluded.ytd_suta_wages,
+          updated_at     = CURRENT_TIMESTAMP
+      `).run(employeeId, year, computedGross, taxes.ssWagesThisPeriod, taxes.futaTaxable, taxes.sutaTaxable);
+    }
+
+    return { stubId: sid };
+  })();
 
   const stub = db.prepare('SELECT * FROM paystubs WHERE id = ?').get(stubId);
   const lineItemsOut = db.prepare('SELECT * FROM paystub_line_items WHERE paystub_id = ?').all(stubId);
@@ -440,6 +465,139 @@ router.post('/:id/submit', async (req, res) => {
   }
 });
 
+// ── POST /api/paystubs/payroll-run — bulk payroll for all employees ───────────
+function advanceDate(dateStr, frequency) {
+  const d = new Date(dateStr + 'T00:00:00');
+  switch (frequency) {
+    case 'weekly':      d.setDate(d.getDate() + 7);  break;
+    case 'biweekly':    d.setDate(d.getDate() + 14); break;
+    case 'semimonthly': d.setDate(d.getDate() + 15); break;
+    case 'monthly':     d.setMonth(d.getMonth() + 1); break;
+    default:            d.setDate(d.getDate() + 14);
+  }
+  return d.toISOString().slice(0, 10);
+}
+
+router.post('/payroll-run', (req, res) => {
+  const db = getDb();
+  const { clientId, payPeriodStart, payPeriodEnd, settlementDate, employees } = req.body;
+  if (!clientId || !payPeriodStart || !payPeriodEnd || !Array.isArray(employees)) {
+    return res.status(400).json({ error: 'clientId, payPeriodStart, payPeriodEnd, employees required' });
+  }
+
+  const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+
+  const runId = `run-${Date.now()}`;
+  const { quarter, year } = getTaxPeriod(payPeriodEnd);
+
+  const results = db.transaction(() => {
+    const created = [];
+
+    const insertStub = db.prepare(`
+      INSERT INTO paystubs (
+        client_id, employee_id, employee_name,
+        pay_period_start, pay_period_end, settlement_date, pay_frequency,
+        filing_status, step2_checkbox, step3_credits, work_state,
+        gross_wages, fit_withholding, employee_ss, employee_medicare,
+        additional_medicare, employer_ss, employer_medicare,
+        state_income_tax, futa_tax, suta_tax,
+        total_deposit, net_pay, ytd_wages_before,
+        tax_year, tax_quarter, check_number, payroll_run_id
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `);
+    const insertItem = db.prepare(`
+      INSERT INTO paystub_line_items (paystub_id, pay_type, description, hours, rate, amount)
+      VALUES (?,?,?,?,?,?)
+    `);
+    const upsertYTD = db.prepare(`
+      INSERT INTO employee_ytd_wages (employee_id, tax_year, ytd_gross, ytd_ss_wages, ytd_futa_wages, ytd_suta_wages)
+      VALUES (?,?,?,?,?,?)
+      ON CONFLICT(employee_id, tax_year) DO UPDATE SET
+        ytd_gross      = ytd_gross      + excluded.ytd_gross,
+        ytd_ss_wages   = ytd_ss_wages   + excluded.ytd_ss_wages,
+        ytd_futa_wages = ytd_futa_wages + excluded.ytd_futa_wages,
+        ytd_suta_wages = ytd_suta_wages + excluded.ytd_suta_wages,
+        updated_at     = CURRENT_TIMESTAMP
+    `);
+
+    for (const empData of employees) {
+      if (empData.skip) continue;
+
+      const emp = db.prepare('SELECT * FROM employees WHERE id = ? AND client_id = ?')
+        .get(empData.employeeId, clientId);
+      if (!emp) continue;
+
+      const lineItems = empData.lineItems || [];
+      const computedGross = lineItems.reduce((s, li) => s + parseFloat(li.amount || 0), 0);
+      if (computedGross <= 0) continue;
+
+      const effectiveWorkState = (emp.work_state || emp.state || client.state || 'TX').toUpperCase();
+      const ytdBefore = parseFloat(empData.ytdGross || 0);
+
+      const taxes = calculateWithholding({
+        grossWages:    computedGross,
+        payFrequency:  emp.pay_frequency || 'biweekly',
+        filingStatus:  emp.filing_status || 'single',
+        step2Checkbox: !!emp.step2_checkbox,
+        step3Children: emp.step3_children || 0,
+        step3Other:    emp.step3_other    || 0,
+        step4a: emp.step4a || 0, step4b: emp.step4b || 0, step4c: emp.step4c || 0,
+        workState: effectiveWorkState,
+        ytdGross:  ytdBefore,
+        sutaRate:  client.suta_rate || null,
+      });
+
+      // Atomically get + increment check number inside the same transaction
+      const checkNum = db.prepare('SELECT next_check_number FROM clients WHERE id = ?').get(clientId).next_check_number || 1001;
+      db.prepare('UPDATE clients SET next_check_number = next_check_number + 1 WHERE id = ?').run(clientId);
+
+      const step3Credits = (emp.step3_children || 0) * 2200 + (emp.step3_other || 0) * 500;
+      const employeeName = `${emp.first_name} ${emp.last_name}`;
+
+      const r = insertStub.run(
+        clientId, emp.id, employeeName,
+        payPeriodStart, payPeriodEnd, settlementDate || null, emp.pay_frequency || 'biweekly',
+        emp.filing_status || 'single', emp.step2_checkbox ? 1 : 0, step3Credits, effectiveWorkState,
+        taxes.grossWages, taxes.fitWithholding, taxes.employeeSS, taxes.employeeMedicare,
+        taxes.additionalMedicare || 0, taxes.employerSS, taxes.employerMedicare,
+        taxes.stateIncomeTax || 0, taxes.futaTax || 0, taxes.sutaTax || 0,
+        taxes.totalDeposit, taxes.netPay, ytdBefore,
+        year, quarter, checkNum, runId,
+      );
+
+      const stubId = r.lastInsertRowid;
+      for (const li of lineItems) {
+        insertItem.run(stubId, li.payType || 'regular', li.description || null,
+          li.hours ? parseFloat(li.hours) : null, li.rate ? parseFloat(li.rate) : null,
+          parseFloat(li.amount || 0));
+      }
+
+      upsertYTD.run(emp.id, year, computedGross,
+        taxes.ssWagesThisPeriod || 0, taxes.futaTaxable || 0, taxes.sutaTaxable || 0);
+
+      created.push({
+        id: stubId, employeeId: emp.id, employeeName, checkNumber: checkNum,
+        grossWages: taxes.grossWages, netPay: taxes.netPay,
+        totalDeposit: taxes.totalDeposit, fitWithholding: taxes.fitWithholding,
+        employeeSS: taxes.employeeSS, employeeMedicare: taxes.employeeMedicare,
+        employerSS: taxes.employerSS, employerMedicare: taxes.employerMedicare,
+        futaTax: taxes.futaTax || 0, sutaTax: taxes.sutaTax || 0,
+      });
+    }
+
+    // Auto-advance the client's next payroll date
+    if (client.next_payroll_date && created.length > 0) {
+      const next = advanceDate(client.next_payroll_date, client.payroll_frequency || 'biweekly');
+      db.prepare('UPDATE clients SET next_payroll_date = ? WHERE id = ?').run(next, clientId);
+    }
+
+    return created;
+  })();
+
+  res.json({ runId, count: results.length, paystubs: results });
+});
+
 // ── POST /api/paystubs/batch-submit ──────────────────────────────────────────
 // taxType '941': aggregate FIT+SS+Medicare (optionally filtered by taxYear+taxQuarter)
 // taxType '940': aggregate FUTA for the year (taxYear required)
@@ -661,7 +819,7 @@ function generatePaystubPDF(stub, lineItems, ytd, stream) {
   const col = W / 4;
   kv('Pay Period', `${fmtDate(stub.pay_period_start)} – ${fmtDate(stub.pay_period_end)}`, 40, y, col * 2 - 10);
   kv('Pay Date',  stub.settlement_date ? fmtDate(stub.settlement_date) : fmtDate(stub.pay_period_end), 40 + col * 2, y);
-  kv('Period',   `Q${stub.tax_quarter || '—'} ${stub.tax_year || ''}`, 40 + col * 3, y);
+  kv('Check #',  stub.check_number ? `#${stub.check_number}` : `Q${stub.tax_quarter || '—'} ${stub.tax_year || ''}`, 40 + col * 3, y);
 
   y += 32;
   doc.rect(40, y, W, 1).fill(BORDER);

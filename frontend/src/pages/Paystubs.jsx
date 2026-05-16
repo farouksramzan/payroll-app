@@ -228,7 +228,7 @@ export default function Paystubs() {
       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
         <thead>
           <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)' }}>
-            {['Employee', 'Pay Period', 'Gross', '941 Deposit', 'FUTA (940)', 'SUI', 'Submission Status', ''].map((h) => (
+            {['Check #', 'Employee', 'Pay Period', 'Gross', '941 Deposit', 'FUTA (940)', 'SUI', 'Submission Status', ''].map((h) => (
               <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>{h}</th>
             ))}
           </tr>
@@ -245,6 +245,9 @@ export default function Paystubs() {
 
             return (
               <tr key={stub.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
+                <td style={{ padding: '10px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--accent)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                  {stub.check_number ? `#${stub.check_number}` : '—'}
+                </td>
                 <td style={{ padding: '10px 12px' }}>
                   <div style={{ fontWeight: 600, fontSize: 13 }}>
                     {stub.employee_name || (stub.first_name ? `${stub.first_name} ${stub.last_name}` : '—')}

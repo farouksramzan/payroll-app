@@ -342,6 +342,7 @@ export default function PaystubEdit() {
             <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
               {[stub?.first_name, stub?.last_name].filter(Boolean).join(' ') || client?.businessName}
               {stub?.pay_period_start && ` — ${stub.pay_period_start} to ${stub.pay_period_end}`}
+              {stub?.check_number && <span style={{ marginLeft: 10, fontFamily: 'JetBrains Mono, monospace', color: 'var(--accent)', fontWeight: 600 }}>Check #{stub.check_number}</span>}
             </p>
           </div>
           <button className="btn btn-secondary" onClick={() => navigate(-1)}>← Back</button>

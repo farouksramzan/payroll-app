@@ -21,6 +21,7 @@ const EMPTY = {
   depositSchedule: 'monthly', sutaRate: '2.7',
   bankAccountNumber: '', bankRoutingNumber: '', bankAccountType: 'checking',
   contactName: '', contactEmail: '', contactPhone: '',
+  payrollFrequency: 'biweekly', nextPayrollDate: '', nextCheckNumber: '1001',
 };
 
 export default function ClientForm() {
@@ -51,6 +52,9 @@ export default function ClientForm() {
         contactName: c.contactName || '',
         contactEmail: c.contactEmail || '',
         contactPhone: c.contactPhone || '',
+        payrollFrequency: c.payrollFrequency || 'biweekly',
+        nextPayrollDate: c.nextPayrollDate || '',
+        nextCheckNumber: c.nextCheckNumber != null ? String(c.nextCheckNumber) : '1001',
       });
     }).catch((err) => setApiError(err.message)).finally(() => setLoading(false));
   }, [id, isEdit]);
@@ -243,6 +247,34 @@ export default function ClientForm() {
                 <option value="savings">Savings</option>
               </select>
             </div>
+
+            <p className="form-section-title">Payroll Schedule</p>
+
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">Payroll Frequency</label>
+                <select className="form-select" value={form.payrollFrequency} onChange={set('payrollFrequency')}>
+                  <option value="weekly">Weekly</option>
+                  <option value="biweekly">Bi-weekly</option>
+                  <option value="semimonthly">Semi-monthly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+                <p className="form-hint">How often employees are paid. Used for the payroll calendar and tax calculations.</p>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Next Payroll Date</label>
+                <input className="form-input" type="date" value={form.nextPayrollDate} onChange={set('nextPayrollDate')} />
+                <p className="form-hint">Shown on the dashboard as a reminder. Auto-advances after each payroll run.</p>
+              </div>
+            </div>
+
+            {!isEdit && (
+              <div className="form-group" style={{ maxWidth: 200 }}>
+                <label className="form-label">Starting Check Number</label>
+                <input className="form-input mono" type="number" min="1" step="1" value={form.nextCheckNumber} onChange={set('nextCheckNumber')} />
+                <p className="form-hint">Sequential check numbers are assigned automatically from this starting value.</p>
+              </div>
+            )}
 
             <p className="form-section-title">Contact Information</p>
 

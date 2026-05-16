@@ -14,6 +14,7 @@ import Reports from './pages/Reports';
 import Paystubs from './pages/Paystubs';
 import PaystubEdit from './pages/PaystubEdit';
 import EmployeeDetail from './pages/EmployeeDetail';
+import PayrollRun from './pages/PayrollRun';
 
 export default function App() {
   return (
@@ -33,6 +34,7 @@ export default function App() {
           <Route path="clients/:id" element={<ClientDetail />} />
           <Route path="clients/:id/edit" element={<ClientForm />} />
           <Route path="clients/:id/payroll/new" element={<PayrollEntry />} />
+          <Route path="clients/:id/payroll/run" element={<PayrollRun />} />
           <Route path="clients/:id/submissions" element={<SubmissionHistory />} />
           <Route path="clients/:id/employees" element={<Employees />} />
           <Route path="clients/:id/employees/new" element={<EmployeeForm />} />

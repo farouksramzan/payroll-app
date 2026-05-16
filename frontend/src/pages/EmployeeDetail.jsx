@@ -183,7 +183,7 @@ export default function EmployeeDetail() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)' }}>
-                  {['Pay Period', 'Gross Pay', 'Net Pay', '941 Status', '940 Status'].map((h) => (
+                  {['Check #', 'Pay Period', 'Gross Pay', 'Net Pay', '941 Status', '940 Status'].map((h) => (
                     <th key={h} style={{ padding: '11px 18px', textAlign: 'left', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
                   ))}
                   <th style={{ padding: '11px 18px' }} />
@@ -198,6 +198,9 @@ export default function EmployeeDetail() {
                     onMouseEnter={(e) => { e.currentTarget.style.filter = 'brightness(0.96)'; }}
                     onMouseLeave={(e) => { e.currentTarget.style.filter = 'none'; }}
                   >
+                    <td style={{ padding: '14px 18px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>
+                      {stub.check_number ? `#${stub.check_number}` : '—'}
+                    </td>
                     <td className="mono" style={{ padding: '14px 18px', fontSize: 12 }}>
                       {stub.pay_period_start} – {stub.pay_period_end}
                     </td>

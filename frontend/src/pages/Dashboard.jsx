@@ -18,6 +18,18 @@ function statusBadge(status, nextDue) {
   return <span className="badge badge-neutral">Pending</span>;
 }
 
+function payrollDueBadge(nextPayrollDate) {
+  if (!nextPayrollDate) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const due = new Date(nextPayrollDate + 'T00:00:00');
+  const diffDays = Math.ceil((due - today) / (1000 * 60 * 60 * 24));
+  if (diffDays < 0) return <span className="badge badge-error">Payroll Overdue</span>;
+  if (diffDays === 0) return <span className="badge badge-warning">Payroll Due Today</span>;
+  if (diffDays <= 3) return <span className="badge badge-warning">Payroll Due in {diffDays}d</span>;
+  return null;
+}
+
 function fmt(date) {
   if (!date) return '—';
   return new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
@@ -122,7 +134,10 @@ export default function Dashboard() {
                     <div className="client-card-name">{client.businessName}</div>
                     <div className="client-card-ein">EIN: {client.ein}</div>
                   </div>
-                  {statusBadge(client.lastSubmissionStatus, client.nextDueDate)}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-end' }}>
+                    {statusBadge(client.lastSubmissionStatus, client.nextDueDate)}
+                    {payrollDueBadge(client.nextPayrollDate)}
+                  </div>
                 </div>
 
                 <div className="client-card-meta">
@@ -136,6 +151,15 @@ export default function Dashboard() {
                     <span className="client-card-meta-label">Next due</span>
                     <span className="client-card-meta-value">{fmt(client.nextDueDate)}</span>
                   </div>
+                  {client.nextPayrollDate && (
+                    <div className="client-card-meta-row">
+                      <span className="client-card-meta-label">Next payroll</span>
+                      <span className="client-card-meta-value" style={{ textTransform: 'capitalize' }}>
+                        {fmt(client.nextPayrollDate)}
+                        {client.payrollFrequency && <span style={{ color: 'var(--text-muted)', fontSize: 11, marginLeft: 4 }}>({client.payrollFrequency})</span>}
+                      </span>
+                    </div>
+                  )}
                   {client.lastSubmissionDate && (
                     <div className="client-card-meta-row">
                       <span className="client-card-meta-label">Last submission</span>
@@ -145,14 +169,14 @@ export default function Dashboard() {
                 </div>
 
                 <div className="client-card-actions">
-                  <Link to={`/clients/${client.id}/employees`} className="btn btn-primary btn-sm" style={{ flex: 1, justifyContent: 'center' }}>
+                  <Link to={`/clients/${client.id}/payroll/run`} className="btn btn-primary btn-sm" style={{ flex: 1, justifyContent: 'center' }}>
+                    Run Payroll
+                  </Link>
+                  <Link to={`/clients/${client.id}/employees`} className="btn btn-secondary btn-sm">
                     Employees
                   </Link>
                   <Link to={`/clients/${client.id}`} className="btn btn-secondary btn-sm">
                     Details
-                  </Link>
-                  <Link to={`/clients/${client.id}/submissions`} className="btn btn-secondary btn-sm">
-                    History
                   </Link>
                   <button
                     className="btn btn-danger btn-sm"

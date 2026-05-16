@@ -26,6 +26,9 @@ function sanitizeClient(client, includeSecrets = false) {
     hasBatchProviderPin: !!client.batch_provider_pin_encrypted,
     hasBankAccount: !!client.bank_account_number_encrypted,
     hasInternetPassword: !!client.eftps_internet_password_encrypted,
+    payrollFrequency: client.payroll_frequency || 'biweekly',
+    nextPayrollDate:  client.next_payroll_date  || null,
+    nextCheckNumber:  client.next_check_number  || 1001,
   };
   if (includeSecrets) {
     out.batchProviderPin = decrypt(client.batch_provider_pin_encrypted);
@@ -49,9 +52,11 @@ router.get('/', (req, res) => {
     const nextDue = calcNextDueDate(c.deposit_schedule, lastSub?.pay_period_end);
     return {
       ...sanitizeClient(c),
-      nextDueDate: nextDue,
+      nextDueDate:          nextDue,
+      nextPayrollDate:      c.next_payroll_date  || null,
+      payrollFrequency:     c.payroll_frequency  || 'biweekly',
       lastSubmissionStatus: lastSub?.eftps_status || null,
-      lastSubmissionDate: lastSub?.created_at || null,
+      lastSubmissionDate:   lastSub?.created_at   || null,
     };
   });
 
@@ -70,7 +75,8 @@ router.get('/:id', (req, res) => {
 router.post('/', (req, res) => {
   const { businessName, ein, state, bankAccountNumber, bankRoutingNumber, bankAccountType, batchProviderPin,
     eftpsInternetPassword, eftpsEnrollmentNumber, depositSchedule, sutaRate,
-    contactName, contactEmail, contactPhone } = req.body;
+    contactName, contactEmail, contactPhone,
+    payrollFrequency, nextPayrollDate, nextCheckNumber } = req.body;
 
   if (!businessName || !ein || !batchProviderPin) {
     return res.status(400).json({ error: 'Business name, EIN, and Batch Provider PIN are required' });
@@ -86,8 +92,9 @@ router.post('/', (req, res) => {
   const result = db.prepare(`
     INSERT INTO clients (user_id, business_name, ein, state, bank_account_number_encrypted, bank_routing_number,
       bank_account_type, batch_provider_pin_encrypted, eftps_internet_password_encrypted, eftps_enrollment_number,
-      deposit_schedule, suta_rate, contact_name, contact_email, contact_phone)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      deposit_schedule, suta_rate, contact_name, contact_email, contact_phone,
+      payroll_frequency, next_payroll_date, next_check_number)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     req.user.id,
     businessName.trim(),
@@ -104,6 +111,9 @@ router.post('/', (req, res) => {
     contactName || null,
     contactEmail || null,
     contactPhone || null,
+    payrollFrequency || 'biweekly',
+    nextPayrollDate   || null,
+    nextCheckNumber   ? parseInt(nextCheckNumber, 10) : 1001,
   );
 
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(result.lastInsertRowid);
@@ -118,7 +128,8 @@ router.put('/:id', (req, res) => {
 
   const { businessName, ein, state, bankAccountNumber, bankRoutingNumber, bankAccountType, batchProviderPin,
     eftpsInternetPassword, eftpsEnrollmentNumber, depositSchedule, sutaRate,
-    contactName, contactEmail, contactPhone } = req.body;
+    contactName, contactEmail, contactPhone,
+    payrollFrequency, nextPayrollDate } = req.body;
 
   if (ein && !/^\d{2}-?\d{7}$/.test(ein)) return res.status(400).json({ error: 'EIN must be in format XX-XXXXXXX' });
   if (batchProviderPin && !/^\d{4}$/.test(batchProviderPin)) return res.status(400).json({ error: 'Batch Provider PIN must be exactly 4 digits' });
@@ -139,6 +150,8 @@ router.put('/:id', (req, res) => {
       contact_name = ?,
       contact_email = ?,
       contact_phone = ?,
+      payroll_frequency = ?,
+      next_payroll_date = ?,
       updated_at = CURRENT_TIMESTAMP
     WHERE id = ? AND user_id = ?
   `).run(
@@ -156,6 +169,8 @@ router.put('/:id', (req, res) => {
     contactName !== undefined ? contactName : existing.contact_name,
     contactEmail !== undefined ? contactEmail : existing.contact_email,
     contactPhone !== undefined ? contactPhone : existing.contact_phone,
+    payrollFrequency || existing.payroll_frequency || 'biweekly',
+    nextPayrollDate  !== undefined ? (nextPayrollDate || null) : existing.next_payroll_date,
     req.params.id,
     req.user.id,
   );

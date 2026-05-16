@@ -281,6 +281,19 @@ function migrate() {
     { name: 'eftps_940_confirmation', def: 'TEXT' },
     { name: 'eftps_940_submitted_at', def: 'TEXT' },
   ]);
+
+  // payroll schedule + sequential check numbers on clients
+  addCols('clients', [
+    { name: 'payroll_frequency',  def: "TEXT DEFAULT 'biweekly'" },
+    { name: 'next_payroll_date',  def: 'TEXT' },
+    { name: 'next_check_number',  def: 'INTEGER DEFAULT 1001' },
+  ]);
+
+  // check number + payroll run grouping on paystubs
+  addCols('paystubs', [
+    { name: 'check_number',   def: 'INTEGER' },
+    { name: 'payroll_run_id', def: 'TEXT' },
+  ]);
 }
 
 function addCols(table, cols) {
