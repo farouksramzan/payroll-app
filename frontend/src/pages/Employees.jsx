@@ -89,7 +89,9 @@ export default function Employees() {
                 {employees.map((emp) => (
                   <tr key={emp.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
                     <td style={{ padding: '12px 16px' }}>
-                      <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: 14 }}>{emp.fullName}</div>
+                      <Link to={`/clients/${id}/employees/${emp.id}`} style={{ textDecoration: 'none' }}>
+                        <div style={{ fontWeight: 600, color: 'var(--accent)', fontSize: 14 }}>{emp.fullName}</div>
+                      </Link>
                       {emp.hasSSN && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>SSN on file</div>}
                     </td>
                     <td style={{ padding: '12px 16px', fontSize: 13, fontFamily: 'JetBrains Mono, monospace' }}>{emp.workState || '—'}</td>

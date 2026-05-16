@@ -35,6 +35,22 @@ router.get('/', (req, res) => {
   res.json(rows.map((e) => sanitize(e)));
 });
 
+// GET /api/employees/ytd-batch?clientId=X&year=YYYY
+router.get('/ytd-batch', (req, res) => {
+  const db = getDb();
+  const { clientId } = req.query;
+  if (!clientId) return res.status(400).json({ error: 'clientId required' });
+  const client = db.prepare('SELECT id FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+  const year = parseInt(req.query.year || new Date().getFullYear(), 10);
+  const rows = db.prepare(`
+    SELECT y.* FROM employee_ytd_wages y
+    JOIN employees e ON y.employee_id = e.id
+    WHERE e.client_id = ? AND y.tax_year = ?
+  `).all(clientId, year);
+  res.json(rows);
+});
+
 // GET /api/employees/:id
 router.get('/:id', (req, res) => {
   const db = getDb();

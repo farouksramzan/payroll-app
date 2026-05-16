@@ -22,24 +22,26 @@ function attachLineItems(db, stubs) {
   return Array.isArray(stubs) ? stubs.map(attach) : attach(stubs);
 }
 
-// ── GET /api/paystubs?clientId=X ──────────────────────────────────────────────
+// ── GET /api/paystubs?clientId=X[&employeeId=Y] ───────────────────────────────
 router.get('/', (req, res) => {
   const db = getDb();
-  const { clientId } = req.query;
+  const { clientId, employeeId } = req.query;
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
 
   const client = db.prepare('SELECT id FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
   if (!client) return res.status(404).json({ error: 'Client not found' });
 
-  const rows = db.prepare(`
+  let sql = `
     SELECT p.*, e.first_name, e.last_name
     FROM paystubs p
     LEFT JOIN employees e ON p.employee_id = e.id
     WHERE p.client_id = ?
-    ORDER BY p.pay_period_end DESC, p.created_at DESC
-  `).all(clientId);
+  `;
+  const params = [clientId];
+  if (employeeId) { sql += ' AND p.employee_id = ?'; params.push(employeeId); }
+  sql += ' ORDER BY p.pay_period_end DESC, p.created_at DESC';
 
-  res.json(attachLineItems(db, rows));
+  res.json(attachLineItems(db, db.prepare(sql).all(...params)));
 });
 
 // ── GET /api/paystubs/:id ─────────────────────────────────────────────────────

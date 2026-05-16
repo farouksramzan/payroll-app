@@ -19,14 +19,27 @@ export default function ClientDetail() {
   const [client, setClient] = useState(null);
   const [recentSubs,    setRecentSubs]    = useState([]);
   const [pendingStubs,  setPendingStubs]  = useState([]);
+  const [employees,     setEmployees]     = useState([]);
+  const [ytdMap,        setYtdMap]        = useState({});
   const [loading, setLoading] = useState(true);
+  const currentYear = new Date().getFullYear();
 
   useEffect(() => {
-    Promise.all([api.getClient(id), api.getSubmissions(id), api.getPaystubs(id)])
-      .then(([c, subs, stubs]) => {
+    Promise.all([
+      api.getClient(id),
+      api.getSubmissions(id),
+      api.getPaystubs(id),
+      api.getEmployees(id),
+      api.getEmployeeYTDBatch(id, currentYear),
+    ])
+      .then(([c, subs, stubs, emps, ytdRows]) => {
         setClient(c);
         setRecentSubs(subs.slice(0, 5));
         setPendingStubs(stubs.filter((s) => s.status === 'pending' || s.status === 'failed'));
+        setEmployees(emps);
+        const map = {};
+        ytdRows.forEach((y) => { map[y.employee_id] = y; });
+        setYtdMap(map);
       })
       .catch((err) => { alert(err.message); navigate('/'); })
       .finally(() => setLoading(false));
@@ -102,6 +115,77 @@ export default function ClientDetail() {
           <InfoRow label="Phone" value={client.contactPhone} />
           <InfoRow label="Added" value={client.createdAt ? new Date(client.createdAt).toLocaleDateString() : '—'} />
           <InfoRow label="Last Updated" value={client.updatedAt ? new Date(client.updatedAt).toLocaleDateString() : '—'} />
+        </div>
+
+        {/* Employees */}
+        <div className="card" style={{ gridColumn: '1 / -1' }}>
+          <div className="card-header">
+            <span className="card-title">Employees</span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Link to={`/clients/${id}/employees/new`} className="btn btn-primary btn-sm">+ Add Employee</Link>
+              <Link to={`/clients/${id}/employees`} className="btn btn-secondary btn-sm">Manage</Link>
+            </div>
+          </div>
+          {employees.length === 0 ? (
+            <div className="empty-state" style={{ padding: '32px 20px' }}>
+              <div className="empty-state-icon">👤</div>
+              <h3>No employees yet</h3>
+              <p>Add employees to run payroll and track paystubs per person.</p>
+              <Link to={`/clients/${id}/employees/new`} className="btn btn-primary">Add Employee</Link>
+            </div>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 14, padding: '16px 20px' }}>
+              {employees.map((emp) => {
+                const ytd = ytdMap[emp.id];
+                const rate = emp.payType === 'hourly'
+                  ? `$${Number(emp.hourlyRate).toFixed(2)}/hr`
+                  : `$${Number(emp.annualSalary).toLocaleString()}/yr`;
+                return (
+                  <Link
+                    key={emp.id}
+                    to={`/clients/${id}/employees/${emp.id}`}
+                    style={{ textDecoration: 'none', color: 'inherit' }}
+                  >
+                    <div style={{
+                      border: '1px solid var(--border)',
+                      borderRadius: 10,
+                      padding: '14px 16px',
+                      background: 'var(--bg-secondary)',
+                      transition: 'border-color 0.15s, box-shadow 0.15s',
+                      cursor: 'pointer',
+                    }}
+                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.boxShadow = 'none'; }}
+                    >
+                      <div style={{ fontWeight: 700, fontSize: 15, color: 'var(--text-primary)', marginBottom: 4 }}>{emp.fullName}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10, display: 'flex', gap: 10 }}>
+                        <span style={{ textTransform: 'capitalize' }}>{emp.payType}</span>
+                        <span>·</span>
+                        <span>{emp.payFrequency}</span>
+                        <span>·</span>
+                        <span>{emp.workState || emp.state || 'TX'}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                        <div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>Rate</div>
+                          <div className="mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{rate}</div>
+                        </div>
+                        <div style={{ textAlign: 'right' }}>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 2 }}>{currentYear} YTD Gross</div>
+                          <div className="mono" style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>
+                            ${Number(ytd?.ytd_gross || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                          </div>
+                        </div>
+                      </div>
+                      {!emp.isActive && (
+                        <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>Inactive</div>
+                      )}
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Paystubs quick card */}

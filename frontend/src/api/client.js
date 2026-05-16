@@ -44,6 +44,7 @@ const api = {
   getEmployees: (clientId) => request(`/employees?clientId=${clientId}`),
   getEmployee: (id) => request(`/employees/${id}`),
   getEmployeeYTD: (id, year) => request(`/employees/${id}/ytd?year=${year}`),
+  getEmployeeYTDBatch: (clientId, year) => request(`/employees/ytd-batch?clientId=${clientId}&year=${year}`),
   createEmployee: (data) => request('/employees', { method: 'POST', body: JSON.stringify(data) }),
   updateEmployee: (id, data) => request(`/employees/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteEmployee: (id) => request(`/employees/${id}`, { method: 'DELETE' }),
@@ -60,7 +61,7 @@ const api = {
   submitViaBridge: (id) => request(`/submissions/${id}/submit-bridge`, { method: 'POST' }),
 
   // Paystubs
-  getPaystubs: (clientId) => request(`/paystubs?clientId=${clientId}`),
+  getPaystubs: (clientId, employeeId) => request(`/paystubs?clientId=${clientId}${employeeId ? `&employeeId=${employeeId}` : ''}`),
   getPaystub: (id) => request(`/paystubs/${id}`),
   createPaystub: (data) => request('/paystubs', { method: 'POST', body: JSON.stringify(data) }),
   updatePaystub: (id, data) => request(`/paystubs/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
