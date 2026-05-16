@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import api from '../api/client';
 
 const CHILD_CREDIT     = 2200;
@@ -392,12 +392,17 @@ function LineItemsTable({ items, onChange }) {
 export default function PayrollEntry() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  // employeeId / employeeName may be passed via navigate(..., { state })
+  const fromEmployeeId   = location.state?.employeeId   || '';
+  const fromEmployeeName = location.state?.employeeName || '';
+
   const [client, setClient]     = useState(null);
   const [employees, setEmployees] = useState([]);
   const [step, setStep]         = useState(1);
 
   // Employee + period
-  const [employeeId,    setEmployeeId]    = useState('');
+  const [employeeId,    setEmployeeId]    = useState(fromEmployeeId);
   const [payPeriodStart, setPayPeriodStart] = useState('');
   const [payPeriodEnd,   setPayPeriodEnd]   = useState('');
   const [settlementDate, setSettlementDate] = useState('');
@@ -584,7 +589,12 @@ export default function PayrollEntry() {
         workState: workState || null,
         ytdGross:  parseFloat(ytdGross || 0),
       });
-      navigate(`/clients/${id}/paystubs`);
+      // Return to employee paycheck history if we came from an employee page
+      if (fromEmployeeId) {
+        navigate(`/clients/${id}/employees/${fromEmployeeId}`);
+      } else {
+        navigate(`/clients/${id}/paystubs`);
+      }
     } catch (err) {
       alert(err.message);
     } finally {
@@ -617,23 +627,32 @@ export default function PayrollEntry() {
         <div className="breadcrumb">
           <Link to="/">Dashboard</Link><span>/</span>
           <Link to={`/clients/${id}`}>{client.businessName}</Link><span>/</span>
-          <span>New Payroll Entry</span>
+          {fromEmployeeId && (
+            <>
+              <Link to={`/clients/${id}/employees`}>Employees</Link><span>/</span>
+              <Link to={`/clients/${id}/employees/${fromEmployeeId}`}>{fromEmployeeName}</Link><span>/</span>
+            </>
+          )}
+          <span>New Paycheck</span>
         </div>
         <div className="page-header-row">
           <div>
-            <h2>Payroll Tax Entry</h2>
+            <h2>{fromEmployeeName ? `New Paycheck — ${fromEmployeeName}` : 'Payroll Tax Entry'}</h2>
             <p>{client.businessName} — EIN: {client.ein}</p>
           </div>
-          {step === 1 && taxes && (
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button className="btn btn-secondary btn-lg" onClick={handleSaveAsPaystub} disabled={savingPaystub || !payPeriodStart || !payPeriodEnd}>
-                {savingPaystub ? <><span className="spinner" /> Saving…</> : 'Save as Paystub'}
-              </button>
-              <button className="btn btn-primary btn-lg" onClick={handleSave} disabled={saving || !payPeriodStart || !payPeriodEnd}>
-                {saving ? <><span className="spinner" /> Saving…</> : 'Review & Submit to EFTPS →'}
-              </button>
-            </div>
-          )}
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <button className="btn btn-secondary" onClick={() => navigate(-1)}>← Back</button>
+            {step === 1 && taxes && (
+              <>
+                <button className="btn btn-secondary btn-lg" onClick={handleSaveAsPaystub} disabled={savingPaystub || !payPeriodStart || !payPeriodEnd}>
+                  {savingPaystub ? <><span className="spinner" /> Saving…</> : 'Save Paycheck'}
+                </button>
+                <button className="btn btn-primary btn-lg" onClick={handleSave} disabled={saving || !payPeriodStart || !payPeriodEnd}>
+                  {saving ? <><span className="spinner" /> Saving…</> : 'Review & Submit to EFTPS →'}
+                </button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -666,16 +685,28 @@ export default function PayrollEntry() {
                   <div className="form-grid">
                     <div className="form-group">
                       <label className="form-label">Employee</label>
-                      <select className="form-select" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
-                        <option value="">— No specific employee —</option>
-                        {employees.map((e) => (
-                          <option key={e.id} value={e.id}>{e.fullName}</option>
-                        ))}
-                      </select>
-                      {employees.length === 0 && (
-                        <p className="form-hint">
-                          <Link to={`/clients/${id}/employees/new`}>Add employees</Link> to enable per-employee payroll tracking.
-                        </p>
+                      {fromEmployeeId ? (
+                        // Locked when navigated from an employee page
+                        <div style={{
+                          padding: '9px 12px', border: '1px solid var(--accent)', borderRadius: 'var(--radius)',
+                          background: 'var(--accent-light)', fontSize: 14, fontWeight: 600, color: 'var(--accent)',
+                        }}>
+                          {fromEmployeeName}
+                        </div>
+                      ) : (
+                        <>
+                          <select className="form-select" value={employeeId} onChange={(e) => setEmployeeId(e.target.value)}>
+                            <option value="">— No specific employee —</option>
+                            {employees.map((e) => (
+                              <option key={e.id} value={e.id}>{e.fullName}</option>
+                            ))}
+                          </select>
+                          {employees.length === 0 && (
+                            <p className="form-hint">
+                              <Link to={`/clients/${id}/employees/new`}>Add employees</Link> to enable per-employee payroll tracking.
+                            </p>
+                          )}
+                        </>
                       )}
                     </div>
                     <div className="form-group">

@@ -103,7 +103,14 @@ export default function EmployeeDetail() {
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
             <button className="btn btn-secondary" onClick={() => navigate(-1)}>← Back</button>
-            <Link to={`/clients/${clientId}/payroll/new`} className="btn btn-primary">+ New Payroll Entry</Link>
+            <button
+              className="btn btn-primary"
+              onClick={() => navigate(`/clients/${clientId}/payroll/new`, {
+                state: { employeeId: empId, employeeName: employee.fullName },
+              })}
+            >
+              + New Paycheck
+            </button>
             <Link to={`/clients/${clientId}/employees/${empId}/edit`} className="btn btn-secondary">Edit Employee</Link>
           </div>
         </div>

@@ -145,8 +145,8 @@ export default function Dashboard() {
                 </div>
 
                 <div className="client-card-actions">
-                  <Link to={`/clients/${client.id}/payroll/new`} className="btn btn-primary btn-sm" style={{ flex: 1, justifyContent: 'center' }}>
-                    New Payroll
+                  <Link to={`/clients/${client.id}/employees`} className="btn btn-primary btn-sm" style={{ flex: 1, justifyContent: 'center' }}>
+                    Employees
                   </Link>
                   <Link to={`/clients/${client.id}`} className="btn btn-secondary btn-sm">
                     Details
