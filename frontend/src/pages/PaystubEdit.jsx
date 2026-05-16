@@ -324,20 +324,27 @@ export default function PaystubEdit() {
         <div className="breadcrumb">
           <Link to="/">Dashboard</Link><span>/</span>
           <Link to={`/clients/${clientId}`}>{client?.businessName}</Link><span>/</span>
-          <Link to={`/clients/${clientId}/paystubs`}>Paystubs</Link><span>/</span>
-          <span>Edit Paystub #{stubId}</span>
+          {stub?.employee_id ? (
+            <>
+              <Link to={`/clients/${clientId}`} state={{ tab: 'employees' }}>Employees</Link><span>/</span>
+              <Link to={`/clients/${clientId}/employees/${stub.employee_id}`}>
+                {[stub.first_name, stub.last_name].filter(Boolean).join(' ') || 'Employee'}
+              </Link><span>/</span>
+            </>
+          ) : (
+            <><Link to={`/clients/${clientId}/paystubs`}>Paystubs</Link><span>/</span></>
+          )}
+          <span>Edit Paycheck</span>
         </div>
         <div className="page-header-row">
           <div>
-            <h2>Edit Paystub</h2>
-            <p>{stub?.employee_name || client?.businessName} — {stub?.pay_period_start} to {stub?.pay_period_end}</p>
+            <h2>Edit Paycheck</h2>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
+              {[stub?.first_name, stub?.last_name].filter(Boolean).join(' ') || client?.businessName}
+              {stub?.pay_period_start && ` — ${stub.pay_period_start} to ${stub.pay_period_end}`}
+            </p>
           </div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <Link to={`/clients/${clientId}/paystubs`} className="btn btn-secondary">← Back</Link>
-            <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
-              {saving ? <><span className="spinner" /> Saving…</> : 'Save Changes'}
-            </button>
-          </div>
+          <button className="btn btn-secondary" onClick={() => navigate(-1)}>← Back</button>
         </div>
       </div>
 
@@ -585,6 +592,36 @@ export default function PaystubEdit() {
             </div>
           </div>
         </div>
+
+        {/* Bottom action bar */}
+        <div style={{
+          display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'flex-end',
+          padding: '20px 0', borderTop: '1px solid var(--border)', marginTop: 8,
+        }}>
+          <button className="btn btn-secondary" onClick={() => navigate(-1)}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving} style={{ minWidth: 130 }}>
+            {saving ? <><span className="spinner" /> Saving…</> : 'Save Changes'}
+          </button>
+          <button
+            className="btn btn-success"
+            onClick={() => handleSubmit('941')}
+            disabled={submitting !== null || is941Submitted}
+            style={{ minWidth: 130 }}
+          >
+            {submitting === '941' ? <span className="spinner" /> : is941Submitted ? '✓ 941 Filed' : 'Submit 941'}
+          </button>
+          {hasFUTA && (
+            <button
+              className="btn btn-success"
+              onClick={() => handleSubmit('940')}
+              disabled={submitting !== null || is940Submitted}
+              style={{ minWidth: 130 }}
+            >
+              {submitting === '940' ? <span className="spinner" /> : is940Submitted ? '✓ 940 Filed' : 'Submit 940'}
+            </button>
+          )}
+        </div>
+
       </div>
     </>
   );
