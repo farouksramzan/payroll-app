@@ -51,17 +51,24 @@ export default function ClientDetail() {
   const currentYear = new Date().getFullYear();
 
   useEffect(() => {
+    // Load critical data first; employees + YTD are best-effort so a missing
+    // backend endpoint won't redirect the whole page away.
     Promise.all([
       api.getClient(id),
       api.getSubmissions(id),
       api.getPaystubs(id),
-      api.getEmployees(id),
-      api.getEmployeeYTDBatch(id, currentYear),
     ])
-      .then(([c, subs, stubs, emps, ytdRows]) => {
+      .then(([c, subs, stubs]) => {
         setClient(c);
         setRecentSubs(subs.slice(0, 10));
         setPendingStubs(stubs.filter((s) => s.status === 'pending' || s.status === 'failed'));
+        // Load employees + YTD in parallel but don't let failures blow up the page
+        return Promise.all([
+          api.getEmployees(id).catch(() => []),
+          api.getEmployeeYTDBatch(id, currentYear).catch(() => []),
+        ]);
+      })
+      .then(([emps, ytdRows]) => {
         setEmployees(emps);
         const map = {};
         ytdRows.forEach((y) => { map[y.employee_id] = y; });
@@ -106,7 +113,7 @@ export default function ClientDetail() {
       </div>
 
       {/* Tab bar */}
-      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)', paddingLeft: 24 }}>
+      <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', background: 'var(--bg-primary)', paddingLeft: 32 }}>
         <button style={TAB_STYLE(activeTab === 'overview')} onClick={() => setActiveTab('overview')}>Overview</button>
         <button style={TAB_STYLE(activeTab === 'employees')} onClick={() => setActiveTab('employees')}>
           Employees{employees.length > 0 ? ` (${employees.length})` : ''}
