@@ -29,9 +29,11 @@ function sanitizeClient(client, includeSecrets = false) {
     payrollFrequency: client.payroll_frequency || 'biweekly',
     nextPayrollDate:  client.next_payroll_date  || null,
     nextCheckNumber:  client.next_check_number  || 1001,
-    businessAddress:  client.business_address   || null,
-    businessCity:     client.business_city      || null,
-    businessZip:      client.business_zip       || null,
+    businessAddress:    client.business_address    || null,
+    businessCity:       client.business_city       || null,
+    businessZip:        client.business_zip        || null,
+    notificationEmail:  client.notification_email  || null,
+    notificationPhone:  client.notification_phone  || null,
   };
   if (includeSecrets) {
     out.batchProviderPin = decrypt(client.batch_provider_pin_encrypted);
@@ -47,12 +49,28 @@ router.get('/', (req, res) => {
   const db = getDb();
   const clients = db.prepare('SELECT * FROM clients WHERE user_id = ? ORDER BY business_name').all(req.user.id);
 
-  // Attach next due date and last submission status to each client
+  const today = new Date().toISOString().slice(0, 10);
+
+  // Attach next due date, last submission status, and overdue liability totals
   const enriched = clients.map((c) => {
     const lastSub = db
       .prepare('SELECT * FROM submissions WHERE client_id = ? ORDER BY created_at DESC LIMIT 1')
       .get(c.id);
     const nextDue = calcNextDueDate(c.deposit_schedule, lastSub?.pay_period_end);
+
+    // Overdue = settlement_due_date < today and still pending
+    const overdueRow = db.prepare(`
+      SELECT COALESCE(SUM(total_deposit),0) as amount941,
+             COALESCE(SUM(futa_tax),0) as amount940
+      FROM paystubs
+      WHERE client_id = ?
+        AND settlement_due_date IS NOT NULL
+        AND settlement_due_date < ?
+        AND (status = 'pending' OR status_940 = 'pending')
+    `).get(c.id, today);
+
+    const overdueAmount = (overdueRow?.amount941 || 0) + (overdueRow?.amount940 || 0);
+
     return {
       ...sanitizeClient(c),
       nextDueDate:          nextDue,
@@ -60,6 +78,7 @@ router.get('/', (req, res) => {
       payrollFrequency:     c.payroll_frequency  || 'biweekly',
       lastSubmissionStatus: lastSub?.eftps_status || null,
       lastSubmissionDate:   lastSub?.created_at   || null,
+      overdueAmount,
     };
   });
 
@@ -133,7 +152,8 @@ router.put('/:id', (req, res) => {
     eftpsInternetPassword, eftpsEnrollmentNumber, depositSchedule, sutaRate,
     contactName, contactEmail, contactPhone,
     payrollFrequency, nextPayrollDate,
-    businessAddress, businessCity, businessZip } = req.body;
+    businessAddress, businessCity, businessZip,
+    notificationEmail, notificationPhone } = req.body;
 
   if (ein && !/^\d{2}-?\d{7}$/.test(ein)) return res.status(400).json({ error: 'EIN must be in format XX-XXXXXXX' });
   if (batchProviderPin && !/^\d{4}$/.test(batchProviderPin)) return res.status(400).json({ error: 'Batch Provider PIN must be exactly 4 digits' });
@@ -159,6 +179,8 @@ router.put('/:id', (req, res) => {
       business_address = ?,
       business_city = ?,
       business_zip = ?,
+      notification_email = ?,
+      notification_phone = ?,
       updated_at = CURRENT_TIMESTAMP
     WHERE id = ? AND user_id = ?
   `).run(
@@ -178,9 +200,11 @@ router.put('/:id', (req, res) => {
     contactPhone !== undefined ? contactPhone : existing.contact_phone,
     payrollFrequency || existing.payroll_frequency || 'biweekly',
     nextPayrollDate  !== undefined ? (nextPayrollDate || null) : existing.next_payroll_date,
-    businessAddress !== undefined ? (businessAddress || null) : existing.business_address,
-    businessCity    !== undefined ? (businessCity    || null) : existing.business_city,
-    businessZip     !== undefined ? (businessZip     || null) : existing.business_zip,
+    businessAddress    !== undefined ? (businessAddress    || null) : existing.business_address,
+    businessCity       !== undefined ? (businessCity       || null) : existing.business_city,
+    businessZip        !== undefined ? (businessZip        || null) : existing.business_zip,
+    notificationEmail  !== undefined ? (notificationEmail  || null) : existing.notification_email,
+    notificationPhone  !== undefined ? (notificationPhone  || null) : existing.notification_phone,
     req.params.id,
     req.user.id,
   );

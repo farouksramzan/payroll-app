@@ -8,6 +8,7 @@ const { decrypt }  = require('../services/cryptoService');
 const { calculateWithholding, getTaxPeriod } = require('../services/taxCalculator');
 const { submitToEFTPS } = require('../services/eftpsAutomation');
 const bridgeManager = require('../ws/bridge');
+const { calcSettlementDueDate } = require('../services/federalHolidays');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -69,6 +70,35 @@ router.get('/pay-periods', (req, res) => {
   `).all(clientId);
 
   res.json(periods);
+});
+
+// ── GET /api/paystubs/by-employee?clientId=X&employeeId=Y ────────────────────
+// Returns all paystubs for one employee, ordered most-recent first
+router.get('/by-employee', (req, res) => {
+  const db = getDb();
+  const { clientId, employeeId } = req.query;
+  if (!clientId || !employeeId) return res.status(400).json({ error: 'clientId and employeeId required' });
+  const client = db.prepare('SELECT id FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+  const rows = db.prepare(`
+    SELECT p.*, e.first_name, e.last_name
+    FROM paystubs p
+    LEFT JOIN employees e ON p.employee_id = e.id
+    WHERE p.client_id = ? AND p.employee_id = ?
+    ORDER BY p.pay_period_end DESC, p.created_at DESC
+  `).all(clientId, employeeId);
+  res.json(rows);
+});
+
+// ── GET /api/paystubs/credits?clientId=X ─────────────────────────────────────
+router.get('/credits', (req, res) => {
+  const db = getDb();
+  const { clientId } = req.query;
+  if (!clientId) return res.status(400).json({ error: 'clientId required' });
+  const client = db.prepare('SELECT id FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+  const credits = db.prepare('SELECT * FROM paystub_credits WHERE client_id = ? ORDER BY created_at DESC').all(clientId);
+  res.json(credits);
 });
 
 // ── GET /api/paystubs/:id ─────────────────────────────────────────────────────
@@ -505,8 +535,9 @@ router.post('/payroll-run', (req, res) => {
         total_deposit, net_pay, ytd_wages_before,
         tax_year, tax_quarter, check_number, payroll_run_id,
         payment_method, regular_hours, overtime_hours, regular_pay, overtime_pay,
-        bonus, commission, reimbursement, deduction, garnishment
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        bonus, commission, reimbursement, deduction, garnishment,
+        check_status, settlement_due_date
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `);
     const insertItem = db.prepare(`
       INSERT INTO paystub_line_items (paystub_id, pay_type, description, hours, rate, amount)
@@ -576,6 +607,8 @@ router.post('/payroll-run', (req, res) => {
         parseFloat(empData.reimbursement || 0),
         parseFloat(empData.deduction     || 0),
         parseFloat(empData.garnishment   || 0),
+        'draft',
+        calcSettlementDueDate(settlementDate || payPeriodEnd, client.deposit_schedule || 'monthly'),
       );
 
       const stubId = r.lastInsertRowid;
@@ -847,6 +880,12 @@ router.get('/run-pdf/:runId', (req, res) => {
   }
 
   doc.end();
+
+  // Mark all checks in this run as 'printed'
+  db.prepare(`
+    UPDATE paystubs SET check_status = 'printed'
+    WHERE payroll_run_id = ? AND client_id = ? AND check_status = 'draft'
+  `).run(runId, clientId);
 });
 
 // taxType '941': aggregate FIT+SS+Medicare (optionally filtered by taxYear+taxQuarter)
@@ -1250,5 +1289,86 @@ function generatePaystubPDF(stub, lineItems, ytd, stream) {
 
   doc.end();
 }
+
+// ── PUT /api/paystubs/:id/status ─────────────────────────────────────────────
+router.put('/:id/status', (req, res) => {
+  const db = getDb();
+  const stub = db.prepare(`
+    SELECT p.* FROM paystubs p
+    JOIN clients c ON p.client_id = c.id
+    WHERE p.id = ? AND c.user_id = ?
+  `).get(req.params.id, req.user.id);
+  if (!stub) return res.status(404).json({ error: 'Paystub not found' });
+
+  const { status } = req.body;
+  const allowed = ['draft', 'printed', 'direct_deposit_sent', 'direct_deposit_cleared', 'voided', 'late'];
+  if (!allowed.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+
+  db.prepare('UPDATE paystubs SET check_status = ? WHERE id = ?').run(status, req.params.id);
+  res.json({ id: parseInt(req.params.id), checkStatus: status });
+});
+
+// ── POST /api/paystubs/:id/void ──────────────────────────────────────────────
+router.post('/:id/void', (req, res) => {
+  const db = getDb();
+  const stub = db.prepare(`
+    SELECT p.* FROM paystubs p
+    JOIN clients c ON p.client_id = c.id
+    WHERE p.id = ? AND c.user_id = ?
+  `).get(req.params.id, req.user.id);
+  if (!stub) return res.status(404).json({ error: 'Paystub not found' });
+  if (stub.check_status === 'voided') return res.status(400).json({ error: 'Already voided' });
+
+  const { reason } = req.body;
+  const now = new Date().toISOString();
+
+  db.transaction(() => {
+    // Mark paystub as voided
+    db.prepare(`
+      UPDATE paystubs SET check_status = 'voided', voided_at = ?, void_reason = ? WHERE id = ?
+    `).run(now, reason || null, stub.id);
+
+    // Create negative credit entry
+    db.prepare(`
+      INSERT INTO paystub_credits (
+        client_id, employee_id, employee_name, reference_stub_id,
+        gross_credit, fit_credit, employee_ss_credit, employee_medicare_credit,
+        employer_ss_credit, employer_medicare_credit, state_tax_credit,
+        futa_credit, suta_credit, total_941_credit, total_940_credit
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `).run(
+      stub.client_id, stub.employee_id, stub.employee_name, stub.id,
+      -(stub.gross_wages || 0),
+      -(stub.fit_withholding || 0),
+      -(stub.employee_ss || 0),
+      -(stub.employee_medicare || 0),
+      -(stub.employer_ss || 0),
+      -(stub.employer_medicare || 0),
+      -(stub.state_income_tax || 0),
+      -(stub.futa_tax || 0),
+      -(stub.suta_tax || 0),
+      -(stub.total_deposit || 0),
+      -(stub.futa_tax || 0),
+    );
+
+    // Reverse YTD wages
+    const year = stub.tax_year || new Date().getFullYear();
+    db.prepare(`
+      UPDATE employee_ytd_wages SET
+        ytd_gross      = MAX(0, ytd_gross      - ?),
+        ytd_ss_wages   = MAX(0, ytd_ss_wages   - ?),
+        ytd_futa_wages = MAX(0, ytd_futa_wages - ?),
+        ytd_suta_wages = MAX(0, ytd_suta_wages - ?),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE employee_id = ? AND tax_year = ?
+    `).run(
+      stub.gross_wages || 0, stub.gross_wages || 0,
+      stub.gross_wages || 0, stub.gross_wages || 0,
+      stub.employee_id, year,
+    );
+  })();
+
+  res.json({ message: 'Check voided and credit entry created', stubId: stub.id });
+});
 
 module.exports = router;

@@ -313,6 +313,63 @@ function migrate() {
     { name: 'first_pay_period_start', def: 'TEXT' },
     { name: 'first_pay_period_end',   def: 'TEXT' },
   ]);
+
+  // check lifecycle status + IRS settlement due date on paystubs
+  addCols('paystubs', [
+    { name: 'check_status',       def: "TEXT DEFAULT 'draft'" },
+    { name: 'settlement_due_date',def: 'TEXT' },
+    { name: 'voided_at',          def: 'TEXT' },
+    { name: 'void_reason',        def: 'TEXT' },
+  ]);
+
+  // notification preferences on clients
+  addCols('clients', [
+    { name: 'notification_email', def: 'TEXT' },
+    { name: 'notification_phone', def: 'TEXT' },
+  ]);
+
+  // paystub_credits — negative entries for voided checks
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS paystub_credits (
+      id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+      client_id            INTEGER NOT NULL,
+      employee_id          INTEGER,
+      employee_name        TEXT,
+      reference_stub_id    INTEGER,
+      gross_credit         REAL DEFAULT 0,
+      fit_credit           REAL DEFAULT 0,
+      employee_ss_credit   REAL DEFAULT 0,
+      employee_medicare_credit REAL DEFAULT 0,
+      employer_ss_credit   REAL DEFAULT 0,
+      employer_medicare_credit REAL DEFAULT 0,
+      state_tax_credit     REAL DEFAULT 0,
+      futa_credit          REAL DEFAULT 0,
+      suta_credit          REAL DEFAULT 0,
+      total_941_credit     REAL DEFAULT 0,
+      total_940_credit     REAL DEFAULT 0,
+      applied              INTEGER DEFAULT 0,
+      applied_run_id       TEXT,
+      created_at           DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (client_id)  REFERENCES clients(id)  ON DELETE CASCADE,
+      FOREIGN KEY (employee_id)REFERENCES employees(id) ON DELETE SET NULL
+    )
+  `);
+
+  // notification_log — tracks sent notifications to avoid duplicates
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS notification_log (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      client_id      INTEGER NOT NULL,
+      liability_type TEXT NOT NULL,
+      due_date       TEXT NOT NULL,
+      notif_type     TEXT NOT NULL,
+      channel        TEXT NOT NULL,
+      amount         REAL,
+      success        INTEGER DEFAULT 1,
+      sent_date      TEXT NOT NULL,
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+    )
+  `);
 }
 
 function addCols(table, cols) {

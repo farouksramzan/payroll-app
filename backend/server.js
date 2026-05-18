@@ -8,6 +8,8 @@ const path    = require('path');
 const fs      = require('fs');
 const { getDb } = require('./src/database/db');
 const bridgeManager = require('./src/ws/bridge');
+const notificationService = require('./src/services/notificationService');
+const notificationCron    = require('./src/cron/notificationCron');
 
 const authRoutes       = require('./src/routes/auth');
 const clientRoutes     = require('./src/routes/clients');
@@ -91,6 +93,10 @@ app.use((err, req, res, next) => {
 
 const httpServer = http.createServer(app);
 bridgeManager.attach(httpServer);
+
+// ── Initialize notifications ──────────────────────────────────────────────────
+notificationService.init();
+notificationCron.start();
 
 httpServer.listen(PORT, () => {
   console.log(`PayrollTax Pro server on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);

@@ -62,11 +62,15 @@ const api = {
 
   // Paystubs
   getPaystubs: (clientId, employeeId) => request(`/paystubs?clientId=${clientId}${employeeId ? `&employeeId=${employeeId}` : ''}`),
+  getPaystubsByEmployee: (clientId, employeeId) => request(`/paystubs/by-employee?clientId=${clientId}&employeeId=${employeeId}`),
   getPaystub: (id) => request(`/paystubs/${id}`),
   createPaystub: (data) => request('/paystubs', { method: 'POST', body: JSON.stringify(data) }),
   updatePaystub: (id, data) => request(`/paystubs/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deletePaystub: (id) => request(`/paystubs/${id}`, { method: 'DELETE' }),
   submitPaystub: (id, taxType = '941') => request(`/paystubs/${id}/submit`, { method: 'POST', body: JSON.stringify({ taxType }) }),
+  updatePaystubStatus: (id, status) => request(`/paystubs/${id}/status`, { method: 'PUT', body: JSON.stringify({ status }) }),
+  voidPaystub: (id, reason) => request(`/paystubs/${id}/void`, { method: 'POST', body: JSON.stringify({ reason }) }),
+  getPaystubCredits: (clientId) => request(`/paystubs/credits?clientId=${clientId}`),
   batchSubmitPaystubs: (data) => request('/paystubs/batch-submit', { method: 'POST', body: JSON.stringify(data) }),
   getPayPeriods: (clientId) => request(`/paystubs/pay-periods?clientId=${clientId}`),
   runPayroll: (data) => request('/paystubs/payroll-run', { method: 'POST', body: JSON.stringify(data) }),

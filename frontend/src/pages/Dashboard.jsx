@@ -101,6 +101,18 @@ export default function Dashboard() {
                   </button>
                 </div>
 
+                {client.overdueAmount > 0 && (
+                  <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '8px 12px', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ color: '#dc2626', fontSize: 14 }}>⚠</span>
+                    <div>
+                      <div style={{ color: '#dc2626', fontWeight: 700, fontSize: 13 }}>Tax Deposit Overdue</div>
+                      <div style={{ color: '#dc2626', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600 }}>
+                        ${Number(client.overdueAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div className="tile-badges">
                   {ps && <span className={`badge ${ps.cls}`}>{ps.label}</span>}
                   <span className="badge badge-neutral" style={{ textTransform: 'capitalize' }}>{client.payrollFrequency || 'biweekly'}</span>
