@@ -72,6 +72,20 @@ const api = {
   voidPaystub: (id, reason) => request(`/paystubs/${id}/void`, { method: 'POST', body: JSON.stringify({ reason }) }),
   getPaystubCredits: (clientId) => request(`/paystubs/credits?clientId=${clientId}`),
   batchSubmitPaystubs: (data) => request('/paystubs/batch-submit', { method: 'POST', body: JSON.stringify(data) }),
+  printSelectedChecks: async (clientId, paystubIds) => {
+    const token = localStorage.getItem('token');
+    const res = await fetch('/api/paystubs/print-selected', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ clientId, paystubIds }),
+    });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'PDF failed'); }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'selected-checks.pdf'; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  },
   getPayPeriods: (clientId) => request(`/paystubs/pay-periods?clientId=${clientId}`),
   runPayroll: (data) => request('/paystubs/payroll-run', { method: 'POST', body: JSON.stringify(data) }),
   downloadRunPdf: async (runId, clientId) => {

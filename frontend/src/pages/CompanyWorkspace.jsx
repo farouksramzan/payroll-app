@@ -268,35 +268,63 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved }) {
   );
 }
 
+// ── Row background by check status ───────────────────────────────────────────
+function checkRowBg(status, selected) {
+  if (selected) return '#eff6ff';
+  if (status === 'voided')                 return '#fef2f2';
+  if (status === 'draft')                  return '#fffbeb';
+  if (status === 'printed')               return '#f0fdf4';
+  if (status === 'direct_deposit_sent')    return '#f0f9ff';
+  if (status === 'direct_deposit_cleared') return '#f0fdf4';
+  if (status === 'late')                   return '#fff7ed';
+  return '#fff';
+}
+
 // ── Check History (per employee in Pay Employees) ─────────────────────────────
-function CheckHistory({ clientId, employeeId, employeeName }) {
-  const [checks, setChecks]   = useState(null);
-  const [voiding, setVoiding] = useState(null);
-  const [err, setErr]         = useState('');
+function CheckHistory({ clientId, employeeId, employeeName, selectedChecks, onToggleCheck, onChecksLoaded, onVoidCheck, onDeleteCheck }) {
+  const [checks, setChecks]     = useState(null);
+  const [actioning, setActioning] = useState(null); // stub.id being actioned
+  const [err, setErr]           = useState('');
 
   useEffect(() => {
     api.getPaystubsByEmployee(clientId, employeeId)
-      .then(setChecks)
+      .then(data => { setChecks(data); onChecksLoaded?.(employeeId, data); })
       .catch(e => setErr(e.message));
   }, [clientId, employeeId]);
 
   async function handleVoid(stub) {
-    const reason = window.prompt(`Void check #${stub.check_number} for ${employeeName}?\n\nReason (optional):`);
-    if (reason === null) return; // cancelled
-    setVoiding(stub.id);
+    const reason = window.prompt(`Void check #${stub.check_number || stub.id} for ${employeeName}?\n\nReason (optional):`);
+    if (reason === null) return;
+    setActioning(stub.id);
     try {
       await api.voidPaystub(stub.id, reason);
-      setChecks(prev => prev.map(c => c.id === stub.id ? { ...c, check_status: 'voided' } : c));
+      const updated = checks.map(c => c.id === stub.id ? { ...c, check_status: 'voided' } : c);
+      setChecks(updated);
+      onChecksLoaded?.(employeeId, updated);
+      onVoidCheck?.(stub.id);
     } catch (e) { alert(e.message); }
-    finally { setVoiding(null); }
+    finally { setActioning(null); }
+  }
+
+  async function handleDelete(stub) {
+    if (!window.confirm(`Are you sure you want to delete this check?\n\nThis will reverse all associated tax liabilities.\n\nCheck #${stub.check_number || stub.id} · ${employeeName} · ${fmt(stub.net_pay)}`)) return;
+    setActioning(stub.id);
+    try {
+      await api.deletePaystub(stub.id);
+      const updated = checks.filter(c => c.id !== stub.id);
+      setChecks(updated);
+      onChecksLoaded?.(employeeId, updated);
+      onDeleteCheck?.(stub.id);
+    } catch (e) { alert(e.message); }
+    finally { setActioning(null); }
   }
 
   if (checks === null) return <div style={{ padding: '12px 0', textAlign: 'center' }}><div className="spinner spinner-dark" style={{ width: 18, height: 18, display: 'inline-block' }} /></div>;
   if (err) return <div style={{ color: '#dc2626', fontSize: 12, padding: '8px 0' }}>{err}</div>;
   if (checks.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: 12, padding: '8px 0', fontStyle: 'italic' }}>No checks issued yet.</div>;
 
-  const canEdit = (s) => s.check_status === 'draft';
-  const canVoid = (s) => s.check_status !== 'voided';
+  const allSelectableIds = checks.filter(c => c.check_status !== 'voided' && c.check_status !== 'direct_deposit_cleared').map(c => c.id);
+  const allSelected = allSelectableIds.length > 0 && allSelectableIds.every(id => selectedChecks?.has(id));
 
   return (
     <div style={{ marginTop: 8 }}>
@@ -305,52 +333,63 @@ function CheckHistory({ clientId, employeeId, employeeName }) {
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
           <thead>
             <tr style={{ background: 'var(--bg-secondary)' }}>
-              <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>Check #</th>
-              <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>Period</th>
-              <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>Gross</th>
-              <th style={{ padding: '6px 10px', textAlign: 'right', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>Net Pay</th>
-              <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>Status</th>
-              <th style={{ padding: '6px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>EFTPS Due</th>
-              <th style={{ padding: '6px 10px', width: 80 }}></th>
+              <th style={{ padding: '6px 8px', width: 32 }}>
+                <input type="checkbox" checked={allSelected} onChange={e => allSelectableIds.forEach(id => { if (e.target.checked !== (selectedChecks?.has(id) ?? false)) onToggleCheck?.(id); })} style={{ accentColor: 'var(--accent)', width: 13, height: 13 }} />
+              </th>
+              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>Check #</th>
+              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>Period</th>
+              <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>Gross</th>
+              <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>Net Pay</th>
+              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>Status</th>
+              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>EFTPS Due</th>
+              <th style={{ padding: '6px 8px', width: 110 }}></th>
             </tr>
           </thead>
           <tbody>
-            {checks.map((c, i) => {
-              const voided = c.check_status === 'voided';
-              const late   = c.check_status === 'late';
-              const dueDays = daysUntil(c.settlement_due_date);
+            {checks.map((c) => {
+              const voided   = c.check_status === 'voided';
+              const isDraft  = !c.check_status || c.check_status === 'draft';
+              const dueDays  = daysUntil(c.settlement_due_date);
+              const isSel    = selectedChecks?.has(c.id) ?? false;
+              const canSel   = !voided && c.check_status !== 'direct_deposit_cleared';
+              const busy     = actioning === c.id;
               return (
-                <tr key={c.id} style={{ background: voided ? '#fef2f2' : i % 2 === 0 ? '#fff' : 'var(--bg-secondary)', borderTop: '1px solid var(--border)', opacity: voided ? 0.7 : 1 }}>
-                  <td style={{ padding: '7px 10px', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: voided ? '#dc2626' : 'var(--accent)' }}>
-                    {c.check_number ? `#${c.check_number}` : '—'}
-                    {voided && <span style={{ marginLeft: 6, color: '#dc2626', fontWeight: 800 }}>VOIDED</span>}
+                <tr key={c.id} style={{ background: checkRowBg(c.check_status, isSel), borderTop: '1px solid var(--border)' }}>
+                  <td style={{ padding: '7px 8px' }}>
+                    {canSel && <input type="checkbox" checked={isSel} onChange={() => onToggleCheck?.(c.id)} style={{ accentColor: 'var(--accent)', width: 13, height: 13 }} />}
                   </td>
-                  <td style={{ padding: '7px 10px', color: 'var(--text-secondary)' }}>
+                  <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: voided ? '#dc2626' : 'var(--accent)', textDecoration: voided ? 'line-through' : 'none' }}>
+                    {c.check_number ? `#${c.check_number}` : isDraft ? <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: 11 }}>Draft</span> : '—'}
+                  </td>
+                  <td style={{ padding: '7px 8px', color: 'var(--text-secondary)', textDecoration: voided ? 'line-through' : 'none' }}>
                     {c.pay_period_start} – {c.pay_period_end}
                   </td>
-                  <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace' }}>{fmt(c.gross_wages)}</td>
-                  <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', color: voided ? '#dc2626' : 'var(--success)', fontWeight: 600 }}>{voided ? `(${fmt(c.net_pay)})` : fmt(c.net_pay)}</td>
-                  <td style={{ padding: '7px 10px' }}><StatusBadge status={c.check_status || 'draft'} /></td>
-                  <td style={{ padding: '7px 10px', fontSize: 11, color: isOverdue(c.settlement_due_date) ? '#dc2626' : dueDays !== null && dueDays <= 5 ? '#d97706' : 'var(--text-muted)', fontWeight: isOverdue(c.settlement_due_date) ? 700 : 400 }}>
+                  <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', textDecoration: voided ? 'line-through' : 'none' }}>{fmt(c.gross_wages)}</td>
+                  <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', color: voided ? '#dc2626' : 'var(--success)', fontWeight: 600, textDecoration: voided ? 'line-through' : 'none' }}>
+                    {voided ? `(${fmt(c.net_pay)})` : fmt(c.net_pay)}
+                  </td>
+                  <td style={{ padding: '7px 8px' }}><StatusBadge status={c.check_status || 'draft'} /></td>
+                  <td style={{ padding: '7px 8px', fontSize: 11, color: isOverdue(c.settlement_due_date) ? '#dc2626' : dueDays !== null && dueDays <= 5 ? '#d97706' : 'var(--text-muted)', fontWeight: isOverdue(c.settlement_due_date) ? 700 : 400 }}>
                     {c.settlement_due_date ? (
-                      <>
-                        {fmtDate(c.settlement_due_date)}
-                        {isOverdue(c.settlement_due_date) && <span style={{ marginLeft: 4 }}>({Math.abs(dueDays)}d overdue)</span>}
-                      </>
+                      <>{fmtDate(c.settlement_due_date)}{isOverdue(c.settlement_due_date) && <span style={{ marginLeft: 4 }}>({Math.abs(dueDays)}d overdue)</span>}</>
                     ) : '—'}
                   </td>
-                  <td style={{ padding: '7px 10px', display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                    {canEdit(c) && (
-                      <Link to={`/clients/${clientId}/paystubs/${c.id}/edit`} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>Edit</Link>
-                    )}
-                    {canVoid(c) && (
-                      <button
-                        className="btn btn-ghost btn-sm"
-                        style={{ fontSize: 11, color: '#dc2626', opacity: voiding === c.id ? 0.5 : 1 }}
-                        onClick={() => handleVoid(c)}
-                        disabled={voiding === c.id}
-                      >{voiding === c.id ? '…' : 'Void'}</button>
-                    )}
+                  <td style={{ padding: '7px 8px' }}>
+                    <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                      {c.check_status === 'draft' && (
+                        <Link to={`/clients/${clientId}/paystubs/${c.id}/edit`} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>Edit</Link>
+                      )}
+                      {!voided && (
+                        <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, color: '#dc2626', opacity: busy ? 0.5 : 1 }} onClick={() => handleVoid(c)} disabled={busy}>
+                          {busy ? '…' : 'Void'}
+                        </button>
+                      )}
+                      {!voided && (
+                        <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, color: '#6b7280', opacity: busy ? 0.5 : 1 }} onClick={() => handleDelete(c)} disabled={busy} title="Delete check and reverse tax liabilities">
+                          {busy ? '…' : 'Del'}
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );
@@ -676,6 +715,133 @@ function PayEmployeesTab({ clientId, client, employees }) {
 
   const [showHistory, setShowHistory] = useState({});
 
+  // ── Check selection (existing paychecks) ───────────────────────────────────
+  const [selectedChecks, setSelectedChecks] = useState(new Set());
+  const [empChecksCache, setEmpChecksCache] = useState({});  // empId → stub[]
+  const [bulkWorking, setBulkWorking] = useState(false);
+
+  function handleChecksLoaded(empId, checks) {
+    setEmpChecksCache(prev => ({ ...prev, [empId]: checks }));
+  }
+
+  function toggleCheck(id) {
+    setSelectedChecks(prev => { const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s; });
+  }
+
+  function handleCheckVoided(id) {
+    setSelectedChecks(prev => { const s = new Set(prev); s.delete(id); return s; });
+  }
+
+  function handleCheckDeleted(id) {
+    setSelectedChecks(prev => { const s = new Set(prev); s.delete(id); return s; });
+  }
+
+  // Click employee name → open history + auto-select all actionable checks
+  function handleEmpNameClick(emp) {
+    const isOpen = showHistory[emp.id];
+    if (!isOpen) setShowHistory(prev => ({ ...prev, [emp.id]: true }));
+    const cached = empChecksCache[emp.id];
+    if (cached) {
+      const actionable = cached.filter(c => c.check_status !== 'voided' && c.check_status !== 'direct_deposit_cleared').map(c => c.id);
+      setSelectedChecks(prev => { const s = new Set(prev); actionable.forEach(id => s.add(id)); return s; });
+    }
+    // If not cached yet, auto-select will fire once onChecksLoaded is called (handled below via effect)
+  }
+
+  // When checks are loaded for an emp and that emp's history was just opened, auto-select
+  const pendingAutoSelect = useRef({});
+  function handleChecksLoadedWithAutoSelect(empId, checks) {
+    handleChecksLoaded(empId, checks);
+    if (pendingAutoSelect.current[empId]) {
+      delete pendingAutoSelect.current[empId];
+      const actionable = checks.filter(c => c.check_status !== 'voided' && c.check_status !== 'direct_deposit_cleared').map(c => c.id);
+      setSelectedChecks(prev => { const s = new Set(prev); actionable.forEach(id => s.add(id)); return s; });
+    }
+  }
+
+  function handleEmpNameClickWithPending(emp) {
+    const isOpen = showHistory[emp.id];
+    if (!isOpen) setShowHistory(prev => ({ ...prev, [emp.id]: true }));
+    if (empChecksCache[emp.id]) {
+      const actionable = empChecksCache[emp.id].filter(c => c.check_status !== 'voided' && c.check_status !== 'direct_deposit_cleared').map(c => c.id);
+      setSelectedChecks(prev => { const s = new Set(prev); actionable.forEach(id => s.add(id)); return s; });
+    } else {
+      pendingAutoSelect.current[emp.id] = true;
+    }
+  }
+
+  // Bulk actions
+  async function handleBulkPrint() {
+    const ids = [...selectedChecks];
+    if (!ids.length) return;
+    setBulkWorking(true);
+    try { await api.printSelectedChecks(clientId, ids); }
+    catch (e) { alert(e.message); }
+    finally { setBulkWorking(false); }
+  }
+
+  async function handleBulkMarkDD() {
+    const ids = [...selectedChecks];
+    if (!ids.length) return;
+    if (!window.confirm(`Mark ${ids.length} check(s) as Direct Deposit Sent?`)) return;
+    setBulkWorking(true);
+    try {
+      await Promise.all(ids.map(id => api.updatePaystubStatus(id, 'direct_deposit_sent')));
+      // Refresh caches for affected employees
+      const affectedEmps = new Set();
+      Object.entries(empChecksCache).forEach(([empId, checks]) => {
+        if (checks.some(c => ids.includes(c.id))) affectedEmps.add(empId);
+      });
+      await Promise.all([...affectedEmps].map(async empId => {
+        const updated = await api.getPaystubsByEmployee(clientId, empId);
+        handleChecksLoaded(empId, updated);
+      }));
+      setSelectedChecks(new Set());
+    } catch (e) { alert(e.message); }
+    finally { setBulkWorking(false); }
+  }
+
+  async function handleBulkVoid() {
+    const ids = [...selectedChecks];
+    if (!ids.length) return;
+    const reason = window.prompt(`Void ${ids.length} selected check(s)?\n\nReason (optional):`);
+    if (reason === null) return;
+    setBulkWorking(true);
+    try {
+      await Promise.all(ids.map(id => api.voidPaystub(id, reason)));
+      const affectedEmps = new Set();
+      Object.entries(empChecksCache).forEach(([empId, checks]) => {
+        if (checks.some(c => ids.includes(c.id))) affectedEmps.add(empId);
+      });
+      await Promise.all([...affectedEmps].map(async empId => {
+        const updated = await api.getPaystubsByEmployee(clientId, empId);
+        handleChecksLoaded(empId, updated);
+      }));
+      setSelectedChecks(new Set());
+    } catch (e) { alert(e.message); }
+    finally { setBulkWorking(false); }
+  }
+
+  async function handleBulkDelete() {
+    const ids = [...selectedChecks];
+    if (!ids.length) return;
+    if (!window.confirm(`Are you sure you want to delete ${ids.length} check(s)?\n\nThis will reverse all associated tax liabilities.`)) return;
+    setBulkWorking(true);
+    try {
+      await Promise.all(ids.map(id => api.deletePaystub(id)));
+      const affectedEmps = new Set();
+      Object.entries(empChecksCache).forEach(([empId, checks]) => {
+        if (checks.some(c => ids.includes(c.id))) affectedEmps.add(empId);
+      });
+      await Promise.all([...affectedEmps].map(async empId => {
+        const updated = await api.getPaystubsByEmployee(clientId, empId);
+        handleChecksLoaded(empId, updated);
+      }));
+      setSelectedChecks(new Set());
+    } catch (e) { alert(e.message); }
+    finally { setBulkWorking(false); }
+  }
+
   function getDefaultPeriod() {
     const anchor = empsInGroup.find(e => e.firstPayPeriodStart && e.firstPayPeriodEnd);
     if (anchor) return getCurrentPeriod(anchor.firstPayPeriodStart, anchor.firstPayPeriodEnd, freqGroup);
@@ -762,6 +928,28 @@ function PayEmployeesTab({ clientId, client, employees }) {
 
   if (activeEmps.length === 0) return <div className="card"><div className="empty-state" style={{ padding: '32px 20px' }}><div className="empty-state-icon">👤</div><h3>No active employees</h3></div></div>;
 
+  // ── Bulk action bar (shown when checks are selected) ────────────────────────
+  const BulkBar = selectedChecks.size > 0 ? (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 16px', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+      <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--accent)' }}>{selectedChecks.size} check{selectedChecks.size !== 1 ? 's' : ''} selected</span>
+      <div style={{ display: 'flex', gap: 8, marginLeft: 8, flexWrap: 'wrap' }}>
+        <button className="btn btn-primary btn-sm" onClick={handleBulkPrint} disabled={bulkWorking}>
+          {bulkWorking ? <span className="spinner" /> : '🖨 Print Selected Checks'}
+        </button>
+        <button className="btn btn-secondary btn-sm" onClick={handleBulkMarkDD} disabled={bulkWorking}>
+          🏦 Mark as Direct Deposit
+        </button>
+        <button className="btn btn-ghost btn-sm" style={{ color: '#dc2626' }} onClick={handleBulkVoid} disabled={bulkWorking}>
+          Void Selected
+        </button>
+        <button className="btn btn-ghost btn-sm" style={{ color: '#6b7280' }} onClick={handleBulkDelete} disabled={bulkWorking}>
+          Delete Selected
+        </button>
+      </div>
+      <button onClick={() => setSelectedChecks(new Set())} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.5, fontSize: 16 }}>×</button>
+    </div>
+  ) : null;
+
   const MI = ({ value, onChange }) => (
     <div style={{ position: 'relative', display: 'inline-block' }}>
       <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 12 }}>$</span>
@@ -773,9 +961,10 @@ function PayEmployeesTab({ clientId, client, employees }) {
     <div>
       {freqGroups.length > 1 && (
         <div className="pay-subtabs" style={{ marginBottom: 16 }}>
-          {freqGroups.map(f => <button key={f} className={`pay-subtab${freqGroup === f ? ' active' : ''}`} onClick={() => { setFreqGroup(f); setSelected(new Set()); }}>{FREQ_LABEL[f] || f} <span style={{ opacity: 0.6, fontSize: 11 }}>({activeEmps.filter(e => (e.payFrequency || 'biweekly') === f).length})</span></button>)}
+          {freqGroups.map(f => <button key={f} className={`pay-subtab${freqGroup === f ? ' active' : ''}`} onClick={() => { setFreqGroup(f); setSelected(new Set()); setSelectedChecks(new Set()); }}>{FREQ_LABEL[f] || f} <span style={{ opacity: 0.6, fontSize: 11 }}>({activeEmps.filter(e => (e.payFrequency || 'biweekly') === f).length})</span></button>)}
         </div>
       )}
+      {BulkBar}
 
       <div className="card" style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
@@ -823,8 +1012,10 @@ function PayEmployeesTab({ clientId, client, employees }) {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div className="emp-avatar" style={{ width: 28, height: 28, fontSize: 10, flexShrink: 0 }}>{initials(`${emp.firstName} ${emp.lastName}`)}</div>
                         <div>
-                          <div style={{ fontWeight: 600, fontSize: 13 }}>{emp.firstName} {emp.lastName}</div>
-                          <button onClick={() => setShowHistory(prev => ({ ...prev, [emp.id]: !prev[emp.id] }))} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--accent)', padding: 0, fontWeight: 600 }}>
+                          <button onClick={() => handleEmpNameClickWithPending(emp)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13, color: 'var(--text-primary)', padding: 0, textAlign: 'left' }} title="Click to open history and select all active checks">
+                            {emp.firstName} {emp.lastName}
+                          </button>
+                          <button onClick={() => setShowHistory(prev => ({ ...prev, [emp.id]: !prev[emp.id] }))} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--accent)', padding: 0, fontWeight: 600, display: 'block', marginTop: 1 }}>
                             {histOpen ? '▲ Hide' : '▼ History'}
                           </button>
                         </div>
@@ -875,7 +1066,16 @@ function PayEmployeesTab({ clientId, client, employees }) {
                   </td></tr>,
                   // Check history row
                   histOpen && <tr key={`${emp.id}-hist`}><td colSpan={9} style={{ padding: '0 20px 16px', background: '#f8fafc' }}>
-                    <CheckHistory clientId={clientId} employeeId={emp.id} employeeName={`${emp.firstName} ${emp.lastName}`} />
+                    <CheckHistory
+                      clientId={clientId}
+                      employeeId={emp.id}
+                      employeeName={`${emp.firstName} ${emp.lastName}`}
+                      selectedChecks={selectedChecks}
+                      onToggleCheck={toggleCheck}
+                      onChecksLoaded={handleChecksLoadedWithAutoSelect}
+                      onVoidCheck={handleCheckVoided}
+                      onDeleteCheck={handleCheckDeleted}
+                    />
                   </td></tr>,
                 ].filter(Boolean);
               })}
