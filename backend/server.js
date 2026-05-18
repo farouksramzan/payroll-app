@@ -18,6 +18,7 @@ const submissionRoutes = require('./src/routes/submissions');
 const employeeRoutes   = require('./src/routes/employees');
 const reportRoutes     = require('./src/routes/reports');
 const paystubRoutes    = require('./src/routes/paystubs');
+const payGroupRoutes   = require('./src/routes/payGroups');
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -56,6 +57,7 @@ app.use('/api/submissions', submissionRoutes);
 app.use('/api/employees',   employeeRoutes);
 app.use('/api/reports',     reportRoutes);
 app.use('/api/paystubs',    paystubRoutes);
+app.use('/api/pay-groups',  payGroupRoutes);
 app.get('/api/health',      (req, res) => res.json({ status: 'ok', env: process.env.NODE_ENV }));
 app.get('/api/bridge/status', (req, res) => {
   const connected = bridgeManager.isConnected;

@@ -101,6 +101,14 @@ const api = {
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   },
 
+  // Pay Groups
+  getPayGroups: (clientId) => request(`/pay-groups?clientId=${clientId}`),
+  getPayGroup: (id) => request(`/pay-groups/${id}`),
+  getPayGroupEmployees: (id) => request(`/pay-groups/${id}/employees`),
+  createPayGroup: (data) => request('/pay-groups', { method: 'POST', body: JSON.stringify(data) }),
+  updatePayGroup: (id, data) => request(`/pay-groups/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deletePayGroup: (id) => request(`/pay-groups/${id}`, { method: 'DELETE' }),
+
   // ACH Bridge
   getBridgeStatus: () => request('/bridge/status'),
 

@@ -90,7 +90,14 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved }) {
   const [form, setForm]     = useState(null);
   const [saving, setSaving] = useState(false);
   const [err, setErr]       = useState('');
-  const [showPeriods, setShowPeriods] = useState(false);
+  const [payGroups, setPayGroups] = useState([]);
+  const [showNewGroup, setShowNewGroup] = useState(false);
+  const [newGroup, setNewGroup] = useState({ name: '', frequency: 'biweekly', firstPayPeriodStart: '', firstPayPeriodEnd: '' });
+  const [savingGroup, setSavingGroup] = useState(false);
+
+  useEffect(() => {
+    api.getPayGroups(clientId).then(setPayGroups).catch(() => {});
+  }, [clientId]);
 
   useEffect(() => {
     if (!empId) return;
@@ -109,12 +116,35 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved }) {
       annualSalary: emp.annualSalary > 0 ? String(emp.annualSalary) : '',
       payFrequency: emp.payFrequency || 'biweekly',
       hireDate: emp.hireDate || '', isActive: emp.isActive !== false,
-      firstPayPeriodStart: emp.firstPayPeriodStart || '',
-      firstPayPeriodEnd:   emp.firstPayPeriodEnd   || '',
+      payGroupId: emp.payGroupId ? String(emp.payGroupId) : '',
     })).catch(e => setErr(e.message));
   }, [empId]);
 
   function set(field) { return e => { const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value; setForm(f => ({ ...f, [field]: v })); }; }
+  function setNG(field) { return e => setNewGroup(g => ({ ...g, [field]: e.target.value })); }
+
+  async function handleCreateGroup() {
+    if (!newGroup.name.trim()) { alert('Group name required'); return; }
+    setSavingGroup(true);
+    try {
+      const created = await api.createPayGroup({ clientId, ...newGroup });
+      setPayGroups(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setForm(f => ({ ...f, payGroupId: String(created.id), payFrequency: created.frequency }));
+      setShowNewGroup(false);
+      setNewGroup({ name: '', frequency: 'biweekly', firstPayPeriodStart: '', firstPayPeriodEnd: '' });
+    } catch (e) { alert(e.message); }
+    finally { setSavingGroup(false); }
+  }
+
+  function handleGroupChange(e) {
+    const val = e.target.value;
+    if (val === '__new__') { setShowNewGroup(true); setForm(f => ({ ...f, payGroupId: '' })); return; }
+    setShowNewGroup(false);
+    setForm(f => {
+      const group = payGroups.find(g => String(g.id) === val);
+      return { ...f, payGroupId: val, ...(group ? { payFrequency: group.frequency } : {}) };
+    });
+  }
 
   async function handleSave() {
     setSaving(true); setErr('');
@@ -123,8 +153,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved }) {
         step3Children: parseInt(form.step3Children || 0), step3Other: parseInt(form.step3Other || 0),
         step4a: parseFloat(form.step4a || 0), step4b: parseFloat(form.step4b || 0), step4c: parseFloat(form.step4c || 0),
         hourlyRate: parseFloat(form.hourlyRate || 0), annualSalary: parseFloat(form.annualSalary || 0),
-        firstPayPeriodStart: form.firstPayPeriodStart || null,
-        firstPayPeriodEnd:   form.firstPayPeriodEnd   || null,
+        payGroupId: form.payGroupId ? parseInt(form.payGroupId) : null,
       };
       if (!payload.ssn) delete payload.ssn;
       await api.updateEmployee(empId, payload);
@@ -132,10 +161,6 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved }) {
     } catch (e) { setErr(e.message); }
     finally { setSaving(false); }
   }
-
-  const upcomingPeriods = form && form.firstPayPeriodStart && form.firstPayPeriodEnd
-    ? calcUpcomingPeriods(form.firstPayPeriodStart, form.firstPayPeriodEnd, form.payFrequency)
-    : [];
 
   return (
     <>
@@ -175,6 +200,43 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved }) {
                 </select>
               </div>
 
+              <p className="form-section-title">Pay Group</p>
+              <div className="form-group" style={{ marginBottom: 8 }}>
+                <label className="form-label">Assigned Pay Group</label>
+                <select className="form-select" value={showNewGroup ? '__new__' : (form.payGroupId || '')} onChange={handleGroupChange}>
+                  <option value="">— No pay group —</option>
+                  {payGroups.map(g => <option key={g.id} value={String(g.id)}>{g.name} ({FREQ_LABEL[g.frequency] || g.frequency})</option>)}
+                  <option value="__new__">+ Create New Pay Group…</option>
+                </select>
+              </div>
+              {showNewGroup && (
+                <div style={{ background: 'var(--accent-light)', borderRadius: 8, padding: '14px 14px 10px', marginBottom: 14, border: '1px solid #bfdbfe' }}>
+                  <div style={{ fontWeight: 700, fontSize: 12, color: 'var(--accent)', marginBottom: 10, textTransform: 'uppercase' }}>New Pay Group</div>
+                  <div className="form-group" style={{ marginBottom: 10 }}>
+                    <label className="form-label" style={{ fontSize: 11 }}>Group Name</label>
+                    <input className="form-input" value={newGroup.name} onChange={setNG('name')} placeholder="e.g. Biweekly 1" />
+                  </div>
+                  <div className="form-grid" style={{ marginBottom: 10 }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: 11 }}>Frequency</label>
+                      <select className="form-select" value={newGroup.frequency} onChange={setNG('frequency')}>
+                        <option value="weekly">Weekly</option><option value="biweekly">Bi-weekly</option>
+                        <option value="semimonthly">Semi-monthly</option><option value="monthly">Monthly</option>
+                      </select>
+                    </div>
+                    <div />
+                  </div>
+                  <div className="form-grid" style={{ marginBottom: 10 }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: 11 }}>First Period Start</label><input className="form-input" type="date" value={newGroup.firstPayPeriodStart} onChange={setNG('firstPayPeriodStart')} /></div>
+                    <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: 11 }}>First Period End</label><input className="form-input" type="date" value={newGroup.firstPayPeriodEnd} onChange={setNG('firstPayPeriodEnd')} /></div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-primary btn-sm" onClick={handleCreateGroup} disabled={savingGroup}>{savingGroup ? <span className="spinner" /> : 'Create & Assign'}</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => { setShowNewGroup(false); setForm(f => ({ ...f, payGroupId: '' })); }}>Cancel</button>
+                  </div>
+                </div>
+              )}
+
               <p className="form-section-title">Pay Settings</p>
               <div className="form-grid">
                 <div className="form-group">
@@ -189,6 +251,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved }) {
                     <option value="weekly">Weekly</option><option value="biweekly">Bi-weekly</option>
                     <option value="semimonthly">Semi-monthly</option><option value="monthly">Monthly</option>
                   </select>
+                  {form.payGroupId && <p className="form-hint">Auto-set from pay group. Override if different.</p>}
                 </div>
               </div>
               {form.payType === 'hourly' ? (
@@ -206,29 +269,6 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved }) {
                     <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 13 }}>$</span>
                     <input className="form-input mono" type="number" min="0" step="1000" value={form.annualSalary} onChange={set('annualSalary')} style={{ paddingLeft: 24 }} />
                   </div>
-                </div>
-              )}
-
-              <p className="form-section-title">Pay Period Schedule</p>
-              <div className="form-grid">
-                <div className="form-group"><label className="form-label">First Pay Period Start</label><input className="form-input" type="date" value={form.firstPayPeriodStart} onChange={set('firstPayPeriodStart')} /></div>
-                <div className="form-group"><label className="form-label">First Pay Period End</label><input className="form-input" type="date" value={form.firstPayPeriodEnd} onChange={set('firstPayPeriodEnd')} /></div>
-              </div>
-              {upcomingPeriods.length > 0 && (
-                <div style={{ marginBottom: 14 }}>
-                  <button className="btn btn-ghost btn-sm" style={{ padding: '4px 0', fontSize: 12, color: 'var(--accent)' }} onClick={() => setShowPeriods(p => !p)}>
-                    {showPeriods ? '▲ Hide' : '▼ Show'} pay periods
-                  </button>
-                  {showPeriods && (
-                    <div style={{ maxHeight: 200, overflowY: 'auto', borderRadius: 8, border: '1px solid var(--border)', marginTop: 6 }}>
-                      {upcomingPeriods.map((p, i) => (
-                        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 12px', borderBottom: '1px solid var(--border)', background: p.overdue ? '#fef2f2' : i % 2 === 0 ? '#fff' : 'var(--bg-secondary)' }}>
-                          <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: p.overdue ? '#dc2626' : 'var(--text-primary)' }}>{fmtDate(p.start)} – {fmtDate(p.end)}</span>
-                          {p.overdue && <span className="badge badge-error" style={{ fontSize: 10 }}>Overdue</span>}
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
               )}
 
@@ -401,9 +441,135 @@ function CheckHistory({ clientId, employeeId, employeeName, selectedChecks, onTo
   );
 }
 
+// ── Pay Group Editor Modal ────────────────────────────────────────────────────
+function PayGroupEditorModal({ group, clientId, allGroups, onSaved, onClose }) {
+  const [form, setForm] = useState({
+    name: group.name,
+    frequency: group.frequency,
+    firstPayPeriodStart: group.firstPayPeriodStart || '',
+    firstPayPeriodEnd:   group.firstPayPeriodEnd   || '',
+  });
+  const [employees, setEmployees] = useState(null);
+  const [saving, setSaving]       = useState(false);
+  const [err, setErr]             = useState('');
+  const [showPeriods, setShowPeriods] = useState(false);
+
+  useEffect(() => {
+    api.getPayGroupEmployees(group.id).then(setEmployees).catch(() => setEmployees([]));
+  }, [group.id]);
+
+  function set(field) { return e => setForm(f => ({ ...f, [field]: e.target.value })); }
+
+  async function handleSave() {
+    setSaving(true); setErr('');
+    try {
+      await api.updatePayGroup(group.id, { ...form, firstPayPeriodStart: form.firstPayPeriodStart || null, firstPayPeriodEnd: form.firstPayPeriodEnd || null });
+      onSaved();
+    } catch (e) { setErr(e.message); }
+    finally { setSaving(false); }
+  }
+
+  async function handleMoveEmployee(emp, newGroupId) {
+    try {
+      await api.updateEmployee(emp.id, { clientId, payGroupId: newGroupId || null });
+      setEmployees(prev => prev.filter(e => e.id !== emp.id));
+    } catch (e) { alert(e.message); }
+  }
+
+  const upcomingPeriods = form.firstPayPeriodStart && form.firstPayPeriodEnd
+    ? calcUpcomingPeriods(form.firstPayPeriodStart, form.firstPayPeriodEnd, form.frequency, 6)
+    : [];
+
+  return (
+    <>
+      <div className="drawer-overlay" onClick={onClose} />
+      <div className="drawer" style={{ width: 520 }}>
+        <div className="drawer-header">
+          <div className="drawer-title">Edit Pay Group</div>
+          <button className="drawer-close" onClick={onClose}>×</button>
+        </div>
+        <div className="drawer-body">
+          {err && <div className="alert alert-error" style={{ marginBottom: 14 }}><span>⚠</span>{err}</div>}
+
+          <p className="form-section-title" style={{ marginTop: 0 }}>Group Details</p>
+          <div className="form-group"><label className="form-label">Group Name</label><input className="form-input" value={form.name} onChange={set('name')} /></div>
+          <div className="form-group">
+            <label className="form-label">Pay Frequency</label>
+            <select className="form-select" value={form.frequency} onChange={set('frequency')}>
+              <option value="weekly">Weekly</option><option value="biweekly">Bi-weekly</option>
+              <option value="semimonthly">Semi-monthly</option><option value="monthly">Monthly</option>
+            </select>
+          </div>
+          <div className="form-grid">
+            <div className="form-group"><label className="form-label">First Period Start</label><input className="form-input" type="date" value={form.firstPayPeriodStart} onChange={set('firstPayPeriodStart')} /></div>
+            <div className="form-group"><label className="form-label">First Period End</label><input className="form-input" type="date" value={form.firstPayPeriodEnd} onChange={set('firstPayPeriodEnd')} /></div>
+          </div>
+
+          {upcomingPeriods.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <button className="btn btn-ghost btn-sm" style={{ fontSize: 12, color: 'var(--accent)', padding: '4px 0' }} onClick={() => setShowPeriods(p => !p)}>
+                {showPeriods ? '▲ Hide' : '▼ Show'} upcoming periods
+              </button>
+              {showPeriods && (
+                <div style={{ maxHeight: 200, overflowY: 'auto', borderRadius: 8, border: '1px solid var(--border)', marginTop: 6 }}>
+                  {upcomingPeriods.map((p, i) => (
+                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 12px', borderBottom: '1px solid var(--border)', background: p.overdue ? '#fef2f2' : i % 2 === 0 ? '#fff' : 'var(--bg-secondary)' }}>
+                      <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: p.overdue ? '#dc2626' : 'var(--text-primary)' }}>{fmtDate(p.start)} – {fmtDate(p.end)}</span>
+                      {p.overdue && <span className="badge badge-error" style={{ fontSize: 10 }}>Overdue</span>}
+                      {!p.overdue && i === 0 && <span className="badge badge-warning" style={{ fontSize: 10 }}>Current</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <p className="form-section-title">Employees in This Group ({employees ? employees.length : '…'})</p>
+          {employees === null ? (
+            <div style={{ textAlign: 'center', padding: 20 }}><div className="spinner spinner-dark" style={{ width: 20, height: 20, display: 'inline-block' }} /></div>
+          ) : employees.length === 0 ? (
+            <div style={{ color: 'var(--text-muted)', fontSize: 13, fontStyle: 'italic' }}>No employees assigned to this group.</div>
+          ) : (
+            <div style={{ borderRadius: 8, border: '1px solid var(--border)', overflow: 'hidden' }}>
+              {employees.map((emp, i) => (
+                <div key={emp.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderTop: i > 0 ? '1px solid var(--border)' : 'none', background: i % 2 === 0 ? '#fff' : 'var(--bg-secondary)' }}>
+                  <div className="emp-avatar" style={{ width: 28, height: 28, fontSize: 10, flexShrink: 0 }}>{initials(`${emp.firstName} ${emp.lastName}`)}</div>
+                  <div style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{emp.firstName} {emp.lastName}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Move to:</span>
+                    <select style={{ fontSize: 12, padding: '3px 6px', borderRadius: 4, border: '1px solid var(--border)', background: '#fff' }}
+                      defaultValue=""
+                      onChange={e => { if (e.target.value) handleMoveEmployee(emp, e.target.value === '__none__' ? null : e.target.value); }}>
+                      <option value="">— select —</option>
+                      <option value="__none__">Remove from group</option>
+                      {allGroups.filter(g => g.id !== group.id).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="drawer-footer">
+          <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? <span className="spinner" /> : 'Save Changes'}</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ── Employees Tab ─────────────────────────────────────────────────────────────
 function EmployeesTab({ clientId, employees, onRefresh }) {
-  const [drawerEmpId, setDrawerEmpId] = useState(null);
+  const [drawerEmpId, setDrawerEmpId]     = useState(null);
+  const [editGroup, setEditGroup]         = useState(null); // group object
+  const [payGroups, setPayGroups]         = useState([]);
+
+  useEffect(() => {
+    api.getPayGroups(clientId).then(setPayGroups).catch(() => {});
+  }, [clientId]);
+
+  function handleGroupSaved() { setEditGroup(null); onRefresh(); api.getPayGroups(clientId).then(setPayGroups); }
 
   return (
     <div>
@@ -424,12 +590,25 @@ function EmployeesTab({ clientId, employees, onRefresh }) {
           {employees.map(emp => {
             const isSalary = emp.payType === 'salary';
             const rate = isSalary ? `${fmt(emp.annualSalary)}/yr` : `${fmt(emp.hourlyRate)}/hr`;
+            const groupObj = payGroups.find(g => g.id === emp.payGroupId);
             return (
               <div key={emp.id} className="emp-row" onClick={() => setDrawerEmpId(emp.id)}>
                 <div className="emp-avatar">{initials(`${emp.firstName} ${emp.lastName}`)}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div className="emp-name">{emp.firstName} {emp.lastName}</div>
-                  <div className="emp-meta">{emp.workState || 'TX'} · {FREQ_LABEL[emp.payFrequency] || emp.payFrequency} · {isSalary ? 'Salary' : 'Hourly'}</div>
+                  <div className="emp-meta" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <span>{emp.workState || 'TX'} · {isSalary ? 'Salary' : 'Hourly'}</span>
+                    {emp.payGroupName ? (
+                      <button
+                        onClick={e => { e.stopPropagation(); const g = groupObj || { id: emp.payGroupId, name: emp.payGroupName, frequency: emp.payGroupFrequency || emp.payFrequency, firstPayPeriodStart: emp.payGroupFirstStart, firstPayPeriodEnd: emp.payGroupFirstEnd }; setEditGroup(g); }}
+                        style={{ background: 'var(--accent-light)', border: 'none', borderRadius: 4, padding: '1px 7px', fontSize: 11, color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}
+                      >
+                        {emp.payGroupName}
+                      </button>
+                    ) : (
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>No pay group</span>
+                    )}
+                  </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 13, color: 'var(--accent)' }}>{rate}</div>
@@ -444,6 +623,9 @@ function EmployeesTab({ clientId, employees, onRefresh }) {
       )}
       {drawerEmpId && (
         <EmployeeDrawer clientId={clientId} empId={drawerEmpId} onClose={() => setDrawerEmpId(null)} onSaved={() => { setDrawerEmpId(null); onRefresh(); }} />
+      )}
+      {editGroup && (
+        <PayGroupEditorModal group={editGroup} clientId={clientId} allGroups={payGroups} onSaved={handleGroupSaved} onClose={() => setEditGroup(null)} />
       )}
     </div>
   );
@@ -709,9 +891,39 @@ function RunPayrollModal({ entries, payPeriodStart, payPeriodEnd, settlementDate
 function PayEmployeesTab({ clientId, client, employees }) {
   const currentYear = new Date().getFullYear();
   const activeEmps  = employees.filter(e => e.isActive !== false);
-  const freqGroups  = [...new Set(activeEmps.map(e => e.payFrequency || 'biweekly'))].sort();
-  const [freqGroup, setFreqGroup] = useState(freqGroups[0] || 'biweekly');
-  const empsInGroup = activeEmps.filter(e => (e.payFrequency || 'biweekly') === freqGroup);
+
+  // Pay groups — loaded from API; fallback to frequency-based groups for unassigned employees
+  const [payGroups, setPayGroups]         = useState([]);
+  const [currentGroupId, setCurrentGroupId] = useState(null);
+  const [editGroup, setEditGroup]         = useState(null);
+  const [groupsLoading, setGroupsLoading] = useState(true);
+
+  useEffect(() => {
+    api.getPayGroups(clientId)
+      .then(groups => {
+        setPayGroups(groups);
+        if (groups.length > 0 && !currentGroupId) setCurrentGroupId(groups[0].id);
+      })
+      .catch(() => {})
+      .finally(() => setGroupsLoading(false));
+  }, [clientId]);
+
+  const currentGroup = payGroups.find(g => g.id === currentGroupId) || null;
+
+  // Employees in current group; unassigned employees go into a virtual "Unassigned" tab
+  const assignedEmpIds = new Set(activeEmps.filter(e => e.payGroupId).map(e => e.payGroupId));
+  const unassignedEmps = activeEmps.filter(e => !e.payGroupId);
+  const UNASSIGNED_ID  = '__unassigned__';
+
+  const empsInGroup = currentGroupId === UNASSIGNED_ID
+    ? unassignedEmps
+    : activeEmps.filter(e => e.payGroupId === currentGroupId);
+
+  // All tabs = pay groups + optional "Unassigned" tab
+  const tabs = [
+    ...payGroups,
+    ...(unassignedEmps.length > 0 ? [{ id: UNASSIGNED_ID, name: `Unassigned (${unassignedEmps.length})`, frequency: 'biweekly', firstPayPeriodStart: null, firstPayPeriodEnd: null }] : []),
+  ];
 
   const [showHistory, setShowHistory] = useState({});
 
@@ -843,12 +1055,15 @@ function PayEmployeesTab({ clientId, client, employees }) {
   }
 
   function getDefaultPeriod() {
-    const anchor = empsInGroup.find(e => e.firstPayPeriodStart && e.firstPayPeriodEnd);
-    if (anchor) return getCurrentPeriod(anchor.firstPayPeriodStart, anchor.firstPayPeriodEnd, freqGroup);
+    const freq = currentGroup?.frequency || 'biweekly';
+    // Use pay group's anchor dates if available
+    if (currentGroup?.firstPayPeriodStart && currentGroup?.firstPayPeriodEnd) {
+      return getCurrentPeriod(currentGroup.firstPayPeriodStart, currentGroup.firstPayPeriodEnd, freq);
+    }
     const today = new Date(); today.setHours(0, 0, 0, 0);
-    if (freqGroup === 'weekly') { const m = new Date(today); m.setDate(today.getDate() - today.getDay() + 1); const s = new Date(m); s.setDate(m.getDate() + 6); return { start: m.toISOString().slice(0, 10), end: s.toISOString().slice(0, 10) }; }
-    if (freqGroup === 'semimonthly') { const d = today.getDate(); const y = today.getFullYear(), mo = today.getMonth(); return d <= 15 ? { start: `${y}-${String(mo+1).padStart(2,'0')}-01`, end: `${y}-${String(mo+1).padStart(2,'0')}-15` } : { start: `${y}-${String(mo+1).padStart(2,'0')}-16`, end: new Date(y, mo+1, 0).toISOString().slice(0,10) }; }
-    if (freqGroup === 'monthly') { const f = new Date(today.getFullYear(), today.getMonth(), 1), l = new Date(today.getFullYear(), today.getMonth() + 1, 0); return { start: f.toISOString().slice(0, 10), end: l.toISOString().slice(0, 10) }; }
+    if (freq === 'weekly') { const m = new Date(today); m.setDate(today.getDate() - today.getDay() + 1); const s = new Date(m); s.setDate(m.getDate() + 6); return { start: m.toISOString().slice(0, 10), end: s.toISOString().slice(0, 10) }; }
+    if (freq === 'semimonthly') { const d = today.getDate(); const y = today.getFullYear(), mo = today.getMonth(); return d <= 15 ? { start: `${y}-${String(mo+1).padStart(2,'0')}-01`, end: `${y}-${String(mo+1).padStart(2,'0')}-15` } : { start: `${y}-${String(mo+1).padStart(2,'0')}-16`, end: new Date(y, mo+1, 0).toISOString().slice(0,10) }; }
+    if (freq === 'monthly') { const f = new Date(today.getFullYear(), today.getMonth(), 1), l = new Date(today.getFullYear(), today.getMonth() + 1, 0); return { start: f.toISOString().slice(0, 10), end: l.toISOString().slice(0, 10) }; }
     const e = new Date(today); e.setDate(today.getDate() - 1); const s = new Date(e); s.setDate(e.getDate() - 13); return { start: s.toISOString().slice(0, 10), end: e.toISOString().slice(0, 10) };
   }
 
@@ -856,7 +1071,7 @@ function PayEmployeesTab({ clientId, client, employees }) {
   const [periodEnd, setPeriodEnd]           = useState('');
   const [settlementDate, setSettlementDate] = useState('');
 
-  useEffect(() => { const p = getDefaultPeriod(); setPeriodStart(p.start); setPeriodEnd(p.end); }, [freqGroup, employees]);
+  useEffect(() => { const p = getDefaultPeriod(); setPeriodStart(p.start); setPeriodEnd(p.end); }, [currentGroupId, employees, payGroups]);
 
   const [empState, setEmpState]   = useState({});
   const [expandedId, setExpandedId] = useState(null);
@@ -869,14 +1084,15 @@ function PayEmployeesTab({ clientId, client, employees }) {
       const next = { ...prev };
       empsInGroup.forEach(emp => {
         if (!next[emp.id]) {
-          const ppy = PERIODS_PER_YEAR[emp.payFrequency] || 26;
+          const freq = currentGroup?.frequency || emp.payFrequency || 'biweekly';
+          const ppy = PERIODS_PER_YEAR[freq] || 26;
           const salaryAmt = emp.payType === 'salary' ? r2((emp.annualSalary || 0) / ppy) : 0;
           next[emp.id] = { regHours: '', otHours: '', regRate: String(emp.hourlyRate || ''), otEnabled: true, salaryAmt: String(salaryAmt), bonus: '', commission: '', reimbursement: '', deduction: '', garnishment: '', taxCalc: null, calcLoading: false };
         }
       });
       return next;
     });
-  }, [freqGroup, employees]);
+  }, [currentGroupId, employees, payGroups]);
 
   function getEmpData(empId) { return empState[empId] || {}; }
 
@@ -898,8 +1114,9 @@ function PayEmployeesTab({ clientId, client, employees }) {
     if (!emp || gross <= 0) return;
     setEmpState(prev => ({ ...prev, [empId]: { ...prev[empId], calcLoading: true } }));
     try {
+      const freq = currentGroup?.frequency || emp.payFrequency || 'biweekly';
       const ytdData = await api.getEmployeeYTD(empId, currentYear).catch(() => ({ ytd_gross: 0 }));
-      const taxes = await api.calculate({ grossWages: gross, payFrequency: emp.payFrequency || 'biweekly', filingStatus: emp.filingStatus || 'single', step2Checkbox: !!emp.step2Checkbox, step3Children: emp.step3Children || 0, step3Other: emp.step3Other || 0, step4a: 0, step4b: 0, step4c: 0, workState: emp.workState || client?.state || 'TX', ytdGross: ytdData?.ytd_gross || 0, sutaRate: client?.sutaRate || null });
+      const taxes = await api.calculate({ grossWages: gross, payFrequency: freq, filingStatus: emp.filingStatus || 'single', step2Checkbox: !!emp.step2Checkbox, step3Children: emp.step3Children || 0, step3Other: emp.step3Other || 0, step4a: 0, step4b: 0, step4c: 0, workState: emp.workState || client?.state || 'TX', ytdGross: ytdData?.ytd_gross || 0, sutaRate: client?.sutaRate || null });
       setEmpState(prev => ({ ...prev, [empId]: { ...prev[empId], taxCalc: { ...taxes, ytdGross: ytdData?.ytd_gross || 0 }, calcLoading: false } }));
     } catch { setEmpState(prev => ({ ...prev, [empId]: { ...prev[empId], calcLoading: false } })); }
   }
@@ -918,7 +1135,8 @@ function PayEmployeesTab({ clientId, client, employees }) {
       if (parseFloat(data.bonus        || 0) > 0) lineItems.push({ payType: 'bonus',        description: 'Bonus',        amount: parseFloat(data.bonus) });
       if (parseFloat(data.commission   || 0) > 0) lineItems.push({ payType: 'commission',   description: 'Commission',   amount: parseFloat(data.commission) });
       if (parseFloat(data.reimbursement|| 0) > 0) lineItems.push({ payType: 'reimbursement',description: 'Reimbursement',amount: parseFloat(data.reimbursement) });
-      return { empId: emp.id, empName: `${emp.firstName} ${emp.lastName}`, payType: emp.payType, regularHours: emp.payType === 'salary' ? null : Math.min(regH, 40), overtimeHours: emp.payType === 'salary' ? null : otH, regularPay: regPay, overtimePay: otPay, bonus: parseFloat(data.bonus || 0), commission: parseFloat(data.commission || 0), reimbursement: parseFloat(data.reimbursement || 0), deduction: parseFloat(data.deduction || 0), garnishment: parseFloat(data.garnishment || 0), grossWages: tc.grossWages || gross, fitWithholding: tc.fitWithholding || 0, employeeSS: tc.employeeSS || 0, employeeMedicare: tc.employeeMedicare || 0, employerSS: tc.employerSS || 0, employerMedicare: tc.employerMedicare || 0, futaTax: tc.futaTax || 0, sutaTax: tc.sutaTax || 0, netPay: tc.netPay || gross, ytdGross: tc.ytdGross || 0, lineItems };
+      const freq = currentGroup?.frequency || emp.payFrequency || 'biweekly';
+      return { empId: emp.id, empName: `${emp.firstName} ${emp.lastName}`, payType: emp.payType, payFrequency: freq, regularHours: emp.payType === 'salary' ? null : Math.min(regH, 40), overtimeHours: emp.payType === 'salary' ? null : otH, regularPay: regPay, overtimePay: otPay, bonus: parseFloat(data.bonus || 0), commission: parseFloat(data.commission || 0), reimbursement: parseFloat(data.reimbursement || 0), deduction: parseFloat(data.deduction || 0), garnishment: parseFloat(data.garnishment || 0), grossWages: tc.grossWages || gross, fitWithholding: tc.fitWithholding || 0, employeeSS: tc.employeeSS || 0, employeeMedicare: tc.employeeMedicare || 0, employerSS: tc.employerSS || 0, employerMedicare: tc.employerMedicare || 0, futaTax: tc.futaTax || 0, sutaTax: tc.sutaTax || 0, netPay: tc.netPay || gross, ytdGross: tc.ytdGross || 0, lineItems };
     });
   }
 
@@ -926,7 +1144,14 @@ function PayEmployeesTab({ clientId, client, employees }) {
   function toggleAll(checked) { setSelected(checked ? new Set(empsInGroup.map(e => e.id)) : new Set()); }
   const allChecked = empsInGroup.length > 0 && empsInGroup.every(e => selected.has(e.id));
 
+  // Upcoming periods for current group
+  const groupFreq = currentGroup?.frequency || 'biweekly';
+  const upcomingPeriods = currentGroup?.firstPayPeriodStart && currentGroup?.firstPayPeriodEnd
+    ? calcUpcomingPeriods(currentGroup.firstPayPeriodStart, currentGroup.firstPayPeriodEnd, groupFreq, 4)
+    : [];
+
   if (activeEmps.length === 0) return <div className="card"><div className="empty-state" style={{ padding: '32px 20px' }}><div className="empty-state-icon">👤</div><h3>No active employees</h3></div></div>;
+  if (groupsLoading) return <div style={{ padding: 40, textAlign: 'center' }}><div className="spinner spinner-dark" style={{ width: 28, height: 28 }} /></div>;
 
   // ── Bulk action bar (shown when checks are selected) ────────────────────────
   const BulkBar = selectedChecks.size > 0 ? (
@@ -959,16 +1184,41 @@ function PayEmployeesTab({ clientId, client, employees }) {
 
   return (
     <div>
-      {freqGroups.length > 1 && (
+      {/* Pay group tabs */}
+      {tabs.length > 0 && (
         <div className="pay-subtabs" style={{ marginBottom: 16 }}>
-          {freqGroups.map(f => <button key={f} className={`pay-subtab${freqGroup === f ? ' active' : ''}`} onClick={() => { setFreqGroup(f); setSelected(new Set()); setSelectedChecks(new Set()); }}>{FREQ_LABEL[f] || f} <span style={{ opacity: 0.6, fontSize: 11 }}>({activeEmps.filter(e => (e.payFrequency || 'biweekly') === f).length})</span></button>)}
+          {tabs.map(g => {
+            const count = g.id === UNASSIGNED_ID
+              ? unassignedEmps.length
+              : activeEmps.filter(e => e.payGroupId === g.id).length;
+            return (
+              <button key={g.id} className={`pay-subtab${currentGroupId === g.id ? ' active' : ''}`}
+                onClick={() => { setCurrentGroupId(g.id); setSelected(new Set()); setSelectedChecks(new Set()); }}>
+                {g.name}
+                <span style={{ opacity: 0.6, fontSize: 11, marginLeft: 4 }}>({count})</span>
+              </button>
+            );
+          })}
+          {tabs.length === 0 && payGroups.length === 0 && (
+            <span style={{ fontSize: 13, color: 'var(--text-muted)', padding: '6px 0' }}>
+              No pay groups set up. Assign employees to pay groups in the Employees tab.
+            </span>
+          )}
+        </div>
+      )}
+      {/* Group name + edit link */}
+      {currentGroup && currentGroup.id !== UNASSIGNED_ID && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+          <span style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>{currentGroup.name}</span>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{FREQ_LABEL[currentGroup.frequency] || currentGroup.frequency}</span>
+          <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} onClick={() => setEditGroup(currentGroup)}>Edit Group</button>
         </div>
       )}
       {BulkBar}
 
       <div className="card" style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-          <span className="card-title">{FREQ_LABEL[freqGroup]} Pay Run</span>
+          <span className="card-title">{currentGroup ? currentGroup.name : 'Pay Run'}</span>
           {[['Period Start', periodStart, setPeriodStart], ['Period End', periodEnd, setPeriodEnd], ['Settlement Date', settlementDate, setSettlementDate]].map(([label, val, setter]) => (
             <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <label style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</label>
@@ -1012,9 +1262,16 @@ function PayEmployeesTab({ clientId, client, employees }) {
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                         <div className="emp-avatar" style={{ width: 28, height: 28, fontSize: 10, flexShrink: 0 }}>{initials(`${emp.firstName} ${emp.lastName}`)}</div>
                         <div>
-                          <button onClick={() => handleEmpNameClickWithPending(emp)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13, color: 'var(--text-primary)', padding: 0, textAlign: 'left' }} title="Click to open history and select all active checks">
-                            {emp.firstName} {emp.lastName}
-                          </button>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <button onClick={() => handleEmpNameClickWithPending(emp)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700, fontSize: 13, color: 'var(--text-primary)', padding: 0, textAlign: 'left' }} title="Click to open history and select all active checks">
+                              {emp.firstName} {emp.lastName}
+                            </button>
+                            {emp.payGroupName && currentGroup && (
+                              <button onClick={() => setEditGroup(currentGroup)} style={{ background: 'var(--accent-light)', border: 'none', cursor: 'pointer', fontSize: 10, color: 'var(--accent)', padding: '1px 5px', borderRadius: 3, fontWeight: 600 }} title="Edit pay group">
+                                {emp.payGroupName}
+                              </button>
+                            )}
+                          </div>
                           <button onClick={() => setShowHistory(prev => ({ ...prev, [emp.id]: !prev[emp.id] }))} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: 'var(--accent)', padding: 0, fontWeight: 600, display: 'block', marginTop: 1 }}>
                             {histOpen ? '▲ Hide' : '▼ History'}
                           </button>
@@ -1084,7 +1341,30 @@ function PayEmployeesTab({ clientId, client, employees }) {
         </div>
       </div>
 
+      {/* Upcoming pay periods for this group */}
+      {upcomingPeriods.length > 0 && (
+        <div className="card" style={{ marginTop: 16 }}>
+          <div style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 10 }}>
+            Upcoming Pay Periods — {currentGroup?.name}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 0, borderRadius: 8, border: '1px solid var(--border)', overflow: 'hidden' }}>
+            {upcomingPeriods.map((p, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 14px', borderTop: i > 0 ? '1px solid var(--border)' : 'none', background: p.overdue ? '#fef2f2' : i === 0 ? 'var(--accent-light)' : i % 2 === 0 ? '#fff' : 'var(--bg-secondary)' }}>
+                <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: p.overdue ? '#dc2626' : i === 0 ? 'var(--accent)' : 'var(--text-primary)', fontWeight: i === 0 || p.overdue ? 700 : 400 }}>
+                  {fmtDate(p.start)} – {fmtDate(p.end)}
+                </span>
+                {p.overdue && <span className="badge badge-error" style={{ fontSize: 10 }}>Overdue</span>}
+                {!p.overdue && i === 0 && <span className="badge badge-warning" style={{ fontSize: 10 }}>Current</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {showModal && <RunPayrollModal entries={buildEntries()} payPeriodStart={periodStart} payPeriodEnd={periodEnd} settlementDate={settlementDate} clientId={clientId} onClose={() => setShowModal(false)} onDone={() => { setShowModal(false); setSelected(new Set()); }} />}
+      {editGroup && editGroup.id !== UNASSIGNED_ID && (
+        <PayGroupEditorModal group={editGroup} clientId={clientId} allGroups={payGroups} onSaved={() => { setEditGroup(null); api.getPayGroups(clientId).then(setPayGroups); }} onClose={() => setEditGroup(null)} />
+      )}
     </div>
   );
 }

@@ -355,6 +355,24 @@ function migrate() {
     )
   `);
 
+  // pay_groups — user-defined pay schedule groups
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS pay_groups (
+      id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+      client_id             INTEGER NOT NULL,
+      name                  TEXT NOT NULL,
+      frequency             TEXT NOT NULL DEFAULT 'biweekly',
+      first_pay_period_start TEXT,
+      first_pay_period_end   TEXT,
+      created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+    )
+  `);
+
+  addCols('employees', [
+    { name: 'pay_group_id', def: 'INTEGER' },
+  ]);
+
   // notification_log — tracks sent notifications to avoid duplicates
   db.exec(`
     CREATE TABLE IF NOT EXISTS notification_log (

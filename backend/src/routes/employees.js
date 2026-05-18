@@ -21,6 +21,11 @@ function sanitize(e, withSSN = false) {
     hireDate: e.hire_date, createdAt: e.created_at,
     firstPayPeriodStart: e.first_pay_period_start || null,
     firstPayPeriodEnd:   e.first_pay_period_end   || null,
+    payGroupId:   e.pay_group_id || null,
+    payGroupName: e.pay_group_name || null,
+    payGroupFrequency:   e.pay_group_frequency   || null,
+    payGroupFirstStart:  e.pay_group_first_start  || null,
+    payGroupFirstEnd:    e.pay_group_first_end    || null,
     hasSSN: !!e.ssn_encrypted,
     ...(withSSN && e.ssn_encrypted ? { ssn: decrypt(e.ssn_encrypted) } : {}),
   };
@@ -33,7 +38,17 @@ router.get('/', (req, res) => {
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
   const client = db.prepare('SELECT id FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
   if (!client) return res.status(404).json({ error: 'Client not found' });
-  const rows = db.prepare('SELECT * FROM employees WHERE client_id = ? ORDER BY last_name, first_name').all(clientId);
+  const rows = db.prepare(`
+    SELECT e.*,
+           pg.name                  AS pay_group_name,
+           pg.frequency             AS pay_group_frequency,
+           pg.first_pay_period_start AS pay_group_first_start,
+           pg.first_pay_period_end   AS pay_group_first_end
+    FROM employees e
+    LEFT JOIN pay_groups pg ON e.pay_group_id = pg.id
+    WHERE e.client_id = ?
+    ORDER BY e.last_name, e.first_name
+  `).all(clientId);
   res.json(rows.map((e) => sanitize(e)));
 });
 
@@ -57,8 +72,14 @@ router.get('/ytd-batch', (req, res) => {
 router.get('/:id', (req, res) => {
   const db = getDb();
   const e = db.prepare(`
-    SELECT e.* FROM employees e
+    SELECT e.*,
+           pg.name                  AS pay_group_name,
+           pg.frequency             AS pay_group_frequency,
+           pg.first_pay_period_start AS pay_group_first_start,
+           pg.first_pay_period_end   AS pay_group_first_end
+    FROM employees e
     JOIN clients c ON e.client_id = c.id
+    LEFT JOIN pay_groups pg ON e.pay_group_id = pg.id
     WHERE e.id = ? AND c.user_id = ?
   `).get(req.params.id, req.user.id);
   if (!e) return res.status(404).json({ error: 'Employee not found' });
@@ -81,7 +102,7 @@ router.post('/', (req, res) => {
   const { clientId, firstName, lastName, ssn, address, city, state, zip, workState,
     filingStatus, step2Checkbox, step3Children, step3Other, step4a, step4b, step4c,
     payType, hourlyRate, annualSalary, payFrequency, hireDate,
-    firstPayPeriodStart, firstPayPeriodEnd } = req.body;
+    firstPayPeriodStart, firstPayPeriodEnd, payGroupId } = req.body;
 
   if (!clientId || !firstName || !lastName) return res.status(400).json({ error: 'clientId, firstName, lastName required' });
   const client = db.prepare('SELECT id FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
@@ -91,8 +112,8 @@ router.post('/', (req, res) => {
     INSERT INTO employees (client_id, first_name, last_name, ssn_encrypted, address, city, state, zip, work_state,
       filing_status, step2_checkbox, step3_children, step3_other, step4a, step4b, step4c,
       pay_type, hourly_rate, annual_salary, pay_frequency, hire_date,
-      first_pay_period_start, first_pay_period_end)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      first_pay_period_start, first_pay_period_end, pay_group_id)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     clientId, firstName.trim(), lastName.trim(), encrypt(ssn),
     address || null, city || null, state || 'TX', zip || null,
@@ -103,8 +124,15 @@ router.post('/', (req, res) => {
     payType || 'hourly', parseFloat(hourlyRate || 0), parseFloat(annualSalary || 0),
     payFrequency || 'biweekly', hireDate || null,
     firstPayPeriodStart || null, firstPayPeriodEnd || null,
+    payGroupId ? parseInt(payGroupId) : null,
   );
-  const emp = db.prepare('SELECT * FROM employees WHERE id = ?').get(result.lastInsertRowid);
+  const emp = db.prepare(`
+    SELECT e.*, pg.name AS pay_group_name, pg.frequency AS pay_group_frequency,
+           pg.first_pay_period_start AS pay_group_first_start,
+           pg.first_pay_period_end   AS pay_group_first_end
+    FROM employees e LEFT JOIN pay_groups pg ON e.pay_group_id = pg.id
+    WHERE e.id = ?
+  `).get(result.lastInsertRowid);
   res.status(201).json(sanitize(emp));
 });
 
@@ -117,7 +145,7 @@ router.put('/:id', (req, res) => {
   const { firstName, lastName, ssn, address, city, state, zip, workState,
     filingStatus, step2Checkbox, step3Children, step3Other, step4a, step4b, step4c,
     payType, hourlyRate, annualSalary, payFrequency, hireDate, isActive,
-    firstPayPeriodStart, firstPayPeriodEnd } = req.body;
+    firstPayPeriodStart, firstPayPeriodEnd, payGroupId } = req.body;
 
   db.prepare(`
     UPDATE employees SET
@@ -126,7 +154,7 @@ router.put('/:id', (req, res) => {
       step4a=?, step4b=?, step4c=?,
       pay_type=?, hourly_rate=?, annual_salary=?, pay_frequency=?,
       hire_date=?, is_active=?,
-      first_pay_period_start=?, first_pay_period_end=?
+      first_pay_period_start=?, first_pay_period_end=?, pay_group_id=?
     WHERE id = ?
   `).run(
     firstName  || e.first_name, lastName || e.last_name,
@@ -146,9 +174,17 @@ router.put('/:id', (req, res) => {
     isActive !== undefined ? (isActive ? 1 : 0) : e.is_active,
     firstPayPeriodStart !== undefined ? (firstPayPeriodStart || null) : e.first_pay_period_start,
     firstPayPeriodEnd   !== undefined ? (firstPayPeriodEnd   || null) : e.first_pay_period_end,
+    payGroupId !== undefined ? (payGroupId ? parseInt(payGroupId) : null) : e.pay_group_id,
     req.params.id,
   );
-  res.json(sanitize(db.prepare('SELECT * FROM employees WHERE id = ?').get(req.params.id)));
+  const updated = db.prepare(`
+    SELECT e.*, pg.name AS pay_group_name, pg.frequency AS pay_group_frequency,
+           pg.first_pay_period_start AS pay_group_first_start,
+           pg.first_pay_period_end   AS pay_group_first_end
+    FROM employees e LEFT JOIN pay_groups pg ON e.pay_group_id = pg.id
+    WHERE e.id = ?
+  `).get(req.params.id);
+  res.json(sanitize(updated));
 });
 
 // DELETE /api/employees/:id
