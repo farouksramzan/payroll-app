@@ -480,7 +480,7 @@ function advanceDate(dateStr, frequency) {
 
 router.post('/payroll-run', (req, res) => {
   const db = getDb();
-  const { clientId, payPeriodStart, payPeriodEnd, settlementDate, employees } = req.body;
+  const { clientId, payPeriodStart, payPeriodEnd, settlementDate, employees, paymentMethod } = req.body;
   if (!clientId || !payPeriodStart || !payPeriodEnd || !Array.isArray(employees)) {
     return res.status(400).json({ error: 'clientId, payPeriodStart, payPeriodEnd, employees required' });
   }
@@ -503,8 +503,10 @@ router.post('/payroll-run', (req, res) => {
         additional_medicare, employer_ss, employer_medicare,
         state_income_tax, futa_tax, suta_tax,
         total_deposit, net_pay, ytd_wages_before,
-        tax_year, tax_quarter, check_number, payroll_run_id
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        tax_year, tax_quarter, check_number, payroll_run_id,
+        payment_method, regular_hours, overtime_hours, regular_pay, overtime_pay,
+        bonus, commission, reimbursement, deduction, garnishment
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `);
     const insertItem = db.prepare(`
       INSERT INTO paystub_line_items (paystub_id, pay_type, description, hours, rate, amount)
@@ -564,6 +566,16 @@ router.post('/payroll-run', (req, res) => {
         taxes.stateIncomeTax || 0, taxes.futaTax || 0, taxes.sutaTax || 0,
         taxes.totalDeposit, taxes.netPay, ytdBefore,
         year, quarter, checkNum, runId,
+        paymentMethod || 'pending',
+        empPayData.regularHours  != null ? parseFloat(empPayData.regularHours)  : null,
+        empPayData.overtimeHours != null ? parseFloat(empPayData.overtimeHours) : null,
+        empPayData.regularPay    != null ? parseFloat(empPayData.regularPay)    : null,
+        empPayData.overtimePay   != null ? parseFloat(empPayData.overtimePay)   : null,
+        parseFloat(empPayData.bonus         || 0),
+        parseFloat(empPayData.commission    || 0),
+        parseFloat(empPayData.reimbursement || 0),
+        parseFloat(empPayData.deduction     || 0),
+        parseFloat(empPayData.garnishment   || 0),
       );
 
       const stubId = r.lastInsertRowid;
@@ -599,6 +611,244 @@ router.post('/payroll-run', (req, res) => {
 });
 
 // ── POST /api/paystubs/batch-submit ──────────────────────────────────────────
+// ── GET /api/paystubs/run-pdf/:runId — check PDF for a payroll run ────────────
+function numberToWords(amount) {
+  const dollars = Math.floor(amount);
+  const cents   = Math.round((amount - dollars) * 100);
+  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine',
+    'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  function below100(n) {
+    if (n < 20) return ones[n];
+    return tens[Math.floor(n / 10)] + (n % 10 ? '-' + ones[n % 10] : '');
+  }
+  function below1000(n) {
+    if (n < 100) return below100(n);
+    return ones[Math.floor(n / 100)] + ' Hundred' + (n % 100 ? ' ' + below100(n % 100) : '');
+  }
+  function toWords(n) {
+    if (n === 0) return 'Zero';
+    let w = '';
+    if (n >= 1000000) { w += below1000(Math.floor(n / 1000000)) + ' Million '; n %= 1000000; }
+    if (n >= 1000)    { w += below1000(Math.floor(n / 1000)) + ' Thousand '; n %= 1000; }
+    if (n > 0)        { w += below1000(n); }
+    return w.trim();
+  }
+  return `${toWords(dollars)} and ${String(cents).padStart(2, '0')}/100 Dollars`;
+}
+
+router.get('/run-pdf/:runId', (req, res) => {
+  const db = getDb();
+  const { runId } = req.params;
+  const { clientId } = req.query;
+  if (!clientId) return res.status(400).json({ error: 'clientId required' });
+
+  const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+
+  const stubs = db.prepare(`
+    SELECT p.*, e.first_name, e.last_name, e.address AS emp_address, e.city AS emp_city,
+           e.state AS emp_state, e.zip AS emp_zip
+    FROM paystubs p
+    LEFT JOIN employees e ON p.employee_id = e.id
+    WHERE p.payroll_run_id = ? AND p.client_id = ?
+    ORDER BY p.check_number
+  `).all(runId, clientId);
+
+  if (!stubs.length) return res.status(404).json({ error: 'No paystubs found for this run' });
+
+  const PDFDocument = require('pdfkit');
+  const doc = new PDFDocument({ size: 'LETTER', margin: 0, autoFirstPage: false });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `attachment; filename="payroll-checks-${runId}.pdf"`);
+  doc.pipe(res);
+
+  const PW = 612, PH = 792;
+  const ACCENT = '#1a2e5a', DARK = '#0f172a', GRAY = '#64748b', BORDER = '#e2e8f0';
+  const ML = 36, MR = 36, TW = PW - ML - MR;
+
+  for (const stub of stubs) {
+    doc.addPage();
+    const empName = stub.employee_name || (stub.first_name ? `${stub.first_name} ${stub.last_name}` : '—');
+
+    // ── Stub section (top 480pt) ──────────────────────────────────────────────
+    // Header bar
+    doc.rect(ML, 30, TW, 44).fill(ACCENT);
+    doc.fillColor('#fff').font('Helvetica-Bold').fontSize(13)
+      .text(client.business_name, ML + 10, 40, { width: TW / 2 });
+    doc.font('Helvetica').fontSize(8)
+      .text(`EIN: ${client.ein}`, ML + 10, 56);
+    doc.font('Helvetica-Bold').fontSize(9)
+      .text('PAY STUB — DETACH AND RETAIN', ML + 10, 63, { align: 'right', width: TW - 10 });
+
+    let y = 84;
+    function kv2(label, val, x, yy, w = 130) {
+      doc.font('Helvetica').fontSize(7).fillColor(GRAY).text(label.toUpperCase(), x, yy, { width: w });
+      doc.font('Helvetica-Bold').fontSize(8.5).fillColor(DARK).text(val || '—', x, yy + 9, { width: w });
+    }
+    const col = TW / 4;
+    kv2('Employee', empName, ML, y, col * 2 - 8);
+    kv2('Pay Period', `${stub.pay_period_start} – ${stub.pay_period_end}`, ML + col * 2, y);
+    kv2('Pay Date', stub.settlement_date || stub.pay_period_end, ML + col * 3, y);
+    y += 28;
+
+    const addrParts = [stub.emp_address, [stub.emp_city, stub.emp_state, stub.emp_zip].filter(Boolean).join(', ')].filter(Boolean);
+    if (addrParts.length) {
+      doc.font('Helvetica').fontSize(7.5).fillColor(GRAY).text(addrParts.join('\n'), ML, y);
+      y += addrParts.length * 10 + 4;
+    }
+
+    doc.rect(ML, y, TW, 1).fill(BORDER); y += 8;
+
+    // Earnings section
+    doc.rect(ML, y, TW, 14).fill('#f8fafc');
+    doc.font('Helvetica-Bold').fontSize(7).fillColor(GRAY).text('EARNINGS', ML + 4, y + 4);
+    y += 14;
+    const lineItems = db.prepare('SELECT * FROM paystub_line_items WHERE paystub_id = ?').all(stub.id);
+    const earnCols = [{ l: 'Description', x: ML + 4, w: 160 }, { l: 'Hours', x: ML + 170, w: 60 }, { l: 'Rate', x: ML + 234, w: 70 }, { l: 'Amount', x: ML + 310, w: 90, right: true }];
+    doc.font('Helvetica-Bold').fontSize(7).fillColor(GRAY);
+    earnCols.forEach(c => doc.text(c.l, c.x, y + 2, { width: c.w, align: c.right ? 'right' : 'left' }));
+    y += 12;
+    let shade = false;
+    for (const li of lineItems) {
+      if (shade) doc.rect(ML, y, TW, 13).fill('#f9fafb').fillOpacity(1);
+      doc.font('Helvetica').fontSize(8).fillColor(DARK)
+        .text((li.description || li.pay_type || '').replace(/_/g, ' '), ML + 4, y + 3, { width: 160 })
+        .text(li.hours != null ? String(li.hours) : '', ML + 170, y + 3, { width: 60 })
+        .text(li.rate  != null ? `$${Number(li.rate).toFixed(2)}` : '', ML + 234, y + 3, { width: 70 })
+        .text(`$${Number(li.amount).toFixed(2)}`, ML + 310, y + 3, { width: 90, align: 'right' });
+      y += 13; shade = !shade;
+    }
+    if (stub.bonus > 0)         { doc.font('Helvetica').fontSize(8).fillColor(DARK).text('Bonus', ML + 4, y + 3, { width: 160 }).text(`$${Number(stub.bonus).toFixed(2)}`, ML + 310, y + 3, { width: 90, align: 'right' }); y += 13; }
+    if (stub.commission > 0)    { doc.font('Helvetica').fontSize(8).fillColor(DARK).text('Commission', ML + 4, y + 3, { width: 160 }).text(`$${Number(stub.commission).toFixed(2)}`, ML + 310, y + 3, { width: 90, align: 'right' }); y += 13; }
+    if (stub.reimbursement > 0) { doc.font('Helvetica').fontSize(8).fillColor(DARK).text('Reimbursement', ML + 4, y + 3, { width: 160 }).text(`$${Number(stub.reimbursement).toFixed(2)}`, ML + 310, y + 3, { width: 90, align: 'right' }); y += 13; }
+
+    doc.rect(ML, y, TW, 1).fill(BORDER); y += 6;
+
+    // Deductions + Employer side by side
+    const halfW = TW / 2 - 4;
+    const leftX = ML, rightX = ML + TW / 2 + 4;
+
+    function section(label, rows, x, startY) {
+      doc.rect(x, startY, halfW, 14).fill('#f8fafc');
+      doc.font('Helvetica-Bold').fontSize(7).fillColor(GRAY).text(label, x + 4, startY + 4);
+      let sy = startY + 14;
+      for (const [desc, amt] of rows) {
+        if (amt !== 0) {
+          doc.font('Helvetica').fontSize(8).fillColor(DARK)
+            .text(desc, x + 4, sy + 2, { width: halfW - 80 })
+            .text(`$${Number(amt).toFixed(2)}`, x + halfW - 76, sy + 2, { width: 72, align: 'right' });
+          sy += 13;
+        }
+      }
+      return sy;
+    }
+
+    const deductRows = [
+      ['Federal Income Tax', stub.fit_withholding],
+      ['Social Security (6.2%)', stub.employee_ss],
+      ['Medicare (1.45%)', stub.employee_medicare],
+      ['State Income Tax', stub.state_income_tax],
+      ['Deductions', stub.deduction],
+      ['Garnishments', stub.garnishment],
+    ];
+    const employerRows = [
+      ['Social Security Match', stub.employer_ss],
+      ['Medicare Match', stub.employer_medicare],
+      ['FUTA (0.6%)', stub.futa_tax],
+      ['SUI', stub.suta_tax],
+    ];
+
+    const lBottom = section('EMPLOYEE DEDUCTIONS', deductRows, leftX, y);
+    const rBottom = section('EMPLOYER CONTRIBUTIONS', employerRows, rightX, y);
+    y = Math.max(lBottom, rBottom) + 8;
+
+    // Totals
+    doc.rect(ML, y, TW, 1).fill(BORDER); y += 8;
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(DARK)
+      .text('Gross Pay', ML + 4, y)
+      .text(`$${Number(stub.gross_wages).toFixed(2)}`, ML + 4, y, { width: TW - 8, align: 'right' });
+    y += 14;
+    doc.font('Helvetica').fontSize(8).fillColor(GRAY)
+      .text('Total Deductions', ML + 4, y)
+      .text(`-$${Number(stub.fit_withholding + stub.employee_ss + stub.employee_medicare + (stub.state_income_tax || 0) + (stub.deduction || 0) + (stub.garnishment || 0)).toFixed(2)}`, ML + 4, y, { width: TW - 8, align: 'right' });
+    y += 14;
+    if (stub.reimbursement > 0) {
+      doc.text('Reimbursements', ML + 4, y)
+        .text(`+$${Number(stub.reimbursement).toFixed(2)}`, ML + 4, y, { width: TW - 8, align: 'right' });
+      y += 14;
+    }
+    doc.rect(ML, y, TW, 1).fill(BORDER); y += 6;
+    doc.font('Helvetica-Bold').fontSize(11).fillColor(ACCENT)
+      .text('NET PAY', ML + 4, y)
+      .text(`$${Number(stub.net_pay).toFixed(2)}`, ML + 4, y, { width: TW - 8, align: 'right' });
+    y += 20;
+
+    // Detach line
+    const detachY = 480;
+    doc.dash(4, { space: 4 }).rect(ML, detachY, TW, 0).stroke(BORDER).undash();
+    doc.font('Helvetica').fontSize(7).fillColor(GRAY).text('✂  DETACH HERE  ✂', ML, detachY + 2, { width: TW, align: 'center' });
+
+    // ── Check section (bottom) ────────────────────────────────────────────────
+    const CY = detachY + 20;
+    const CW = TW, CX = ML;
+
+    // Company info (upper left)
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text(client.business_name, CX, CY);
+    doc.font('Helvetica').fontSize(8).fillColor(GRAY);
+    if (client.business_address) doc.text(client.business_address, CX, CY + 13);
+    const companyCity = [client.business_city, client.state, client.business_zip].filter(Boolean).join(', ');
+    if (companyCity) doc.text(companyCity, CX, client.business_address ? CY + 23 : CY + 13);
+
+    // Check number (upper right)
+    doc.font('Helvetica-Bold').fontSize(11).fillColor(DARK)
+      .text(stub.check_number ? `#${stub.check_number}` : '', CX, CY, { width: CW, align: 'right' });
+
+    // Date
+    const payDate = stub.settlement_date || stub.pay_period_end || new Date().toISOString().slice(0, 10);
+    doc.font('Helvetica').fontSize(8).fillColor(GRAY)
+      .text('Date:', CX + CW - 180, CY + 13)
+      .font('Helvetica-Bold').fillColor(DARK).text(payDate, CX + CW - 150, CY + 13);
+
+    let cy = CY + 48;
+
+    // Pay to line
+    doc.font('Helvetica').fontSize(8).fillColor(GRAY).text('PAY TO THE ORDER OF', CX, cy);
+    cy += 12;
+    doc.rect(CX, cy, CW - 120, 22).stroke(BORDER);
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text(empName, CX + 6, cy + 6, { width: CW - 130 });
+
+    // Amount box
+    doc.rect(CX + CW - 114, cy, 114, 22).fill('#f8fafc').stroke(BORDER);
+    doc.font('Helvetica-Bold').fontSize(11).fillColor(DARK)
+      .text(`$${Number(stub.net_pay).toFixed(2)}`, CX + CW - 110, cy + 5, { width: 106, align: 'right' });
+
+    cy += 30;
+
+    // Amount in words
+    doc.font('Helvetica').fontSize(8).fillColor(GRAY).text('AMOUNT:', CX, cy);
+    cy += 10;
+    doc.rect(CX, cy, CW, 18).stroke(BORDER);
+    const wordsLine = numberToWords(stub.net_pay) + ' ****';
+    doc.font('Helvetica').fontSize(8.5).fillColor(DARK).text(wordsLine, CX + 6, cy + 4, { width: CW - 12 });
+    cy += 28;
+
+    // Memo line
+    const memo = `Pay period: ${stub.pay_period_start} to ${stub.pay_period_end}`;
+    doc.font('Helvetica').fontSize(8).fillColor(GRAY).text('MEMO:', CX, cy);
+    doc.fillColor(DARK).text(memo, CX + 36, cy);
+
+    // Signature line
+    doc.rect(CX + CW - 160, cy + 20, 160, 1).fill(DARK);
+    doc.font('Helvetica').fontSize(7.5).fillColor(GRAY).text('Authorized Signature', CX + CW - 160, cy + 24, { width: 160, align: 'center' });
+
+    // Border around whole check
+    doc.rect(CX - 4, CY - 8, CW + 8, PH - CY - ML + 8 - 10).stroke(BORDER);
+  }
+
+  doc.end();
+});
+
 // taxType '941': aggregate FIT+SS+Medicare (optionally filtered by taxYear+taxQuarter)
 // taxType '940': aggregate FUTA for the year (taxYear required)
 router.post('/batch-submit', async (req, res) => {

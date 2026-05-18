@@ -19,6 +19,8 @@ function sanitize(e, withSSN = false) {
     payType: e.pay_type, hourlyRate: e.hourly_rate, annualSalary: e.annual_salary,
     payFrequency: e.pay_frequency, isActive: !!e.is_active,
     hireDate: e.hire_date, createdAt: e.created_at,
+    firstPayPeriodStart: e.first_pay_period_start || null,
+    firstPayPeriodEnd:   e.first_pay_period_end   || null,
     hasSSN: !!e.ssn_encrypted,
     ...(withSSN && e.ssn_encrypted ? { ssn: decrypt(e.ssn_encrypted) } : {}),
   };
@@ -78,7 +80,8 @@ router.post('/', (req, res) => {
   const db = getDb();
   const { clientId, firstName, lastName, ssn, address, city, state, zip, workState,
     filingStatus, step2Checkbox, step3Children, step3Other, step4a, step4b, step4c,
-    payType, hourlyRate, annualSalary, payFrequency, hireDate } = req.body;
+    payType, hourlyRate, annualSalary, payFrequency, hireDate,
+    firstPayPeriodStart, firstPayPeriodEnd } = req.body;
 
   if (!clientId || !firstName || !lastName) return res.status(400).json({ error: 'clientId, firstName, lastName required' });
   const client = db.prepare('SELECT id FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
@@ -87,8 +90,9 @@ router.post('/', (req, res) => {
   const result = db.prepare(`
     INSERT INTO employees (client_id, first_name, last_name, ssn_encrypted, address, city, state, zip, work_state,
       filing_status, step2_checkbox, step3_children, step3_other, step4a, step4b, step4c,
-      pay_type, hourly_rate, annual_salary, pay_frequency, hire_date)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      pay_type, hourly_rate, annual_salary, pay_frequency, hire_date,
+      first_pay_period_start, first_pay_period_end)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     clientId, firstName.trim(), lastName.trim(), encrypt(ssn),
     address || null, city || null, state || 'TX', zip || null,
@@ -98,6 +102,7 @@ router.post('/', (req, res) => {
     parseFloat(step4a || 0), parseFloat(step4b || 0), parseFloat(step4c || 0),
     payType || 'hourly', parseFloat(hourlyRate || 0), parseFloat(annualSalary || 0),
     payFrequency || 'biweekly', hireDate || null,
+    firstPayPeriodStart || null, firstPayPeriodEnd || null,
   );
   const emp = db.prepare('SELECT * FROM employees WHERE id = ?').get(result.lastInsertRowid);
   res.status(201).json(sanitize(emp));
@@ -111,7 +116,8 @@ router.put('/:id', (req, res) => {
 
   const { firstName, lastName, ssn, address, city, state, zip, workState,
     filingStatus, step2Checkbox, step3Children, step3Other, step4a, step4b, step4c,
-    payType, hourlyRate, annualSalary, payFrequency, hireDate, isActive } = req.body;
+    payType, hourlyRate, annualSalary, payFrequency, hireDate, isActive,
+    firstPayPeriodStart, firstPayPeriodEnd } = req.body;
 
   db.prepare(`
     UPDATE employees SET
@@ -119,7 +125,8 @@ router.put('/:id', (req, res) => {
       filing_status=?, step2_checkbox=?, step3_children=?, step3_other=?,
       step4a=?, step4b=?, step4c=?,
       pay_type=?, hourly_rate=?, annual_salary=?, pay_frequency=?,
-      hire_date=?, is_active=?
+      hire_date=?, is_active=?,
+      first_pay_period_start=?, first_pay_period_end=?
     WHERE id = ?
   `).run(
     firstName  || e.first_name, lastName || e.last_name,
@@ -137,6 +144,8 @@ router.put('/:id', (req, res) => {
     annualSalary !== undefined ? parseFloat(annualSalary) : e.annual_salary,
     payFrequency || e.pay_frequency, hireDate ?? e.hire_date,
     isActive !== undefined ? (isActive ? 1 : 0) : e.is_active,
+    firstPayPeriodStart !== undefined ? (firstPayPeriodStart || null) : e.first_pay_period_start,
+    firstPayPeriodEnd   !== undefined ? (firstPayPeriodEnd   || null) : e.first_pay_period_end,
     req.params.id,
   );
   res.json(sanitize(db.prepare('SELECT * FROM employees WHERE id = ?').get(req.params.id)));

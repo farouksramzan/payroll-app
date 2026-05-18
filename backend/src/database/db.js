@@ -287,12 +287,31 @@ function migrate() {
     { name: 'payroll_frequency',  def: "TEXT DEFAULT 'biweekly'" },
     { name: 'next_payroll_date',  def: 'TEXT' },
     { name: 'next_check_number',  def: 'INTEGER DEFAULT 1001' },
+    { name: 'business_address',   def: 'TEXT' },
+    { name: 'business_city',      def: 'TEXT' },
+    { name: 'business_zip',       def: 'TEXT' },
   ]);
 
-  // check number + payroll run grouping on paystubs
+  // check number + payroll run grouping + payment details on paystubs
   addCols('paystubs', [
-    { name: 'check_number',   def: 'INTEGER' },
-    { name: 'payroll_run_id', def: 'TEXT' },
+    { name: 'check_number',    def: 'INTEGER' },
+    { name: 'payroll_run_id',  def: 'TEXT' },
+    { name: 'payment_method',  def: "TEXT DEFAULT 'pending'" },
+    { name: 'regular_hours',   def: 'REAL' },
+    { name: 'overtime_hours',  def: 'REAL' },
+    { name: 'regular_pay',     def: 'REAL' },
+    { name: 'overtime_pay',    def: 'REAL' },
+    { name: 'bonus',           def: 'REAL DEFAULT 0' },
+    { name: 'commission',      def: 'REAL DEFAULT 0' },
+    { name: 'reimbursement',   def: 'REAL DEFAULT 0' },
+    { name: 'deduction',       def: 'REAL DEFAULT 0' },
+    { name: 'garnishment',     def: 'REAL DEFAULT 0' },
+  ]);
+
+  // first pay period anchor dates on employees
+  addCols('employees', [
+    { name: 'first_pay_period_start', def: 'TEXT' },
+    { name: 'first_pay_period_end',   def: 'TEXT' },
   ]);
 }
 

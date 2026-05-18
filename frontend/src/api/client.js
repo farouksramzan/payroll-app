@@ -70,6 +70,18 @@ const api = {
   batchSubmitPaystubs: (data) => request('/paystubs/batch-submit', { method: 'POST', body: JSON.stringify(data) }),
   getPayPeriods: (clientId) => request(`/paystubs/pay-periods?clientId=${clientId}`),
   runPayroll: (data) => request('/paystubs/payroll-run', { method: 'POST', body: JSON.stringify(data) }),
+  downloadRunPdf: async (runId, clientId) => {
+    const token = localStorage.getItem('token');
+    const res = await fetch(`/api/paystubs/run-pdf/${runId}?clientId=${clientId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'PDF failed'); }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = `payroll-checks-${runId}.pdf`; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  },
 
   // ACH Bridge
   getBridgeStatus: () => request('/bridge/status'),

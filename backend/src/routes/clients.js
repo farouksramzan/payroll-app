@@ -29,6 +29,9 @@ function sanitizeClient(client, includeSecrets = false) {
     payrollFrequency: client.payroll_frequency || 'biweekly',
     nextPayrollDate:  client.next_payroll_date  || null,
     nextCheckNumber:  client.next_check_number  || 1001,
+    businessAddress:  client.business_address   || null,
+    businessCity:     client.business_city      || null,
+    businessZip:      client.business_zip       || null,
   };
   if (includeSecrets) {
     out.batchProviderPin = decrypt(client.batch_provider_pin_encrypted);
@@ -129,7 +132,8 @@ router.put('/:id', (req, res) => {
   const { businessName, ein, state, bankAccountNumber, bankRoutingNumber, bankAccountType, batchProviderPin,
     eftpsInternetPassword, eftpsEnrollmentNumber, depositSchedule, sutaRate,
     contactName, contactEmail, contactPhone,
-    payrollFrequency, nextPayrollDate } = req.body;
+    payrollFrequency, nextPayrollDate,
+    businessAddress, businessCity, businessZip } = req.body;
 
   if (ein && !/^\d{2}-?\d{7}$/.test(ein)) return res.status(400).json({ error: 'EIN must be in format XX-XXXXXXX' });
   if (batchProviderPin && !/^\d{4}$/.test(batchProviderPin)) return res.status(400).json({ error: 'Batch Provider PIN must be exactly 4 digits' });
@@ -152,6 +156,9 @@ router.put('/:id', (req, res) => {
       contact_phone = ?,
       payroll_frequency = ?,
       next_payroll_date = ?,
+      business_address = ?,
+      business_city = ?,
+      business_zip = ?,
       updated_at = CURRENT_TIMESTAMP
     WHERE id = ? AND user_id = ?
   `).run(
@@ -171,6 +178,9 @@ router.put('/:id', (req, res) => {
     contactPhone !== undefined ? contactPhone : existing.contact_phone,
     payrollFrequency || existing.payroll_frequency || 'biweekly',
     nextPayrollDate  !== undefined ? (nextPayrollDate || null) : existing.next_payroll_date,
+    businessAddress !== undefined ? (businessAddress || null) : existing.business_address,
+    businessCity    !== undefined ? (businessCity    || null) : existing.business_city,
+    businessZip     !== undefined ? (businessZip     || null) : existing.business_zip,
     req.params.id,
     req.user.id,
   );
