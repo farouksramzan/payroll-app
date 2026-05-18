@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import ClientForm from './pages/ClientForm';
 import ClientDetail from './pages/ClientDetail';
+import CompanyWorkspace from './pages/CompanyWorkspace';
 import PayrollEntry from './pages/PayrollEntry';
 import SubmissionHistory from './pages/SubmissionHistory';
 import Employees from './pages/Employees';
@@ -31,7 +32,7 @@ export default function App() {
         >
           <Route index element={<Dashboard />} />
           <Route path="clients/new" element={<ClientForm />} />
-          <Route path="clients/:id" element={<ClientDetail />} />
+          <Route path="clients/:id" element={<CompanyWorkspace />} />
           <Route path="clients/:id/edit" element={<ClientForm />} />
           <Route path="clients/:id/payroll/new" element={<PayrollEntry />} />
           <Route path="clients/:id/payroll/run" element={<PayrollRun />} />
