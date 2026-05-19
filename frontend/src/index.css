@@ -5,10 +5,10 @@
   --bg-secondary:  #f8fafc;
   --bg-tertiary:   #f1f5f9;
   --bg-hover:      #eef2f7;
-  --accent:        #1a2e5a;
-  --accent-hover:  #152447;
-  --accent-light:  #eef1f8;
-  --accent-mid:    rgba(26,46,90,0.12);
+  --accent:        #2d6a4f;
+  --accent-hover:  #1e4d38;
+  --accent-light:  #e8f5ee;
+  --accent-mid:    rgba(45,106,79,0.12);
   --success:       #059669;
   --success-light: #d1fae5;
   --warning:       #d97706;
@@ -624,7 +624,7 @@ tbody tr:hover td { background: var(--bg-hover); }
 .login-page {
   min-height: 100vh;
   display: flex; align-items: center; justify-content: center;
-  background: linear-gradient(135deg, #eef1f8 0%, #f8fafc 60%, #e8edf5 100%);
+  background: linear-gradient(135deg, #e8f5ee 0%, #f8fafc 60%, #e0f0e8 100%);
   padding: 20px;
 }
 .login-box {
