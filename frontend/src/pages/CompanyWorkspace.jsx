@@ -989,13 +989,17 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
 
     let s = new Date(anchor + 'T00:00:00'), e = new Date(g.firstPayPeriodEnd + 'T00:00:00');
     const pending = [];
+    let nonLateCount = 0;
     for (let i = 0; i < 60; i++) {
       const endStr = e.toISOString().slice(0, 10);
       if (!paidEnds.has(endStr)) {
-        const payDate = g.payDate || calcDefaultPayDate(endStr);
-        pending.push({ start: s.toISOString().slice(0, 10), end: endStr, payDate, isLate: payDate < todayStr });
-        // Stop after including the first non-late (upcoming) period
-        if (payDate >= todayStr) break;
+        const payDate = calcDefaultPayDate(endStr);  // always per-period end date, never shared across periods
+        const isLate = payDate < todayStr;
+        pending.push({ start: s.toISOString().slice(0, 10), end: endStr, payDate, isLate });
+        if (!isLate) {
+          nonLateCount++;
+          if (nonLateCount >= 2) break;  // current due + one next upcoming, then stop
+        }
       }
       [s, e] = advancePeriod(s, e, freq);
     }
