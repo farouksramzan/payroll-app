@@ -14,6 +14,7 @@ function sanitizeGroup(g) {
     frequency: g.frequency,
     firstPayPeriodStart: g.first_pay_period_start || null,
     firstPayPeriodEnd:   g.first_pay_period_end   || null,
+    payDate: g.pay_date || null,
     createdAt: g.created_at,
   };
 }
@@ -63,21 +64,21 @@ router.get('/:id/employees', (req, res) => {
 
 // POST /api/pay-groups
 router.post('/', (req, res) => {
-  const { clientId, name, frequency, firstPayPeriodStart, firstPayPeriodEnd } = req.body;
+  const { clientId, name, frequency, firstPayPeriodStart, firstPayPeriodEnd, payDate } = req.body;
   if (!clientId || !name) return res.status(400).json({ error: 'clientId and name required' });
   const db = getDb();
   const client = db.prepare('SELECT id FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
   if (!client) return res.status(404).json({ error: 'Client not found' });
   const result = db.prepare(`
-    INSERT INTO pay_groups (client_id, name, frequency, first_pay_period_start, first_pay_period_end)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(clientId, name.trim(), frequency || 'biweekly', firstPayPeriodStart || null, firstPayPeriodEnd || null);
+    INSERT INTO pay_groups (client_id, name, frequency, first_pay_period_start, first_pay_period_end, pay_date)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(clientId, name.trim(), frequency || 'biweekly', firstPayPeriodStart || null, firstPayPeriodEnd || null, payDate || null);
   res.status(201).json(sanitizeGroup(db.prepare('SELECT * FROM pay_groups WHERE id = ?').get(result.lastInsertRowid)));
 });
 
 // PUT /api/pay-groups/:id
 router.put('/:id', (req, res) => {
-  const { name, frequency, firstPayPeriodStart, firstPayPeriodEnd } = req.body;
+  const { name, frequency, firstPayPeriodStart, firstPayPeriodEnd, payDate } = req.body;
   const db = getDb();
   const g = db.prepare(`
     SELECT pg.* FROM pay_groups pg
@@ -86,13 +87,14 @@ router.put('/:id', (req, res) => {
   `).get(req.params.id, req.user.id);
   if (!g) return res.status(404).json({ error: 'Pay group not found' });
   db.prepare(`
-    UPDATE pay_groups SET name = ?, frequency = ?, first_pay_period_start = ?, first_pay_period_end = ?
+    UPDATE pay_groups SET name = ?, frequency = ?, first_pay_period_start = ?, first_pay_period_end = ?, pay_date = ?
     WHERE id = ?
   `).run(
     name !== undefined ? name.trim() : g.name,
     frequency || g.frequency,
     firstPayPeriodStart !== undefined ? (firstPayPeriodStart || null) : g.first_pay_period_start,
     firstPayPeriodEnd   !== undefined ? (firstPayPeriodEnd   || null) : g.first_pay_period_end,
+    payDate !== undefined ? (payDate || null) : g.pay_date,
     g.id,
   );
   res.json(sanitizeGroup(db.prepare('SELECT * FROM pay_groups WHERE id = ?').get(g.id)));

@@ -57,6 +57,31 @@ function getCurrentPeriod(firstStart, firstEnd, freq) {
   return { start: s.toISOString().slice(0, 10), end: e.toISOString().slice(0, 10) };
 }
 
+function prevPeriod(s, e, freq) {
+  if (freq === 'weekly')      return [addDays(s, -7),  addDays(e, -7)];
+  if (freq === 'biweekly')    return [addDays(s, -14), addDays(e, -14)];
+  if (freq === 'monthly')     return [new Date(s.getFullYear(), s.getMonth() - 1, s.getDate()), new Date(e.getFullYear(), e.getMonth() - 1, e.getDate())];
+  if (freq === 'semimonthly') {
+    const ne = addDays(s, -1);
+    const ns = ne.getDate() === 15
+      ? new Date(ne.getFullYear(), ne.getMonth(), 1)
+      : new Date(ne.getFullYear(), ne.getMonth(), 16);
+    return [ns, ne];
+  }
+  return [addDays(s, -14), addDays(e, -14)];
+}
+
+const DOW_MAP = { sunday: 0, monday: 1, tuesday: 2, wednesday: 3, thursday: 4, friday: 5, saturday: 6 };
+function calcPayDate(payDayName, periodEnd) {
+  if (!payDayName || !periodEnd) return '';
+  const target = DOW_MAP[payDayName.toLowerCase()];
+  if (target === undefined) return '';
+  const d = new Date(periodEnd + 'T00:00:00');
+  const diff = (target - d.getDay() + 7) % 7;
+  d.setDate(d.getDate() + diff);
+  return d.toISOString().slice(0, 10);
+}
+
 const US_STATES = [
   ['AL','Alabama'],['AK','Alaska'],['AZ','Arizona'],['AR','Arkansas'],['CA','California'],
   ['CO','Colorado'],['CT','Connecticut'],['DE','Delaware'],['FL','Florida'],['GA','Georgia'],
@@ -92,7 +117,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved }) {
   const [err, setErr]       = useState('');
   const [payGroups, setPayGroups] = useState([]);
   const [showNewGroup, setShowNewGroup] = useState(false);
-  const [newGroup, setNewGroup] = useState({ name: '', frequency: 'biweekly', firstPayPeriodStart: '', firstPayPeriodEnd: '' });
+  const [newGroup, setNewGroup] = useState({ name: '', frequency: 'biweekly', firstPayPeriodStart: '', firstPayPeriodEnd: '', payDate: '' });
   const [savingGroup, setSavingGroup] = useState(false);
 
   useEffect(() => {
@@ -131,7 +156,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved }) {
       setPayGroups(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
       setForm(f => ({ ...f, payGroupId: String(created.id), payFrequency: created.frequency }));
       setShowNewGroup(false);
-      setNewGroup({ name: '', frequency: 'biweekly', firstPayPeriodStart: '', firstPayPeriodEnd: '' });
+      setNewGroup({ name: '', frequency: 'biweekly', firstPayPeriodStart: '', firstPayPeriodEnd: '', payDate: '' });
     } catch (e) { alert(e.message); }
     finally { setSavingGroup(false); }
   }
@@ -229,6 +254,13 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved }) {
                   <div className="form-grid" style={{ marginBottom: 10 }}>
                     <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: 11 }}>First Period Start</label><input className="form-input" type="date" value={newGroup.firstPayPeriodStart} onChange={setNG('firstPayPeriodStart')} /></div>
                     <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: 11 }}>First Period End</label><input className="form-input" type="date" value={newGroup.firstPayPeriodEnd} onChange={setNG('firstPayPeriodEnd')} /></div>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 10 }}>
+                    <label className="form-label" style={{ fontSize: 11 }}>Pay Date (day of week)</label>
+                    <select className="form-select" value={newGroup.payDate} onChange={setNG('payDate')}>
+                      <option value="">— None —</option>
+                      {['monday','tuesday','wednesday','thursday','friday'].map(d => <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>)}
+                    </select>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
                     <button className="btn btn-primary btn-sm" onClick={handleCreateGroup} disabled={savingGroup}>{savingGroup ? <span className="spinner" /> : 'Create & Assign'}</button>
@@ -448,6 +480,7 @@ function PayGroupEditorModal({ group, clientId, allGroups, onSaved, onClose }) {
     frequency: group.frequency,
     firstPayPeriodStart: group.firstPayPeriodStart || '',
     firstPayPeriodEnd:   group.firstPayPeriodEnd   || '',
+    payDate: group.payDate || '',
   });
   const [employees, setEmployees] = useState(null);
   const [saving, setSaving]       = useState(false);
@@ -493,12 +526,21 @@ function PayGroupEditorModal({ group, clientId, allGroups, onSaved, onClose }) {
 
           <p className="form-section-title" style={{ marginTop: 0 }}>Group Details</p>
           <div className="form-group"><label className="form-label">Group Name</label><input className="form-input" value={form.name} onChange={set('name')} /></div>
-          <div className="form-group">
-            <label className="form-label">Pay Frequency</label>
-            <select className="form-select" value={form.frequency} onChange={set('frequency')}>
-              <option value="weekly">Weekly</option><option value="biweekly">Bi-weekly</option>
-              <option value="semimonthly">Semi-monthly</option><option value="monthly">Monthly</option>
-            </select>
+          <div className="form-grid">
+            <div className="form-group">
+              <label className="form-label">Pay Frequency</label>
+              <select className="form-select" value={form.frequency} onChange={set('frequency')}>
+                <option value="weekly">Weekly</option><option value="biweekly">Bi-weekly</option>
+                <option value="semimonthly">Semi-monthly</option><option value="monthly">Monthly</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Pay Date (day of week)</label>
+              <select className="form-select" value={form.payDate} onChange={set('payDate')}>
+                <option value="">— None —</option>
+                {['monday','tuesday','wednesday','thursday','friday'].map(d => <option key={d} value={d}>{d.charAt(0).toUpperCase() + d.slice(1)}</option>)}
+              </select>
+            </div>
           </div>
           <div className="form-grid">
             <div className="form-group"><label className="form-label">First Period Start</label><input className="form-input" type="date" value={form.firstPayPeriodStart} onChange={set('firstPayPeriodStart')} /></div>
@@ -1071,7 +1113,16 @@ function PayEmployeesTab({ clientId, client, employees }) {
   const [periodEnd, setPeriodEnd]           = useState('');
   const [settlementDate, setSettlementDate] = useState('');
 
-  useEffect(() => { const p = getDefaultPeriod(); setPeriodStart(p.start); setPeriodEnd(p.end); }, [currentGroupId, employees, payGroups]);
+  useEffect(() => {
+    const p = getDefaultPeriod();
+    setPeriodStart(p.start);
+    setPeriodEnd(p.end);
+    if (currentGroup?.payDate && p.end) {
+      setSettlementDate(calcPayDate(currentGroup.payDate, p.end));
+    } else {
+      setSettlementDate('');
+    }
+  }, [currentGroupId, employees, payGroups]);
 
   const [empState, setEmpState]   = useState({});
   const [expandedId, setExpandedId] = useState(null);
@@ -1219,7 +1270,28 @@ function PayEmployeesTab({ clientId, client, employees }) {
       <div className="card" style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <span className="card-title">{currentGroup ? currentGroup.name : 'Pay Run'}</span>
-          {[['Period Start', periodStart, setPeriodStart], ['Period End', periodEnd, setPeriodEnd], ['Settlement Date', settlementDate, setSettlementDate]].map(([label, val, setter]) => (
+          {/* Prev/Next period navigation */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <button className="btn btn-ghost btn-sm" style={{ padding: '4px 8px', fontSize: 13 }} title="Previous period"
+              onClick={() => {
+                const freq = currentGroup?.frequency || 'biweekly';
+                const [ns, ne] = prevPeriod(new Date(periodStart + 'T00:00:00'), new Date(periodEnd + 'T00:00:00'), freq);
+                const s = ns.toISOString().slice(0, 10), e = ne.toISOString().slice(0, 10);
+                setPeriodStart(s); setPeriodEnd(e);
+                if (currentGroup?.payDate) setSettlementDate(calcPayDate(currentGroup.payDate, e));
+              }}
+              disabled={!periodStart || !periodEnd}>‹ Prev</button>
+            <button className="btn btn-ghost btn-sm" style={{ padding: '4px 8px', fontSize: 13 }} title="Next period"
+              onClick={() => {
+                const freq = currentGroup?.frequency || 'biweekly';
+                const [ns, ne] = advancePeriod(new Date(periodStart + 'T00:00:00'), new Date(periodEnd + 'T00:00:00'), freq);
+                const s = ns.toISOString().slice(0, 10), e = ne.toISOString().slice(0, 10);
+                setPeriodStart(s); setPeriodEnd(e);
+                if (currentGroup?.payDate) setSettlementDate(calcPayDate(currentGroup.payDate, e));
+              }}
+              disabled={!periodStart || !periodEnd}>Next ›</button>
+          </div>
+          {[['Period Start', periodStart, setPeriodStart], ['Period End', periodEnd, setPeriodEnd], ['Pay Date', settlementDate, setSettlementDate]].map(([label, val, setter]) => (
             <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <label style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, whiteSpace: 'nowrap' }}>{label}</label>
               <input className="form-input" type="date" value={val} onChange={e => setter(e.target.value)} style={{ width: 145, height: 32, fontSize: 13 }} />
@@ -1442,7 +1514,7 @@ function LiabilityCheckEditor({ stub, clientId, client, onUpdated, onClose }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 12 }}>
             <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: 11 }}>Period Start</label><input className="form-input" type="date" value={form.payPeriodStart} onChange={set('payPeriodStart')} style={{ height: 32, fontSize: 13 }} /></div>
             <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: 11 }}>Period End</label><input className="form-input" type="date" value={form.payPeriodEnd} onChange={set('payPeriodEnd')} style={{ height: 32, fontSize: 13 }} /></div>
-            <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: 11 }}>Settlement Date</label><input className="form-input" type="date" value={form.settlementDate} onChange={set('settlementDate')} style={{ height: 32, fontSize: 13 }} /></div>
+            <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: 11 }}>Pay Date</label><input className="form-input" type="date" value={form.settlementDate} onChange={set('settlementDate')} style={{ height: 32, fontSize: 13 }} /></div>
           </div>
           {taxes && (
             <div style={{ background: '#fff', borderRadius: 8, padding: '10px 12px', border: '1px solid var(--border)', marginBottom: 12, display: 'flex', gap: 24, flexWrap: 'wrap', fontSize: 12 }}>

@@ -364,10 +364,15 @@ function migrate() {
       frequency             TEXT NOT NULL DEFAULT 'biweekly',
       first_pay_period_start TEXT,
       first_pay_period_end   TEXT,
+      pay_date              TEXT,
       created_at            DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
     )
   `);
+
+  addCols('pay_groups', [
+    { name: 'pay_date', def: 'TEXT' },
+  ]);
 
   addCols('employees', [
     { name: 'pay_group_id', def: 'INTEGER' },

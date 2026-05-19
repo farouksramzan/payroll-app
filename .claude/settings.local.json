@@ -30,7 +30,9 @@
       "Bash(git -C \"/Users/faroukramzan/Desktop/Payroll App\" add bridge-server/EFTPSBridgeWatcher.ahk)",
       "Bash(node -e \"require\\('./src/services/taxCalculator'\\)\")",
       "Bash(npx vite *)",
-      "Bash(node -e \"const PDFDocument = require\\('pdfkit'\\); const doc = new PDFDocument\\(\\); console.log\\('pdfkit OK, version:', require\\('./node_modules/pdfkit/package.json'\\).version\\)\")"
+      "Bash(node -e \"const PDFDocument = require\\('pdfkit'\\); const doc = new PDFDocument\\(\\); console.log\\('pdfkit OK, version:', require\\('./node_modules/pdfkit/package.json'\\).version\\)\")",
+      "Bash(cat backend/src/index.js)",
+      "Bash(cat backend/index.js)"
     ]
   }
 }
