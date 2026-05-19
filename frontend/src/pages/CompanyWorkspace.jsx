@@ -964,13 +964,13 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     ...(unassignedEmps.length > 0 ? [{ id: UNASSIGNED_ID, name: `Unassigned (${unassignedEmps.length})`, frequency: 'biweekly' }] : []),
   ];
 
-  // Returns the first pay period (from the anchor) that has no non-voided paystubs.
-  // Never skips ahead to today — always surfaces the oldest unpaid period first.
-  function getPendingPeriod() {
+  // Returns ALL unpaid periods from the anchor: late periods (pay date passed) first,
+  // then at most one upcoming period (pay date in the future).
+  function getPendingPeriods() {
     const g = currentGroup;
-    if (!g || g.id === UNASSIGNED_ID || !g.firstPayPeriodEnd || g.deletedAt) return null;
+    if (!g || g.id === UNASSIGNED_ID || !g.firstPayPeriodEnd || g.deletedAt) return [];
     const anchor = g.firstPayPeriodStart || calcStartFromEnd(g.firstPayPeriodEnd, g.frequency);
-    if (!anchor) return null;
+    if (!anchor) return [];
     const freq = g.frequency || 'biweekly';
 
     // Consistent with getHistory: prefer pay_group_id filter, fall back to employee_id
@@ -980,15 +980,22 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
       return paystubs.filter(s => s.employee_id && empIds.has(s.employee_id) && s.check_status !== 'voided');
     })();
 
-    const latestEnd = groupStubs.reduce((max, s) => (s.pay_period_end > max ? s.pay_period_end : max), '');
-    let s = new Date(anchor + 'T00:00:00'), e = new Date(g.firstPayPeriodEnd + 'T00:00:00');
-    // Advance only past periods that have already been paid
-    while (latestEnd && e.toISOString().slice(0, 10) <= latestEnd) [s, e] = advancePeriod(s, e, freq);
+    const paidEnds = new Set(groupStubs.map(s => s.pay_period_end));
+    const todayStr = new Date().toISOString().slice(0, 10);
 
-    const endStr = e.toISOString().slice(0, 10);
-    const payDate = g.payDate || calcDefaultPayDate(endStr);
-    const today   = new Date().toISOString().slice(0, 10);
-    return { start: s.toISOString().slice(0, 10), end: endStr, payDate, isLate: payDate < today };
+    let s = new Date(anchor + 'T00:00:00'), e = new Date(g.firstPayPeriodEnd + 'T00:00:00');
+    const pending = [];
+    for (let i = 0; i < 60; i++) {
+      const endStr = e.toISOString().slice(0, 10);
+      if (!paidEnds.has(endStr)) {
+        const payDate = g.payDate || calcDefaultPayDate(endStr);
+        pending.push({ start: s.toISOString().slice(0, 10), end: endStr, payDate, isLate: payDate < todayStr });
+        // Stop after including the first non-late (upcoming) period
+        if (payDate >= todayStr) break;
+      }
+      [s, e] = advancePeriod(s, e, freq);
+    }
+    return pending;
   }
 
   // Historical periods: paystubs for this group, grouped by period, newest first
@@ -1016,69 +1023,97 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     return Object.values(byPeriod).sort((a, b) => b.end.localeCompare(a.end));
   }
 
-  function getRow(empId) { return pendingRows[empId] || { regHours: '', otHours: '', selected: true }; }
-  function setRow(empId, field, val) { setPendingRows(prev => ({ ...prev, [empId]: { ...getRow(empId), [field]: val } })); }
+  function getRow(periodEnd, empId) {
+    return (pendingRows[periodEnd] || {})[empId] || { regHours: '', otHours: '', selected: true };
+  }
+  function setRow(periodEnd, empId, field, val) {
+    setPendingRows(prev => ({
+      ...prev,
+      [periodEnd]: { ...(prev[periodEnd] || {}), [empId]: { ...getRow(periodEnd, empId), [field]: val } },
+    }));
+  }
 
   async function handleRunPayroll() {
-    const period = getPendingPeriod();
-    if (!period) return;
+    const pendingPeriods = getPendingPeriods();
+    if (pendingPeriods.length === 0) return;
     const freq = currentGroup?.frequency || 'biweekly';
     const ppy  = PERIODS_PER_YEAR[freq] || 26;
-    const sel  = empsInGroup.filter(e => getRow(e.id).selected);
-    if (sel.length === 0) { setRunErr('Select at least one employee.'); return; }
 
-    const zeroHours = sel.filter(e => e.payType === 'hourly' && !parseFloat(getRow(e.id).regHours || 0));
-    if (zeroHours.length > 0) {
-      if (!window.confirm(`${zeroHours.map(e => `${e.firstName} ${e.lastName}`).join(', ')} have 0 regular hours. Continue anyway?`)) return;
+    // Require at least one employee selected across any period
+    const totalSel = pendingPeriods.reduce((n, p) =>
+      n + empsInGroup.filter(e => getRow(p.end, e.id).selected).length, 0);
+    if (totalSel === 0) { setRunErr('Select at least one employee.'); return; }
+
+    // Zero-hours warning (de-duplicated across periods)
+    const warnedIds = new Set();
+    const zeroNames = [];
+    for (const period of pendingPeriods) {
+      empsInGroup
+        .filter(e => getRow(period.end, e.id).selected && e.payType === 'hourly' && !parseFloat(getRow(period.end, e.id).regHours || 0))
+        .forEach(e => { if (!warnedIds.has(e.id)) { warnedIds.add(e.id); zeroNames.push(`${e.firstName} ${e.lastName}`); } });
+    }
+    if (zeroNames.length > 0) {
+      if (!window.confirm(`${zeroNames.join(', ')} have 0 regular hours in one or more periods. Continue anyway?`)) return;
     }
 
-    if (!window.confirm(`Run payroll for ${sel.length} employee${sel.length !== 1 ? 's' : ''}?\n${fmtDate(period.start)} – ${fmtDate(period.end)}  ·  Pay Date: ${fmtDate(period.payDate)}`)) return;
+    const periodSummary = pendingPeriods.map(p =>
+      `${fmtDate(p.start)} – ${fmtDate(p.end)}  ·  Pay Date: ${fmtDate(p.payDate)}${p.isLate ? '  ⚠ LATE' : ''}`
+    ).join('\n');
+    if (!window.confirm(`Run payroll for ${pendingPeriods.length} period${pendingPeriods.length !== 1 ? 's' : ''}?\n\n${periodSummary}`)) return;
 
     setRunning(true); setRunErr(''); setRunSuccess('');
+    const allStubIds = [];
     try {
-      const empData = sel.map(emp => {
-        const row   = getRow(emp.id);
-        const rate  = emp.hourlyRate || 0;
-        const regH  = parseFloat(row.regHours || 0);
-        const otH   = parseFloat(row.otHours  || 0);
-        const salAmt = r2((emp.annualSalary || 0) / ppy);
-        const regPay = emp.payType === 'salary' ? salAmt : r2(Math.min(regH, 40) * rate);
-        const otPay  = emp.payType === 'salary' ? 0 : r2(otH * rate * 1.5);
-        const lineItems = emp.payType === 'salary'
-          ? [{ payType: 'salary', description: 'Salary', amount: salAmt }]
-          : [
-              ...(regPay > 0 ? [{ payType: 'regular',  description: 'Regular',  hours: Math.min(regH, 40), rate, amount: regPay }] : []),
-              ...(otPay  > 0 ? [{ payType: 'overtime', description: 'Overtime', hours: otH, rate: r2(rate * 1.5), amount: otPay }] : []),
-            ];
-        const empStubs = paystubs.filter(s => s.employee_id === emp.id && s.check_status !== 'voided');
-        const ytdGross = empStubs.reduce((sum, s) => sum + (s.gross_wages || 0), 0);
-        return {
-          employeeId: emp.id, ytdGross, lineItems,
-          regularHours: emp.payType === 'salary' ? null : Math.min(regH, 40),
-          overtimeHours: emp.payType === 'salary' ? null : otH,
-          regularPay: regPay, overtimePay: otPay,
-          bonus: 0, commission: 0, reimbursement: 0, deduction: 0, garnishment: 0,
-        };
-      });
+      for (const period of pendingPeriods) {
+        const sel = empsInGroup.filter(e => getRow(period.end, e.id).selected);
+        if (sel.length === 0) continue;
 
-      const result = await api.runPayroll({
-        clientId,
-        payPeriodStart: period.start, payPeriodEnd: period.end,
-        settlementDate: period.payDate || null,
-        paymentMethod: 'print_check',
-        payGroupId: currentGroupId !== UNASSIGNED_ID ? currentGroupId : null,
-        employees: empData,
-      });
+        const empData = sel.map(emp => {
+          const row    = getRow(period.end, emp.id);
+          const rate   = emp.hourlyRate || 0;
+          const regH   = parseFloat(row.regHours || 0);
+          const otH    = parseFloat(row.otHours  || 0);
+          const salAmt = r2((emp.annualSalary || 0) / ppy);
+          const regPay = emp.payType === 'salary' ? salAmt : r2(Math.min(regH, 40) * rate);
+          const otPay  = emp.payType === 'salary' ? 0 : r2(otH * rate * 1.5);
+          const lineItems = emp.payType === 'salary'
+            ? [{ payType: 'salary', description: 'Salary', amount: salAmt }]
+            : [
+                ...(regPay > 0 ? [{ payType: 'regular',  description: 'Regular',  hours: Math.min(regH, 40), rate, amount: regPay }] : []),
+                ...(otPay  > 0 ? [{ payType: 'overtime', description: 'Overtime', hours: otH, rate: r2(rate * 1.5), amount: otPay }] : []),
+              ];
+          const empStubs = paystubs.filter(s => s.employee_id === emp.id && s.check_status !== 'voided');
+          const ytdGross = empStubs.reduce((sum, s) => sum + (s.gross_wages || 0), 0);
+          return {
+            employeeId: emp.id, ytdGross, lineItems,
+            regularHours:  emp.payType === 'salary' ? null : Math.min(regH, 40),
+            overtimeHours: emp.payType === 'salary' ? null : otH,
+            regularPay: regPay, overtimePay: otPay,
+            bonus: 0, commission: 0, reimbursement: 0, deduction: 0, garnishment: 0,
+          };
+        });
 
-      await api.downloadRunPdf(result.runId, clientId);
+        const result = await api.runPayroll({
+          clientId,
+          payPeriodStart: period.start, payPeriodEnd: period.end,
+          settlementDate: period.payDate || null,
+          paymentMethod: 'print_check',
+          payGroupId: currentGroupId !== UNASSIGNED_ID ? currentGroupId : null,
+          employees: empData,
+        });
+        allStubIds.push(...result.paystubs.map(s => s.id));
+      }
+
+      // Download combined PDF for all checks and mark them printed
+      await api.printSelectedChecks(clientId, allStubIds);
       await reloadStubs();
 
       setPendingRows(prev => {
         const next = { ...prev };
-        sel.forEach(e => delete next[e.id]);
+        pendingPeriods.forEach(p => { delete next[p.end]; });
         return next;
       });
-      setRunSuccess(`${result.count} check${result.count !== 1 ? 's' : ''} created — PDF downloaded.`);
+      setRunSuccess(`${allStubIds.length} check${allStubIds.length !== 1 ? 's' : ''} created — PDF downloaded.`);
     } catch (e) { setRunErr(e.message); }
     finally { setRunning(false); }
   }
@@ -1088,10 +1123,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     <div className="card"><div className="empty-state" style={{ padding: '32px 20px' }}><div className="empty-state-icon">👤</div><h3>No active employees</h3></div></div>
   );
 
-  const pendingPeriod = getPendingPeriod();
-  const history       = getHistory();
-  const selCount      = empsInGroup.filter(e => getRow(e.id).selected).length;
-  const allPendingSel = empsInGroup.length > 0 && empsInGroup.every(e => getRow(e.id).selected);
+  const pendingPeriods = getPendingPeriods();
+  const history        = getHistory();
+  const totalSelCount  = pendingPeriods.reduce((n, p) =>
+    n + empsInGroup.filter(e => getRow(p.end, e.id).selected).length, 0);
 
   const todayStr = new Date().toISOString().slice(0, 10);
 
@@ -1140,9 +1175,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
           </>
         )}
         <div style={{ flex: 1 }} />
-        {pendingPeriod && !isGroupDeleted && (
-          <button className="btn btn-primary" onClick={handleRunPayroll} disabled={running || selCount === 0}>
-            {running ? <span className="spinner" /> : `+ Run Payroll (${selCount})`}
+        {pendingPeriods.length > 0 && !isGroupDeleted && (
+          <button className="btn btn-primary" onClick={handleRunPayroll} disabled={running || totalSelCount === 0}>
+            {running ? <span className="spinner" /> : `+ Run Payroll (${totalSelCount})`}
           </button>
         )}
       </div>
@@ -1155,75 +1190,78 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
       {runErr     && <div className="alert alert-error"   style={{ marginBottom: 14 }}><span>⚠</span>{runErr}<button onClick={() => setRunErr('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button></div>}
       {runSuccess && <div className="alert alert-success" style={{ marginBottom: 14 }}><span>✓</span>{runSuccess}<button onClick={() => setRunSuccess('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button></div>}
 
-      {/* ── Pending period ── */}
-      {pendingPeriod && empsInGroup.length > 0 && (
-        <div style={{ marginBottom: 28 }}>
-          <PeriodHeader start={pendingPeriod.start} end={pendingPeriod.end} payDate={pendingPeriod.payDate} pending isLate={pendingPeriod.isLate} />
-          {pendingPeriod.isLate && (
-            <div style={{ fontSize: 12, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: '6px 12px', marginBottom: 8 }}>
-              ⚠ Pay date has passed — these checks are late. You can still run payroll below.
+      {/* ── Pending periods (late first, then current/upcoming) ── */}
+      {pendingPeriods.length > 0 && empsInGroup.length > 0 && pendingPeriods.map(period => {
+        const ppy = PERIODS_PER_YEAR[currentGroup?.frequency || 'biweekly'] || 26;
+        const allPeriodSel = empsInGroup.length > 0 && empsInGroup.every(e => getRow(period.end, e.id).selected);
+        return (
+          <div key={period.end} style={{ marginBottom: 28 }}>
+            <PeriodHeader start={period.start} end={period.end} payDate={period.payDate} pending isLate={period.isLate} />
+            {period.isLate && (
+              <div style={{ fontSize: 12, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: '6px 12px', marginBottom: 8 }}>
+                ⚠ Pay date has passed — these checks are late. Select employees and click Run Payroll to process.
+              </div>
+            )}
+            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <table className="schedule-table" style={{ tableLayout: 'auto' }}>
+                <thead>
+                  <tr>
+                    <th style={{ width: 36 }}>
+                      <input type="checkbox" checked={allPeriodSel} style={{ accentColor: 'var(--accent)', width: 14, height: 14 }}
+                        onChange={ev => empsInGroup.forEach(e => setRow(period.end, e.id, 'selected', ev.target.checked))} />
+                    </th>
+                    <th>Employee</th>
+                    <th style={{ width: 120 }}>Pay</th>
+                    <th className="num" style={{ width: 110 }}>Reg Hours</th>
+                    <th className="num" style={{ width: 110 }}>OT Hours</th>
+                    <th style={{ width: 90 }}>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {empsInGroup.map(emp => {
+                    const row    = getRow(period.end, emp.id);
+                    const salAmt = r2((emp.annualSalary || 0) / ppy);
+                    return (
+                      <tr key={emp.id} style={{ background: row.selected ? (period.isLate ? '#fef2f2' : 'var(--accent-light)') : undefined }}>
+                        <td>
+                          <input type="checkbox" checked={row.selected} style={{ accentColor: 'var(--accent)', width: 14, height: 14 }}
+                            onChange={ev => setRow(period.end, emp.id, 'selected', ev.target.checked)} />
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div className="emp-avatar" style={{ width: 28, height: 28, fontSize: 10, flexShrink: 0 }}>{initials(`${emp.firstName} ${emp.lastName}`)}</div>
+                            <span style={{ fontWeight: 600, fontSize: 13 }}>{emp.firstName} {emp.lastName}</span>
+                          </div>
+                        </td>
+                        <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                          {emp.payType === 'salary' ? fmt(salAmt) : `$${emp.hourlyRate || 0}/hr`}
+                        </td>
+                        <td>
+                          {emp.payType === 'hourly'
+                            ? <input className="form-input mono" type="number" min="0" step="0.5" value={row.regHours} placeholder="0"
+                                onChange={ev => setRow(period.end, emp.id, 'regHours', ev.target.value)}
+                                style={{ width: 90, height: 30, fontSize: 13, textAlign: 'right' }} />
+                            : <span style={{ display: 'block', textAlign: 'right', fontSize: 12, color: 'var(--text-muted)' }}>—</span>
+                          }
+                        </td>
+                        <td>
+                          {emp.payType === 'hourly'
+                            ? <input className="form-input mono" type="number" min="0" step="0.5" value={row.otHours} placeholder="0"
+                                onChange={ev => setRow(period.end, emp.id, 'otHours', ev.target.value)}
+                                style={{ width: 90, height: 30, fontSize: 13, textAlign: 'right' }} />
+                            : <span style={{ display: 'block', textAlign: 'right', fontSize: 12, color: 'var(--text-muted)' }}>—</span>
+                          }
+                        </td>
+                        <td><span className={`badge ${period.isLate ? 'badge-error' : 'badge-neutral'}`}>{period.isLate ? 'Late' : 'Pending'}</span></td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          )}
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <table className="schedule-table" style={{ tableLayout: 'auto' }}>
-              <thead>
-                <tr>
-                  <th style={{ width: 36 }}>
-                    <input type="checkbox" checked={allPendingSel} style={{ accentColor: 'var(--accent)', width: 14, height: 14 }}
-                      onChange={ev => empsInGroup.forEach(e => setRow(e.id, 'selected', ev.target.checked))} />
-                  </th>
-                  <th>Employee</th>
-                  <th style={{ width: 120 }}>Pay</th>
-                  <th className="num" style={{ width: 110 }}>Reg Hours</th>
-                  <th className="num" style={{ width: 110 }}>OT Hours</th>
-                  <th style={{ width: 90 }}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {empsInGroup.map(emp => {
-                  const row = getRow(emp.id);
-                  const ppy = PERIODS_PER_YEAR[currentGroup?.frequency || 'biweekly'] || 26;
-                  const salAmt = r2((emp.annualSalary || 0) / ppy);
-                  return (
-                    <tr key={emp.id} style={{ background: row.selected ? 'var(--accent-light)' : undefined }}>
-                      <td>
-                        <input type="checkbox" checked={row.selected} style={{ accentColor: 'var(--accent)', width: 14, height: 14 }}
-                          onChange={ev => setRow(emp.id, 'selected', ev.target.checked)} />
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div className="emp-avatar" style={{ width: 28, height: 28, fontSize: 10, flexShrink: 0 }}>{initials(`${emp.firstName} ${emp.lastName}`)}</div>
-                          <span style={{ fontWeight: 600, fontSize: 13 }}>{emp.firstName} {emp.lastName}</span>
-                        </div>
-                      </td>
-                      <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        {emp.payType === 'salary' ? fmt(salAmt) : `$${emp.hourlyRate || 0}/hr`}
-                      </td>
-                      <td>
-                        {emp.payType === 'hourly'
-                          ? <input className="form-input mono" type="number" min="0" step="0.5" value={row.regHours} placeholder="0"
-                              onChange={ev => setRow(emp.id, 'regHours', ev.target.value)}
-                              style={{ width: 90, height: 30, fontSize: 13, textAlign: 'right' }} />
-                          : <span style={{ display: 'block', textAlign: 'right', fontSize: 12, color: 'var(--text-muted)' }}>—</span>
-                        }
-                      </td>
-                      <td>
-                        {emp.payType === 'hourly'
-                          ? <input className="form-input mono" type="number" min="0" step="0.5" value={row.otHours} placeholder="0"
-                              onChange={ev => setRow(emp.id, 'otHours', ev.target.value)}
-                              style={{ width: 90, height: 30, fontSize: 13, textAlign: 'right' }} />
-                          : <span style={{ display: 'block', textAlign: 'right', fontSize: 12, color: 'var(--text-muted)' }}>—</span>
-                        }
-                      </td>
-                      <td><span className="badge badge-neutral">Pending</span></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
           </div>
-        </div>
-      )}
+        );
+      })}
 
       {/* ── Historical periods ── */}
       {history.map(period => (
@@ -1285,7 +1323,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
       ))}
 
       {/* Empty state */}
-      {history.length === 0 && !pendingPeriod && (
+      {history.length === 0 && pendingPeriods.length === 0 && (
         <div className="card">
           <div className="empty-state" style={{ padding: '32px 20px' }}>
             <div className="empty-state-icon">📋</div>
