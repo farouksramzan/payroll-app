@@ -71,6 +71,7 @@ const api = {
   updatePaystubStatus: (id, status) => request(`/paystubs/${id}/status`, { method: 'PUT', body: JSON.stringify({ status }) }),
   voidPaystub: (id, reason) => request(`/paystubs/${id}/void`, { method: 'POST', body: JSON.stringify({ reason }) }),
   getPaystubCredits: (clientId) => request(`/paystubs/credits?clientId=${clientId}`),
+  markLateChecks: () => request('/paystubs/mark-late', { method: 'POST' }),
   batchSubmitPaystubs: (data) => request('/paystubs/batch-submit', { method: 'POST', body: JSON.stringify(data) }),
   printSelectedChecks: async (clientId, paystubIds) => {
     const token = localStorage.getItem('token');

@@ -73,6 +73,21 @@ router.get('/pay-periods', (req, res) => {
 });
 
 // ── POST /api/paystubs/print-selected — PDF for arbitrary paystub IDs ─────────
+// POST /api/paystubs/mark-late — sweep draft checks with a past pay date → 'late'
+router.post('/mark-late', (req, res) => {
+  const db = getDb();
+  const today = new Date().toISOString().slice(0, 10);
+  const result = db.prepare(`
+    UPDATE paystubs
+    SET check_status = 'late'
+    WHERE check_status = 'draft'
+      AND settlement_date IS NOT NULL
+      AND settlement_date < ?
+      AND client_id IN (SELECT id FROM clients WHERE user_id = ?)
+  `).run(today, req.user.id);
+  res.json({ updated: result.changes });
+});
+
 router.post('/print-selected', (req, res) => {
   const { clientId, paystubIds } = req.body;
   if (!clientId || !Array.isArray(paystubIds) || paystubIds.length === 0)

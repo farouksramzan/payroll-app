@@ -927,12 +927,13 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
   const [currentGroupId, setCurrentGroupId] = useState(null);
   const [groupsLoading, setGroupsLoading]   = useState(true);
   const [editGroup, setEditGroup]     = useState(null);
-  const [paystubs, setPaystubs]       = useState([]);
-  // pendingRows[empId] = { regHours, otHours, selected }
-  const [pendingRows, setPendingRows] = useState({});
-  const [running, setRunning]         = useState(false);
-  const [runErr, setRunErr]           = useState('');
-  const [runSuccess, setRunSuccess]   = useState('');
+  const [paystubs, setPaystubs]                   = useState([]);
+  // pendingRows[periodEnd][empId] = { regHours, otHours, selected }
+  const [pendingRows, setPendingRows]             = useState({});
+  const [selectedLateStubs, setSelectedLateStubs] = useState(new Set());
+  const [running, setRunning]                     = useState(false);
+  const [runErr, setRunErr]                       = useState('');
+  const [runSuccess, setRunSuccess]               = useState('');
 
   useEffect(() => {
     api.getPayGroups(clientId)
@@ -944,7 +945,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
       .finally(() => setGroupsLoading(false));
   }, [clientId]);
 
-  useEffect(() => { reloadStubs(); }, [clientId]);
+  useEffect(() => {
+    // Sweep draft checks with a past pay date → 'late' in the DB, then reload.
+    api.markLateChecks().catch(() => {}).finally(reloadStubs);
+  }, [clientId]);
 
   async function reloadStubs() {
     try { setPaystubs(await api.getPaystubs(clientId)); } catch {}
@@ -1039,10 +1043,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     const freq = currentGroup?.frequency || 'biweekly';
     const ppy  = PERIODS_PER_YEAR[freq] || 26;
 
-    // Require at least one employee selected across any period
+    // Require at least one employee selected across any period OR at least one late stub
     const totalSel = pendingPeriods.reduce((n, p) =>
       n + empsInGroup.filter(e => getRow(p.end, e.id).selected).length, 0);
-    if (totalSel === 0) { setRunErr('Select at least one employee.'); return; }
+    if (totalSel === 0 && selectedLateStubs.size === 0) { setRunErr('Select at least one employee or late check.'); return; }
 
     // Zero-hours warning (de-duplicated across periods)
     const warnedIds = new Set();
@@ -1104,8 +1108,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
         allStubIds.push(...result.paystubs.map(s => s.id));
       }
 
-      // Download combined PDF for all checks and mark them printed
-      await api.printSelectedChecks(clientId, allStubIds);
+      // Combine new stub IDs with any selected late stubs, print all together
+      const lateIds = Array.from(selectedLateStubs);
+      const combinedIds = [...allStubIds, ...lateIds];
+      if (combinedIds.length > 0) await api.printSelectedChecks(clientId, combinedIds);
       await reloadStubs();
 
       setPendingRows(prev => {
@@ -1113,7 +1119,13 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
         pendingPeriods.forEach(p => { delete next[p.end]; });
         return next;
       });
-      setRunSuccess(`${allStubIds.length} check${allStubIds.length !== 1 ? 's' : ''} created — PDF downloaded.`);
+      setSelectedLateStubs(new Set());
+      const newCount  = allStubIds.length;
+      const lateCount2 = lateIds.length;
+      const parts = [];
+      if (newCount  > 0) parts.push(`${newCount} new check${newCount !== 1 ? 's' : ''} created`);
+      if (lateCount2 > 0) parts.push(`${lateCount2} late check${lateCount2 !== 1 ? 's' : ''} printed`);
+      setRunSuccess(parts.join(' · ') + ' — PDF downloaded.');
     } catch (e) { setRunErr(e.message); }
     finally { setRunning(false); }
   }
@@ -1123,10 +1135,11 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     <div className="card"><div className="empty-state" style={{ padding: '32px 20px' }}><div className="empty-state-icon">👤</div><h3>No active employees</h3></div></div>
   );
 
-  const pendingPeriods = getPendingPeriods();
-  const history        = getHistory();
-  const totalSelCount  = pendingPeriods.reduce((n, p) =>
+  const pendingPeriods   = getPendingPeriods();
+  const history          = getHistory();
+  const totalSelCount    = pendingPeriods.reduce((n, p) =>
     n + empsInGroup.filter(e => getRow(p.end, e.id).selected).length, 0);
+  const totalActionCount = totalSelCount + selectedLateStubs.size;
 
   const todayStr = new Date().toISOString().slice(0, 10);
 
@@ -1150,7 +1163,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
             const deleted = !!g.deletedAt;
             return (
               <button key={g.id} className={`pay-subtab${currentGroupId === g.id ? ' active' : ''}`}
-                onClick={() => { setCurrentGroupId(g.id); setRunErr(''); setRunSuccess(''); }}
+                onClick={() => { setCurrentGroupId(g.id); setRunErr(''); setRunSuccess(''); setSelectedLateStubs(new Set()); }}
                 style={deleted ? { opacity: 0.5, fontStyle: 'italic' } : {}}>
                 {g.name}{deleted ? ' (Deleted)' : ''}
                 {g.id !== UNASSIGNED_ID && !deleted && (
@@ -1175,9 +1188,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
           </>
         )}
         <div style={{ flex: 1 }} />
-        {pendingPeriods.length > 0 && !isGroupDeleted && (
-          <button className="btn btn-primary" onClick={handleRunPayroll} disabled={running || totalSelCount === 0}>
-            {running ? <span className="spinner" /> : `+ Run Payroll (${totalSelCount})`}
+        {!isGroupDeleted && (pendingPeriods.length > 0 || selectedLateStubs.size > 0) && (
+          <button className="btn btn-primary" onClick={handleRunPayroll} disabled={running || totalActionCount === 0}>
+            {running ? <span className="spinner" /> : `+ Run Payroll (${totalActionCount})`}
           </button>
         )}
       </div>
@@ -1282,11 +1295,22 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
               </thead>
               <tbody>
                 {period.stubs.map(stub => {
-                  const isLateCheck = stub.check_status === 'draft' && stub.settlement_date && stub.settlement_date < todayStr;
-                  const displayStatus = isLateCheck ? 'late' : (stub.check_status || 'draft');
+                  const isLateCheck = stub.check_status === 'late';
+                  const displayStatus = stub.check_status || 'draft';
                   return (
                     <tr key={stub.id} style={{ opacity: stub.check_status === 'voided' ? 0.5 : 1, background: isLateCheck ? '#fef2f2' : undefined }}>
-                      <td style={{ width: 36 }} />
+                      <td style={{ width: 36 }}>
+                        {isLateCheck && (
+                          <input type="checkbox"
+                            checked={selectedLateStubs.has(stub.id)}
+                            onChange={() => setSelectedLateStubs(prev => {
+                              const next = new Set(prev);
+                              next.has(stub.id) ? next.delete(stub.id) : next.add(stub.id);
+                              return next;
+                            })}
+                            style={{ accentColor: 'var(--accent)', width: 13, height: 13 }} />
+                        )}
+                      </td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                           <div className="emp-avatar" style={{ width: 28, height: 28, fontSize: 10, flexShrink: 0 }}>{initials(stub.employee_name || '?')}</div>
