@@ -195,10 +195,18 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved }) {
     const val = e.target.value;
     if (val === '__new__') { setShowNewGroup(true); setForm(f => ({ ...f, payGroupId: '' })); return; }
     setShowNewGroup(false);
-    setForm(f => {
-      const group = payGroups.find(g => String(g.id) === val);
-      return { ...f, payGroupId: val, ...(group ? { payFrequency: group.frequency } : {}) };
-    });
+    const targetGroup = payGroups.find(g => String(g.id) === val);
+    // Date consistency check: employee's current group end must match target group's end
+    if (targetGroup && targetGroup.firstPayPeriodEnd) {
+      const currentGroupObj = payGroups.find(g => String(g.id) === form.payGroupId);
+      const empEnd = currentGroupObj?.firstPayPeriodEnd;
+      if (empEnd && empEnd !== targetGroup.firstPayPeriodEnd) {
+        setErr(`Cannot assign to "${targetGroup.name}". The group's first period end date (${fmtDate(targetGroup.firstPayPeriodEnd)}) does not match this employee's current group (${fmtDate(empEnd)}). All employees in a pay group must share the same pay period schedule.`);
+        return;
+      }
+    }
+    setErr('');
+    setForm(f => ({ ...f, payGroupId: val, ...(targetGroup ? { payFrequency: targetGroup.frequency } : {}) }));
   }
 
   async function handleSave() {
@@ -260,7 +268,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved }) {
                 <label className="form-label">Assigned Pay Group</label>
                 <select className="form-select" value={showNewGroup ? '__new__' : (form.payGroupId || '')} onChange={handleGroupChange}>
                   <option value="">— No pay group —</option>
-                  {payGroups.map(g => <option key={g.id} value={String(g.id)}>{g.name} ({FREQ_LABEL[g.frequency] || g.frequency})</option>)}
+                  {payGroups.filter(g => !g.deletedAt).map(g => <option key={g.id} value={String(g.id)}>{g.name} ({FREQ_LABEL[g.frequency] || g.frequency})</option>)}
                   <option value="__new__">+ Create New Pay Group…</option>
                 </select>
               </div>
@@ -516,7 +524,7 @@ function CheckHistory({ clientId, employeeId, employeeName, selectedChecks, onTo
 }
 
 // ── Pay Group Editor Modal ────────────────────────────────────────────────────
-function PayGroupEditorModal({ group, clientId, allGroups, onSaved, onClose, onDeleted }) {
+function PayGroupEditorModal({ group, clientId, allGroups, onSaved, onClose, onDeleted, onMoved }) {
   const [form, setForm] = useState({
     name: group.name,
     frequency: group.frequency,
@@ -555,9 +563,16 @@ function PayGroupEditorModal({ group, clientId, allGroups, onSaved, onClose, onD
   }
 
   async function handleMoveEmployee(emp, newGroupId) {
+    const targetGroup = newGroupId ? allGroups.find(g => String(g.id) === String(newGroupId)) : null;
+    if (targetGroup && targetGroup.firstPayPeriodEnd && group.firstPayPeriodEnd &&
+        targetGroup.firstPayPeriodEnd !== group.firstPayPeriodEnd) {
+      alert(`Cannot move ${emp.firstName} ${emp.lastName} to "${targetGroup.name}". The group's first period end date (${fmtDate(targetGroup.firstPayPeriodEnd)}) does not match this group's (${fmtDate(group.firstPayPeriodEnd)}). All employees in a pay group must share the same pay period schedule.`);
+      return;
+    }
     try {
-      await api.updateEmployee(emp.id, { clientId, payGroupId: newGroupId || null });
+      await api.updateEmployee(emp.id, { clientId, payGroupId: newGroupId ? parseInt(newGroupId) : null });
       setEmployees(prev => prev.filter(e => e.id !== emp.id));
+      onMoved?.();
     } catch (e) { alert(e.message); }
   }
 
@@ -567,9 +582,6 @@ function PayGroupEditorModal({ group, clientId, allGroups, onSaved, onClose, onD
     )) return;
     setDeleting(true); setErr('');
     try {
-      // Unassign all employees first, then delete the (now-empty) group
-      const empsToUnassign = employees || [];
-      await Promise.all(empsToUnassign.map(e => api.updateEmployee(e.id, { clientId, payGroupId: null })));
       await api.deletePayGroup(group.id);
       onDeleted?.();
     } catch (e) { setErr(e.message); setDeleting(false); }
@@ -663,7 +675,7 @@ function PayGroupEditorModal({ group, clientId, allGroups, onSaved, onClose, onD
                       onChange={e => { if (e.target.value) handleMoveEmployee(emp, e.target.value === '__none__' ? null : e.target.value); }}>
                       <option value="">— select —</option>
                       <option value="__none__">Remove from group</option>
-                      {allGroups.filter(g => g.id !== group.id).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                      {allGroups.filter(g => g.id !== group.id && !g.deletedAt).map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                     </select>
                   </div>
                 </div>
@@ -749,7 +761,7 @@ function EmployeesTab({ clientId, employees, onRefresh }) {
         <EmployeeDrawer clientId={clientId} empId={drawerEmpId} onClose={() => setDrawerEmpId(null)} onSaved={() => { setDrawerEmpId(null); onRefresh(); }} />
       )}
       {editGroup && (
-        <PayGroupEditorModal group={editGroup} clientId={clientId} allGroups={payGroups} onSaved={handleGroupSaved} onClose={() => setEditGroup(null)} onDeleted={handleGroupSaved} />
+        <PayGroupEditorModal group={editGroup} clientId={clientId} allGroups={payGroups} onSaved={handleGroupSaved} onClose={() => setEditGroup(null)} onDeleted={handleGroupSaved} onMoved={onRefresh} />
       )}
     </div>
   );
@@ -910,7 +922,7 @@ function CompanyTab({ client, onSaved }) {
 }
 
 // ── Pay Employees Tab ─────────────────────────────────────────────────────────
-function PayEmployeesTab({ clientId, client, employees }) {
+function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
   const [payGroups, setPayGroups]     = useState([]);
   const [currentGroupId, setCurrentGroupId] = useState(null);
   const [groupsLoading, setGroupsLoading]   = useState(true);
@@ -945,6 +957,7 @@ function PayEmployeesTab({ clientId, client, employees }) {
   const empsInGroup   = currentGroupId === UNASSIGNED_ID
     ? unassignedEmps
     : activeEmps.filter(e => e.payGroupId === currentGroupId);
+  const isGroupDeleted = currentGroup ? !!currentGroup.deletedAt : false;
 
   const tabs = [
     ...payGroups,
@@ -954,7 +967,7 @@ function PayEmployeesTab({ clientId, client, employees }) {
   // The next period that has no paystubs yet for employees in this group
   function getPendingPeriod() {
     const g = currentGroup;
-    if (!g || g.id === UNASSIGNED_ID || !g.firstPayPeriodEnd) return null;
+    if (!g || g.id === UNASSIGNED_ID || !g.firstPayPeriodEnd || g.deletedAt) return null;
     const anchor = g.firstPayPeriodStart || calcStartFromEnd(g.firstPayPeriodEnd, g.frequency);
     if (!anchor) return null;
     const freq = g.frequency || 'biweekly';
@@ -972,10 +985,22 @@ function PayEmployeesTab({ clientId, client, employees }) {
     return { start: s.toISOString().slice(0, 10), end: endStr, payDate: calcDefaultPayDate(endStr) };
   }
 
-  // Historical periods: paystubs for this group's employees, grouped by period, newest first
+  // Historical periods: paystubs for this group, grouped by period, newest first
+  // Prefer filtering by pay_group_id (set on new runs); fall back to employee_id for legacy stubs
   function getHistory() {
-    const empIds = new Set(empsInGroup.map(e => e.id));
-    const groupStubs = paystubs.filter(s => s.employee_id && empIds.has(s.employee_id));
+    let groupStubs;
+    if (currentGroupId === UNASSIGNED_ID) {
+      const empIds = new Set(unassignedEmps.map(e => e.id));
+      groupStubs = paystubs.filter(s => s.employee_id && empIds.has(s.employee_id) && !s.pay_group_id);
+    } else {
+      const byGroupId = paystubs.filter(s => s.pay_group_id === currentGroupId);
+      if (byGroupId.length > 0) {
+        groupStubs = byGroupId;
+      } else {
+        const empIds = new Set(empsInGroup.map(e => e.id));
+        groupStubs = paystubs.filter(s => s.employee_id && empIds.has(s.employee_id));
+      }
+    }
     const byPeriod = {};
     groupStubs.forEach(stub => {
       const key = `${stub.pay_period_start}|${stub.pay_period_end}`;
@@ -1035,6 +1060,7 @@ function PayEmployeesTab({ clientId, client, employees }) {
         payPeriodStart: period.start, payPeriodEnd: period.end,
         settlementDate: period.payDate || null,
         paymentMethod: 'print_check',
+        payGroupId: currentGroupId !== UNASSIGNED_ID ? currentGroupId : null,
         employees: empData,
       });
 
@@ -1076,34 +1102,46 @@ function PayEmployeesTab({ clientId, client, employees }) {
       {/* Tab strip */}
       {tabs.length > 0 && (
         <div className="pay-subtabs" style={{ marginBottom: 16 }}>
-          {tabs.map(g => (
-            <button key={g.id} className={`pay-subtab${currentGroupId === g.id ? ' active' : ''}`}
-              onClick={() => { setCurrentGroupId(g.id); setRunErr(''); setRunSuccess(''); }}>
-              {g.name}
-              <span style={{ opacity: 0.6, fontSize: 11, marginLeft: 4 }}>
-                ({activeEmps.filter(e => g.id === UNASSIGNED_ID ? !e.payGroupId : e.payGroupId === g.id).length})
-              </span>
-            </button>
-          ))}
+          {tabs.map(g => {
+            const deleted = !!g.deletedAt;
+            return (
+              <button key={g.id} className={`pay-subtab${currentGroupId === g.id ? ' active' : ''}`}
+                onClick={() => { setCurrentGroupId(g.id); setRunErr(''); setRunSuccess(''); }}
+                style={deleted ? { opacity: 0.5, fontStyle: 'italic' } : {}}>
+                {g.name}{deleted ? ' (Deleted)' : ''}
+                {g.id !== UNASSIGNED_ID && !deleted && (
+                  <span style={{ opacity: 0.6, fontSize: 11, marginLeft: 4 }}>
+                    ({activeEmps.filter(e => e.payGroupId === g.id).length})
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       )}
 
       {/* Group header row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: isGroupDeleted ? 8 : 16 }}>
         {currentGroup && currentGroup.id !== UNASSIGNED_ID && (
           <>
-            <span style={{ fontWeight: 700, fontSize: 14 }}>{currentGroup.name}</span>
+            <span style={{ fontWeight: 700, fontSize: 14, fontStyle: isGroupDeleted ? 'italic' : 'normal', opacity: isGroupDeleted ? 0.6 : 1 }}>{currentGroup.name}</span>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{FREQ_LABEL[currentGroup.frequency] || currentGroup.frequency}</span>
-            <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} onClick={() => setEditGroup(currentGroup)}>Edit Group</button>
+            {!isGroupDeleted && <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} onClick={() => setEditGroup(currentGroup)}>Edit Group</button>}
+            {isGroupDeleted && <span className="badge badge-error" style={{ fontSize: 10 }}>Deleted</span>}
           </>
         )}
         <div style={{ flex: 1 }} />
-        {pendingPeriod && (
+        {pendingPeriod && !isGroupDeleted && (
           <button className="btn btn-primary" onClick={handleRunPayroll} disabled={running || selCount === 0}>
             {running ? <span className="spinner" /> : `+ Run Payroll (${selCount})`}
           </button>
         )}
       </div>
+      {isGroupDeleted && (
+        <div className="alert alert-error" style={{ marginBottom: 16, fontSize: 12 }}>
+          <span>⚠</span> This pay group has been deleted. Historical checks are shown below for reference, but no new payroll can be run.
+        </div>
+      )}
 
       {runErr     && <div className="alert alert-error"   style={{ marginBottom: 14 }}><span>⚠</span>{runErr}<button onClick={() => setRunErr('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button></div>}
       {runSuccess && <div className="alert alert-success" style={{ marginBottom: 14 }}><span>✓</span>{runSuccess}<button onClick={() => setRunSuccess('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button></div>}
@@ -1244,13 +1282,15 @@ function PayEmployeesTab({ clientId, client, employees }) {
         <PayGroupEditorModal group={editGroup} clientId={clientId} allGroups={payGroups}
           onSaved={() => { setEditGroup(null); api.getPayGroups(clientId).then(setPayGroups); }}
           onClose={() => setEditGroup(null)}
+          onMoved={() => { onRefresh?.(); }}
           onDeleted={() => {
             const deletedId = editGroup.id;
             setEditGroup(null);
+            onRefresh?.();
             api.getPayGroups(clientId).then(groups => {
               setPayGroups(groups);
-              const next = groups.find(g => g.id !== deletedId);
-              setCurrentGroupId(next ? next.id : UNASSIGNED_ID);
+              const next = groups.find(g => g.id !== deletedId && !g.deletedAt);
+              setCurrentGroupId(next ? next.id : (unassignedEmps.length > 0 ? UNASSIGNED_ID : null));
             });
           }} />
       )}
@@ -1581,14 +1621,14 @@ function FileFormsTab({ clientId }) {
 }
 
 // ── Payroll Tab ───────────────────────────────────────────────────────────────
-function PayrollTab({ clientId, client, employees }) {
+function PayrollTab({ clientId, client, employees, onRefresh }) {
   const [sub, setSub] = useState('pay');
   return (
     <div>
       <div className="pay-subtabs">
         {[['pay','Pay Employees'],['liabilities','Pay Liabilities'],['forms','File Forms']].map(([k, label]) => <button key={k} className={`pay-subtab${sub === k ? ' active' : ''}`} onClick={() => setSub(k)}>{label}</button>)}
       </div>
-      {sub === 'pay'         && <PayEmployeesTab clientId={clientId} client={client} employees={employees} />}
+      {sub === 'pay'         && <PayEmployeesTab clientId={clientId} client={client} employees={employees} onRefresh={onRefresh} />}
       {sub === 'liabilities' && <PayLiabilitiesTab clientId={clientId} client={client} />}
       {sub === 'forms'       && <FileFormsTab clientId={clientId} />}
     </div>
@@ -1634,7 +1674,7 @@ export default function CompanyWorkspace() {
       <div className="workspace-body">
         {activeTab === 'employees' && <EmployeesTab clientId={id} employees={employees} onRefresh={loadAll} />}
         {activeTab === 'company'   && <CompanyTab client={client} onSaved={loadAll} />}
-        {activeTab === 'payroll'   && <PayrollTab clientId={id} client={client} employees={employees} />}
+        {activeTab === 'payroll'   && <PayrollTab clientId={id} client={client} employees={employees} onRefresh={loadAll} />}
       </div>
     </div>
   );

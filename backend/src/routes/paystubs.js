@@ -680,7 +680,7 @@ function advanceDate(dateStr, frequency) {
 
 router.post('/payroll-run', (req, res) => {
   const db = getDb();
-  const { clientId, payPeriodStart, payPeriodEnd, settlementDate, employees, paymentMethod } = req.body;
+  const { clientId, payPeriodStart, payPeriodEnd, settlementDate, employees, paymentMethod, payGroupId } = req.body;
   if (!clientId || !payPeriodStart || !payPeriodEnd || !Array.isArray(employees)) {
     return res.status(400).json({ error: 'clientId, payPeriodStart, payPeriodEnd, employees required' });
   }
@@ -706,8 +706,8 @@ router.post('/payroll-run', (req, res) => {
         tax_year, tax_quarter, check_number, payroll_run_id,
         payment_method, regular_hours, overtime_hours, regular_pay, overtime_pay,
         bonus, commission, reimbursement, deduction, garnishment,
-        check_status, settlement_due_date
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        check_status, settlement_due_date, pay_group_id
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `);
     const insertItem = db.prepare(`
       INSERT INTO paystub_line_items (paystub_id, pay_type, description, hours, rate, amount)
@@ -779,6 +779,7 @@ router.post('/payroll-run', (req, res) => {
         parseFloat(empData.garnishment   || 0),
         'draft',
         calcSettlementDueDate(settlementDate || payPeriodEnd, client.deposit_schedule || 'monthly'),
+        payGroupId || null,
       );
 
       const stubId = r.lastInsertRowid;

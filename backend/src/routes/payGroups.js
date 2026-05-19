@@ -15,6 +15,7 @@ function sanitizeGroup(g) {
     firstPayPeriodStart: g.first_pay_period_start || null,
     firstPayPeriodEnd:   g.first_pay_period_end   || null,
     payDate: g.pay_date || null,
+    deletedAt: g.deleted_at || null,
     createdAt: g.created_at,
   };
 }
@@ -100,7 +101,7 @@ router.put('/:id', (req, res) => {
   res.json(sanitizeGroup(db.prepare('SELECT * FROM pay_groups WHERE id = ?').get(g.id)));
 });
 
-// DELETE /api/pay-groups/:id
+// DELETE /api/pay-groups/:id  (soft delete — sets deleted_at, unassigns employees)
 router.delete('/:id', (req, res) => {
   const db = getDb();
   const g = db.prepare(`
@@ -109,10 +110,12 @@ router.delete('/:id', (req, res) => {
     WHERE pg.id = ? AND c.user_id = ?
   `).get(req.params.id, req.user.id);
   if (!g) return res.status(404).json({ error: 'Pay group not found' });
-  const empCount = db.prepare('SELECT COUNT(*) as n FROM employees WHERE pay_group_id = ?').get(g.id).n;
-  if (empCount > 0) return res.status(400).json({ error: `Cannot delete — ${empCount} employee(s) still assigned to this group` });
-  db.prepare('DELETE FROM pay_groups WHERE id = ?').run(g.id);
-  res.json({ message: 'Pay group deleted' });
+  if (g.deleted_at) return res.status(400).json({ error: 'Pay group already deleted' });
+  db.transaction(() => {
+    db.prepare('UPDATE employees SET pay_group_id = NULL WHERE pay_group_id = ?').run(g.id);
+    db.prepare("UPDATE pay_groups SET deleted_at = datetime('now') WHERE id = ?").run(g.id);
+  })();
+  res.json(sanitizeGroup(db.prepare('SELECT * FROM pay_groups WHERE id = ?').get(g.id)));
 });
 
 module.exports = router;

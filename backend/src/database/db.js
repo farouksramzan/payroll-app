@@ -371,10 +371,15 @@ function migrate() {
   `);
 
   addCols('pay_groups', [
-    { name: 'pay_date', def: 'TEXT' },
+    { name: 'pay_date',    def: 'TEXT' },
+    { name: 'deleted_at', def: 'TEXT' },
   ]);
 
   addCols('employees', [
+    { name: 'pay_group_id', def: 'INTEGER' },
+  ]);
+
+  addCols('paystubs', [
     { name: 'pay_group_id', def: 'INTEGER' },
   ]);
 
