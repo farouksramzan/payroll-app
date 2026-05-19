@@ -964,25 +964,31 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     ...(unassignedEmps.length > 0 ? [{ id: UNASSIGNED_ID, name: `Unassigned (${unassignedEmps.length})`, frequency: 'biweekly' }] : []),
   ];
 
-  // The next period that has no paystubs yet for employees in this group
+  // Returns the first pay period (from the anchor) that has no non-voided paystubs.
+  // Never skips ahead to today — always surfaces the oldest unpaid period first.
   function getPendingPeriod() {
     const g = currentGroup;
     if (!g || g.id === UNASSIGNED_ID || !g.firstPayPeriodEnd || g.deletedAt) return null;
     const anchor = g.firstPayPeriodStart || calcStartFromEnd(g.firstPayPeriodEnd, g.frequency);
     if (!anchor) return null;
     const freq = g.frequency || 'biweekly';
-    const empIds = new Set(empsInGroup.map(e => e.id));
-    const groupStubs = paystubs.filter(s => s.employee_id && empIds.has(s.employee_id) && s.check_status !== 'voided');
-    const latestEnd  = groupStubs.reduce((max, s) => (s.pay_period_end > max ? s.pay_period_end : max), '');
+
+    // Consistent with getHistory: prefer pay_group_id filter, fall back to employee_id
+    const byGroupId = paystubs.filter(s => s.pay_group_id === currentGroupId && s.check_status !== 'voided');
+    const groupStubs = byGroupId.length > 0 ? byGroupId : (() => {
+      const empIds = new Set(empsInGroup.map(e => e.id));
+      return paystubs.filter(s => s.employee_id && empIds.has(s.employee_id) && s.check_status !== 'voided');
+    })();
+
+    const latestEnd = groupStubs.reduce((max, s) => (s.pay_period_end > max ? s.pay_period_end : max), '');
     let s = new Date(anchor + 'T00:00:00'), e = new Date(g.firstPayPeriodEnd + 'T00:00:00');
-    if (latestEnd) {
-      while (e.toISOString().slice(0, 10) <= latestEnd) [s, e] = advancePeriod(s, e, freq);
-    } else {
-      const today = new Date(); today.setHours(0, 0, 0, 0);
-      while (e < today) [s, e] = advancePeriod(s, e, freq);
-    }
+    // Advance only past periods that have already been paid
+    while (latestEnd && e.toISOString().slice(0, 10) <= latestEnd) [s, e] = advancePeriod(s, e, freq);
+
     const endStr = e.toISOString().slice(0, 10);
-    return { start: s.toISOString().slice(0, 10), end: endStr, payDate: calcDefaultPayDate(endStr) };
+    const payDate = g.payDate || calcDefaultPayDate(endStr);
+    const today   = new Date().toISOString().slice(0, 10);
+    return { start: s.toISOString().slice(0, 10), end: endStr, payDate, isLate: payDate < today };
   }
 
   // Historical periods: paystubs for this group, grouped by period, newest first
@@ -1087,13 +1093,16 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
   const selCount      = empsInGroup.filter(e => getRow(e.id).selected).length;
   const allPendingSel = empsInGroup.length > 0 && empsInGroup.every(e => getRow(e.id).selected);
 
-  const PeriodHeader = ({ start, end, payDate, pending }) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '7px 14px', background: pending ? 'var(--accent-light)' : 'var(--bg-secondary)', borderRadius: 8, marginBottom: 8 }}>
-      <span style={{ fontWeight: 700, fontSize: 13, color: pending ? 'var(--accent)' : 'var(--text-secondary)' }}>
-        {pending ? 'Upcoming: ' : ''}{fmtDate(start)} – {fmtDate(end)}
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  const PeriodHeader = ({ start, end, payDate, pending, isLate }) => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '7px 14px', background: isLate ? '#fef2f2' : pending ? 'var(--accent-light)' : 'var(--bg-secondary)', borderRadius: 8, marginBottom: 8, border: isLate ? '1px solid #fecaca' : 'none' }}>
+      <span style={{ fontWeight: 700, fontSize: 13, color: isLate ? '#dc2626' : pending ? 'var(--accent)' : 'var(--text-secondary)' }}>
+        {fmtDate(start)} – {fmtDate(end)}
       </span>
-      {payDate && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Pay Date: {fmtDate(payDate)}</span>}
-      {pending && <span className="badge badge-neutral" style={{ fontSize: 10 }}>Pending</span>}
+      {payDate && <span style={{ fontSize: 12, color: isLate ? '#dc2626' : 'var(--text-muted)' }}>Pay Date: {fmtDate(payDate)}</span>}
+      {isLate && <span className="badge badge-error" style={{ fontSize: 10 }}>LATE</span>}
+      {pending && !isLate && <span className="badge badge-neutral" style={{ fontSize: 10 }}>Pending</span>}
     </div>
   );
 
@@ -1149,7 +1158,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
       {/* ── Pending period ── */}
       {pendingPeriod && empsInGroup.length > 0 && (
         <div style={{ marginBottom: 28 }}>
-          <PeriodHeader start={pendingPeriod.start} end={pendingPeriod.end} payDate={pendingPeriod.payDate} pending />
+          <PeriodHeader start={pendingPeriod.start} end={pendingPeriod.end} payDate={pendingPeriod.payDate} pending isLate={pendingPeriod.isLate} />
+          {pendingPeriod.isLate && (
+            <div style={{ fontSize: 12, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: '6px 12px', marginBottom: 8 }}>
+              ⚠ Pay date has passed — these checks are late. You can still run payroll below.
+            </div>
+          )}
           <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
             <table className="schedule-table" style={{ tableLayout: 'auto' }}>
               <thead>
@@ -1214,7 +1228,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
       {/* ── Historical periods ── */}
       {history.map(period => (
         <div key={period.end} style={{ marginBottom: 24 }}>
-          <PeriodHeader start={period.start} end={period.end} payDate={period.stubs[0]?.settlement_date} pending={false} />
+          <PeriodHeader start={period.start} end={period.end} payDate={period.stubs[0]?.settlement_date} pending={false} isLate={false} />
           <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
             <table className="schedule-table" style={{ tableLayout: 'auto' }}>
               <thead>
@@ -1229,37 +1243,41 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                 </tr>
               </thead>
               <tbody>
-                {period.stubs.map(stub => (
-                  <tr key={stub.id} style={{ opacity: stub.check_status === 'voided' ? 0.5 : 1 }}>
-                    <td style={{ width: 36 }} />
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div className="emp-avatar" style={{ width: 28, height: 28, fontSize: 10, flexShrink: 0 }}>{initials(stub.employee_name || '?')}</div>
-                        <div>
-                          <span style={{ fontWeight: 600, fontSize: 13, textDecoration: stub.check_status === 'voided' ? 'line-through' : 'none' }}>
-                            {stub.employee_name}
-                          </span>
-                          {stub.check_number && (
-                            <span style={{ marginLeft: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--accent)' }}>#{stub.check_number}</span>
-                          )}
+                {period.stubs.map(stub => {
+                  const isLateCheck = stub.check_status === 'draft' && stub.settlement_date && stub.settlement_date < todayStr;
+                  const displayStatus = isLateCheck ? 'late' : (stub.check_status || 'draft');
+                  return (
+                    <tr key={stub.id} style={{ opacity: stub.check_status === 'voided' ? 0.5 : 1, background: isLateCheck ? '#fef2f2' : undefined }}>
+                      <td style={{ width: 36 }} />
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div className="emp-avatar" style={{ width: 28, height: 28, fontSize: 10, flexShrink: 0 }}>{initials(stub.employee_name || '?')}</div>
+                          <div>
+                            <span style={{ fontWeight: 600, fontSize: 13, textDecoration: stub.check_status === 'voided' ? 'line-through' : 'none' }}>
+                              {stub.employee_name}
+                            </span>
+                            {stub.check_number && (
+                              <span style={{ marginLeft: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--accent)' }}>#{stub.check_number}</span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <td className="num" style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>
-                      {stub.gross_wages ? fmt(stub.gross_wages) : '—'}
-                    </td>
-                    <td className="num" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                      {stub.regular_hours != null ? stub.regular_hours : '—'}
-                    </td>
-                    <td className="num" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                      {stub.overtime_hours > 0 ? stub.overtime_hours : '—'}
-                    </td>
-                    <td className="num" style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 700, color: 'var(--success)' }}>
-                      {stub.net_pay ? fmt(stub.net_pay) : '—'}
-                    </td>
-                    <td><StatusBadge status={stub.check_status || 'draft'} /></td>
-                  </tr>
-                ))}
+                      </td>
+                      <td className="num" style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>
+                        {stub.gross_wages ? fmt(stub.gross_wages) : '—'}
+                      </td>
+                      <td className="num" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        {stub.regular_hours != null ? stub.regular_hours : '—'}
+                      </td>
+                      <td className="num" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        {stub.overtime_hours > 0 ? stub.overtime_hours : '—'}
+                      </td>
+                      <td className="num" style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 700, color: 'var(--success)' }}>
+                        {stub.net_pay ? fmt(stub.net_pay) : '—'}
+                      </td>
+                      <td><StatusBadge status={displayStatus} /></td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1301,6 +1319,16 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
 
 // ── Pay Liabilities — Inline Check Editor ─────────────────────────────────────
 function LiabilityCheckEditor({ stub, clientId, client, onUpdated, onClose }) {
+  const depositSchedule = client?.depositSchedule || 'monthly';
+
+  function calcSettlementDue(payDate) {
+    if (!payDate) return '';
+    return calcIRSDepositDue(payDate, depositSchedule);
+  }
+
+  const initialSettlementDue = stub.settlement_due_date ||
+    (stub.settlement_date ? calcSettlementDue(stub.settlement_date) : '');
+
   const [form, setForm] = useState({
     grossWages: String(stub.gross_wages || ''),
     filingStatus: stub.filing_status || 'single',
@@ -1309,6 +1337,7 @@ function LiabilityCheckEditor({ stub, clientId, client, onUpdated, onClose }) {
     payPeriodStart: stub.pay_period_start || '',
     payPeriodEnd: stub.pay_period_end || '',
     settlementDate: stub.settlement_date || '',
+    settlementDueDate: initialSettlementDue,
   });
   const [taxes, setTaxes]     = useState(null);
   const [saving, setSaving]   = useState(false);
@@ -1317,7 +1346,6 @@ function LiabilityCheckEditor({ stub, clientId, client, onUpdated, onClose }) {
   const calcTimer = useRef(null);
 
   const alreadySubmitted = stub.status === 'submitted' || stub.eftps_status === 'submitted';
-  const irsDepositDue = form.settlementDate ? calcIRSDepositDue(form.settlementDate, client?.depositSchedule || 'monthly') : '';
 
   useEffect(() => {
     clearTimeout(calcTimer.current);
@@ -1344,6 +1372,7 @@ function LiabilityCheckEditor({ stub, clientId, client, onUpdated, onClose }) {
         payPeriodStart: form.payPeriodStart,
         payPeriodEnd: form.payPeriodEnd,
         settlementDate: form.settlementDate || null,
+        settlementDueDate: form.settlementDueDate || null,
       });
       onUpdated();
     } catch (e) { setErr(e.message); }
@@ -1351,6 +1380,14 @@ function LiabilityCheckEditor({ stub, clientId, client, onUpdated, onClose }) {
   }
 
   function set(field) { return e => setForm(f => ({ ...f, [field]: e.target.value })); }
+
+  function handlePayDateChange(val) {
+    setForm(f => ({
+      ...f,
+      settlementDate: val,
+      settlementDueDate: val ? calcSettlementDue(val) : '',
+    }));
+  }
 
   return (
     <div style={{ padding: '16px 20px', background: '#f8fafc', borderTop: '1px solid var(--border)' }}>
@@ -1370,15 +1407,19 @@ function LiabilityCheckEditor({ stub, clientId, client, onUpdated, onClose }) {
             <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: 11 }}>Pay Frequency</label><select className="form-select" value={form.payFrequency} onChange={set('payFrequency')} style={{ height: 32, fontSize: 13 }}><option value="weekly">Weekly</option><option value="biweekly">Bi-weekly</option><option value="semimonthly">Semi-monthly</option><option value="monthly">Monthly</option></select></div>
             <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: 11 }}>Work State</label><select className="form-select" value={form.workState} onChange={set('workState')} style={{ height: 32, fontSize: 13 }}>{US_STATES.map(([c]) => <option key={c} value={c}>{c}</option>)}</select></div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 12 }}>
             <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: 11 }}>Period Start</label><input className="form-input" type="date" value={form.payPeriodStart} onChange={set('payPeriodStart')} style={{ height: 32, fontSize: 13 }} /></div>
             <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: 11 }}>Period End</label><input className="form-input" type="date" value={form.payPeriodEnd} onChange={set('payPeriodEnd')} style={{ height: 32, fontSize: 13 }} /></div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label" style={{ fontSize: 11 }}>Pay Date</label>
-              <input className="form-input" type="date" value={form.settlementDate} onChange={set('settlementDate')} style={{ height: 32, fontSize: 13 }} />
-              {irsDepositDue && (
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 3 }}>
-                  IRS deposit due: <strong style={{ color: isOverdue(irsDepositDue) ? '#dc2626' : 'var(--text-secondary)' }}>{fmtDate(irsDepositDue)}</strong>
+              <input className="form-input" type="date" value={form.settlementDate} onChange={e => handlePayDateChange(e.target.value)} style={{ height: 32, fontSize: 13 }} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ fontSize: 11 }}>Settlement Date <span style={{ fontWeight: 400, textTransform: 'none', color: 'var(--text-muted)', fontSize: 10 }}>(EFTPS)</span></label>
+              <input className="form-input" type="date" value={form.settlementDueDate} onChange={set('settlementDueDate')} style={{ height: 32, fontSize: 13 }} />
+              {form.settlementDueDate && (
+                <div style={{ fontSize: 10, color: isOverdue(form.settlementDueDate) ? '#dc2626' : 'var(--text-muted)', marginTop: 3, fontWeight: isOverdue(form.settlementDueDate) ? 700 : 400 }}>
+                  {isOverdue(form.settlementDueDate) ? '⚠ Overdue' : `Due ${fmtDate(form.settlementDueDate)}`}
                 </div>
               )}
             </div>

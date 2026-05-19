@@ -405,7 +405,7 @@ router.put('/:id', (req, res) => {
   const alreadySubmitted = stub.status === 'submitted' || stub.status_940 === 'submitted';
 
   const {
-    payPeriodStart, payPeriodEnd, settlementDate, payFrequency,
+    payPeriodStart, payPeriodEnd, settlementDate, settlementDueDate, payFrequency,
     filingStatus, step2Checkbox, step3Children, step3Other,
     step4a, step4b, step4c,
     lineItems, workState, ytdGross, notes,
@@ -444,8 +444,8 @@ router.put('/:id', (req, res) => {
 
   db.prepare(`
     UPDATE paystubs SET
-      pay_period_start = ?, pay_period_end = ?, settlement_date = ?, pay_frequency = ?,
-      filing_status = ?, step2_checkbox = ?, step3_credits = ?, work_state = ?,
+      pay_period_start = ?, pay_period_end = ?, settlement_date = ?, settlement_due_date = ?,
+      pay_frequency = ?, filing_status = ?, step2_checkbox = ?, step3_credits = ?, work_state = ?,
       gross_wages = ?, fit_withholding = ?, employee_ss = ?, employee_medicare = ?,
       additional_medicare = ?, employer_ss = ?, employer_medicare = ?,
       state_income_tax = ?, futa_tax = ?, suta_tax = ?,
@@ -455,7 +455,8 @@ router.put('/:id', (req, res) => {
   `).run(
     payPeriodStart  || stub.pay_period_start,
     payPeriodEnd    || stub.pay_period_end,
-    settlementDate  !== undefined ? (settlementDate || null) : stub.settlement_date,
+    settlementDate     !== undefined ? (settlementDate     || null) : stub.settlement_date,
+    settlementDueDate  !== undefined ? (settlementDueDate  || null) : stub.settlement_due_date,
     payFrequency    || stub.pay_frequency,
     filingStatus    || stub.filing_status,
     step2Checkbox !== undefined ? (step2Checkbox ? 1 : 0) : stub.step2_checkbox,
