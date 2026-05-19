@@ -516,7 +516,7 @@ function CheckHistory({ clientId, employeeId, employeeName, selectedChecks, onTo
 }
 
 // ── Pay Group Editor Modal ────────────────────────────────────────────────────
-function PayGroupEditorModal({ group, clientId, allGroups, onSaved, onClose }) {
+function PayGroupEditorModal({ group, clientId, allGroups, onSaved, onClose, onDeleted }) {
   const [form, setForm] = useState({
     name: group.name,
     frequency: group.frequency,
@@ -525,6 +525,7 @@ function PayGroupEditorModal({ group, clientId, allGroups, onSaved, onClose }) {
   });
   const [employees, setEmployees] = useState(null);
   const [saving, setSaving]       = useState(false);
+  const [deleting, setDeleting]   = useState(false);
   const [err, setErr]             = useState('');
   const [showPeriods, setShowPeriods] = useState(false);
 
@@ -558,6 +559,20 @@ function PayGroupEditorModal({ group, clientId, allGroups, onSaved, onClose }) {
       await api.updateEmployee(emp.id, { clientId, payGroupId: newGroupId || null });
       setEmployees(prev => prev.filter(e => e.id !== emp.id));
     } catch (e) { alert(e.message); }
+  }
+
+  async function handleDeleteGroup() {
+    if (!window.confirm(
+      `Deleting this pay group will unassign all employees from it. Their paycheck history will be preserved. Continue?`
+    )) return;
+    setDeleting(true); setErr('');
+    try {
+      // Unassign all employees first, then delete the (now-empty) group
+      const empsToUnassign = employees || [];
+      await Promise.all(empsToUnassign.map(e => api.updateEmployee(e.id, { clientId, payGroupId: null })));
+      await api.deletePayGroup(group.id);
+      onDeleted?.();
+    } catch (e) { setErr(e.message); setDeleting(false); }
   }
 
   const upcomingPeriods = computedStart && form.firstPayPeriodEnd
@@ -657,8 +672,11 @@ function PayGroupEditorModal({ group, clientId, allGroups, onSaved, onClose }) {
           )}
         </div>
         <div className="drawer-footer">
+          <button className="btn btn-ghost" style={{ color: '#dc2626', marginRight: 'auto' }} onClick={handleDeleteGroup} disabled={deleting || saving}>
+            {deleting ? <span className="spinner" /> : '🗑 Delete Group'}
+          </button>
           <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? <span className="spinner" /> : 'Save Changes'}</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving || deleting}>{saving ? <span className="spinner" /> : 'Save Changes'}</button>
         </div>
       </div>
     </>
@@ -731,7 +749,7 @@ function EmployeesTab({ clientId, employees, onRefresh }) {
         <EmployeeDrawer clientId={clientId} empId={drawerEmpId} onClose={() => setDrawerEmpId(null)} onSaved={() => { setDrawerEmpId(null); onRefresh(); }} />
       )}
       {editGroup && (
-        <PayGroupEditorModal group={editGroup} clientId={clientId} allGroups={payGroups} onSaved={handleGroupSaved} onClose={() => setEditGroup(null)} />
+        <PayGroupEditorModal group={editGroup} clientId={clientId} allGroups={payGroups} onSaved={handleGroupSaved} onClose={() => setEditGroup(null)} onDeleted={handleGroupSaved} />
       )}
     </div>
   );
@@ -1493,7 +1511,18 @@ function PayEmployeesTab({ clientId, client, employees }) {
 
       {showModal && <RunPayrollModal entries={buildEntries()} payPeriodStart={periodStart} payPeriodEnd={periodEnd} settlementDate={settlementDate} clientId={clientId} onClose={() => setShowModal(false)} onDone={() => { setShowModal(false); setSelected(new Set()); }} />}
       {editGroup && editGroup.id !== UNASSIGNED_ID && (
-        <PayGroupEditorModal group={editGroup} clientId={clientId} allGroups={payGroups} onSaved={() => { setEditGroup(null); api.getPayGroups(clientId).then(setPayGroups); }} onClose={() => setEditGroup(null)} />
+        <PayGroupEditorModal group={editGroup} clientId={clientId} allGroups={payGroups}
+          onSaved={() => { setEditGroup(null); api.getPayGroups(clientId).then(setPayGroups); }}
+          onClose={() => setEditGroup(null)}
+          onDeleted={() => {
+            const deletedId = editGroup.id;
+            setEditGroup(null);
+            api.getPayGroups(clientId).then(groups => {
+              setPayGroups(groups);
+              const next = groups.find(g => g.id !== deletedId);
+              setCurrentGroupId(next ? next.id : UNASSIGNED_ID);
+            });
+          }} />
       )}
     </div>
   );
@@ -1820,8 +1849,8 @@ function FileFormsTab({ clientId }) {
   );
 }
 
-// ── Payments Tab ──────────────────────────────────────────────────────────────
-function PaymentsTab({ clientId, client, employees }) {
+// ── Payroll Tab ───────────────────────────────────────────────────────────────
+function PayrollTab({ clientId, client, employees }) {
   const [sub, setSub] = useState('pay');
   return (
     <div>
@@ -1863,7 +1892,7 @@ export default function CompanyWorkspace() {
           <div style={{ flex: 1 }} />
         </div>
         <div className="ws-tabs">
-          {[['employees','Employees'],['company','Company'],['payments','Payments']].map(([k, label]) => (
+          {[['employees','Employees'],['company','Company'],['payroll','Payroll']].map(([k, label]) => (
             <button key={k} className={`ws-tab${activeTab === k ? ' active' : ''}`} onClick={() => setActiveTab(k)}>
               {label}
               {k === 'employees' && employees.length > 0 && <span style={{ marginLeft: 6, background: activeTab === k ? 'var(--accent)' : 'var(--bg-tertiary)', color: activeTab === k ? '#fff' : 'var(--text-muted)', borderRadius: 20, fontSize: 10, fontWeight: 700, padding: '1px 6px' }}>{employees.length}</span>}
@@ -1874,7 +1903,7 @@ export default function CompanyWorkspace() {
       <div className="workspace-body">
         {activeTab === 'employees' && <EmployeesTab clientId={id} employees={employees} onRefresh={loadAll} />}
         {activeTab === 'company'   && <CompanyTab client={client} onSaved={loadAll} />}
-        {activeTab === 'payments'  && <PaymentsTab clientId={id} client={client} employees={employees} />}
+        {activeTab === 'payroll'   && <PayrollTab clientId={id} client={client} employees={employees} />}
       </div>
     </div>
   );
