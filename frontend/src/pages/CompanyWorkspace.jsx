@@ -1035,6 +1035,22 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
 
   const pendingPeriods = getPendingPeriods();
 
+  // Existing paystubs for this group, grouped by pay period end date
+  const history = (() => {
+    const byGroupId = paystubs.filter(s => s.pay_group_id === currentGroupId);
+    const groupStubs = byGroupId.length > 0 ? byGroupId : (() => {
+      const empIds = new Set(empsInGroup.map(e => e.id));
+      return paystubs.filter(s => s.employee_id && empIds.has(s.employee_id));
+    })();
+    const map = {};
+    groupStubs.forEach(stub => {
+      const end = stub.pay_period_end;
+      if (!map[end]) map[end] = { end, stubs: [] };
+      map[end].stubs.push(stub);
+    });
+    return Object.values(map).sort((a, b) => b.end.localeCompare(a.end));
+  })();
+
   // Split rows: main (pending + late history), printed (processed history)
   const PRINTED_STATUSES = new Set(['printed','direct_deposit_sent','direct_deposit_cleared','voided']);
   const mainRows    = [];
