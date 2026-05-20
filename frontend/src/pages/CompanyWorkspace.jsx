@@ -1077,6 +1077,61 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     });
   }
 
+  function getRow(periodEnd, empId) {
+    return (pendingRows[periodEnd] || {})[empId] || { regHours: '', otHours: '', selected: false };
+  }
+  function setRow(periodEnd, empId, field, value) {
+    setPendingRows(prev => ({
+      ...prev,
+      [periodEnd]: { ...(prev[periodEnd] || {}), [empId]: { ...((prev[periodEnd] || {})[empId] || {}), [field]: value } },
+    }));
+  }
+
+  const selectedPendingCount = pendingPeriods.reduce((n, period) =>
+    n + empsInGroup.filter(emp => getRow(period.end, emp.id).selected).length, 0);
+  const totalActionCount = selectedPendingCount + selectedLateStubs.size;
+
+  async function handleRunPayroll() {
+    setRunning(true); setRunErr(''); setRunSuccess('');
+    try {
+      // Group selected pending rows by period, call runPayroll once per period
+      for (const period of pendingPeriods) {
+        const selectedEmps = empsInGroup.filter(emp => getRow(period.end, emp.id).selected);
+        if (selectedEmps.length === 0) continue;
+        const employees = selectedEmps.map(emp => {
+          const row = getRow(period.end, emp.id);
+          const isSalary = emp.payType === 'salary';
+          const regH = parseFloat(row.regHours || 0);
+          const otH  = parseFloat(row.otHours  || 0);
+          const rate = emp.hourlyRate || 0;
+          const regPay = isSalary ? r2((emp.annualSalary || 0) / ppy) : r2(Math.min(regH, 40) * rate);
+          const otPay  = isSalary ? 0 : r2(otH * rate * 1.5);
+          const lineItems = isSalary
+            ? [{ payType: 'salary', description: 'Salary', amount: regPay }]
+            : [
+                ...(regH > 0 ? [{ payType: 'regular',  description: 'Regular',  hours: regH, rate, amount: regPay }] : []),
+                ...(otH  > 0 ? [{ payType: 'overtime', description: 'Overtime', hours: otH,  rate: rate * 1.5, amount: otPay }] : []),
+              ];
+          const ytd = calcEmpYTD(emp.id, null);
+          return { employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay };
+        });
+        await api.runPayroll({ clientId, payPeriodStart: period.start, payPeriodEnd: period.end, settlementDate: period.payDate, payGroupId: currentGroupId, employees });
+      }
+      // Submit any selected late stubs
+      if (selectedLateStubs.size > 0) {
+        await api.batchSubmitPaystubs({ paystubIds: [...selectedLateStubs], taxType: '941' });
+      }
+      await reloadStubs();
+      setPendingRows({});
+      setSelectedLateStubs(new Set());
+      setRunSuccess(`Payroll complete — ${totalActionCount} check(s) processed.`);
+    } catch (err) {
+      setRunErr(err.message || 'Payroll run failed');
+    } finally {
+      setRunning(false);
+    }
+  }
+
   // Select-all helpers
   function handleSelectAllLate() {
     const newPR = { ...pendingRows };
