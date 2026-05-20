@@ -939,9 +939,14 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
   const [runSuccess, setRunSuccess]               = useState('');
   const [detailModal, setDetailModal]             = useState(null); // rowData object
   const [showPrinted, setShowPrinted]             = useState(false);
+  const [printModal, setPrintModal]               = useState(null); // stub IDs for print dialog
   const [drawerEmpId, setDrawerEmpId]             = useState(null);
   const [periodEdit, setPeriodEdit]               = useState(null); // { id, start, end, payDate }
   const [savingPeriod, setSavingPeriod]           = useState(false);
+  const [ungroupedModal, setUngroupedModal]       = useState(false);
+  const [ugForm, setUgForm]                       = useState({ employeeId: '', start: '', end: '', payDate: '', regHours: '', otHours: '', payType: 'regular' });
+  const [ugRunning, setUgRunning]                 = useState(false);
+  const [ugErr, setUgErr]                         = useState('');
 
   useEffect(() => {
     api.getPayGroups(clientId)
@@ -1130,19 +1135,18 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
         const res = await api.runPayroll({ clientId, payPeriodStart: period.start, payPeriodEnd: period.end, settlementDate: period.payDate, payGroupId: currentGroupId, employees: payrollEmps });
         if (res?.created) res.created.forEach(s => allNewIds.push(s.id));
       }
-      // Submit any selected late stubs — clientId required by backend
-      if (selectedLateStubs.size > 0) {
-        await api.batchSubmitPaystubs({ clientId, paystubIds: [...selectedLateStubs], taxType: '941' });
-      }
-      // Auto-generate PDF and mark checks as printed
-      if (allNewIds.length > 0) {
-        try { await api.printSelectedChecks(clientId, allNewIds); } catch {}
-        await Promise.all(allNewIds.map(id => api.updatePaystubStatus(id, 'printed').catch(() => {})));
-      }
+      // Include selected late stubs in print batch (NOT EFTPS — late checks are payroll, not tax deposits)
+      selectedLateStubs.forEach(id => allNewIds.push(id));
+      // Mark all checks as printed immediately
+      await Promise.all(allNewIds.map(id => api.updatePaystubStatus(id, 'printed').catch(() => {})));
       await reloadStubs();
       setPendingRows({});
       setSelectedLateStubs(new Set());
-      setRunSuccess(`Payroll complete — ${allNewIds.length + selectedLateStubs.size} check(s) processed.`);
+      if (allNewIds.length > 0) {
+        setPrintModal(allNewIds);
+      } else {
+        setRunSuccess('Payroll complete — no checks were generated.');
+      }
     } catch (err) {
       setRunErr(err.message || 'Payroll run failed');
     } finally {
@@ -1176,6 +1180,49 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     });
     setPendingRows(newPR);
     setSelectedLateStubs(allSel ? new Set() : new Set(lateHistIds));
+  }
+
+  async function handleUngroupedRun() {
+    setUgErr('');
+    const { employeeId, start, end, payDate, regHours, otHours, payType } = ugForm;
+    if (!employeeId || !start || !end || !payDate) { setUgErr('All fields required.'); return; }
+    const emp = activeEmps.find(e => e.id === Number(employeeId));
+    if (!emp) { setUgErr('Employee not found.'); return; }
+    const isSalary = payType === 'salary' || emp.payType === 'salary';
+    if (!isSalary) {
+      const regH = parseFloat(regHours || 0);
+      const otH  = parseFloat(otHours  || 0);
+      if (regH === 0 && otH === 0) { setUgErr('Enter at least reg or OT hours.'); return; }
+    }
+    setUgRunning(true);
+    try {
+      const regH = parseFloat(regHours || 0);
+      const otH  = parseFloat(otHours  || 0);
+      const rate = emp.hourlyRate || 0;
+      const regPay = isSalary ? r2((emp.annualSalary || 0) / ppy) : r2(Math.min(regH, 40) * rate);
+      const otPay  = isSalary ? 0 : r2(otH * rate * 1.5);
+      const lineItems = isSalary
+        ? [{ payType: 'salary', description: 'Salary', amount: regPay }]
+        : [
+            ...(regH > 0 ? [{ payType: 'regular',  description: 'Regular',  hours: regH, rate, amount: regPay }] : []),
+            ...(otH  > 0 ? [{ payType: 'overtime', description: 'Overtime', hours: otH,  rate: rate * 1.5, amount: otPay }] : []),
+          ];
+      const ytd = calcEmpYTD(emp.id, null);
+      const res = await api.runPayroll({
+        clientId, payPeriodStart: start, payPeriodEnd: end, settlementDate: payDate,
+        employees: [{ employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay }],
+      });
+      const newIds = (res?.created || []).map(s => s.id);
+      await Promise.all(newIds.map(id => api.updatePaystubStatus(id, 'printed').catch(() => {})));
+      await reloadStubs();
+      setUngroupedModal(false);
+      setUgForm({ employeeId: '', start: '', end: '', payDate: '', regHours: '', otHours: '', payType: 'regular' });
+      if (newIds.length > 0) setPrintModal(newIds);
+    } catch (e) {
+      setUgErr(e.message || 'Failed to run payroll.');
+    } finally {
+      setUgRunning(false);
+    }
   }
 
   const hasLateRows    = pendingPeriods.some(p => p.isLate) || history.some(p => p.stubs.some(s => s.check_status === 'late'));
@@ -1547,6 +1594,11 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
           <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={handleSelectAllDue}>Select All Due</button>
         )}
         <div style={{ flex: 1 }} />
+        {!isGroupDeleted && (
+          <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} onClick={() => setUngroupedModal(true)}>
+            + Ungrouped Check
+          </button>
+        )}
         {!isGroupDeleted && (pendingPeriods.length > 0 || selectedLateStubs.size > 0) && (
           <button className="btn btn-primary" onClick={handleRunPayroll} disabled={running || totalActionCount === 0}>
             {running ? <span className="spinner" /> : `Run Payroll (${totalActionCount})`}
@@ -1624,6 +1676,98 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
               setCurrentGroupId(next ? next.id : (unassignedEmps.length > 0 ? UNASSIGNED_ID : null));
             });
           }} />
+      )}
+
+      {/* Print Checks Modal */}
+      {printModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.55)' }}
+          onClick={e => { if (e.target === e.currentTarget) setPrintModal(null); }}>
+          <div className="card" style={{ width: 400, maxWidth: '92vw', padding: 28, textAlign: 'center' }}>
+            <div style={{ fontSize: 36, marginBottom: 10 }}>✅</div>
+            <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 6 }}>Payroll Complete!</div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 22 }}>
+              {printModal.length} check{printModal.length !== 1 ? 's' : ''} processed and marked as printed.
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+              <button className="btn btn-primary" onClick={async () => {
+                try { await api.printSelectedChecks(clientId, printModal); } catch (e) { alert(e.message); }
+                setPrintModal(null);
+              }}>
+                Print Checks
+              </button>
+              <button className="btn btn-ghost" onClick={() => setPrintModal(null)}>Not Now</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ungrouped Payroll Modal */}
+      {ungroupedModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.55)' }}
+          onClick={e => { if (e.target === e.currentTarget) setUngroupedModal(false); }}>
+          <div className="card" style={{ width: 460, maxWidth: '95vw', padding: 24 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, fontSize: 15 }}>Run Ungrouped Payroll</div>
+              <button onClick={() => setUngroupedModal(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+            </div>
+            {ugErr && <div className="alert alert-error" style={{ marginBottom: 10, fontSize: 12 }}>{ugErr}</div>}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Employee
+                <select className="form-input" value={ugForm.employeeId}
+                  onChange={e => setUgForm(f => ({ ...f, employeeId: e.target.value }))}
+                  style={{ marginTop: 4, width: '100%' }}>
+                  <option value="">Select employee…</option>
+                  {activeEmps.map(e => <option key={e.id} value={e.id}>{e.firstName} {e.lastName}</option>)}
+                </select>
+              </label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Period Start
+                  <input className="form-input" type="date" value={ugForm.start}
+                    onChange={e => setUgForm(f => ({ ...f, start: e.target.value }))}
+                    style={{ marginTop: 4, width: '100%' }} />
+                </label>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Period End
+                  <input className="form-input" type="date" value={ugForm.end}
+                    onChange={e => { const end = e.target.value; setUgForm(f => ({ ...f, end, payDate: end ? calcDefaultPayDate(end) : f.payDate })); }}
+                    style={{ marginTop: 4, width: '100%' }} />
+                </label>
+              </div>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Pay Date
+                <input className="form-input" type="date" value={ugForm.payDate}
+                  onChange={e => setUgForm(f => ({ ...f, payDate: e.target.value }))}
+                  style={{ marginTop: 4, width: '100%' }} />
+              </label>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Pay Type Override
+                <select className="form-input" value={ugForm.payType}
+                  onChange={e => setUgForm(f => ({ ...f, payType: e.target.value }))}
+                  style={{ marginTop: 4, width: '100%' }}>
+                  <option value="regular">Regular (Hourly)</option>
+                  <option value="salary">Salary</option>
+                </select>
+              </label>
+              {ugForm.payType !== 'salary' && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Reg Hours
+                    <input className="form-input mono" type="number" min="0" step="0.5" value={ugForm.regHours} placeholder="0"
+                      onChange={e => setUgForm(f => ({ ...f, regHours: e.target.value }))}
+                      style={{ marginTop: 4, width: '100%' }} />
+                  </label>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>OT Hours
+                    <input className="form-input mono" type="number" min="0" step="0.5" value={ugForm.otHours} placeholder="0"
+                      onChange={e => setUgForm(f => ({ ...f, otHours: e.target.value }))}
+                      style={{ marginTop: 4, width: '100%' }} />
+                  </label>
+                </div>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 18 }}>
+              <button className="btn btn-ghost" onClick={() => setUngroupedModal(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={handleUngroupedRun} disabled={ugRunning}>
+                {ugRunning ? <span className="spinner" /> : 'Run Payroll'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

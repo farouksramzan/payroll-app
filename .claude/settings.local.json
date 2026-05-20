@@ -32,7 +32,10 @@
       "Bash(npx vite *)",
       "Bash(node -e \"const PDFDocument = require\\('pdfkit'\\); const doc = new PDFDocument\\(\\); console.log\\('pdfkit OK, version:', require\\('./node_modules/pdfkit/package.json'\\).version\\)\")",
       "Bash(cat backend/src/index.js)",
-      "Bash(cat backend/index.js)"
+      "Bash(cat backend/index.js)",
+      "Bash(node --input-type=module)",
+      "Bash(grep -n \"^  }$\\\\|^  \\);\" \"/Users/faroukramzan/Desktop/Payroll App/frontend/src/pages/CompanyWorkspace.jsx\")",
+      "Bash(awk 'NR>40 && NR<60')"
     ]
   }
 }
