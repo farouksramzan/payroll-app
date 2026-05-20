@@ -123,6 +123,7 @@ const US_STATES = [
 
 // ── Check Status Badge ────────────────────────────────────────────────────────
 const STATUS_CFG = {
+  pending:                { label: 'Pending',            cls: 'badge-neutral' },
   draft:                  { label: 'Draft',              cls: 'badge-neutral' },
   printed:                { label: 'Printed',            cls: 'badge-accent' },
   direct_deposit_sent:    { label: 'DD Sent',            cls: 'badge-warning' },
@@ -934,6 +935,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
   const [running, setRunning]                     = useState(false);
   const [runErr, setRunErr]                       = useState('');
   const [runSuccess, setRunSuccess]               = useState('');
+  const [expandedRows, setExpandedRows]           = useState(new Set());
 
   useEffect(() => {
     api.getPayGroups(clientId)
@@ -1145,24 +1147,36 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     n + empsInGroup.filter(e => getRow(p.end, e.id).selected).length, 0);
   const totalActionCount = totalSelCount + selectedLateStubs.size;
 
-  const todayStr = new Date().toISOString().slice(0, 10);
 
-  const PeriodHeader = ({ start, end, payDate, pending, isLate }) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '7px 14px', background: isLate ? '#fef2f2' : pending ? 'var(--accent-light)' : 'var(--bg-secondary)', borderRadius: 8, marginBottom: 8, border: isLate ? '1px solid #fecaca' : 'none' }}>
-      <span style={{ fontWeight: 700, fontSize: 13, color: isLate ? '#dc2626' : pending ? 'var(--accent)' : 'var(--text-secondary)' }}>
-        {fmtDate(start)} – {fmtDate(end)}
-      </span>
-      {payDate && <span style={{ fontSize: 12, color: isLate ? '#dc2626' : 'var(--text-muted)' }}>Pay Date: {fmtDate(payDate)}</span>}
-      {isLate && <span className="badge badge-error" style={{ fontSize: 10 }}>LATE</span>}
-      {pending && !isLate && <span className="badge badge-neutral" style={{ fontSize: 10 }}>Pending</span>}
-    </div>
-  );
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const ppy = PERIODS_PER_YEAR[currentGroup?.frequency || 'biweekly'] || 26;
+
+  // Flat row list: pending (oldest/late first) then history (newest first)
+  const allRows = [];
+  pendingPeriods.forEach(period => {
+    empsInGroup.forEach(emp => {
+      allRows.push({ type: 'pending', period, emp, key: `p-${period.end}-${emp.id}` });
+    });
+  });
+  history.forEach(period => {
+    period.stubs.forEach(stub => {
+      allRows.push({ type: 'history', stub, key: `h-${stub.id}` });
+    });
+  });
+
+  function toggleExpand(key) {
+    setExpandedRows(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  }
 
   return (
     <div>
       {/* Tab strip */}
       {tabs.length > 0 && (
-        <div className="pay-subtabs" style={{ marginBottom: 16 }}>
+        <div className="pay-subtabs" style={{ marginBottom: 12 }}>
           {tabs.map(g => {
             const deleted = !!g.deletedAt;
             return (
@@ -1181,8 +1195,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
         </div>
       )}
 
-      {/* Group header row */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: isGroupDeleted ? 8 : 16 }}>
+      {/* Group header + Run Payroll */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
         {currentGroup && currentGroup.id !== UNASSIGNED_ID && (
           <>
             <span style={{ fontWeight: 700, fontSize: 14, fontStyle: isGroupDeleted ? 'italic' : 'normal', opacity: isGroupDeleted ? 0.6 : 1 }}>{currentGroup.name}</span>
@@ -1194,116 +1208,132 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
         <div style={{ flex: 1 }} />
         {!isGroupDeleted && (pendingPeriods.length > 0 || selectedLateStubs.size > 0) && (
           <button className="btn btn-primary" onClick={handleRunPayroll} disabled={running || totalActionCount === 0}>
-            {running ? <span className="spinner" /> : `+ Run Payroll (${totalActionCount})`}
+            {running ? <span className="spinner" /> : `Run Payroll (${totalActionCount})`}
           </button>
         )}
       </div>
+
       {isGroupDeleted && (
-        <div className="alert alert-error" style={{ marginBottom: 16, fontSize: 12 }}>
-          <span>⚠</span> This pay group has been deleted. Historical checks are shown below for reference, but no new payroll can be run.
+        <div className="alert alert-error" style={{ marginBottom: 12, fontSize: 12 }}>
+          <span>⚠</span> This pay group has been deleted. Historical checks are shown below for reference.
         </div>
       )}
+      {runErr     && <div className="alert alert-error"   style={{ marginBottom: 10 }}><span>⚠</span>{runErr}<button onClick={() => setRunErr('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button></div>}
+      {runSuccess && <div className="alert alert-success" style={{ marginBottom: 10 }}><span>✓</span>{runSuccess}<button onClick={() => setRunSuccess('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button></div>}
 
-      {runErr     && <div className="alert alert-error"   style={{ marginBottom: 14 }}><span>⚠</span>{runErr}<button onClick={() => setRunErr('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button></div>}
-      {runSuccess && <div className="alert alert-success" style={{ marginBottom: 14 }}><span>✓</span>{runSuccess}<button onClick={() => setRunSuccess('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button></div>}
+      {/* Flat payroll spreadsheet */}
+      {allRows.length > 0 && (
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 12 }}>
+            <colgroup>
+              <col style={{ width: 36 }} />
+              <col />
+              <col style={{ width: 88 }} />
+              <col style={{ width: 88 }} />
+              <col style={{ width: 88 }} />
+              <col style={{ width: 82 }} />
+              <col style={{ width: 82 }} />
+              <col style={{ width: 92 }} />
+            </colgroup>
+            <thead>
+              <tr style={{ borderBottom: '2px solid var(--border)', background: 'var(--bg-secondary)' }}>
+                <th style={{ padding: '7px 0 7px 12px' }} />
+                <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'left' }}>Employee</th>
+                <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'left' }}>Period Start</th>
+                <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'left' }}>Period End</th>
+                <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'left' }}>Pay Date</th>
+                <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>Reg Hrs</th>
+                <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>OT Hrs</th>
+                <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {allRows.map((rowData, idx) => {
+                const isExpanded = expandedRows.has(rowData.key);
+                const stripeBg   = idx % 2 === 0 ? 'var(--bg-primary, #fff)' : '#f8fafc';
 
-      {/* ── Pending periods (late first, then current/upcoming) ── */}
-      {pendingPeriods.length > 0 && empsInGroup.length > 0 && pendingPeriods.map(period => {
-        const ppy = PERIODS_PER_YEAR[currentGroup?.frequency || 'biweekly'] || 26;
-        const allPeriodSel = empsInGroup.length > 0 && empsInGroup.every(e => getRow(period.end, e.id).selected);
-        return (
-          <div key={period.end} style={{ marginBottom: 28 }}>
-            <PeriodHeader start={period.start} end={period.end} payDate={period.payDate} pending isLate={period.isLate} />
-            {period.isLate && (
-              <div style={{ fontSize: 12, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: '6px 12px', marginBottom: 8 }}>
-                ⚠ Pay date has passed — these checks are late. Select employees and click Run Payroll to process.
-              </div>
-            )}
-            <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-              <table className="schedule-table" style={{ tableLayout: 'auto' }}>
-                <thead>
-                  <tr>
-                    <th style={{ width: 36 }}>
-                      <input type="checkbox" checked={allPeriodSel} style={{ accentColor: 'var(--accent)', width: 14, height: 14 }}
-                        onChange={ev => empsInGroup.forEach(e => setRow(period.end, e.id, 'selected', ev.target.checked))} />
-                    </th>
-                    <th>Employee</th>
-                    <th style={{ width: 120 }}>Pay</th>
-                    <th className="num" style={{ width: 110 }}>Reg Hours</th>
-                    <th className="num" style={{ width: 110 }}>OT Hours</th>
-                    <th style={{ width: 90 }}>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {empsInGroup.map(emp => {
-                    const row    = getRow(period.end, emp.id);
-                    const salAmt = r2((emp.annualSalary || 0) / ppy);
-                    return (
-                      <tr key={emp.id} style={{ background: row.selected ? (period.isLate ? '#fef2f2' : 'var(--accent-light)') : undefined }}>
-                        <td>
-                          <input type="checkbox" checked={row.selected} style={{ accentColor: 'var(--accent)', width: 14, height: 14 }}
+                if (rowData.type === 'pending') {
+                  const { period, emp } = rowData;
+                  const row      = getRow(period.end, emp.id);
+                  const isSalary = emp.payType === 'salary';
+                  const salAmt   = r2((emp.annualSalary || 0) / ppy);
+                  const rate     = emp.hourlyRate || 0;
+                  const regH     = parseFloat(row.regHours || 0);
+                  const otH      = parseFloat(row.otHours  || 0);
+                  const grossPreview = isSalary ? salAmt : r2(Math.min(regH, 40) * rate + otH * rate * 1.5);
+                  const status   = period.isLate ? 'late' : 'pending';
+                  const selBg    = period.isLate ? '#fff5f5' : 'var(--accent-light)';
+                  const rowBg    = row.selected ? selBg : stripeBg;
+                  return (
+                    <React.Fragment key={rowData.key}>
+                      <tr
+                        style={{ background: rowBg, borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                        onClick={e => { if (e.target.type !== 'checkbox' && e.target.tagName !== 'INPUT') toggleExpand(rowData.key); }}
+                      >
+                        <td style={{ padding: '0 0 0 12px' }}>
+                          <input type="checkbox" checked={row.selected}
+                            style={{ accentColor: 'var(--accent)', width: 13, height: 13, cursor: 'pointer' }}
                             onChange={ev => setRow(period.end, emp.id, 'selected', ev.target.checked)} />
                         </td>
-                        <td>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                            <div className="emp-avatar" style={{ width: 28, height: 28, fontSize: 10, flexShrink: 0 }}>{initials(`${emp.firstName} ${emp.lastName}`)}</div>
-                            <span style={{ fontWeight: 600, fontSize: 13 }}>{emp.firstName} {emp.lastName}</span>
-                          </div>
-                        </td>
-                        <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                          {emp.payType === 'salary' ? fmt(salAmt) : `$${emp.hourlyRate || 0}/hr`}
-                        </td>
-                        <td>
-                          {emp.payType === 'hourly'
-                            ? <input className="form-input mono" type="number" min="0" step="0.5" value={row.regHours} placeholder="0"
+                        <td style={{ padding: '7px 8px', fontWeight: 600 }}>{emp.firstName} {emp.lastName}</td>
+                        <td style={{ padding: '7px 8px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{fmtDate(period.start)}</td>
+                        <td style={{ padding: '7px 8px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{fmtDate(period.end)}</td>
+                        <td style={{ padding: '7px 8px', color: period.isLate ? '#dc2626' : 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{fmtDate(period.payDate)}</td>
+                        {isSalary ? (
+                          <td colSpan={2} style={{ padding: '7px 8px', textAlign: 'right', color: 'var(--text-secondary)', fontSize: 12 }}>
+                            {fmt(salAmt)}<span style={{ fontSize: 10, color: 'var(--text-muted)', marginLeft: 3 }}>/period</span>
+                          </td>
+                        ) : (
+                          <>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input className="form-input mono" type="number" min="0" step="0.5" value={row.regHours} placeholder="0"
                                 onChange={ev => setRow(period.end, emp.id, 'regHours', ev.target.value)}
-                                style={{ width: 90, height: 30, fontSize: 13, textAlign: 'right' }} />
-                            : <span style={{ display: 'block', textAlign: 'right', fontSize: 12, color: 'var(--text-muted)' }}>—</span>
-                          }
-                        </td>
-                        <td>
-                          {emp.payType === 'hourly'
-                            ? <input className="form-input mono" type="number" min="0" step="0.5" value={row.otHours} placeholder="0"
+                                style={{ width: '100%', height: 26, fontSize: 12, textAlign: 'right', padding: '0 6px' }} />
+                            </td>
+                            <td style={{ padding: '4px 6px' }}>
+                              <input className="form-input mono" type="number" min="0" step="0.5" value={row.otHours} placeholder="0"
                                 onChange={ev => setRow(period.end, emp.id, 'otHours', ev.target.value)}
-                                style={{ width: 90, height: 30, fontSize: 13, textAlign: 'right' }} />
-                            : <span style={{ display: 'block', textAlign: 'right', fontSize: 12, color: 'var(--text-muted)' }}>—</span>
-                          }
+                                style={{ width: '100%', height: 26, fontSize: 12, textAlign: 'right', padding: '0 6px' }} />
+                            </td>
+                          </>
+                        )}
+                        <td style={{ padding: '7px 8px', textAlign: 'right' }}>
+                          <StatusBadge status={status} />
                         </td>
-                        <td><span className={`badge ${period.isLate ? 'badge-error' : 'badge-neutral'}`}>{period.isLate ? 'Late' : 'Pending'}</span></td>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        );
-      })}
+                      {isExpanded && (
+                        <tr style={{ background: period.isLate ? '#fff5f5' : 'var(--accent-light)', borderBottom: '1px solid var(--border)' }}>
+                          <td colSpan={8} style={{ padding: '10px 16px 12px 52px' }}>
+                            <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', fontSize: 12 }}>
+                              <div><div style={{ color: 'var(--text-muted)', marginBottom: 2 }}>Pay Type</div><strong>{isSalary ? 'Salary' : 'Hourly'}</strong></div>
+                              {isSalary
+                                ? <div><div style={{ color: 'var(--text-muted)', marginBottom: 2 }}>Annual Salary</div><strong>{fmt(emp.annualSalary || 0)}</strong></div>
+                                : <div><div style={{ color: 'var(--text-muted)', marginBottom: 2 }}>Rate</div><strong>${rate}/hr</strong></div>}
+                              <div><div style={{ color: 'var(--text-muted)', marginBottom: 2 }}>Period</div><strong>{fmtDate(period.start)} – {fmtDate(period.end)}</strong></div>
+                              <div><div style={{ color: 'var(--text-muted)', marginBottom: 2 }}>Pay Date</div><strong style={{ color: period.isLate ? '#dc2626' : undefined }}>{fmtDate(period.payDate)}{period.isLate ? ' — LATE' : ''}</strong></div>
+                              <div><div style={{ color: 'var(--text-muted)', marginBottom: 2 }}>Gross Preview</div><strong style={{ color: 'var(--accent)' }}>{fmt(grossPreview)}</strong></div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                }
 
-      {/* ── Historical periods ── */}
-      {history.map(period => (
-        <div key={period.end} style={{ marginBottom: 24 }}>
-          <PeriodHeader start={period.start} end={period.end} payDate={period.stubs[0]?.settlement_date} pending={false} isLate={false} />
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <table className="schedule-table" style={{ tableLayout: 'auto' }}>
-              <thead>
-                <tr>
-                  <th style={{ width: 36 }} />
-                  <th>Employee</th>
-                  <th className="num" style={{ width: 120 }}>Gross</th>
-                  <th className="num" style={{ width: 110 }}>Reg Hrs</th>
-                  <th className="num" style={{ width: 110 }}>OT Hrs</th>
-                  <th className="num" style={{ width: 110 }}>Net Pay</th>
-                  <th style={{ width: 100 }}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {period.stubs.map(stub => {
-                  const isLateCheck = stub.check_status === 'late';
-                  const displayStatus = stub.check_status || 'draft';
-                  return (
-                    <tr key={stub.id} style={{ opacity: stub.check_status === 'voided' ? 0.5 : 1, background: isLateCheck ? '#fef2f2' : undefined }}>
-                      <td style={{ width: 36 }}>
+                // History row
+                const { stub } = rowData;
+                const isLateCheck = stub.check_status === 'late';
+                const isVoided    = stub.check_status === 'voided';
+                const empObj      = employees.find(e => e.id === stub.employee_id);
+                const isSalary    = empObj?.payType === 'salary';
+                const rowBg       = isLateCheck ? '#fff5f5' : stripeBg;
+                return (
+                  <React.Fragment key={rowData.key}>
+                    <tr
+                      style={{ background: rowBg, opacity: isVoided ? 0.5 : 1, borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                      onClick={e => { if (e.target.type !== 'checkbox') toggleExpand(rowData.key); }}
+                    >
+                      <td style={{ padding: '0 0 0 12px' }}>
                         {isLateCheck && (
                           <input type="checkbox"
                             checked={selectedLateStubs.has(stub.id)}
@@ -1312,46 +1342,57 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                               next.has(stub.id) ? next.delete(stub.id) : next.add(stub.id);
                               return next;
                             })}
-                            style={{ accentColor: 'var(--accent)', width: 13, height: 13 }} />
+                            style={{ accentColor: 'var(--accent)', width: 13, height: 13, cursor: 'pointer' }} />
                         )}
                       </td>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div className="emp-avatar" style={{ width: 28, height: 28, fontSize: 10, flexShrink: 0 }}>{initials(stub.employee_name || '?')}</div>
-                          <div>
-                            <span style={{ fontWeight: 600, fontSize: 13, textDecoration: stub.check_status === 'voided' ? 'line-through' : 'none' }}>
-                              {stub.employee_name}
-                            </span>
-                            {stub.check_number && (
-                              <span style={{ marginLeft: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--accent)' }}>#{stub.check_number}</span>
-                            )}
-                          </div>
-                        </div>
+                      <td style={{ padding: '7px 8px' }}>
+                        <span style={{ fontWeight: 600, textDecoration: isVoided ? 'line-through' : 'none' }}>{stub.employee_name}</span>
+                        {stub.check_number && (
+                          <span style={{ marginLeft: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--accent)' }}>#{stub.check_number}</span>
+                        )}
                       </td>
-                      <td className="num" style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>
-                        {stub.gross_wages ? fmt(stub.gross_wages) : '—'}
+                      <td style={{ padding: '7px 8px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{fmtDate(stub.pay_period_start)}</td>
+                      <td style={{ padding: '7px 8px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{fmtDate(stub.pay_period_end)}</td>
+                      <td style={{ padding: '7px 8px', color: isLateCheck ? '#dc2626' : 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{fmtDate(stub.settlement_date)}</td>
+                      {isSalary ? (
+                        <td colSpan={2} style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--accent)', fontSize: 12 }}>
+                          {stub.gross_wages ? fmt(stub.gross_wages) : '—'}
+                        </td>
+                      ) : (
+                        <>
+                          <td style={{ padding: '7px 8px', textAlign: 'right', color: 'var(--text-muted)' }}>{stub.regular_hours != null ? stub.regular_hours : '—'}</td>
+                          <td style={{ padding: '7px 8px', textAlign: 'right', color: 'var(--text-muted)' }}>{stub.overtime_hours > 0 ? stub.overtime_hours : '—'}</td>
+                        </>
+                      )}
+                      <td style={{ padding: '7px 8px', textAlign: 'right' }}>
+                        <StatusBadge status={stub.check_status || 'draft'} />
                       </td>
-                      <td className="num" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        {stub.regular_hours != null ? stub.regular_hours : '—'}
-                      </td>
-                      <td className="num" style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        {stub.overtime_hours > 0 ? stub.overtime_hours : '—'}
-                      </td>
-                      <td className="num" style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 700, color: 'var(--success)' }}>
-                        {stub.net_pay ? fmt(stub.net_pay) : '—'}
-                      </td>
-                      <td><StatusBadge status={displayStatus} /></td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                    {isExpanded && (
+                      <tr style={{ background: isLateCheck ? '#fff5f5' : 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
+                        <td colSpan={8} style={{ padding: '10px 16px 12px 52px' }}>
+                          <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap', fontSize: 12 }}>
+                            <div><div style={{ color: 'var(--text-muted)', marginBottom: 2 }}>Gross</div><strong>{fmt(stub.gross_wages || 0)}</strong></div>
+                            <div><div style={{ color: 'var(--text-muted)', marginBottom: 2 }}>FIT</div><strong>{fmt(stub.fit_withholding || 0)}</strong></div>
+                            <div><div style={{ color: 'var(--text-muted)', marginBottom: 2 }}>EE SS</div><strong>{fmt(stub.employee_ss || 0)}</strong></div>
+                            <div><div style={{ color: 'var(--text-muted)', marginBottom: 2 }}>EE Medicare</div><strong>{fmt(stub.employee_medicare || 0)}</strong></div>
+                            <div><div style={{ color: 'var(--text-muted)', marginBottom: 2 }}>State Tax</div><strong>{fmt(stub.state_income_tax || 0)}</strong></div>
+                            <div><div style={{ color: 'var(--text-muted)', marginBottom: 2 }}>Net Pay</div><strong style={{ color: 'var(--success, #16a34a)' }}>{fmt(stub.net_pay || 0)}</strong></div>
+                            {stub.check_number && <div><div style={{ color: 'var(--text-muted)', marginBottom: 2 }}>Check #</div><strong style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--accent)' }}>#{stub.check_number}</strong></div>}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
-      ))}
+      )}
 
       {/* Empty state */}
-      {history.length === 0 && pendingPeriods.length === 0 && (
+      {allRows.length === 0 && (
         <div className="card">
           <div className="empty-state" style={{ padding: '32px 20px' }}>
             <div className="empty-state-icon">📋</div>
