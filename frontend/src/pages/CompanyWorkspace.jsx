@@ -1033,6 +1033,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     };
   }
 
+  const pendingPeriods = getPendingPeriods();
+
   // Split rows: main (pending + late history), printed (processed history)
   const PRINTED_STATUSES = new Set(['printed','direct_deposit_sent','direct_deposit_cleared','voided']);
   const mainRows    = [];
