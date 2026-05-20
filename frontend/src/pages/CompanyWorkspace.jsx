@@ -1744,6 +1744,136 @@ function LiabilityCheckEditor({ stub, clientId, client, onUpdated, onClose }) {
   );
 }
 
+// ── Liability shared helpers ──────────────────────────────────────────────────
+function calcLiabilityDue(stub, taxType, schedule) {
+  const refDate = stub.settlement_date || stub.pay_period_end;
+  if (!refDate) return null;
+  const d = new Date(refDate + 'T00:00:00');
+  const q = Math.ceil((d.getMonth() + 1) / 3);
+  const qMons = [3, 6, 9, 0];  // Apr, Jul, Oct, Jan
+  const qDays = [30, 31, 31, 31];
+  const qYear = q === 4 ? d.getFullYear() + 1 : d.getFullYear();
+
+  if (taxType === '941') {
+    if (schedule === 'semiweekly') return calcIRSDepositDue(refDate, 'semiweekly');
+    if (schedule === 'quarterly')  return nextBizDay(new Date(qYear, qMons[q - 1], qDays[q - 1])).toISOString().slice(0, 10);
+    return nextBizDay(new Date(d.getFullYear(), d.getMonth() + 1, 15)).toISOString().slice(0, 10); // monthly
+  }
+  if (taxType === '940') {
+    if (schedule === 'annually') return nextBizDay(new Date(d.getFullYear() + 1, 0, 31)).toISOString().slice(0, 10);
+    return nextBizDay(new Date(qYear, qMons[q - 1], qDays[q - 1])).toISOString().slice(0, 10); // quarterly
+  }
+  // SUI
+  if (schedule === 'monthly')  return nextBizDay(new Date(d.getFullYear(), d.getMonth() + 1, 15)).toISOString().slice(0, 10);
+  if (schedule === 'annually') return nextBizDay(new Date(d.getFullYear() + 1, 0, 31)).toISOString().slice(0, 10);
+  return nextBizDay(new Date(qYear, qMons[q - 1], qDays[q - 1])).toISOString().slice(0, 10); // quarterly
+}
+
+function calcSendByDate(dueDate) {
+  if (!dueDate) return null;
+  let d = new Date(dueDate + 'T00:00:00'), count = 0;
+  while (count < 2) { d.setDate(d.getDate() - 1); if (isBizDay(d)) count++; }
+  return d.toISOString().slice(0, 10);
+}
+
+function calcLiabilityStatus(stub, taxType, sendBy, due, todayStr) {
+  const submitted = taxType === '940' ? stub.status_940 === 'submitted' : stub.status === 'submitted';
+  if (submitted) return 'completed';
+  if (!due) return 'upcoming';
+  if (todayStr > due) return 'late';
+  if (sendBy && todayStr >= sendBy) return 'due-soon';
+  const days = daysUntil(sendBy || due);
+  if (days !== null && days <= 5) return 'due-soon';
+  return 'upcoming';
+}
+
+const LIAB_STATUS_CFG = {
+  upcoming:  { label: 'Upcoming',  cls: 'badge-neutral' },
+  'due-soon':{ label: 'Due Soon',  cls: 'badge-warning' },
+  late:      { label: 'Late',      cls: 'badge-error'   },
+  completed: { label: 'Completed', cls: 'badge-success' },
+};
+function LiabStatusBadge({ status }) {
+  const cfg = LIAB_STATUS_CFG[status] || LIAB_STATUS_CFG.upcoming;
+  return <span className={`badge ${cfg.cls}`} style={{ fontWeight: 700, fontSize: 10 }}>{cfg.label}</span>;
+}
+
+// Shared detail modal for both pending and sent liabilities
+function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose }) {
+  if (!stub) return null;
+  const liabStatus = calcLiabilityStatus(stub, taxType, sendBy, due, todayStr);
+  const totalDeductions = r2(
+    (stub.fit_withholding || 0) + (stub.employee_ss || 0) +
+    (stub.employee_medicare || 0) + (stub.additional_medicare || 0) +
+    (stub.state_income_tax || 0)
+  );
+  const DL = ({ label, value, mono, color }) => (
+    <div style={{ minWidth: 110 }}>
+      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
+      <div style={{ fontFamily: mono ? 'JetBrains Mono, monospace' : undefined, fontWeight: 600, fontSize: 13, color: color || 'inherit' }}>{value}</div>
+    </div>
+  );
+  const Section = ({ title, children }) => (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8, paddingBottom: 4, borderBottom: '1px solid var(--border)' }}>{title}</div>
+      <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>{children}</div>
+    </div>
+  );
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="card" style={{ width: 620, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
+          <div>
+            <div style={{ fontWeight: 700, fontSize: 16 }}>{stub.employee_name}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <StatusBadge status={stub.check_status || 'draft'} />
+              <LiabStatusBadge status={liabStatus} />
+              {stub.check_number && <span style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--accent)' }}>#{stub.check_number}</span>}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+        </div>
+        <Section title="Pay Period">
+          <DL label="Period Start" value={fmtDate(stub.pay_period_start)} mono />
+          <DL label="Period End"   value={fmtDate(stub.pay_period_end)}   mono />
+          <DL label="Pay Date"     value={fmtDate(stub.settlement_date)}  mono />
+          {sendBy && <DL label="Send By"      value={fmtDate(sendBy)} mono color={liabStatus === 'due-soon' ? '#d97706' : liabStatus === 'late' ? '#dc2626' : undefined} />}
+          {due    && <DL label="IRS Due Date" value={fmtDate(due)}    mono color={liabStatus === 'late' ? '#dc2626' : undefined} />}
+        </Section>
+        <Section title="Earnings">
+          {stub.regular_hours != null && <DL label="Reg Hours" value={stub.regular_hours} mono />}
+          {stub.regular_pay   != null && <DL label="Reg Pay"   value={fmt(stub.regular_pay)} mono />}
+          {stub.overtime_hours > 0    && <DL label="OT Hours"  value={stub.overtime_hours} mono />}
+          {stub.overtime_pay   > 0    && <DL label="OT Pay"    value={fmt(stub.overtime_pay)} mono />}
+          {stub.bonus         > 0     && <DL label="Bonus"         value={fmt(stub.bonus)} mono />}
+          {stub.commission    > 0     && <DL label="Commission"    value={fmt(stub.commission)} mono />}
+          {stub.reimbursement > 0     && <DL label="Reimbursement" value={fmt(stub.reimbursement)} mono />}
+          <DL label="Gross Pay" value={fmt(stub.gross_wages || 0)} mono color="var(--accent)" />
+        </Section>
+        <Section title="Employee Contributions">
+          <DL label="Federal Income Tax" value={fmt(stub.fit_withholding  || 0)} mono />
+          <DL label="Social Security"    value={fmt(stub.employee_ss      || 0)} mono />
+          <DL label="Medicare"           value={fmt(stub.employee_medicare || 0)} mono />
+          <DL label="State Income Tax"   value={fmt(stub.state_income_tax || 0)} mono />
+        </Section>
+        <Section title="Employer Contributions">
+          <DL label="SS Match"  value={fmt(stub.employer_ss      || 0)} mono />
+          <DL label="Med Match" value={fmt(stub.employer_medicare || 0)} mono />
+          <DL label="FUTA"      value={fmt(stub.futa_tax          || 0)} mono />
+          <DL label="SUI"       value={fmt(stub.suta_tax          || 0)} mono />
+        </Section>
+        <div style={{ display: 'flex', gap: 16, padding: '12px 16px', background: 'var(--bg-secondary)', borderRadius: 8 }}>
+          <DL label="Gross Pay"            value={fmt(stub.gross_wages   || 0)} mono color="var(--accent)" />
+          <DL label="Employee Deductions"  value={fmt(totalDeductions)}         mono color="#dc2626" />
+          <DL label="Net Pay"              value={fmt(stub.net_pay       || 0)} mono color="var(--success, #16a34a)" />
+          <DL label="941 Deposit"          value={fmt(stub.total_deposit || 0)} mono />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Pay Liabilities Tab ───────────────────────────────────────────────────────
 function PayLiabilitiesTab({ clientId, client }) {
   const [paystubs, setPaystubs]     = useState([]);
@@ -1753,19 +1883,13 @@ function PayLiabilitiesTab({ clientId, client }) {
   const [submitting, setSubmitting] = useState(null);
   const [result,   setResult]       = useState(null);
   const [expanded, setExpanded]     = useState({ '941': true, '940': false, 'sui': false });
-  const [liabilityModal, setLiabilityModal] = useState(null); // stub object
-  const [sched941, setSched941]     = useState(client?.depositSchedule || 'monthly');
-  const [sched940, setSched940]     = useState('annually');
-  const [schedSUI, setSchedSUI]     = useState('quarterly');
+  const [liabilityModal, setLiabilityModal] = useState(null); // { stub, taxType, due, sendBy }
+  const [sched941, setSched941] = useState(client?.depositSchedule || 'monthly');
+  const [sched940, setSched940] = useState('quarterly');
+  const [schedSUI, setSchedSUI] = useState('quarterly');
+  const [markingPaid, setMarkingPaid] = useState(null); // stub.id being marked
 
   const todayStr = new Date().toISOString().slice(0, 10);
-
-  function calcSendBy(settlementDue) {
-    if (!settlementDue) return null;
-    let d = new Date(settlementDue + 'T00:00:00'), count = 0;
-    while (count < 2) { d.setDate(d.getDate() - 1); if (isBizDay(d)) count++; }
-    return d.toISOString().slice(0, 10);
-  }
 
   async function reload() {
     const [stubs, crds] = await Promise.all([api.getPaystubs(clientId), api.getPaystubCredits(clientId)]);
@@ -1773,7 +1897,6 @@ function PayLiabilitiesTab({ clientId, client }) {
     const pending = stubs.filter(s => s.status === 'pending' || s.status === 'failed' || s.status_940 === 'pending' || s.status_940 === 'failed');
     setSelected(new Set(pending.map(s => s.id)));
   }
-
   useEffect(() => { reload().finally(() => setLoading(false)); }, [clientId]);
 
   const pending941 = paystubs.filter(s => s.status === 'pending' || s.status === 'failed');
@@ -1784,14 +1907,28 @@ function PayLiabilitiesTab({ clientId, client }) {
   const credit941 = unappCredits.reduce((s, c) => s + (c.total_941_credit || 0), 0);
   const credit940 = unappCredits.reduce((s, c) => s + (c.total_940_credit || 0), 0);
 
-  const sel941 = pending941.filter(s => selected.has(s.id));
-  const sel940 = pending940.filter(s => selected.has(s.id));
+  // Compute totals for selected stubs using schedule-derived due dates
+  function enrichedStubs(stubs, taxType, schedule) {
+    return stubs.map(s => {
+      const due    = calcLiabilityDue(s, taxType, schedule);
+      const sendBy = calcSendByDate(due);
+      const status = calcLiabilityStatus(s, taxType, sendBy, due, todayStr);
+      return { ...s, _due: due, _sendBy: sendBy, _status: status };
+    });
+  }
+  const e941 = enrichedStubs(pending941, '941', sched941);
+  const e940 = enrichedStubs(pending940, '940', sched940);
+  const eSUI = enrichedStubs(pendingSUI, 'sui', schedSUI);
+
+  const sel941 = e941.filter(s => selected.has(s.id));
+  const sel940 = e940.filter(s => selected.has(s.id));
   const total941 = sel941.reduce((s, p) => s + p.total_deposit, 0) + credit941;
   const total940 = sel940.reduce((s, p) => s + p.futa_tax, 0) + credit940;
-  const totalSUI  = pendingSUI.filter(s => selected.has(s.id)).reduce((s, p) => s + (p.suta_tax || 0), 0);
+  const totalSUI = eSUI.filter(s => selected.has(s.id)).reduce((s, p) => s + (p.suta_tax || 0), 0);
 
   async function handleSubmit(taxType) {
-    const ids = (taxType === '941' ? sel941 : sel940).map(s => s.id);
+    const sel = taxType === '941' ? sel941 : sel940;
+    const ids = sel.map(s => s.id);
     if (!ids.length && credit941 === 0) return;
     const amt = taxType === '941' ? total941 : total940;
     if (!window.confirm(`Submit ${taxType} (${fmt(amt)}) to EFTPS?`)) return;
@@ -1803,113 +1940,51 @@ function PayLiabilitiesTab({ clientId, client }) {
     finally { setSubmitting(null); }
   }
 
-  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><div className="spinner spinner-dark" style={{ width: 28, height: 28 }} /></div>;
-
-  // Read-only liability check detail modal
-  function LiabilityDetailModal({ stub, onClose }) {
-    if (!stub) return null;
-    const due    = stub.settlement_due_date;
-    const sendBy = calcSendBy(due);
-    const isLate   = due  && todayStr > due;
-    const isCutting = !isLate && due && sendBy && todayStr >= sendBy;
-    const totalDeductions = r2(
-      (stub.fit_withholding    || 0) + (stub.employee_ss       || 0) +
-      (stub.employee_medicare  || 0) + (stub.additional_medicare|| 0) +
-      (stub.state_income_tax   || 0)
-    );
-    const DL = ({ label, value, mono, color }) => (
-      <div style={{ minWidth: 110 }}>
-        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
-        <div style={{ fontFamily: mono ? 'JetBrains Mono, monospace' : undefined, fontWeight: 600, fontSize: 13, color: color || 'inherit' }}>{value}</div>
-      </div>
-    );
-    const Section = ({ title, children }) => (
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8, paddingBottom: 4, borderBottom: '1px solid var(--border)' }}>{title}</div>
-        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>{children}</div>
-      </div>
-    );
-    return (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}
-        onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-        <div className="card" style={{ width: 600, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', padding: 24, position: 'relative' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 16 }}>{stub.employee_name}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <StatusBadge status={stub.check_status || 'draft'} />
-                {stub.check_number && <span style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--accent)' }}>#{stub.check_number}</span>}
-                {isLate    && <span className="badge badge-error" style={{ fontWeight: 700 }}>Late</span>}
-                {isCutting && <span className="badge badge-warning" style={{ fontWeight: 700 }}>Cutting It Close</span>}
-              </div>
-            </div>
-            <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
-          </div>
-          <Section title="Pay Period">
-            <DL label="Period Start" value={fmtDate(stub.pay_period_start)} mono />
-            <DL label="Period End"   value={fmtDate(stub.pay_period_end)}   mono />
-            <DL label="Pay Date"     value={fmtDate(stub.settlement_date)}  mono />
-            {sendBy && <DL label="Send By"   value={fmtDate(sendBy)} mono color={isCutting ? '#d97706' : isLate ? '#dc2626' : undefined} />}
-            {due    && <DL label="IRS Due"   value={fmtDate(due)}    mono color={isLate ? '#dc2626' : undefined} />}
-          </Section>
-          <Section title="Earnings">
-            {stub.regular_hours != null && <DL label="Reg Hours" value={stub.regular_hours} mono />}
-            {stub.regular_pay   != null && <DL label="Reg Pay"   value={fmt(stub.regular_pay)} mono />}
-            {stub.overtime_hours > 0    && <DL label="OT Hours"  value={stub.overtime_hours}  mono />}
-            {stub.overtime_pay   > 0    && <DL label="OT Pay"    value={fmt(stub.overtime_pay)} mono />}
-            {stub.bonus         > 0     && <DL label="Bonus"         value={fmt(stub.bonus)}         mono />}
-            {stub.commission    > 0     && <DL label="Commission"    value={fmt(stub.commission)}    mono />}
-            {stub.reimbursement > 0     && <DL label="Reimbursement" value={fmt(stub.reimbursement)} mono />}
-            <DL label="Gross Pay" value={fmt(stub.gross_wages || 0)} mono color="var(--accent)" />
-          </Section>
-          <Section title="Employee Contributions">
-            <DL label="Federal Income Tax" value={fmt(stub.fit_withholding   || 0)} mono />
-            <DL label="Social Security"    value={fmt(stub.employee_ss       || 0)} mono />
-            <DL label="Medicare"           value={fmt(stub.employee_medicare  || 0)} mono />
-            <DL label="State Income Tax"   value={fmt(stub.state_income_tax  || 0)} mono />
-          </Section>
-          <Section title="Employer Contributions">
-            <DL label="SS Match"  value={fmt(stub.employer_ss       || 0)} mono />
-            <DL label="Med Match" value={fmt(stub.employer_medicare  || 0)} mono />
-            <DL label="FUTA"      value={fmt(stub.futa_tax           || 0)} mono />
-            <DL label="SUI"       value={fmt(stub.suta_tax           || 0)} mono />
-          </Section>
-          <div style={{ display: 'flex', gap: 16, padding: '12px 16px', background: 'var(--bg-secondary)', borderRadius: 8, marginBottom: 16 }}>
-            <DL label="Gross Pay"        value={fmt(stub.gross_wages    || 0)} mono color="var(--accent)" />
-            <DL label="Employee Deductions" value={fmt(totalDeductions)} mono color="#dc2626" />
-            <DL label="Net Pay"          value={fmt(stub.net_pay        || 0)} mono color="var(--success, #16a34a)" />
-            <DL label="941 Deposit"      value={fmt(stub.total_deposit  || 0)} mono />
-          </div>
-        </div>
-      </div>
-    );
+  async function handleMarkPaid(stub, taxType) {
+    setMarkingPaid(stub.id);
+    try {
+      await api.updatePaystubStatus(stub.id, 'submitted');
+      await reload();
+    } catch (e) { alert(e.message); }
+    finally { setMarkingPaid(null); }
   }
 
-  function LiabilityGroup({ title, stubs, taxType, total, credit }) {
+  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><div className="spinner spinner-dark" style={{ width: 28, height: 28 }} /></div>;
+
+  // Group enriched stubs by deposit period (settlement due date)
+  function groupByPeriod(stubs, taxType) {
+    const map = {};
+    stubs.forEach(s => {
+      const key = s._due || 'unknown';
+      if (!map[key]) map[key] = { due: s._due, sendBy: s._sendBy, stubs: [] };
+      map[key].stubs.push(s);
+    });
+    return Object.values(map).sort((a, b) => (a.due || '').localeCompare(b.due || ''));
+  }
+
+  function LiabilityGroup({ title, enriched, taxType, total, credit }) {
     const isOpen = expanded[taxType];
-    const overdueCount = stubs.filter(s => s.settlement_due_date && s.settlement_due_date < todayStr).length;
-    const dueDates = stubs.map(s => s.settlement_due_date).filter(Boolean).sort();
-    const nextDue = dueDates[0];
+    const groups = groupByPeriod(enriched, taxType);
+    const lateCount = enriched.filter(s => s._status === 'late').length;
+    const dueSoonCount = enriched.filter(s => s._status === 'due-soon').length;
+    const earliest = groups[0];
 
     return (
       <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
-        {/* Collapsible header */}
         <div onClick={() => setExpanded(prev => ({ ...prev, [taxType]: !prev[taxType] }))}
           style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', background: isOpen ? 'var(--accent-light)' : undefined, userSelect: 'none' }}>
-          <span style={{ fontSize: 16, color: 'var(--text-muted)', transition: 'transform 0.15s', display: 'inline-block', transform: isOpen ? 'rotate(90deg)' : 'none' }}>›</span>
+          <span style={{ fontSize: 16, color: 'var(--text-muted)', display: 'inline-block', transform: isOpen ? 'rotate(90deg)' : 'none' }}>›</span>
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 700, fontSize: 14 }}>{title}</div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-              {stubs.length} check{stubs.length !== 1 ? 's' : ''}
-              {nextDue && <span> · {overdueCount > 0
-                ? <span style={{ color: '#dc2626', fontWeight: 700 }}>⚠ {overdueCount} overdue · Earliest due {fmtDate(nextDue)}</span>
-                : `Due ${fmtDate(nextDue)}`}</span>}
+              {enriched.length} check{enriched.length !== 1 ? 's' : ''}
+              {lateCount > 0 && <span style={{ color: '#dc2626', fontWeight: 700, marginLeft: 6 }}>⚠ {lateCount} late</span>}
+              {dueSoonCount > 0 && <span style={{ color: '#d97706', fontWeight: 600, marginLeft: 6 }}>{dueSoonCount} due soon</span>}
+              {earliest?.due && <span style={{ marginLeft: 6 }}>· Next deposit {fmtDate(earliest.due)}</span>}
               {credit < 0 && <span style={{ color: 'var(--success)', marginLeft: 8 }}>Credit: {fmt(credit)}</span>}
             </div>
           </div>
-          <div style={{ textAlign: 'right' }}>
-            <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 18, color: total > 0 ? 'var(--accent)' : 'var(--success)' }}>{fmt(total)}</div>
-          </div>
+          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 18, color: total > 0 ? 'var(--accent)' : 'var(--success)' }}>{fmt(total)}</div>
         </div>
 
         {isOpen && (
@@ -1917,8 +1992,8 @@ function PayLiabilitiesTab({ clientId, client }) {
             {/* Toolbar */}
             <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border)', borderBottom: '2px solid var(--border)', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', gap: 10 }}>
               <input type="checkbox"
-                checked={stubs.length > 0 && stubs.every(s => selected.has(s.id))}
-                onChange={e => { const next = new Set(selected); stubs.forEach(s => e.target.checked ? next.add(s.id) : next.delete(s.id)); setSelected(next); }}
+                checked={enriched.length > 0 && enriched.every(s => selected.has(s.id))}
+                onChange={e => { const next = new Set(selected); enriched.forEach(s => e.target.checked ? next.add(s.id) : next.delete(s.id)); setSelected(next); }}
                 style={{ accentColor: 'var(--accent)', width: 14, height: 14 }} />
               <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>SELECT ALL</span>
               {taxType !== 'sui' && (
@@ -1930,7 +2005,7 @@ function PayLiabilitiesTab({ clientId, client }) {
               )}
             </div>
 
-            {/* Credit rows */}
+            {/* Credits */}
             {taxType !== 'sui' && unappCredits.filter(c => taxType === '941' ? (c.total_941_credit || 0) < 0 : (c.total_940_credit || 0) < 0).map(c => (
               <div key={`cr-${c.id}`} style={{ padding: '9px 16px', borderBottom: '1px solid var(--border)', background: '#f0fdf4', display: 'flex', gap: 12, alignItems: 'center' }}>
                 <div style={{ width: 14 }} />
@@ -1939,78 +2014,105 @@ function PayLiabilitiesTab({ clientId, client }) {
               </div>
             ))}
 
-            {/* Excel-style check rows */}
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-              <colgroup>
-                <col style={{ width: 36 }} />
-                <col />
-                <col style={{ width: 160 }} />
-                <col style={{ width: 96 }} />
-                <col style={{ width: 96 }} />
-                <col style={{ width: 80 }} />
-              </colgroup>
-              <thead>
-                <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
-                  <th style={{ padding: '6px 0 6px 14px' }} />
-                  <th style={{ padding: '6px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'left' }}>Employee</th>
-                  <th style={{ padding: '6px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'left' }}>Period</th>
-                  <th style={{ padding: '6px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'left' }}>Pay Date</th>
-                  <th style={{ padding: '6px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>Amount</th>
-                  <th style={{ padding: '6px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stubs.map((stub, idx) => {
-                  const voided   = stub.check_status === 'voided';
-                  const due      = stub.settlement_due_date;
-                  const sendBy   = calcSendBy(due);
-                  const isLate   = due && todayStr > due;
-                  const isCutting = !isLate && due && sendBy && todayStr >= sendBy;
-                  const stripeBg  = idx % 2 === 0 ? 'var(--bg-primary, #fff)' : '#f8fafc';
-                  const rowBg     = voided ? '#fef2f2' : isLate ? '#fff5f5' : isCutting ? '#fffbeb' : stripeBg;
-                  const amount    = taxType === '941' ? (stub.total_deposit || 0) : taxType === '940' ? (stub.futa_tax || 0) : (stub.suta_tax || 0);
-                  return (
-                    <tr key={stub.id}
-                      style={{ background: rowBg, opacity: voided ? 0.6 : 1, borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
-                      onClick={e => { if (e.target.type !== 'checkbox') setLiabilityModal(stub); }}>
-                      <td style={{ padding: '0 0 0 14px' }}>
-                        <input type="checkbox" checked={selected.has(stub.id)}
-                          onChange={() => { const n = new Set(selected); n.has(stub.id) ? n.delete(stub.id) : n.add(stub.id); setSelected(n); }}
-                          style={{ accentColor: 'var(--accent)', width: 13, height: 13, cursor: 'pointer' }}
-                          disabled={voided} />
-                      </td>
-                      <td style={{ padding: '8px 8px' }}>
-                        <span style={{ fontWeight: 600, textDecoration: voided ? 'line-through' : 'none' }}>{stub.employee_name || '—'}</span>
-                        {stub.check_number && <span style={{ marginLeft: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--accent)' }}>#{stub.check_number}</span>}
-                      </td>
-                      <td style={{ padding: '8px 8px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>
-                        {fmtDate(stub.pay_period_start)} – {fmtDate(stub.pay_period_end)}
-                      </td>
-                      <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>
-                        <div style={{ color: isLate ? '#dc2626' : 'var(--text-muted)' }}>{fmtDate(stub.settlement_date)}</div>
-                        {due && (
-                          <div style={{ fontSize: 10, color: isLate ? '#dc2626' : isCutting ? '#d97706' : 'var(--text-muted)', marginTop: 1 }}>
-                            {isLate ? 'IRS OVERDUE' : isCutting ? `Send by ${fmtDate(sendBy)}` : `Due ${fmtDate(due)}`}
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--accent)', fontSize: 12 }}>
-                        {fmt(amount)}
-                      </td>
-                      <td style={{ padding: '8px 8px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
-                          {isLate    && <span className="badge badge-error"   style={{ fontWeight: 700, fontSize: 10 }}>Late</span>}
-                          {isCutting && <span className="badge badge-warning" style={{ fontWeight: 700, fontSize: 10 }}>Close</span>}
-                          <StatusBadge status={stub.check_status || 'draft'} />
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            {/* Deposit period groups */}
+            {groups.map(group => {
+              const groupTotal = group.stubs.reduce((n, s) =>
+                n + (taxType === '941' ? (s.total_deposit || 0) : taxType === '940' ? (s.futa_tax || 0) : (s.suta_tax || 0)), 0);
+              const groupStatus = group.stubs.some(s => s._status === 'late') ? 'late'
+                : group.stubs.some(s => s._status === 'due-soon') ? 'due-soon'
+                : group.stubs.some(s => s._status === 'completed') ? 'completed' : 'upcoming';
+              const periodBg = groupStatus === 'late' ? '#fff5f5' : groupStatus === 'due-soon' ? '#fffbeb' : 'var(--bg-secondary)';
 
-            {stubs.length === 0 && (
+              return (
+                <div key={group.due || 'unknown'}>
+                  {/* Period header */}
+                  <div style={{ padding: '7px 16px', background: periodBg, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ width: 14 }} />
+                    <div style={{ flex: 1, fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)' }}>
+                      {group.sendBy
+                        ? <span>Send by <span style={{ fontFamily: 'JetBrains Mono, monospace', color: groupStatus === 'late' ? '#dc2626' : groupStatus === 'due-soon' ? '#d97706' : 'var(--accent)' }}>{fmtDate(group.sendBy)}</span></span>
+                        : 'No due date'}
+                      {group.due && <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: 8 }}>· IRS settlement {fmtDate(group.due)}</span>}
+                    </div>
+                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 12, color: 'var(--accent)' }}>{fmt(groupTotal)}</span>
+                    <LiabStatusBadge status={groupStatus} />
+                  </div>
+
+                  {/* Individual check rows */}
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <colgroup>
+                      <col style={{ width: 36 }} />
+                      <col />
+                      <col style={{ width: 150 }} />
+                      <col style={{ width: 84 }} />
+                      <col style={{ width: 84 }} />
+                      <col style={{ width: 96 }} />
+                      <col style={{ width: 88 }} />
+                    </colgroup>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
+                        <th style={{ padding: '5px 0 5px 14px' }} />
+                        <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'left' }}>Employee</th>
+                        <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'left' }}>Period</th>
+                        <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'left' }}>Send By</th>
+                        <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'left' }}>IRS Due</th>
+                        <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'right' }}>Amount</th>
+                        <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'right' }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.stubs.map((stub, idx) => {
+                        const voided   = stub.check_status === 'voided';
+                        const stripeBg = idx % 2 === 0 ? 'var(--bg-primary, #fff)' : '#f8fafc';
+                        const rowBg    = voided ? '#fef2f2' : stripeBg;
+                        const amount   = taxType === '941' ? (stub.total_deposit || 0) : taxType === '940' ? (stub.futa_tax || 0) : (stub.suta_tax || 0);
+                        return (
+                          <tr key={stub.id}
+                            style={{ background: rowBg, opacity: voided ? 0.6 : 1, borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                            onClick={e => { if (e.target.type !== 'checkbox' && e.target.tagName !== 'BUTTON') setLiabilityModal({ stub, taxType, due: stub._due, sendBy: stub._sendBy }); }}>
+                            <td style={{ padding: '0 0 0 14px' }}>
+                              <input type="checkbox" checked={selected.has(stub.id)}
+                                onChange={() => { const n = new Set(selected); n.has(stub.id) ? n.delete(stub.id) : n.add(stub.id); setSelected(n); }}
+                                style={{ accentColor: 'var(--accent)', width: 13, height: 13, cursor: 'pointer' }} disabled={voided} />
+                            </td>
+                            <td style={{ padding: '8px 8px' }}>
+                              <span style={{ fontWeight: 600, textDecoration: voided ? 'line-through' : 'none' }}>{stub.employee_name || '—'}</span>
+                              {stub.check_number && <span style={{ marginLeft: 5, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--accent)' }}>#{stub.check_number}</span>}
+                            </td>
+                            <td style={{ padding: '8px 8px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: 10 }}>
+                              {fmtDate(stub.pay_period_start)} – {fmtDate(stub.pay_period_end)}
+                            </td>
+                            <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: stub._status === 'late' ? '#dc2626' : stub._status === 'due-soon' ? '#d97706' : 'var(--text-muted)' }}>
+                              {fmtDate(stub._sendBy)}
+                            </td>
+                            <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: stub._status === 'late' ? '#dc2626' : 'var(--text-muted)' }}>
+                              {fmtDate(stub._due)}
+                            </td>
+                            <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--accent)', fontSize: 12 }}>
+                              {fmt(amount)}
+                            </td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                              <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', alignItems: 'center' }}>
+                                <LiabStatusBadge status={stub._status} />
+                                {!voided && stub._status !== 'completed' && (
+                                  <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, padding: '1px 6px', height: 22 }}
+                                    onClick={e => { e.stopPropagation(); handleMarkPaid(stub, taxType); }}
+                                    disabled={markingPaid === stub.id}>
+                                    {markingPaid === stub.id ? <span className="spinner" style={{ width: 10, height: 10 }} /> : 'Mark Paid'}
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })}
+
+            {enriched.length === 0 && (
               <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No pending {title.toLowerCase()} liabilities.</div>
             )}
           </div>
@@ -2022,26 +2124,28 @@ function PayLiabilitiesTab({ clientId, client }) {
   return (
     <div>
       {/* Frequency selectors */}
-      <div className="card" style={{ marginBottom: 16, padding: '14px 20px' }}>
+      <div className="card" style={{ marginBottom: 16, padding: '12px 20px' }}>
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>941 Deposit:</span>
-            <select className="form-select" value={sched941} onChange={e => setSched941(e.target.value)} style={{ fontSize: 12, padding: '4px 8px', height: 30 }}>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>941 Deposit Schedule</div>
+            <select className="form-select" value={sched941} onChange={e => setSched941(e.target.value)} style={{ fontSize: 12, height: 30 }}>
+              <option value="monthly">Monthly — 15th of following month</option>
+              <option value="semiweekly">Semi-weekly — Wed/Fri after pay date</option>
+              <option value="quarterly">Quarterly — when filing Form 941</option>
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>940 Payment Schedule</div>
+            <select className="form-select" value={sched940} onChange={e => setSched940(e.target.value)} style={{ fontSize: 12, height: 30 }}>
+              <option value="quarterly">Quarterly — if liability over $500</option>
+              <option value="annually">Annually — Jan 31 (if under $500)</option>
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>State SUI Schedule</div>
+            <select className="form-select" value={schedSUI} onChange={e => setSchedSUI(e.target.value)} style={{ fontSize: 12, height: 30 }}>
+              <option value="quarterly">Quarterly</option>
               <option value="monthly">Monthly</option>
-              <option value="semiweekly">Semi-weekly</option>
-            </select>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>940 Payment:</span>
-            <select className="form-select" value={sched940} onChange={e => setSched940(e.target.value)} style={{ fontSize: 12, padding: '4px 8px', height: 30 }}>
-              <option value="quarterly">Quarterly</option>
-              <option value="annually">Annually</option>
-            </select>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>State SUI:</span>
-            <select className="form-select" value={schedSUI} onChange={e => setSchedSUI(e.target.value)} style={{ fontSize: 12, padding: '4px 8px', height: 30 }}>
-              <option value="quarterly">Quarterly</option>
               <option value="annually">Annually</option>
             </select>
           </div>
@@ -2056,15 +2160,19 @@ function PayLiabilitiesTab({ clientId, client }) {
         </div>
       )}
 
-      <LiabilityGroup title="Federal 941" stubs={pending941} taxType="941" total={total941} credit={credit941} />
-      <LiabilityGroup title="Federal 940 (FUTA)" stubs={pending940} taxType="940" total={total940} credit={credit940} />
-      <LiabilityGroup title="State SUI" stubs={pendingSUI} taxType="sui" total={totalSUI} credit={0} />
+      <LiabilityGroup title="Federal 941" enriched={e941} taxType="941" total={total941} credit={credit941} />
+      <LiabilityGroup title="Federal 940 (FUTA)" enriched={e940} taxType="940" total={total940} credit={credit940} />
+      <LiabilityGroup title="State SUI" enriched={eSUI} taxType="sui" total={totalSUI} credit={0} />
 
       {pending941.length === 0 && pending940.length === 0 && pendingSUI.length === 0 && (
         <div className="card"><div className="empty-state" style={{ padding: '32px 20px' }}><div className="empty-state-icon">✓</div><h3>All caught up</h3><p>No pending liabilities.</p></div></div>
       )}
 
-      {liabilityModal && <LiabilityDetailModal stub={liabilityModal} onClose={() => setLiabilityModal(null)} />}
+      {liabilityModal && (
+        <LiabilityDetailModal stub={liabilityModal.stub} taxType={liabilityModal.taxType}
+          due={liabilityModal.due} sendBy={liabilityModal.sendBy} todayStr={todayStr}
+          onClose={() => setLiabilityModal(null)} />
+      )}
     </div>
   );
 }
@@ -2098,16 +2206,205 @@ function FileFormsTab({ clientId }) {
   );
 }
 
+// ── Sent Checks Sub-tab ───────────────────────────────────────────────────────
+function SentChecksTab({ clientId, client }) {
+  const [paystubs, setPaystubs] = useState([]);
+  const [loading, setLoading]   = useState(true);
+  const [expanded, setExpanded] = useState({ '941': true, '940': false, 'sui': false });
+  const [liabilityModal, setLiabilityModal] = useState(null);
+  const [markingPaid, setMarkingPaid] = useState(null);
+  const [sched941, setSched941] = useState(client?.depositSchedule || 'monthly');
+  const [sched940, setSched940] = useState('quarterly');
+  const [schedSUI, setSchedSUI] = useState('quarterly');
+  const todayStr = new Date().toISOString().slice(0, 10);
+
+  async function reload() {
+    const stubs = await api.getPaystubs(clientId);
+    setPaystubs(stubs);
+  }
+  useEffect(() => { reload().finally(() => setLoading(false)); }, [clientId]);
+
+  async function handleUnmark(stub, taxType) {
+    if (!window.confirm('Mark this payment as pending again?')) return;
+    setMarkingPaid(stub.id);
+    try {
+      await api.updatePaystubStatus(stub.id, 'pending');
+      await reload();
+    } catch (e) { alert(e.message); }
+    finally { setMarkingPaid(null); }
+  }
+
+  const sent941 = paystubs.filter(s => s.status === 'submitted');
+  const sent940 = paystubs.filter(s => s.status_940 === 'submitted' && s.futa_tax > 0);
+  const sentSUI = paystubs.filter(s => s.suta_tax > 0 && s.status === 'submitted');
+
+  function enrichSent(stubs, taxType, schedule) {
+    return stubs.map(s => {
+      const due    = calcLiabilityDue(s, taxType, schedule);
+      const sendBy = calcSendByDate(due);
+      return { ...s, _due: due, _sendBy: sendBy, _status: 'completed' };
+    });
+  }
+
+  const e941 = enrichSent(sent941, '941', sched941);
+  const e940 = enrichSent(sent940, '940', sched940);
+  const eSUI = enrichSent(sentSUI, 'sui', schedSUI);
+
+  function groupByPeriod(stubs) {
+    const map = {};
+    stubs.forEach(s => {
+      const key = s._due || 'unknown';
+      if (!map[key]) map[key] = { due: s._due, sendBy: s._sendBy, stubs: [] };
+      map[key].stubs.push(s);
+    });
+    return Object.values(map).sort((a, b) => (b.due || '').localeCompare(a.due || ''));
+  }
+
+  function SentGroup({ title, enriched, taxType }) {
+    const isOpen = expanded[taxType];
+    const groups = groupByPeriod(enriched);
+    const groupTotal = enriched.reduce((n, s) =>
+      n + (taxType === '941' ? (s.total_deposit || 0) : taxType === '940' ? (s.futa_tax || 0) : (s.suta_tax || 0)), 0);
+    return (
+      <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
+        <div onClick={() => setExpanded(prev => ({ ...prev, [taxType]: !prev[taxType] }))}
+          style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', background: isOpen ? 'var(--accent-light)' : undefined, userSelect: 'none' }}>
+          <span style={{ fontSize: 16, color: 'var(--text-muted)', display: 'inline-block', transform: isOpen ? 'rotate(90deg)' : 'none' }}>›</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 14 }}>{title}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{enriched.length} completed payment{enriched.length !== 1 ? 's' : ''}</div>
+          </div>
+          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 18, color: 'var(--success)' }}>{fmt(groupTotal)}</div>
+        </div>
+        {isOpen && (
+          <div>
+            {groups.length === 0 && (
+              <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No completed {title.toLowerCase()} payments.</div>
+            )}
+            {groups.map(group => {
+              const periodTotal = group.stubs.reduce((n, s) =>
+                n + (taxType === '941' ? (s.total_deposit || 0) : taxType === '940' ? (s.futa_tax || 0) : (s.suta_tax || 0)), 0);
+              return (
+                <div key={group.due || 'unknown'}>
+                  <div style={{ padding: '7px 16px', background: '#f0fdf4', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div style={{ flex: 1, fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)' }}>
+                      {group.due ? <span>IRS settlement <span style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--success)' }}>{fmtDate(group.due)}</span></span> : 'No due date'}
+                      {group.sendBy && <span style={{ color: 'var(--text-muted)', fontWeight: 400, marginLeft: 8 }}>· Send by {fmtDate(group.sendBy)}</span>}
+                    </div>
+                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 12, color: 'var(--success)' }}>{fmt(periodTotal)}</span>
+                    <LiabStatusBadge status="completed" />
+                  </div>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <colgroup><col /><col style={{ width: 160 }} /><col style={{ width: 84 }} /><col style={{ width: 84 }} /><col style={{ width: 96 }} /><col style={{ width: 110 }} /></colgroup>
+                    <thead>
+                      <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
+                        <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'left' }}>Employee</th>
+                        <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'left' }}>Period</th>
+                        <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'left' }}>Send By</th>
+                        <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'left' }}>IRS Due</th>
+                        <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'right' }}>Amount</th>
+                        <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'right' }}>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.stubs.map((stub, idx) => {
+                        const amount = taxType === '941' ? (stub.total_deposit || 0) : taxType === '940' ? (stub.futa_tax || 0) : (stub.suta_tax || 0);
+                        return (
+                          <tr key={stub.id}
+                            style={{ background: idx % 2 === 0 ? 'var(--bg-primary, #fff)' : '#f8fafc', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                            onClick={e => { if (e.target.tagName !== 'BUTTON') setLiabilityModal({ stub, taxType, due: stub._due, sendBy: stub._sendBy }); }}>
+                            <td style={{ padding: '8px 8px' }}>
+                              <span style={{ fontWeight: 600 }}>{stub.employee_name || '—'}</span>
+                              {stub.check_number && <span style={{ marginLeft: 5, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--accent)' }}>#{stub.check_number}</span>}
+                            </td>
+                            <td style={{ padding: '8px 8px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: 10 }}>{fmtDate(stub.pay_period_start)} – {fmtDate(stub.pay_period_end)}</td>
+                            <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--text-muted)' }}>{fmtDate(stub._sendBy)}</td>
+                            <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--text-muted)' }}>{fmtDate(stub._due)}</td>
+                            <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--success)', fontSize: 12 }}>{fmt(amount)}</td>
+                            <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                              <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', alignItems: 'center' }}>
+                                <LiabStatusBadge status="completed" />
+                                <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, padding: '1px 6px', height: 22 }}
+                                  onClick={e => { e.stopPropagation(); handleUnmark(stub, taxType); }}
+                                  disabled={markingPaid === stub.id}>
+                                  {markingPaid === stub.id ? <span className="spinner" style={{ width: 10, height: 10 }} /> : 'Undo'}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><div className="spinner spinner-dark" style={{ width: 28, height: 28 }} /></div>;
+
+  return (
+    <div>
+      <div className="card" style={{ marginBottom: 16, padding: '12px 20px' }}>
+        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'center' }}>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>941 Deposit Schedule</div>
+            <select className="form-select" value={sched941} onChange={e => setSched941(e.target.value)} style={{ fontSize: 12, height: 30 }}>
+              <option value="monthly">Monthly — 15th of following month</option>
+              <option value="semiweekly">Semi-weekly — Wed/Fri after pay date</option>
+              <option value="quarterly">Quarterly — when filing Form 941</option>
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>940 Payment Schedule</div>
+            <select className="form-select" value={sched940} onChange={e => setSched940(e.target.value)} style={{ fontSize: 12, height: 30 }}>
+              <option value="quarterly">Quarterly — if liability over $500</option>
+              <option value="annually">Annually — Jan 31 (if under $500)</option>
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>State SUI Schedule</div>
+            <select className="form-select" value={schedSUI} onChange={e => setSchedSUI(e.target.value)} style={{ fontSize: 12, height: 30 }}>
+              <option value="quarterly">Quarterly</option>
+              <option value="monthly">Monthly</option>
+              <option value="annually">Annually</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <SentGroup title="Federal 941" enriched={e941} taxType="941" />
+      <SentGroup title="Federal 940 (FUTA)" enriched={e940} taxType="940" />
+      <SentGroup title="State SUI" enriched={eSUI} taxType="sui" />
+
+      {sent941.length === 0 && sent940.length === 0 && sentSUI.length === 0 && (
+        <div className="card"><div className="empty-state" style={{ padding: '32px 20px' }}><div className="empty-state-icon">📭</div><h3>No sent payments</h3><p>Completed liability payments will appear here.</p></div></div>
+      )}
+
+      {liabilityModal && (
+        <LiabilityDetailModal stub={liabilityModal.stub} taxType={liabilityModal.taxType}
+          due={liabilityModal.due} sendBy={liabilityModal.sendBy} todayStr={todayStr}
+          onClose={() => setLiabilityModal(null)} />
+      )}
+    </div>
+  );
+}
+
 // ── Payroll Tab ───────────────────────────────────────────────────────────────
 function PayrollTab({ clientId, client, employees, onRefresh }) {
   const [sub, setSub] = useState('pay');
   return (
     <div>
       <div className="pay-subtabs">
-        {[['pay','Pay Employees'],['liabilities','Pay Liabilities'],['forms','File Forms']].map(([k, label]) => <button key={k} className={`pay-subtab${sub === k ? ' active' : ''}`} onClick={() => setSub(k)}>{label}</button>)}
+        {[['pay','Pay Employees'],['liabilities','Pay Liabilities'],['sent','Sent Checks'],['forms','File Forms']].map(([k, label]) => <button key={k} className={`pay-subtab${sub === k ? ' active' : ''}`} onClick={() => setSub(k)}>{label}</button>)}
       </div>
       {sub === 'pay'         && <PayEmployeesTab clientId={clientId} client={client} employees={employees} onRefresh={onRefresh} />}
       {sub === 'liabilities' && <PayLiabilitiesTab clientId={clientId} client={client} />}
+      {sub === 'sent'        && <SentChecksTab clientId={clientId} client={client} />}
       {sub === 'forms'       && <FileFormsTab clientId={clientId} />}
     </div>
   );
