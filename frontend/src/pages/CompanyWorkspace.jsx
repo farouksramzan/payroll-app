@@ -1867,10 +1867,29 @@ function PayLiabilitiesTab({ clientId, client }) {
   const [sched941, setSched941] = useState(client?.depositSchedule || 'monthly');
   const [sched940, setSched940] = useState('quarterly');
   const [schedSUI, setSchedSUI] = useState('quarterly');
-  const [markingPaid, setMarkingPaid] = useState(null); // stub.id being marked
+  const [markingPaid, setMarkingPaid] = useState(null);
   const [sentOpen, setSentOpen] = useState(false);
+  const [statusDropdownId, setStatusDropdownId] = useState(null);
+  const [updatingStatus, setUpdatingStatus] = useState(null);
 
   const todayStr = new Date().toISOString().slice(0, 10);
+
+  // Close status dropdown when clicking anywhere outside
+  useEffect(() => {
+    if (!statusDropdownId) return;
+    const close = () => setStatusDropdownId(null);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [statusDropdownId]);
+
+  async function handleStatusChange(stub, newComputedStatus) {
+    const dbStatus = newComputedStatus === 'completed' ? 'submitted' : 'pending';
+    setStatusDropdownId(null);
+    setUpdatingStatus(stub.id);
+    try { await api.updatePaystubStatus(stub.id, dbStatus); await reload(); }
+    catch (e) { alert(e.message); }
+    finally { setUpdatingStatus(null); }
+  }
 
   async function reload() {
     const [stubs, crds] = await Promise.all([api.getPaystubs(clientId), api.getPaystubCredits(clientId)]);
@@ -1945,10 +1964,9 @@ function PayLiabilitiesTab({ clientId, client }) {
 
   function LiabilityGroup({ title, enriched, taxType, total, credit }) {
     const isOpen = expanded[taxType];
-    const groups = groupByPeriod(enriched, taxType);
-    const lateCount = enriched.filter(s => s._status === 'late').length;
+    const lateCount    = enriched.filter(s => s._status === 'late').length;
     const dueSoonCount = enriched.filter(s => s._status === 'due-soon').length;
-    const earliest = groups[0];
+    const nextDue      = [...enriched].sort((a, b) => (a._due || '').localeCompare(b._due || ''))[0];
 
     return (
       <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
@@ -1961,7 +1979,7 @@ function PayLiabilitiesTab({ clientId, client }) {
               {enriched.length} check{enriched.length !== 1 ? 's' : ''}
               {lateCount > 0 && <span style={{ color: '#dc2626', fontWeight: 700, marginLeft: 6 }}>⚠ {lateCount} late</span>}
               {dueSoonCount > 0 && <span style={{ color: '#d97706', fontWeight: 600, marginLeft: 6 }}>{dueSoonCount} due soon</span>}
-              {earliest?.due && <span style={{ marginLeft: 6 }}>· Next deposit {fmtDate(earliest.due)}</span>}
+              {nextDue?._due && <span style={{ marginLeft: 6 }}>· Next deposit {fmtDate(nextDue._due)}</span>}
               {credit < 0 && <span style={{ color: 'var(--success)', marginLeft: 8 }}>Credit: {fmt(credit)}</span>}
             </div>
           </div>
@@ -1971,7 +1989,7 @@ function PayLiabilitiesTab({ clientId, client }) {
         {isOpen && (
           <div>
             {/* Toolbar */}
-            <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border)', borderBottom: '2px solid var(--border)', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', gap: 10 }}>
               <input type="checkbox"
                 checked={enriched.length > 0 && enriched.every(s => selected.has(s.id))}
                 onChange={e => { const next = new Set(selected); enriched.forEach(s => e.target.checked ? next.add(s.id) : next.delete(s.id)); setSelected(next); }}
@@ -1995,105 +2013,85 @@ function PayLiabilitiesTab({ clientId, client }) {
               </div>
             ))}
 
-            {/* Deposit period groups */}
-            {groups.map(group => {
-              const groupTotal = group.stubs.reduce((n, s) =>
-                n + (taxType === '941' ? (s.total_deposit || 0) : taxType === '940' ? (s.futa_tax || 0) : (s.suta_tax || 0)), 0);
-              const groupStatus = group.stubs.some(s => s._status === 'late') ? 'late'
-                : group.stubs.some(s => s._status === 'due-soon') ? 'due-soon'
-                : group.stubs.some(s => s._status === 'completed') ? 'completed' : 'upcoming';
-              const periodBg = groupStatus === 'late' ? '#fff5f5' : groupStatus === 'due-soon' ? '#fffbeb' : 'var(--bg-secondary)';
-
-              return (
-                <div key={group.due || 'unknown'}>
-                  {/* Period header */}
-                  <div style={{ padding: '7px 16px', background: periodBg, borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{ width: 14 }} />
-                    <div style={{ flex: 1, fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)' }}>
-                      {group.due
-                        ? <span>IRS settlement <span style={{ fontFamily: 'JetBrains Mono, monospace', color: groupStatus === 'late' ? '#dc2626' : groupStatus === 'due-soon' ? '#d97706' : 'var(--accent)' }}>{fmtDate(group.due)}</span></span>
-                        : 'No due date'}
-                    </div>
-                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 12, color: 'var(--accent)' }}>{fmt(groupTotal)}</span>
-                    <LiabStatusBadge status={groupStatus} />
-                  </div>
-
-                  {/* Individual check rows */}
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                    <colgroup>
-                      <col style={{ width: 36 }} />
-                      <col />
-                      <col style={{ width: 150 }} />
-                      <col style={{ width: 84 }} />
-                      <col style={{ width: 84 }} />
-                      <col style={{ width: 96 }} />
-                      <col style={{ width: 88 }} />
-                    </colgroup>
-                    <thead>
-                      <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
-                        <th style={{ padding: '5px 0 5px 14px' }} />
-                        <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'left' }}>Employee</th>
-                        <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'left' }}>Period</th>
-                        <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'left' }}>Send By</th>
-                        <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'left' }}>IRS Due</th>
-                        <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'right' }}>Amount</th>
-                        <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'right' }}>Status</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {group.stubs.map((stub, idx) => {
-                        const voided   = stub.check_status === 'voided';
-                        const stripeBg = idx % 2 === 0 ? 'var(--bg-primary, #fff)' : '#f8fafc';
-                        const rowBg    = voided ? '#fef2f2' : stripeBg;
-                        const amount   = taxType === '941' ? (stub.total_deposit || 0) : taxType === '940' ? (stub.futa_tax || 0) : (stub.suta_tax || 0);
-                        return (
-                          <tr key={stub.id}
-                            style={{ background: rowBg, opacity: voided ? 0.6 : 1, borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
-                            onClick={e => { if (e.target.type !== 'checkbox' && e.target.tagName !== 'BUTTON') setLiabilityModal({ stub, taxType, due: stub._due, sendBy: stub._sendBy }); }}>
-                            <td style={{ padding: '0 0 0 14px' }}>
-                              <input type="checkbox" checked={selected.has(stub.id)}
-                                onChange={() => { const n = new Set(selected); n.has(stub.id) ? n.delete(stub.id) : n.add(stub.id); setSelected(n); }}
-                                style={{ accentColor: 'var(--accent)', width: 13, height: 13, cursor: 'pointer' }} disabled={voided} />
-                            </td>
-                            <td style={{ padding: '8px 8px' }}>
-                              <span style={{ fontWeight: 600, textDecoration: voided ? 'line-through' : 'none' }}>{stub.employee_name || '—'}</span>
-                              {stub.check_number && <span style={{ marginLeft: 5, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--accent)' }}>#{stub.check_number}</span>}
-                            </td>
-                            <td style={{ padding: '8px 8px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: 10 }}>
-                              {fmtDate(stub.pay_period_start)} – {fmtDate(stub.pay_period_end)}
-                            </td>
-                            <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: stub._status === 'late' ? '#dc2626' : stub._status === 'due-soon' ? '#d97706' : 'var(--text-muted)' }}>
-                              {fmtDate(stub._sendBy)}
-                            </td>
-                            <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: stub._status === 'late' ? '#dc2626' : 'var(--text-muted)' }}>
-                              {fmtDate(stub._due)}
-                            </td>
-                            <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--accent)', fontSize: 12 }}>
-                              {fmt(amount)}
-                            </td>
-                            <td style={{ padding: '6px 8px', textAlign: 'right' }}>
-                              <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', alignItems: 'center' }}>
-                                <LiabStatusBadge status={stub._status} />
-                                {!voided && stub._status !== 'completed' && (
-                                  <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, padding: '1px 6px', height: 22 }}
-                                    onClick={e => { e.stopPropagation(); handleMarkPaid(stub, taxType); }}
-                                    disabled={markingPaid === stub.id}>
-                                    {markingPaid === stub.id ? <span className="spinner" style={{ width: 10, height: 10 }} /> : 'Mark Paid'}
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              );
-            })}
-
-            {enriched.length === 0 && (
+            {/* Flat check rows — no period headers, no column headers */}
+            {enriched.length === 0 ? (
               <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No pending {title.toLowerCase()} liabilities.</div>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <colgroup>
+                  <col style={{ width: 36 }} />
+                  <col />
+                  <col style={{ width: 150 }} />
+                  <col style={{ width: 84 }} />
+                  <col style={{ width: 84 }} />
+                  <col style={{ width: 96 }} />
+                  <col style={{ width: 100 }} />
+                </colgroup>
+                <tbody>
+                  {enriched.map((stub, idx) => {
+                    const voided   = stub.check_status === 'voided';
+                    const stripeBg = idx % 2 === 0 ? 'var(--bg-primary, #fff)' : '#f8fafc';
+                    const lateBg   = stub._status === 'late' ? '#fff5f5' : stub._status === 'due-soon' ? '#fffbeb' : null;
+                    const rowBg    = voided ? '#fef2f2' : lateBg || stripeBg;
+                    const amount   = taxType === '941' ? (stub.total_deposit || 0) : taxType === '940' ? (stub.futa_tax || 0) : (stub.suta_tax || 0);
+                    const isOpen   = statusDropdownId === stub.id;
+                    return (
+                      <tr key={stub.id}
+                        style={{ background: rowBg, opacity: voided ? 0.6 : 1, borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                        onClick={e => { if (e.target.type !== 'checkbox' && e.target.tagName !== 'BUTTON' && !e.target.closest('[data-dropdown]')) setLiabilityModal({ stub, taxType, due: stub._due, sendBy: stub._sendBy }); }}>
+                        <td style={{ padding: '0 0 0 14px' }}>
+                          <input type="checkbox" checked={selected.has(stub.id)}
+                            onChange={() => { const n = new Set(selected); n.has(stub.id) ? n.delete(stub.id) : n.add(stub.id); setSelected(n); }}
+                            style={{ accentColor: 'var(--accent)', width: 13, height: 13, cursor: 'pointer' }} disabled={voided} />
+                        </td>
+                        <td style={{ padding: '8px 8px' }}>
+                          <span style={{ fontWeight: 600, textDecoration: voided ? 'line-through' : 'none' }}>{stub.employee_name || '—'}</span>
+                          {stub.check_number && <span style={{ marginLeft: 5, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--accent)' }}>#{stub.check_number}</span>}
+                        </td>
+                        <td style={{ padding: '8px 8px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: 10 }}>
+                          {fmtDate(stub.pay_period_start)} – {fmtDate(stub.pay_period_end)}
+                        </td>
+                        <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: stub._status === 'late' ? '#dc2626' : stub._status === 'due-soon' ? '#d97706' : 'var(--text-muted)' }}>
+                          {fmtDate(stub._sendBy)}
+                        </td>
+                        <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: stub._status === 'late' ? '#dc2626' : 'var(--text-muted)' }}>
+                          {fmtDate(stub._due)}
+                        </td>
+                        <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--accent)', fontSize: 12 }}>
+                          {fmt(amount)}
+                        </td>
+                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                          {updatingStatus === stub.id ? (
+                            <span className="spinner" style={{ width: 12, height: 12 }} />
+                          ) : (
+                            <div data-dropdown style={{ position: 'relative', display: 'inline-block' }}>
+                              <span style={{ cursor: 'pointer' }}
+                                onClick={e => { e.stopPropagation(); setStatusDropdownId(isOpen ? null : stub.id); }}>
+                                <LiabStatusBadge status={stub._status} />
+                              </span>
+                              {isOpen && (
+                                <div onClick={e => e.stopPropagation()}
+                                  style={{ position: 'absolute', right: 0, top: '100%', zIndex: 200, background: '#fff', border: '1px solid var(--border)', borderRadius: 6, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: 130, padding: '4px 0' }}>
+                                  {['upcoming', 'due-soon', 'late', 'completed'].map(s => {
+                                    const isCur = stub._status === s;
+                                    return (
+                                      <button key={s}
+                                        onClick={() => handleStatusChange(stub, s)}
+                                        style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 12px', background: isCur ? 'var(--accent-light)' : 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: isCur ? 700 : 400, textAlign: 'left' }}>
+                                        <LiabStatusBadge status={s} />
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             )}
           </div>
         )}
@@ -2168,13 +2166,12 @@ function PayLiabilitiesTab({ clientId, client }) {
         <div className="card"><div className="empty-state" style={{ padding: '32px 20px' }}><div className="empty-state-icon">✓</div><h3>All caught up</h3><p>No pending liabilities.</p></div></div>
       )}
 
-      {/* Sent Checks — collapsible section */}
+      {/* Sent Checks — always visible collapsible section */}
       {(() => {
         const sent941 = paystubs.filter(s => s.status === 'submitted');
         const sent940 = paystubs.filter(s => s.status_940 === 'submitted' && s.futa_tax > 0);
         const sentSUI = paystubs.filter(s => s.suta_tax > 0 && s.status === 'submitted');
         const totalSent = sent941.length + sent940.length + sentSUI.length;
-        if (totalSent === 0) return null;
 
         function enrichSent(stubs, taxType, schedule) {
           return stubs.map(s => {
@@ -2183,90 +2180,59 @@ function PayLiabilitiesTab({ clientId, client }) {
             return { ...s, _due: due, _sendBy: sendBy, _status: 'completed' };
           });
         }
-        function groupSentByPeriod(stubs) {
-          const map = {};
-          stubs.forEach(s => {
-            const key = s._due || 'unknown';
-            if (!map[key]) map[key] = { due: s._due, sendBy: s._sendBy, stubs: [] };
-            map[key].stubs.push(s);
-          });
-          return Object.values(map).sort((a, b) => (b.due || '').localeCompare(a.due || ''));
-        }
-
         const se941 = enrichSent(sent941, '941', sched941);
         const se940 = enrichSent(sent940, '940', sched940);
         const seSUI = enrichSent(sentSUI, 'sui', schedSUI);
 
         function SentTypeGroup({ title, enriched, taxType }) {
           const [open, setOpen] = useState(false);
-          const groups = groupSentByPeriod(enriched);
           const gtotal = enriched.reduce((n, s) => n + (taxType === '941' ? (s.total_deposit || 0) : taxType === '940' ? (s.futa_tax || 0) : (s.suta_tax || 0)), 0);
           return (
-            <div style={{ marginBottom: 8 }}>
+            <div style={{ marginBottom: 6 }}>
               <button onClick={() => setOpen(p => !p)}
                 style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', padding: '4px 0', fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600, width: '100%' }}>
                 <span style={{ fontSize: 10, display: 'inline-block', transform: open ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
                 {title} ({enriched.length})
-                <span style={{ marginLeft: 'auto', fontFamily: 'JetBrains Mono, monospace', color: 'var(--success)', fontWeight: 700, fontSize: 12 }}>{fmt(gtotal)}</span>
+                {enriched.length > 0 && <span style={{ marginLeft: 'auto', fontFamily: 'JetBrains Mono, monospace', color: 'var(--success)', fontWeight: 700, fontSize: 12 }}>{fmt(gtotal)}</span>}
               </button>
               {open && (
                 <div className="card" style={{ padding: 0, overflow: 'hidden', marginTop: 4 }}>
-                  {groups.map(group => {
-                    const periodTotal = group.stubs.reduce((n, s) => n + (taxType === '941' ? (s.total_deposit || 0) : taxType === '940' ? (s.futa_tax || 0) : (s.suta_tax || 0)), 0);
-                    return (
-                      <div key={group.due || 'unknown'}>
-                        <div style={{ padding: '6px 14px', background: '#f0fdf4', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <div style={{ flex: 1, fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)' }}>
-                            {group.due ? <span>IRS settlement <span style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--success)' }}>{fmtDate(group.due)}</span></span> : 'No due date'}
-                          </div>
-                          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 12, color: 'var(--success)' }}>{fmt(periodTotal)}</span>
-                          <LiabStatusBadge status="completed" />
-                        </div>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                          <colgroup><col /><col style={{ width: 160 }} /><col style={{ width: 84 }} /><col style={{ width: 84 }} /><col style={{ width: 96 }} /><col style={{ width: 110 }} /></colgroup>
-                          <thead>
-                            <tr style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
-                              <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'left' }}>Employee</th>
-                              <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'left' }}>Period</th>
-                              <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'left' }}>Send By</th>
-                              <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'left' }}>IRS Due</th>
-                              <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'right' }}>Amount</th>
-                              <th style={{ padding: '5px 8px', fontWeight: 600, fontSize: 10, color: 'var(--text-muted)', textAlign: 'right' }}>Action</th>
+                  {enriched.length === 0 ? (
+                    <div style={{ padding: '14px 16px', color: 'var(--text-muted)', fontSize: 12 }}>No sent checks.</div>
+                  ) : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                      <colgroup><col /><col style={{ width: 160 }} /><col style={{ width: 84 }} /><col style={{ width: 84 }} /><col style={{ width: 96 }} /><col style={{ width: 80 }} /></colgroup>
+                      <tbody>
+                        {enriched.map((stub, idx) => {
+                          const amount = taxType === '941' ? (stub.total_deposit || 0) : taxType === '940' ? (stub.futa_tax || 0) : (stub.suta_tax || 0);
+                          return (
+                            <tr key={stub.id}
+                              style={{ background: idx % 2 === 0 ? 'var(--bg-primary, #fff)' : '#f8fafc', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                              onClick={e => { if (e.target.tagName !== 'BUTTON') setLiabilityModal({ stub, taxType, due: stub._due, sendBy: stub._sendBy }); }}>
+                              <td style={{ padding: '8px 8px' }}>
+                                <span style={{ fontWeight: 600 }}>{stub.employee_name || '—'}</span>
+                                {stub.check_number && <span style={{ marginLeft: 5, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--accent)' }}>#{stub.check_number}</span>}
+                              </td>
+                              <td style={{ padding: '8px 8px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: 10 }}>{fmtDate(stub.pay_period_start)} – {fmtDate(stub.pay_period_end)}</td>
+                              <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--text-muted)' }}>{fmtDate(stub._sendBy)}</td>
+                              <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--text-muted)' }}>{fmtDate(stub._due)}</td>
+                              <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--success)', fontSize: 12 }}>{fmt(amount)}</td>
+                              <td style={{ padding: '6px 8px', textAlign: 'right' }}>
+                                <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, padding: '1px 6px', height: 22 }}
+                                  onClick={async e => {
+                                    e.stopPropagation();
+                                    if (!window.confirm('Mark this payment as pending again?')) return;
+                                    try { await api.updatePaystubStatus(stub.id, 'pending'); await reload(); } catch (ex) { alert(ex.message); }
+                                  }}>
+                                  Undo
+                                </button>
+                              </td>
                             </tr>
-                          </thead>
-                          <tbody>
-                            {group.stubs.map((stub, idx) => {
-                              const amount = taxType === '941' ? (stub.total_deposit || 0) : taxType === '940' ? (stub.futa_tax || 0) : (stub.suta_tax || 0);
-                              return (
-                                <tr key={stub.id}
-                                  style={{ background: idx % 2 === 0 ? 'var(--bg-primary, #fff)' : '#f8fafc', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
-                                  onClick={e => { if (e.target.tagName !== 'BUTTON') setLiabilityModal({ stub, taxType, due: stub._due, sendBy: stub._sendBy }); }}>
-                                  <td style={{ padding: '8px 8px' }}>
-                                    <span style={{ fontWeight: 600 }}>{stub.employee_name || '—'}</span>
-                                    {stub.check_number && <span style={{ marginLeft: 5, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--accent)' }}>#{stub.check_number}</span>}
-                                  </td>
-                                  <td style={{ padding: '8px 8px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: 10 }}>{fmtDate(stub.pay_period_start)} – {fmtDate(stub.pay_period_end)}</td>
-                                  <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--text-muted)' }}>{fmtDate(stub._sendBy)}</td>
-                                  <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--text-muted)' }}>{fmtDate(stub._due)}</td>
-                                  <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--success)', fontSize: 12 }}>{fmt(amount)}</td>
-                                  <td style={{ padding: '6px 8px', textAlign: 'right' }}>
-                                    <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, padding: '1px 6px', height: 22 }}
-                                      onClick={async e => {
-                                        e.stopPropagation();
-                                        if (!window.confirm('Mark this payment as pending again?')) return;
-                                        try { await api.updatePaystubStatus(stub.id, 'pending'); await reload(); } catch (ex) { alert(ex.message); }
-                                      }}>
-                                      Undo
-                                    </button>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    );
-                  })}
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
               )}
             </div>
@@ -2278,13 +2244,19 @@ function PayLiabilitiesTab({ clientId, client }) {
             <button onClick={() => setSentOpen(p => !p)}
               style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', padding: '6px 0', fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>
               <span style={{ fontSize: 11, display: 'inline-block', transform: sentOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
-              Sent Checks ({totalSent})
+              Sent Checks {totalSent > 0 ? `(${totalSent})` : ''}
             </button>
             {sentOpen && (
               <div style={{ marginTop: 6 }}>
-                <SentTypeGroup title="Federal 941" enriched={se941} taxType="941" />
-                <SentTypeGroup title="Federal 940 (FUTA)" enriched={se940} taxType="940" />
-                <SentTypeGroup title="State SUI" enriched={seSUI} taxType="sui" />
+                {totalSent === 0 ? (
+                  <div style={{ padding: '12px 4px', color: 'var(--text-muted)', fontSize: 13 }}>No sent checks yet.</div>
+                ) : (
+                  <>
+                    <SentTypeGroup title="Federal 941" enriched={se941} taxType="941" />
+                    <SentTypeGroup title="Federal 940 (FUTA)" enriched={se940} taxType="940" />
+                    <SentTypeGroup title="State SUI" enriched={seSUI} taxType="sui" />
+                  </>
+                )}
               </div>
             )}
           </div>
