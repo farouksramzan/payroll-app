@@ -939,8 +939,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
   const [runSuccess, setRunSuccess]               = useState('');
   const [detailModal, setDetailModal]             = useState(null); // rowData object
   const [showPrinted, setShowPrinted]             = useState(false);
-  const [printModal, setPrintModal]               = useState(null); // new stub IDs after run
   const [drawerEmpId, setDrawerEmpId]             = useState(null);
+  const [periodEdit, setPeriodEdit]               = useState(null); // { id, start, end, payDate }
+  const [savingPeriod, setSavingPeriod]           = useState(false);
 
   useEffect(() => {
     api.getPayGroups(clientId)
@@ -1089,7 +1090,6 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
 
   async function handleRunPayroll() {
     setRunErr(''); setRunSuccess('');
-    // Validate hours for all selected hourly employees
     for (const period of pendingPeriods) {
       for (const emp of empsInGroup) {
         const row = getRow(period.end, emp.id);
@@ -1107,11 +1107,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     setRunning(true);
     try {
       const allNewIds = [];
-      // Group selected pending rows by period, call runPayroll once per period
       for (const period of pendingPeriods) {
         const selectedEmps = empsInGroup.filter(emp => getRow(period.end, emp.id).selected);
         if (selectedEmps.length === 0) continue;
-        const employees = selectedEmps.map(emp => {
+        const payrollEmps = selectedEmps.map(emp => {
           const row = getRow(period.end, emp.id);
           const isSalary = emp.payType === 'salary';
           const regH = parseFloat(row.regHours || 0);
@@ -1128,23 +1127,38 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
           const ytd = calcEmpYTD(emp.id, null);
           return { employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay };
         });
-        const res = await api.runPayroll({ clientId, payPeriodStart: period.start, payPeriodEnd: period.end, settlementDate: period.payDate, payGroupId: currentGroupId, employees });
+        const res = await api.runPayroll({ clientId, payPeriodStart: period.start, payPeriodEnd: period.end, settlementDate: period.payDate, payGroupId: currentGroupId, employees: payrollEmps });
         if (res?.created) res.created.forEach(s => allNewIds.push(s.id));
       }
-      // Submit any selected late stubs
+      // Submit any selected late stubs — clientId required by backend
       if (selectedLateStubs.size > 0) {
-        await api.batchSubmitPaystubs({ paystubIds: [...selectedLateStubs], taxType: '941' });
+        await api.batchSubmitPaystubs({ clientId, paystubIds: [...selectedLateStubs], taxType: '941' });
+      }
+      // Auto-generate PDF and mark checks as printed
+      if (allNewIds.length > 0) {
+        try { await api.printSelectedChecks(clientId, allNewIds); } catch {}
+        await Promise.all(allNewIds.map(id => api.updatePaystubStatus(id, 'printed').catch(() => {})));
       }
       await reloadStubs();
       setPendingRows({});
       setSelectedLateStubs(new Set());
-      setPrintModal(allNewIds.length > 0 ? allNewIds : null);
-      if (allNewIds.length === 0) setRunSuccess(`Payroll complete — ${totalActionCount} check(s) processed.`);
+      setRunSuccess(`Payroll complete — ${allNewIds.length + selectedLateStubs.size} check(s) processed.`);
     } catch (err) {
       setRunErr(err.message || 'Payroll run failed');
     } finally {
       setRunning(false);
     }
+  }
+
+  async function handleSavePeriod(stubId) {
+    if (!periodEdit || periodEdit.id !== stubId) return;
+    setSavingPeriod(true);
+    try {
+      await api.updatePaystub(stubId, { payPeriodStart: periodEdit.start, payPeriodEnd: periodEdit.end, settlementDate: periodEdit.payDate });
+      await reloadStubs();
+      setPeriodEdit(null);
+    } catch (e) { alert(e.message); }
+    finally { setSavingPeriod(false); }
   }
 
   // Select-all helper — selects Late + Due Soon (within 5 days), toggles on repeat click
@@ -1381,9 +1395,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                       {emp.firstName} {emp.lastName}
                     </button>
                   </td>
-                  <td style={{ padding: '7px 8px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{fmtDate(period.start)}</td>
-                  <td style={{ padding: '7px 8px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{fmtDate(period.end)}</td>
-                  <td style={{ padding: '7px 8px', color: period.isLate ? '#dc2626' : 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{fmtDate(period.payDate)}</td>
+                  <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: '#222' }}>{fmtDate(period.start)}</td>
+                  <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: '#222' }}>{fmtDate(period.end)}</td>
+                  <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: period.isLate ? '#dc2626' : '#222' }}>{fmtDate(period.payDate)}</td>
                   {isSalary ? (
                     <>
                       <td colSpan={2} style={{ padding: '7px 8px', textAlign: 'right', color: 'var(--text-secondary)', fontSize: 11 }}>salary</td>
@@ -1402,7 +1416,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                       </td>
                     </>
                   )}
-                  <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: grossPreview > 0 ? 'var(--success, #16a34a)' : 'var(--text-muted)', fontSize: 12 }}>
+                  <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: grossPreview > 0 ? 'var(--success, #16a34a)' : '#aaa', fontSize: 13 }}>
                     {grossPreview > 0 ? fmt(grossPreview) : '—'}
                   </td>
                   <td style={{ padding: '7px 8px', textAlign: 'right' }}>
@@ -1414,38 +1428,74 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
 
             // History row
             const { stub } = rowData;
-            const isLateCheck = stub.check_status === 'late';
-            const isVoided    = stub.check_status === 'voided';
-            const rowBg       = isLateCheck ? '#fff5f5' : stripeBg;
+            const isLateCheck    = stub.check_status === 'late';
+            const isVoided       = stub.check_status === 'voided';
+            const rowBg          = isLateCheck ? '#fff5f5' : stripeBg;
+            const canEditPeriod  = !PRINTED_STATUSES.has(stub.check_status) && !isVoided;
+            const isEditingPeriod = periodEdit?.id === stub.id;
             return (
               <tr key={rowData.key}
                 style={{ background: rowBg, opacity: isVoided ? 0.5 : 1, borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
-                onClick={e => { if (e.target.type !== 'checkbox') setDetailModal(rowData); }}
+                onClick={e => { if (e.target.type !== 'checkbox' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') setDetailModal(rowData); }}
               >
                 <td style={{ padding: '0 0 0 12px' }}>
                   {isLateCheck && (
                     <input type="checkbox"
                       checked={selectedLateStubs.has(stub.id)}
                       onChange={() => setSelectedLateStubs(prev => {
-                        const next = new Set(prev);
-                        next.has(stub.id) ? next.delete(stub.id) : next.add(stub.id);
-                        return next;
+                        const next = new Set(prev); next.has(stub.id) ? next.delete(stub.id) : next.add(stub.id); return next;
                       })}
                       style={{ accentColor: 'var(--accent)', width: 13, height: 13, cursor: 'pointer' }} />
                   )}
                 </td>
                 <td style={{ padding: '7px 8px' }}>
-                  <span style={{ fontWeight: 600, textDecoration: isVoided ? 'line-through' : 'none' }}>{stub.employee_name}</span>
-                  {stub.check_number && (
-                    <span style={{ marginLeft: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--accent)' }}>#{stub.check_number}</span>
+                  {stub.employee_id ? (
+                    <button onClick={e => { e.stopPropagation(); setDrawerEmpId(stub.employee_id); }}
+                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 700, fontSize: 13, color: 'var(--accent)', textDecoration: 'underline', textDecorationStyle: isVoided ? 'line-through' : 'underline' }}>
+                      {stub.employee_name}
+                    </button>
+                  ) : (
+                    <span style={{ fontWeight: 700, fontSize: 13, color: '#111', textDecoration: isVoided ? 'line-through' : 'none' }}>{stub.employee_name}</span>
                   )}
+                  {stub.check_number && <span style={{ marginLeft: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--accent)', fontWeight: 700 }}>#{stub.check_number}</span>}
                 </td>
-                <td style={{ padding: '7px 8px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{fmtDate(stub.pay_period_start)}</td>
-                <td style={{ padding: '7px 8px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{fmtDate(stub.pay_period_end)}</td>
-                <td style={{ padding: '7px 8px', color: isLateCheck ? '#dc2626' : 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{fmtDate(stub.settlement_date)}</td>
-                <td style={{ padding: '7px 8px', textAlign: 'right', color: 'var(--text-muted)' }}>{stub.regular_hours != null ? stub.regular_hours : '—'}</td>
-                <td style={{ padding: '7px 8px', textAlign: 'right', color: 'var(--text-muted)' }}>{stub.overtime_hours > 0 ? stub.overtime_hours : '—'}</td>
-                <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--success, #16a34a)', fontSize: 12 }}>
+                {isEditingPeriod ? (
+                  <td colSpan={3} style={{ padding: '4px 8px' }} onClick={e => e.stopPropagation()}>
+                    <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <input type="date" value={periodEdit.start}
+                        onChange={e => setPeriodEdit(p => ({ ...p, start: e.target.value }))}
+                        style={{ height: 26, fontSize: 11, border: '1px solid var(--border)', borderRadius: 4, padding: '0 4px' }} />
+                      <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>–</span>
+                      <input type="date" value={periodEdit.end}
+                        onChange={e => { const end = e.target.value; setPeriodEdit(p => ({ ...p, end, payDate: end ? calcDefaultPayDate(end) : p.payDate })); }}
+                        style={{ height: 26, fontSize: 11, border: '1px solid var(--border)', borderRadius: 4, padding: '0 4px' }} />
+                      <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>Pay:</span>
+                      <input type="date" value={periodEdit.payDate}
+                        onChange={e => setPeriodEdit(p => ({ ...p, payDate: e.target.value }))}
+                        style={{ height: 26, fontSize: 11, border: '1px solid var(--border)', borderRadius: 4, padding: '0 4px' }} />
+                      <button className="btn btn-primary btn-sm" style={{ fontSize: 10, padding: '0 8px', height: 26 }}
+                        onClick={() => handleSavePeriod(stub.id)} disabled={savingPeriod}>
+                        {savingPeriod ? <span className="spinner" style={{ width: 10, height: 10 }} /> : 'Save'}
+                      </button>
+                      <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, padding: '0 6px', height: 26 }}
+                        onClick={() => setPeriodEdit(null)}>×</button>
+                    </div>
+                  </td>
+                ) : (
+                  <>
+                    <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: '#222',
+                      cursor: canEditPeriod ? 'pointer' : 'default' }}
+                      onClick={canEditPeriod ? e => { e.stopPropagation(); setPeriodEdit({ id: stub.id, start: stub.pay_period_start || '', end: stub.pay_period_end || '', payDate: stub.settlement_date || '' }); } : undefined}
+                      title={canEditPeriod ? 'Click to edit period' : ''}>
+                      {fmtDate(stub.pay_period_start)}{canEditPeriod && <span style={{ marginLeft: 3, opacity: 0.35, fontSize: 9 }}>✏</span>}
+                    </td>
+                    <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: '#222' }}>{fmtDate(stub.pay_period_end)}</td>
+                    <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: isLateCheck ? '#dc2626' : '#222' }}>{fmtDate(stub.settlement_date)}</td>
+                  </>
+                )}
+                <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: 12 }}>{stub.regular_hours != null ? stub.regular_hours : '—'}</td>
+                <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: 12 }}>{stub.overtime_hours > 0 ? stub.overtime_hours : '—'}</td>
+                <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--success, #16a34a)', fontSize: 13 }}>
                   {stub.net_pay != null ? fmt(stub.net_pay) : '—'}
                 </td>
                 <td style={{ padding: '7px 8px', textAlign: 'right' }}>
@@ -1550,25 +1600,6 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
 
       {/* Check detail modal */}
       {detailModal && <CheckDetailModal rowData={detailModal} onClose={() => setDetailModal(null)} />}
-
-      {/* Print checks modal after successful payroll run */}
-      {printModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}>
-          <div className="card" style={{ width: 400, padding: 32, textAlign: 'center' }}>
-            <div style={{ fontSize: 36, marginBottom: 12 }}>✓</div>
-            <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 8 }}>Payroll Complete!</div>
-            <div style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 24 }}>{printModal.length} check{printModal.length !== 1 ? 's' : ''} processed. Would you like to print checks?</div>
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
-              <button className="btn btn-primary" onClick={async () => { try { await api.printSelectedChecks(clientId, printModal); } catch (e) { setRunErr(e.message); } setPrintModal(null); setRunSuccess(`Payroll complete — ${printModal.length} check(s) processed.`); }}>
-                Print Checks
-              </button>
-              <button className="btn btn-ghost" onClick={() => { setPrintModal(null); setRunSuccess(`Payroll complete — ${printModal.length} check(s) processed.`); }}>
-                Not Now
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Employee edit drawer */}
       {drawerEmpId && (
@@ -2048,16 +2079,16 @@ function PayLiabilitiesTab({ clientId, client }) {
                           <span style={{ fontWeight: 600, textDecoration: voided ? 'line-through' : 'none' }}>{stub.employee_name || '—'}</span>
                           {stub.check_number && <span style={{ marginLeft: 5, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--accent)' }}>#{stub.check_number}</span>}
                         </td>
-                        <td style={{ padding: '8px 8px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: 10 }}>
+                        <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: '#222' }}>
                           {fmtDate(stub.pay_period_start)} – {fmtDate(stub.pay_period_end)}
                         </td>
-                        <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: stub._status === 'late' ? '#dc2626' : stub._status === 'due-soon' ? '#d97706' : 'var(--text-muted)' }}>
+                        <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 700, color: stub._status === 'late' ? '#dc2626' : stub._status === 'due-soon' ? '#d97706' : '#222' }}>
                           {fmtDate(stub._sendBy)}
                         </td>
-                        <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: stub._status === 'late' ? '#dc2626' : 'var(--text-muted)' }}>
+                        <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 700, color: stub._status === 'late' ? '#dc2626' : '#222' }}>
                           {fmtDate(stub._due)}
                         </td>
-                        <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--accent)', fontSize: 12 }}>
+                        <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, color: '#111', fontSize: 13 }}>
                           {fmt(amount)}
                         </td>
                         <td style={{ padding: '6px 8px', textAlign: 'right' }}>
@@ -2106,7 +2137,7 @@ function PayLiabilitiesTab({ clientId, client }) {
         <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'center' }}>
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>941 Deposit Schedule</div>
-            <select className="form-select" value={sched941} onChange={e => setSched941(e.target.value)} style={{ fontSize: 12, height: 30 }}>
+            <select className="form-select" value={sched941} onChange={e => setSched941(e.target.value)} style={{ fontSize: 12, height: 30, minWidth: 280 }}>
               <option value="monthly">Monthly — 15th of following month</option>
               <option value="semiweekly">Semi-weekly — Wed/Fri after pay date</option>
               <option value="quarterly">Quarterly — when filing Form 941</option>
@@ -2114,14 +2145,14 @@ function PayLiabilitiesTab({ clientId, client }) {
           </div>
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>940 Payment Schedule</div>
-            <select className="form-select" value={sched940} onChange={e => setSched940(e.target.value)} style={{ fontSize: 12, height: 30 }}>
+            <select className="form-select" value={sched940} onChange={e => setSched940(e.target.value)} style={{ fontSize: 12, height: 30, minWidth: 260 }}>
               <option value="quarterly">Quarterly — if liability over $500</option>
               <option value="annually">Annually — Jan 31 (if under $500)</option>
             </select>
           </div>
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>State SUI Schedule</div>
-            <select className="form-select" value={schedSUI} onChange={e => setSchedSUI(e.target.value)} style={{ fontSize: 12, height: 30 }}>
+            <select className="form-select" value={schedSUI} onChange={e => setSchedSUI(e.target.value)} style={{ fontSize: 12, height: 30, minWidth: 160 }}>
               <option value="quarterly">Quarterly</option>
               <option value="monthly">Monthly</option>
               <option value="annually">Annually</option>
