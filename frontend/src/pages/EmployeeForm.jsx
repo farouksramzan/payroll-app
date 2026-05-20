@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../api/client';
 
@@ -16,6 +16,28 @@ const US_STATES = [
   ['DC','Washington D.C.'],
 ];
 
+const FREQ_LABEL = { weekly: 'Weekly', biweekly: 'Bi-weekly', semimonthly: 'Semi-monthly', monthly: 'Monthly' };
+
+const FEDERAL_HOLIDAYS = new Set([
+  '2024-01-01','2024-01-15','2024-02-19','2024-05-27','2024-06-19','2024-07-04','2024-09-02','2024-10-14','2024-11-11','2024-11-28','2024-12-25',
+  '2025-01-01','2025-01-20','2025-02-17','2025-05-26','2025-06-19','2025-07-04','2025-09-01','2025-10-13','2025-11-11','2025-11-27','2025-12-25',
+  '2026-01-01','2026-01-19','2026-02-16','2026-05-25','2026-06-19','2026-07-03','2026-09-07','2026-10-12','2026-11-11','2026-11-26','2026-12-25',
+]);
+function isBizDay(d) { const w = d.getDay(); return w !== 0 && w !== 6 && !FEDERAL_HOLIDAYS.has(d.toISOString().slice(0, 10)); }
+function addBizDays(d, n) { const r = new Date(d); let added = 0; while (added < n) { r.setDate(r.getDate() + 1); if (isBizDay(r)) added++; } return r; }
+function nextBizDay(d) { const r = new Date(d); while (!isBizDay(r)) r.setDate(r.getDate() + 1); return r; }
+function calcDefaultPayDate(periodEnd) { if (!periodEnd) return ''; return addBizDays(new Date(periodEnd + 'T00:00:00'), 2).toISOString().slice(0, 10); }
+function calcStartFromEnd(endDate, freq) {
+  if (!endDate) return '';
+  const e = new Date(endDate + 'T00:00:00');
+  const days = { weekly: 6, biweekly: 13, semimonthly: null, monthly: null }[freq];
+  if (days !== null && days !== undefined) { const s = new Date(e); s.setDate(s.getDate() - days); return s.toISOString().slice(0, 10); }
+  if (freq === 'semimonthly') { return e.getDate() <= 15 ? `${endDate.slice(0, 7)}-01` : `${endDate.slice(0, 7)}-16`; }
+  if (freq === 'monthly') { return `${endDate.slice(0, 7)}-01`; }
+  return '';
+}
+function fmtDate(s) { if (!s) return '—'; const [y, m, d] = s.split('-'); return `${m}/${d}/${y}`; }
+
 const EMPTY = {
   firstName: '', lastName: '', ssn: '',
   address: '', city: '', state: 'TX', zip: '',
@@ -24,12 +46,7 @@ const EMPTY = {
   step3Children: 0, step3Other: 0,
   step4a: '', step4b: '', step4c: '',
   payType: 'hourly', hourlyRate: '', annualSalary: '',
-  payFrequency: 'biweekly', hireDate: '', isActive: true,
-};
-
-const PAY_FREQ_LABELS = {
-  weekly: 'Weekly', biweekly: 'Bi-weekly',
-  semimonthly: 'Semi-monthly', monthly: 'Monthly',
+  payFrequency: 'biweekly', payGroupId: '', hireDate: '', isActive: true,
 };
 
 export default function EmployeeForm() {
@@ -42,6 +59,15 @@ export default function EmployeeForm() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState('');
+
+  const [payGroups, setPayGroups]       = useState([]);
+  const [showNewGroup, setShowNewGroup] = useState(false);
+  const [newGroup, setNewGroup]         = useState({ name: '', frequency: 'biweekly', firstPayPeriodEnd: '', payDate: '' });
+  const [savingGroup, setSavingGroup]   = useState(false);
+
+  useEffect(() => {
+    api.getPayGroups(id).then(setPayGroups).catch(() => {});
+  }, [id]);
 
   useEffect(() => {
     const tasks = [api.getClient(id)];
@@ -68,6 +94,7 @@ export default function EmployeeForm() {
             hourlyRate: emp.hourlyRate > 0 ? String(emp.hourlyRate) : '',
             annualSalary: emp.annualSalary > 0 ? String(emp.annualSalary) : '',
             payFrequency: emp.payFrequency || 'biweekly',
+            payGroupId: emp.payGroupId ? String(emp.payGroupId) : '',
             hireDate: emp.hireDate || '',
             isActive: emp.isActive !== undefined ? emp.isActive : true,
           });
@@ -83,6 +110,32 @@ export default function EmployeeForm() {
       setForm((f) => ({ ...f, [field]: val }));
       setErrors((err) => ({ ...err, [field]: '' }));
     };
+  }
+  function setNG(field) { return e => setNewGroup(g => ({ ...g, [field]: e.target.value })); }
+  function setNGEndDate(val) { setNewGroup(g => ({ ...g, firstPayPeriodEnd: val, payDate: val ? calcDefaultPayDate(val) : '' })); }
+
+  function handleGroupChange(e) {
+    const val = e.target.value;
+    if (val === '__new__') { setShowNewGroup(true); setForm(f => ({ ...f, payGroupId: '' })); return; }
+    setShowNewGroup(false);
+    const g = payGroups.find(g => String(g.id) === val);
+    setForm(f => ({ ...f, payGroupId: val, ...(g ? { payFrequency: g.frequency } : {}) }));
+  }
+
+  async function handleCreateGroup() {
+    if (!newGroup.name.trim()) { alert('Group name required'); return; }
+    setSavingGroup(true);
+    try {
+      const created = await api.createPayGroup({
+        clientId: id, ...newGroup,
+        firstPayPeriodStart: calcStartFromEnd(newGroup.firstPayPeriodEnd, newGroup.frequency) || null,
+      });
+      setPayGroups(prev => [...prev, created].sort((a, b) => a.name.localeCompare(b.name)));
+      setForm(f => ({ ...f, payGroupId: String(created.id), payFrequency: created.frequency }));
+      setShowNewGroup(false);
+      setNewGroup({ name: '', frequency: 'biweekly', firstPayPeriodEnd: '', payDate: '' });
+    } catch (e) { alert(e.message); }
+    finally { setSavingGroup(false); }
   }
 
   function validate() {
@@ -112,6 +165,7 @@ export default function EmployeeForm() {
         step4c: parseFloat(form.step4c || 0),
         hourlyRate:   parseFloat(form.hourlyRate   || 0),
         annualSalary: parseFloat(form.annualSalary || 0),
+        payGroupId: form.payGroupId ? parseInt(form.payGroupId) : null,
       };
       if (!payload.ssn) delete payload.ssn;
       if (isEdit) {
@@ -173,14 +227,7 @@ export default function EmployeeForm() {
 
             <div className="form-group" style={{ maxWidth: 280 }}>
               <label className="form-label">Social Security Number {isEdit && <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(leave blank to keep current)</span>}</label>
-              <input
-                className="form-input mono"
-                type="password"
-                value={form.ssn}
-                onChange={set('ssn')}
-                placeholder="###-##-####"
-                maxLength={11}
-              />
+              <input className="form-input mono" type="password" value={form.ssn} onChange={set('ssn')} placeholder="###-##-####" maxLength={11} />
               {errors.ssn && <p className="form-error-msg">{errors.ssn}</p>}
               <p className="form-hint">Stored encrypted with AES-256.</p>
             </div>
@@ -198,9 +245,7 @@ export default function EmployeeForm() {
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">State (Address)</label>
                 <select className="form-select" value={form.state} onChange={set('state')}>
-                  {US_STATES.map(([code, name]) => (
-                    <option key={code} value={code}>{code}</option>
-                  ))}
+                  {US_STATES.map(([code]) => <option key={code} value={code}>{code}</option>)}
                 </select>
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
@@ -213,11 +258,9 @@ export default function EmployeeForm() {
               <label className="form-label">State of Work <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}>(for tax withholding)</span></label>
               <select className="form-select" value={form.workState} onChange={set('workState')}>
                 <option value="">— Use client's state default —</option>
-                {US_STATES.map(([code, name]) => (
-                  <option key={code} value={code}>{code} — {name}</option>
-                ))}
+                {US_STATES.map(([code, name]) => <option key={code} value={code}>{code} — {name}</option>)}
               </select>
-              <p className="form-hint">Override if this employee works in a different state than the business. Determines SUI wage base and state income tax.</p>
+              <p className="form-hint">Override if this employee works in a different state than the business.</p>
             </div>
 
             <div className="form-group" style={{ marginTop: 16, maxWidth: 200 }}>
@@ -239,22 +282,62 @@ export default function EmployeeForm() {
           <div className="card" style={{ marginBottom: 16 }}>
             <p className="form-section-title" style={{ marginTop: 0 }}>Pay Settings</p>
 
-            <div className="form-grid">
-              <div className="form-group">
-                <label className="form-label">Pay Type</label>
-                <select className="form-select" value={form.payType} onChange={set('payType')}>
-                  <option value="hourly">Hourly</option>
-                  <option value="salary">Salary</option>
-                </select>
+            {/* Pay Group */}
+            <div className="form-group">
+              <label className="form-label">Pay Group</label>
+              <select className="form-select" value={showNewGroup ? '__new__' : (form.payGroupId || '')} onChange={handleGroupChange} style={{ maxWidth: 360 }}>
+                <option value="">— No pay group —</option>
+                {payGroups.filter(g => !g.deletedAt).map(g => (
+                  <option key={g.id} value={String(g.id)}>{g.name} ({FREQ_LABEL[g.frequency] || g.frequency})</option>
+                ))}
+                <option value="__new__">+ Create New Pay Group…</option>
+              </select>
+              {form.payGroupId && !showNewGroup && (
+                <p className="form-hint">Pay frequency auto-set from group: <strong>{FREQ_LABEL[form.payFrequency] || form.payFrequency}</strong></p>
+              )}
+            </div>
+
+            {showNewGroup && (
+              <div style={{ background: 'var(--accent-light)', borderRadius: 8, padding: '14px 14px 10px', marginBottom: 14, border: '1px solid var(--accent-mid)' }}>
+                <div style={{ fontWeight: 700, fontSize: 12, color: 'var(--accent)', marginBottom: 10, textTransform: 'uppercase' }}>New Pay Group</div>
+                <div className="form-group" style={{ marginBottom: 10 }}>
+                  <label className="form-label" style={{ fontSize: 11 }}>Group Name</label>
+                  <input className="form-input" value={newGroup.name} onChange={setNG('name')} placeholder="e.g. Biweekly 1" />
+                </div>
+                <div className="form-group" style={{ marginBottom: 10 }}>
+                  <label className="form-label" style={{ fontSize: 11 }}>Frequency</label>
+                  <select className="form-select" value={newGroup.frequency} onChange={setNG('frequency')}>
+                    <option value="weekly">Weekly</option><option value="biweekly">Bi-weekly</option>
+                    <option value="semimonthly">Semi-monthly</option><option value="monthly">Monthly</option>
+                  </select>
+                </div>
+                <div className="form-group" style={{ marginBottom: 4 }}>
+                  <label className="form-label" style={{ fontSize: 11 }}>First Period End Date</label>
+                  <input className="form-input" type="date" value={newGroup.firstPayPeriodEnd} onChange={e => setNGEndDate(e.target.value)} />
+                </div>
+                {newGroup.firstPayPeriodEnd && (
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+                    Period starts: <strong>{fmtDate(calcStartFromEnd(newGroup.firstPayPeriodEnd, newGroup.frequency))}</strong>
+                    &nbsp;·&nbsp;Default pay date: <strong>{fmtDate(calcDefaultPayDate(newGroup.firstPayPeriodEnd))}</strong>
+                  </div>
+                )}
+                {newGroup.payDate && !isBizDay(new Date(newGroup.payDate + 'T00:00:00')) && (() => {
+                  const suggested = nextBizDay(new Date(newGroup.payDate + 'T00:00:00')).toISOString().slice(0, 10);
+                  return <div style={{ fontSize: 11, color: '#d97706', marginBottom: 8 }}>⚠ Weekend/holiday — suggest: <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontWeight: 700, fontSize: 11, padding: 0 }} onClick={() => setNewGroup(g => ({ ...g, payDate: suggested }))}>{fmtDate(suggested)}</button></div>;
+                })()}
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <button type="button" className="btn btn-primary btn-sm" onClick={handleCreateGroup} disabled={savingGroup}>{savingGroup ? <span className="spinner" /> : 'Create & Assign'}</button>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setShowNewGroup(false); setForm(f => ({ ...f, payGroupId: '' })); }}>Cancel</button>
+                </div>
               </div>
-              <div className="form-group">
-                <label className="form-label">Pay Frequency</label>
-                <select className="form-select" value={form.payFrequency} onChange={set('payFrequency')}>
-                  {Object.entries(PAY_FREQ_LABELS).map(([v, l]) => (
-                    <option key={v} value={v}>{l}</option>
-                  ))}
-                </select>
-              </div>
+            )}
+
+            <div className="form-group" style={{ marginTop: 4 }}>
+              <label className="form-label">Pay Type</label>
+              <select className="form-select" value={form.payType} onChange={set('payType')} style={{ maxWidth: 220 }}>
+                <option value="hourly">Hourly</option>
+                <option value="salary">Salary</option>
+              </select>
             </div>
 
             {form.payType === 'hourly' ? (
