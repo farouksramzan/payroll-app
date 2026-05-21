@@ -100,7 +100,7 @@ def main():
         sys.exit(1)
     time.sleep(2)  # wait for file browser to open
 
-    # Step 5 — Type filename in the file browser and press Enter
+    # Step 5 — Type filename in the file browser and press Enter to open
     filename = os.path.basename(enroll_file_path)
     log('Step 5: Typing filename: ' + filename)
     pyautogui.hotkey('ctrl', 'a')
@@ -110,11 +110,9 @@ def main():
     pyautogui.press('enter')
     time.sleep(4)
 
-    # Step 6 — Click Open button
-    log('Step 6: Clicking Open button')
-    if not find_and_click('open.png', 'Open button', timeout=10, confidence=0.7):
-        print('ENROLLMENT_FAILED: Open button not found', flush=True)
-        sys.exit(1)
+    # Step 6 — Press Enter again to confirm Open (more reliable than image search)
+    log('Step 6: Pressing Enter to open file')
+    pyautogui.press('enter')
     time.sleep(2)
 
     # Step 7 — Click OK (first time)
