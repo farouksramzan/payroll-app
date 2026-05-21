@@ -4,7 +4,7 @@ const express      = require('express');
 const PDFDocument  = require('pdfkit');
 const { getDb }    = require('../database/db');
 const { requireAuth } = require('../middleware/auth');
-const { decrypt }  = require('../services/cryptoService');
+const { decrypt, encrypt }  = require('../services/cryptoService');
 const { calculateWithholding, getTaxPeriod } = require('../services/taxCalculator');
 const { submitToEFTPS } = require('../services/eftpsAutomation');
 const bridgeManager = require('../ws/bridge');
@@ -14,6 +14,25 @@ const router = express.Router();
 router.use(requireAuth);
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+function generatePin() {
+  const BLOCKED = new Set(['0000', '9999', '1234']);
+  let pin;
+  do {
+    pin = String(Math.floor(Math.random() * 9000) + 1000);
+    const isSeq = [0, 1, 2].every(i => Number(pin[i + 1]) === Number(pin[i]) + 1);
+    if (BLOCKED.has(pin) || isSeq) pin = null;
+  } while (!pin);
+  return pin;
+}
+
+function resolvePin(db, clientId, encryptedPin) {
+  if (encryptedPin) return decrypt(encryptedPin);
+  const pin = generatePin();
+  db.prepare('UPDATE clients SET batch_provider_pin_encrypted = ? WHERE id = ?')
+    .run(encrypt(pin), clientId);
+  return pin;
+}
 
 function attachLineItems(db, stubs) {
   const attach = (s) => {
@@ -574,8 +593,7 @@ router.post('/:id/submit', async (req, res) => {
     if (stub.status === 'submitted') return res.status(400).json({ error: '941 already submitted for this paystub' });
   }
 
-  const pin = decrypt(stub.batch_provider_pin_encrypted);
-  if (!pin) return res.status(400).json({ error: 'Batch Provider PIN not configured' });
+  const pin = resolvePin(db, stub.client_id, stub.batch_provider_pin_encrypted);
 
   // Mark processing
   if (taxType === '940') {
@@ -1085,8 +1103,7 @@ router.post('/batch-submit', async (req, res) => {
   const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
   if (!client) return res.status(404).json({ error: 'Client not found' });
 
-  const pin = decrypt(client.batch_provider_pin_encrypted);
-  if (!pin) return res.status(400).json({ error: 'Batch Provider PIN not configured' });
+  const pin = resolvePin(db, client.id, client.batch_provider_pin_encrypted);
 
   // Build query for pending paystubs based on taxType
   let pending;

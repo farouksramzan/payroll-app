@@ -35,7 +35,11 @@
       "Bash(cat backend/index.js)",
       "Bash(node --input-type=module)",
       "Bash(grep -n \"^  }$\\\\|^  \\);\" \"/Users/faroukramzan/Desktop/Payroll App/frontend/src/pages/CompanyWorkspace.jsx\")",
-      "Bash(awk 'NR>40 && NR<60')"
+      "Bash(awk 'NR>40 && NR<60')",
+      "Bash(node -e \"require\\('./src/routes/submissions.js'\\); console.log\\('submissions.js OK'\\)\")",
+      "Bash(node -e \"require\\('./src/routes/paystubs.js'\\); console.log\\('paystubs.js OK'\\)\")",
+      "Bash(node -e \"require\\('./src/enrollmentGenerator.js'\\); console.log\\('enrollmentGenerator.js OK'\\)\")",
+      "Bash(node -e \"require\\('./src/wsClient.js'\\); console.log\\('wsClient.js OK'\\)\")"
     ]
   }
 }

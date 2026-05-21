@@ -1,11 +1,13 @@
 # Button Images — Capture Instructions
 
-`sikulix_automation.py` uses `pyautogui.locateOnScreen()` to find UI elements by
-comparing these reference images against the live screen. Each image must be a
+`bp_automation.py` and `bp_enrollment.py` use `pyautogui.locateOnScreen()` to find UI
+elements by comparing these reference images against the live screen. Each image must be a
 **tight, pixel-perfect crop** of the button or row exactly as it appears in
 EFTPS Batch Provider on this machine.
 
-## Required images
+---
+
+## Payment automation images (`bp_automation.py`)
 
 | Filename | What to capture | When visible |
 |---|---|---|
@@ -16,6 +18,19 @@ EFTPS Batch Provider on this machine.
 | `btn_ok.png` | The **OK** button in the File Format Selector dialog | After clicking Open |
 | `payment_row.png` | One row of a payment entry in the payments list | After clicking OK — the imported payment appears |
 | `btn_submit.png` | The **Submit** button at the bottom right of the window | After clicking the payment row |
+
+---
+
+## Enrollment automation images (`bp_enrollment.py`)
+
+| Filename | What to capture | When visible |
+|---|---|---|
+| `enrollments_tab.png` | The **Enrollments** tab in the Batch Provider toolbar | Always visible; click to switch to Enrollments screen |
+| `enroll_import.png` | The **Import** button on the Enrollments screen | After clicking the Enrollments tab |
+| `enroll_ok.png` | The **OK** / Confirm button shown after selecting the enrollment file | After typing the file path and pressing Enter |
+| `enroll_submit.png` | The **Submit** button that sends enrollments to EFTPS | After clicking OK — appears in the Enrollments screen |
+
+---
 
 ## How to capture each image
 
@@ -33,8 +48,6 @@ EFTPS Batch Provider on this machine.
   **normal / idle** state.
 - The script uses `confidence=0.8`, so minor rendering differences are tolerated,
   but blurry or scaled images will fail to match.
-- For `ach_file_row.png`, capture just one file row from the browser list —
-  the script finds all matches and clicks the bottom-most one (most recent file).
 
 ## Verifying a capture
 

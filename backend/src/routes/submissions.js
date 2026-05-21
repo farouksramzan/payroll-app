@@ -3,11 +3,30 @@ const { getDb } = require('../database/db');
 const { requireAuth } = require('../middleware/auth');
 const { calculateWithholding, getTaxPeriod } = require('../services/taxCalculator');
 const { submitToEFTPS } = require('../services/eftpsAutomation');
-const { decrypt } = require('../services/cryptoService');
+const { decrypt, encrypt } = require('../services/cryptoService');
 const bridgeManager = require('../ws/bridge');
 
 const router = express.Router();
 router.use(requireAuth);
+
+function generatePin() {
+  const BLOCKED = new Set(['0000', '9999', '1234']);
+  let pin;
+  do {
+    pin = String(Math.floor(Math.random() * 9000) + 1000);
+    const isSeq = [0, 1, 2].every(i => Number(pin[i + 1]) === Number(pin[i]) + 1);
+    if (BLOCKED.has(pin) || isSeq) pin = null;
+  } while (!pin);
+  return pin;
+}
+
+function resolvePin(db, clientId, encryptedPin) {
+  if (encryptedPin) return decrypt(encryptedPin);
+  const pin = generatePin();
+  db.prepare('UPDATE clients SET batch_provider_pin_encrypted = ? WHERE id = ?')
+    .run(encrypt(pin), clientId);
+  return pin;
+}
 
 function attachLineItems(db, submissions) {
   if (!Array.isArray(submissions)) {
@@ -305,9 +324,8 @@ router.post('/:id/submit-bridge', async (req, res) => {
   if (!sub) return res.status(404).json({ error: 'Submission not found' });
   if (sub.eftps_status === 'submitted') return res.status(400).json({ error: 'Already submitted' });
 
-  const pin           = sub.batch_provider_pin_encrypted ? decrypt(sub.batch_provider_pin_encrypted) : null;
+  const pin           = resolvePin(db, sub.client_id, sub.batch_provider_pin_encrypted);
   const accountNumber = sub.bank_account_number_encrypted ? decrypt(sub.bank_account_number_encrypted) : null;
-  if (!pin) return res.status(400).json({ error: 'Batch Provider PIN not configured for this client' });
 
   if (!sub.settlement_date) {
     return res.status(400).json({ error: 'Settlement date is required for ACH bridge submission' });

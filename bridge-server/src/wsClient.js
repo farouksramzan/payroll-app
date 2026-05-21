@@ -25,7 +25,7 @@ const { saveACHFile, WATCHED_FOLDER } = require('./batchProvider');
 const BP_SCRIPT          = path.join(__dirname, '..', 'bp_automation.py');
 const BP_ENROLL_SCRIPT   = path.join(__dirname, '..', 'bp_enrollment.py');
 const ENROLLED_JSON      = path.join(__dirname, '..', 'enrolled_clients.json');
-const ENROLL_FOLDER      = path.join(__dirname, '..', 'data', 'enroll-out');
+const ENROLL_FOLDER      = path.join(__dirname, '..', 'data', 'enrollments-out');
 
 // ── Enrollment tracking ───────────────────────────────────────────────────────
 
@@ -252,6 +252,8 @@ class BridgeClient extends EventEmitter {
 
         markEnrolled(job.ein);
         log(`EIN ${cleanEin(job.ein)} added to enrolled_clients.json`);
+        log('Waiting 5s for Batch Provider to sync enrollment with EFTPS...');
+        await new Promise(resolve => setTimeout(resolve, 5000));
       } else {
         log(`EIN ${cleanEin(job.ein)} already enrolled — skipping enrollment`);
       }
