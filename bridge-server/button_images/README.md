@@ -25,10 +25,12 @@ EFTPS Batch Provider on this machine.
 
 | Filename | What to capture | When visible |
 |---|---|---|
-| `enrollments_tab.png` | The **Enrollments** tab in the Batch Provider toolbar | Always visible; click to switch to Enrollments screen |
-| `enroll_import.png` | The **Import** button on the Enrollments screen | After clicking the Enrollments tab |
-| `enroll_ok.png` | The **OK** / Confirm button shown after selecting the enrollment file | After typing the file path and pressing Enter |
-| `enroll_submit.png` | The **Submit** button that sends enrollments to EFTPS | After clicking OK — appears in the Enrollments screen |
+| `enrollments_tab.png` | The **Enrollments** tab at the top of Batch Provider | Always visible |
+| `send_enrollments.png` | The **Send Enrollments** button on the Enrollments screen | After clicking the Enrollments tab |
+| `enroll_import.png` | The **Import** button in the Send Enrollments dialog | After clicking Send Enrollments |
+| `enroll_add.png` | The **Add** button in the file dialog | After clicking Import |
+| `enroll_ok.png` | The **first OK** button — after selecting the enrollment file | After typing the file path and pressing Enter |
+| `enroll_ok2.png` | The **second OK** button — confirmation/summary dialog | After clicking the first OK |
 
 ---
 
