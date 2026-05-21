@@ -64,7 +64,11 @@ class BridgeManager extends EventEmitter {
         this.emit('disconnected');
         for (const [, p] of this._pending) {
           clearTimeout(p.timeout);
-          p.reject(new Error('Bridge disconnected'));
+          if (p.async) {
+            p.onResult?.(false, { error: 'Bridge disconnected' });
+          } else {
+            p.reject(new Error('Bridge disconnected'));
+          }
         }
         this._pending.clear();
       }
