@@ -100,11 +100,12 @@ def main():
         sys.exit(1)
     time.sleep(2)  # wait for file browser to open
 
-    # Step 5 — Type full absolute file path and press Enter
-    log('Step 5: Typing full file path: ' + enroll_file_path)
+    # Step 5 — Type filename in the file browser and press Enter
+    filename = os.path.basename(enroll_file_path)
+    log('Step 5: Typing filename: ' + filename)
     pyautogui.hotkey('ctrl', 'a')
     time.sleep(0.3)
-    pyautogui.typewrite(enroll_file_path, interval=0.15)
+    pyautogui.typewrite(filename, interval=0.15)
     time.sleep(0.3)
     pyautogui.press('enter')
 
