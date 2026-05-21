@@ -123,15 +123,17 @@ def main():
     log('Debug screenshot saved to ' + debug_path)
 
     # Step 7 — Click OK (first time)
+    log('Step 7: Waiting 5s for dialog to fully render...')
+    time.sleep(5)
     log('Step 7: Clicking OK (first)')
-    if not find_and_click('enroll_ok.png', 'OK button (first)', timeout=10):
+    if not find_and_click('enroll_ok.png', 'OK button (first)', timeout=10, confidence=0.6):
         print('ENROLLMENT_FAILED: First OK button not found', flush=True)
         sys.exit(1)
     time.sleep(2)
 
     # Step 8 — Click OK (second time — confirmation)
     log('Step 8: Clicking OK (second)')
-    if not find_and_click('enroll_ok2.png', 'OK button (second)', timeout=10):
+    if not find_and_click('enroll_ok2.png', 'OK button (second)', timeout=10, confidence=0.6):
         print('ENROLLMENT_FAILED: Second OK button not found', flush=True)
         sys.exit(1)
     time.sleep(1)
