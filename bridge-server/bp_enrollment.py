@@ -28,7 +28,7 @@ import pyautogui
 
 pyautogui.FAILSAFE = False
 
-CONFIDENCE = 0.8
+CONFIDENCE = 0.7
 IMAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'button_images')
 
 
