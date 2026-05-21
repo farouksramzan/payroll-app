@@ -1,40 +1,50 @@
 """
-EFTPS Batch Provider enrollment status checker using pyautogui.
+EFTPS Batch Provider enrollment status checker using pyautogui + pytesseract OCR.
 
 Usage:
     python bp_enrollment_check.py <ein>
 
 Exit codes:
-    0  ENROLLMENT_ACTIVE   — EIN found with Active status
-    1  ENROLLMENT_PENDING  — EIN not found or status not Active
+    0  ENROLLMENT_ACTIVE   — EIN found with Active status in the inquiry list
+    1  ENROLLMENT_PENDING  — EIN not found, not Active, or an error occurred
 
 Requires:
-    pip install pyautogui opencv-python pillow
-
-Screenshots needed in button_images/:
-    enrollments_tab.png        — Enrollments tab at the top of Batch Provider
-    enrollment_inquiry.png     — Enrollment Inquiry button on the Enrollments screen
-    enroll_sync.png            — Sync button in the Enrollment Inquiry screen
-    enroll_ok.png              — OK / Close button to dismiss dialogs
+    pip install pyautogui opencv-python pillow pytesseract
 
 Environment variables:
-    BATCH_PROVIDER_MASTER_PIN       — Master PIN for Batch Provider
-    BATCH_PROVIDER_MASTER_PASSWORD  — Master Password for Batch Provider
+    BATCH_PROVIDER_MASTER_PIN       — Master PIN for Batch Provider sync dialog
+    BATCH_PROVIDER_MASTER_PASSWORD  — Master Password for Batch Provider sync dialog
+    TESSERACT_PATH                  — Full path to tesseract.exe
+                                      e.g. C:\\Users\\mramz\\OneDrive\\Desktop\\tesseract.exe
+
+Screenshots needed in button_images/:
+    enrollments_tab.png     — Enrollments tab at the top of Batch Provider
+    enrollment_inquiry.png  — Enrollment Inquiry button on the Enrollments screen
+    enroll_sync.png         — Sync button in the Enrollment Inquiry screen
+    enroll_sync_pin.png     — PIN input field in the sync credentials dialog
+    enroll_sync_password.png — Password input field in the sync credentials dialog
+    enroll_sync_submit.png  — Submit button in the sync credentials dialog
+    enroll_sync_ok.png      — OK button after sync completes
 """
 
 import sys
 import os
 import time
-import subprocess
 import pyautogui
+import pytesseract
+from PIL import Image
 
 pyautogui.FAILSAFE = False
 
-CONFIDENCE = 0.7
-IMAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'button_images')
+CONFIDENCE  = 0.7
+IMAGES_DIR  = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'button_images')
 
 MASTER_PIN      = os.environ.get('BATCH_PROVIDER_MASTER_PIN', '')
 MASTER_PASSWORD = os.environ.get('BATCH_PROVIDER_MASTER_PASSWORD', '')
+TESSERACT_PATH  = os.environ.get('TESSERACT_PATH', 'tesseract')
+
+# Point pytesseract at the correct tesseract binary
+pytesseract.pytesseract.tesseract_cmd = TESSERACT_PATH
 
 
 def log(msg):
@@ -64,17 +74,28 @@ def find_and_click(filename, description, timeout=10, confidence=CONFIDENCE):
     return False
 
 
-def get_clipboard():
-    """Read clipboard text via PowerShell (Windows)."""
-    try:
-        result = subprocess.run(
-            ['powershell', '-NoProfile', '-Command', 'Get-Clipboard'],
-            capture_output=True, text=True, timeout=10
-        )
-        return result.stdout
-    except Exception as e:
-        log('Clipboard read error: ' + str(e))
-        return ''
+def ocr_screen_for_ein(ein):
+    """Take a full screenshot and use OCR to find the EIN with Active status."""
+    log('Taking screenshot for OCR...')
+    screenshot = pyautogui.screenshot()
+    text = pytesseract.image_to_string(screenshot, config='--psm 6')
+    log('OCR text length: ' + str(len(text)) + ' chars')
+
+    # Also check with common OCR misreads of dashes
+    ein_clean   = ein.replace('-', '').strip()
+    ein_dashed  = ein_clean[:2] + '-' + ein_clean[2:]   # 12-3456789
+    ein_variants = [ein_clean, ein_dashed]
+
+    for line in text.splitlines():
+        line_stripped = line.strip()
+        for variant in ein_variants:
+            if variant in line_stripped and 'Active' in line_stripped:
+                log('Found Active enrollment for EIN ' + ein_clean + ': ' + line_stripped)
+                return True
+
+    log('EIN ' + ein_clean + ' not found as Active in OCR output')
+    log('Raw OCR (first 2000 chars): ' + text[:2000])
+    return False
 
 
 def main():
@@ -86,84 +107,70 @@ def main():
     log('Checking enrollment status for EIN: ' + ein)
 
     if not MASTER_PIN:
-        log('WARNING: BATCH_PROVIDER_MASTER_PIN not set in environment')
+        log('WARNING: BATCH_PROVIDER_MASTER_PIN not set — sync dialog may fail')
     if not MASTER_PASSWORD:
-        log('WARNING: BATCH_PROVIDER_MASTER_PASSWORD not set in environment')
+        log('WARNING: BATCH_PROVIDER_MASTER_PASSWORD not set — sync dialog may fail')
 
-    # Step 1 — Click Enrollments tab
+    # ── Step 1: Click Enrollments tab ────────────────────────────────────────
     log('Step 1: Clicking Enrollments tab')
     if not find_and_click('enrollments_tab.png', 'Enrollments tab', timeout=15):
         print('ENROLLMENT_PENDING: Enrollments tab not found', flush=True)
         sys.exit(1)
     time.sleep(1)
 
-    # Step 2 — Click Enrollment Inquiry
+    # ── Step 2: Click Enrollment Inquiry ─────────────────────────────────────
     log('Step 2: Clicking Enrollment Inquiry')
-    if not find_and_click('enrollment_inquiry.png', 'Enrollment Inquiry', timeout=10):
+    if not find_and_click('enrollment_inquiry.png', 'Enrollment Inquiry button', timeout=10):
         print('ENROLLMENT_PENDING: Enrollment Inquiry button not found', flush=True)
         sys.exit(1)
-    time.sleep(2)
-
-    # Step 3 — Enter Master PIN if dialog appears
-    if MASTER_PIN:
-        log('Step 3: Entering Master PIN')
-        pyautogui.hotkey('ctrl', 'a')
-        time.sleep(0.2)
-        pyautogui.typewrite(MASTER_PIN, interval=0.1)
-        time.sleep(0.3)
-        pyautogui.press('tab')
-        time.sleep(0.3)
-
-    # Step 4 — Enter Master Password
-    if MASTER_PASSWORD:
-        log('Step 4: Entering Master Password')
-        pyautogui.hotkey('ctrl', 'a')
-        time.sleep(0.2)
-        pyautogui.typewrite(MASTER_PASSWORD, interval=0.1)
-        time.sleep(0.3)
-        pyautogui.press('enter')
-        time.sleep(3)  # wait for inquiry window to load
-
-    # Step 5 — Click Sync to refresh enrollment data from EFTPS
-    log('Step 5: Clicking Sync')
-    if not find_and_click('enroll_sync.png', 'Sync button', timeout=15):
-        log('WARNING: Sync button not found — proceeding without sync')
-    time.sleep(10)  # EFTPS sync can take several seconds
-
-    # Step 6 — Select all rows in the enrollment list and copy to clipboard
-    log('Step 6: Selecting all and copying enrollment list')
-    pyautogui.hotkey('ctrl', 'a')
-    time.sleep(0.5)
-    pyautogui.hotkey('ctrl', 'c')
     time.sleep(1)
 
-    # Step 7 — Read clipboard and search for EIN with Active status
-    log('Step 7: Reading clipboard')
-    clipboard = get_clipboard()
-    log('Clipboard length: ' + str(len(clipboard)) + ' chars')
+    # ── Step 3: Click Sync ───────────────────────────────────────────────────
+    log('Step 3: Clicking Sync')
+    if not find_and_click('enroll_sync.png', 'Sync button', timeout=10):
+        print('ENROLLMENT_PENDING: Sync button not found', flush=True)
+        sys.exit(1)
+    time.sleep(2)  # wait for PIN/Password dialog to appear
 
-    # Normalize EIN formats — strip dashes and look for "Active" near the EIN
-    ein_variants = [ein, ein[:2] + '-' + ein[2:]]  # 123456789 and 12-3456789
-    found_active = False
+    # ── Step 4: Click PIN field and type Master PIN ───────────────────────────
+    log('Step 4: Clicking PIN field')
+    if not find_and_click('enroll_sync_pin.png', 'PIN field', timeout=10):
+        print('ENROLLMENT_PENDING: PIN field not found', flush=True)
+        sys.exit(1)
+    pyautogui.hotkey('ctrl', 'a')
+    time.sleep(0.2)
+    pyautogui.typewrite(MASTER_PIN, interval=0.15)
+    time.sleep(0.3)
 
-    for line in clipboard.splitlines():
-        line_stripped = line.strip()
-        for variant in ein_variants:
-            if variant in line_stripped and 'Active' in line_stripped:
-                log('Found Active enrollment for EIN ' + ein + ': ' + line_stripped)
-                found_active = True
-                break
-        if found_active:
-            break
+    # ── Step 5: Click Password field and type Master Password ─────────────────
+    log('Step 5: Clicking Password field')
+    if not find_and_click('enroll_sync_password.png', 'Password field', timeout=10):
+        print('ENROLLMENT_PENDING: Password field not found', flush=True)
+        sys.exit(1)
+    pyautogui.hotkey('ctrl', 'a')
+    time.sleep(0.2)
+    pyautogui.typewrite(MASTER_PASSWORD, interval=0.15)
+    time.sleep(0.3)
 
-    # Step 8 — Dismiss any open dialog
-    try:
-        find_and_click('enroll_ok.png', 'OK/Close button', timeout=3)
-    except Exception:
-        pass
+    # ── Step 6: Click Submit ──────────────────────────────────────────────────
+    log('Step 6: Clicking Submit')
+    if not find_and_click('enroll_sync_submit.png', 'Submit button', timeout=10):
+        print('ENROLLMENT_PENDING: Submit button not found', flush=True)
+        sys.exit(1)
+    time.sleep(3)  # wait for sync to complete
 
-    if found_active:
-        log('Enrollment is Active — proceeding')
+    # ── Step 7: Click OK to dismiss confirmation ──────────────────────────────
+    log('Step 7: Clicking OK after sync')
+    if not find_and_click('enroll_sync_ok.png', 'OK button', timeout=10):
+        log('WARNING: OK button not found after sync — continuing anyway')
+    time.sleep(5)  # wait for enrollment list to fully load
+
+    # ── Step 8: OCR the screen and look for EIN with Active status ────────────
+    log('Step 8: Running OCR to check enrollment status')
+    active = ocr_screen_for_ein(ein)
+
+    if active:
+        log('Enrollment confirmed Active for EIN ' + ein)
         print('ENROLLMENT_ACTIVE', flush=True)
         sys.exit(0)
     else:

@@ -59,6 +59,13 @@ def main():
     log('Starting Batch Provider import')
     log('ACH file: ' + ach_file_path)
 
+    # Step 0 — Navigate to Payments tab
+    log('Step 0: Clicking Payments tab')
+    if not find_and_click('payments_tab.png', 'Payments tab', timeout=15):
+        print('IMPORT_FAILED: Payments tab not found', flush=True)
+        sys.exit(1)
+    time.sleep(1)
+
     # Step 1 — Import button
     log('Step 1: Clicking Import button')
     if not find_and_click('import.png', 'Import button'):

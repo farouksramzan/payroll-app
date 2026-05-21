@@ -39,10 +39,25 @@ EFTPS Batch Provider on this machine.
 
 | Filename | What to capture | When visible |
 |---|---|---|
-| `enrollments_tab.png` | The **Enrollments** tab at the top of Batch Provider | Always visible (shared with above) |
+| `enrollments_tab.png` | The **Enrollments** tab at the top of Batch Provider | Always visible (shared with enrollment automation) |
 | `enrollment_inquiry.png` | The **Enrollment Inquiry** button on the Enrollments screen | After clicking the Enrollments tab |
 | `enroll_sync.png` | The **Sync** button in the Enrollment Inquiry screen | After the inquiry window opens |
-| `enroll_ok.png` | The **OK / Close** button to dismiss any confirmation dialog | After sync completes (shared with above) |
+| `enroll_sync_pin.png` | The **PIN input field** in the sync credentials dialog | After clicking Sync |
+| `enroll_sync_password.png` | The **Password input field** in the sync credentials dialog | After clicking Sync |
+| `enroll_sync_submit.png` | The **Submit** button in the sync credentials dialog | After entering PIN and Password |
+| `enroll_sync_ok.png` | The **OK** button that appears after sync completes | After clicking Submit |
+
+---
+
+## Payment automation images (`bp_automation.py` — updated)
+
+`bp_automation.py` now clicks the **Payments tab** as step 0 before importing.
+
+| Filename | What to capture | When visible |
+|---|---|---|
+| `payments_tab.png` | The **Payments** tab at the top of Batch Provider | Always visible |
+
+All other payment images (`btn_import.png`, `btn_add.png`, etc.) remain unchanged — see the Payment automation table above.
 
 ---
 

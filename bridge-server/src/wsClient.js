@@ -328,7 +328,7 @@ class BridgeClient extends EventEmitter {
       const achFilePath = saveACHFile(achContent, submissionId);
       log(`ACH file saved: ${achFilePath}`);
 
-      // 4. Run payment automation
+      // 4. Run payment automation (bp_automation.py clicks Payments tab as step 0)
       const result = await runPaymentAutomation(achFilePath, log);
 
       this.stats.jobsSucceeded++;
@@ -343,7 +343,7 @@ class BridgeClient extends EventEmitter {
         confirmation: result.confirmation,
         achFilePath:  result.achFilePath,
         warning:      result.warning || null,
-        message:      'ACH file generated and submitted to Batch Provider',
+        message:      'Your payment is sent!',
       });
 
     } catch (err) {
@@ -351,13 +351,18 @@ class BridgeClient extends EventEmitter {
       this.emit('log', `Job ${submissionId} FAILED: ${err.message}`);
       this.emit('jobComplete', { job, error: err.message, success: false });
 
+      const isEnrollmentError = err.message.includes('Enrollment could not be confirmed');
       this._send({
         type:         'result',
         jobId,
         submissionId,
         success:      false,
-        error:        err.message,
-        message:      'Bridge processing failed',
+        error:        isEnrollmentError
+                        ? 'Enrollment could not be confirmed. Please contact support.'
+                        : err.message,
+        message:      isEnrollmentError
+                        ? 'Enrollment could not be confirmed. Please contact support.'
+                        : 'Bridge processing failed',
       });
     }
   }
