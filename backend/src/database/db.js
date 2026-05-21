@@ -383,6 +383,27 @@ function migrate() {
     { name: 'pay_group_id', def: 'INTEGER' },
   ]);
 
+  // Clean up orphaned draft paystubs that were never issued.
+  // These accumulate when payroll runs fail mid-flight or employees are deleted.
+  // Only draft records are removed — printed/deposited history is always preserved.
+  const orphanByEmployee = db.prepare(`
+    DELETE FROM paystubs
+    WHERE check_status = 'draft'
+      AND employee_id IS NOT NULL
+      AND employee_id NOT IN (SELECT id FROM employees)
+  `).run();
+  if (orphanByEmployee.changes > 0)
+    console.log(`[DB] Cleaned up ${orphanByEmployee.changes} orphaned draft paystub(s) with no matching employee`);
+
+  const orphanByPayGroup = db.prepare(`
+    DELETE FROM paystubs
+    WHERE check_status = 'draft'
+      AND pay_group_id IS NOT NULL
+      AND pay_group_id NOT IN (SELECT id FROM pay_groups)
+  `).run();
+  if (orphanByPayGroup.changes > 0)
+    console.log(`[DB] Cleaned up ${orphanByPayGroup.changes} orphaned draft paystub(s) with no matching pay group`);
+
   // notification_log — tracks sent notifications to avoid duplicates
   db.exec(`
     CREATE TABLE IF NOT EXISTS notification_log (

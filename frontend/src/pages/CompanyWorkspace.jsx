@@ -2070,17 +2070,24 @@ function PayLiabilitiesTab({ clientId, client }) {
     finally { setUpdatingStatus(null); }
   }
 
+  // Only checks that have actually been issued to employees belong in Pay Liabilities.
+  // Drafts, late (un-printed), and voided checks have no tax deposit obligation yet.
+  const ISSUED = new Set(['printed', 'direct_deposit_sent', 'direct_deposit_cleared']);
+
   async function reload() {
     const [stubs, crds] = await Promise.all([api.getPaystubs(clientId), api.getPaystubCredits(clientId)]);
     setPaystubs(stubs); setCredits(crds);
-    const pending = stubs.filter(s => s.status === 'pending' || s.status === 'failed' || s.status_940 === 'pending' || s.status_940 === 'failed');
+    const pending = stubs.filter(s =>
+      ISSUED.has(s.check_status) &&
+      (s.status === 'pending' || s.status === 'failed' || s.status_940 === 'pending' || s.status_940 === 'failed')
+    );
     setSelected(new Set(pending.map(s => s.id)));
   }
   useEffect(() => { reload().finally(() => setLoading(false)); }, [clientId]);
 
-  const pending941 = paystubs.filter(s => s.status === 'pending' || s.status === 'failed');
-  const pending940 = paystubs.filter(s => (s.status_940 === 'pending' || s.status_940 === 'failed') && s.futa_tax > 0);
-  const pendingSUI = paystubs.filter(s => s.suta_tax > 0 && (s.status === 'pending' || s.status === 'failed'));
+  const pending941 = paystubs.filter(s => ISSUED.has(s.check_status) && (s.status === 'pending' || s.status === 'failed'));
+  const pending940 = paystubs.filter(s => ISSUED.has(s.check_status) && (s.status_940 === 'pending' || s.status_940 === 'failed') && s.futa_tax > 0);
+  const pendingSUI = paystubs.filter(s => ISSUED.has(s.check_status) && s.suta_tax > 0 && (s.status === 'pending' || s.status === 'failed'));
 
   const unappCredits = credits.filter(c => !c.applied);
   const credit941 = unappCredits.reduce((s, c) => s + (c.total_941_credit || 0), 0);
