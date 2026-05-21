@@ -115,6 +115,13 @@ def main():
     pyautogui.press('enter')
     time.sleep(5)
 
+    # Debug screenshot — shows what is on screen before looking for enroll_ok.png
+    debug_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+    os.makedirs(debug_dir, exist_ok=True)
+    debug_path = os.path.join(debug_dir, 'debug_after_enter.png')
+    pyautogui.screenshot(debug_path)
+    log('Debug screenshot saved to ' + debug_path)
+
     # Step 7 — Click OK (first time)
     log('Step 7: Clicking OK (first)')
     if not find_and_click('enroll_ok.png', 'OK button (first)', timeout=10):
