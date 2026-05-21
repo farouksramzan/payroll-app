@@ -12,12 +12,13 @@ Requires:
     pip install pyautogui opencv-python pillow
 
 Screenshots needed in button_images/:
-    enrollments_tab.png    — Enrollments tab at the top of Batch Provider
-    send_enrollments.png   — Send Enrollments button on the Enrollments screen
-    enroll_import.png      — Import button in the Send Enrollments dialog
-    enroll_add.png         — Add button in the file dialog
-    enroll_ok.png          — First OK button (after selecting file)
-    enroll_ok2.png         — Second OK button (confirmation/summary)
+    enrollments_tab.png   — Enrollments tab at the top of Batch Provider
+    send_enrollments.png  — Send Enrollments button on the Enrollments screen
+    enroll_import.png     — Import button in the Send Enrollments dialog
+    enroll_add.png        — Add button in the File Format Selector dialog
+    enroll_open.png       — Open button in the file browser
+    enroll_ok.png         — First OK button (after file is loaded)
+    enroll_ok2.png        — Second OK button (confirmation/summary)
 """
 
 import sys
@@ -71,7 +72,7 @@ def main():
         print('ENROLLMENT_FAILED: Enrollment file not found: ' + enroll_file_path, flush=True)
         sys.exit(1)
 
-    # Step 1 — Click Enrollments tab at top of Batch Provider
+    # Step 1 — Click Enrollments tab
     log('Step 1: Clicking Enrollments tab')
     if not find_and_click('enrollments_tab.png', 'Enrollments tab', timeout=15):
         print('ENROLLMENT_FAILED: Enrollments tab not found', flush=True)
@@ -83,40 +84,46 @@ def main():
     if not find_and_click('send_enrollments.png', 'Send Enrollments button', timeout=10):
         print('ENROLLMENT_FAILED: Send Enrollments button not found', flush=True)
         sys.exit(1)
-    time.sleep(1.5)
+    time.sleep(1)
 
-    # Step 3 — Click Import button in the dialog
+    # Step 3 — Click Import button
     log('Step 3: Clicking Import button')
     if not find_and_click('enroll_import.png', 'Import button', timeout=10):
         print('ENROLLMENT_FAILED: Import button not found', flush=True)
         sys.exit(1)
-    time.sleep(1.5)
+    time.sleep(2)  # wait for File Format Selector dialog
 
-    # Step 4 — Click Add button in the file dialog
+    # Step 4 — Click Add button in File Format Selector dialog
     log('Step 4: Clicking Add button')
     if not find_and_click('enroll_add.png', 'Add button', timeout=10):
         print('ENROLLMENT_FAILED: Add button not found', flush=True)
         sys.exit(1)
-    time.sleep(1.5)
+    time.sleep(2)  # wait for file browser to open
 
-    # Step 5 — Type full absolute file path in the file browser and press Enter
+    # Step 5 — Type full absolute file path and press Enter
     log('Step 5: Typing full file path: ' + enroll_file_path)
     pyautogui.hotkey('ctrl', 'a')
     time.sleep(0.3)
     pyautogui.typewrite(enroll_file_path, interval=0.15)
     time.sleep(0.3)
     pyautogui.press('enter')
+
+    # Step 6 — Click Open button
+    log('Step 6: Clicking Open button')
+    if not find_and_click('enroll_open.png', 'Open button', timeout=10):
+        print('ENROLLMENT_FAILED: Open button not found', flush=True)
+        sys.exit(1)
     time.sleep(2)
 
-    # Step 6 — Click OK (first time)
-    log('Step 6: Clicking OK (first)')
+    # Step 7 — Click OK (first time)
+    log('Step 7: Clicking OK (first)')
     if not find_and_click('enroll_ok.png', 'OK button (first)', timeout=10):
         print('ENROLLMENT_FAILED: First OK button not found', flush=True)
         sys.exit(1)
-    time.sleep(1.5)
+    time.sleep(2)
 
-    # Step 7 — Click OK (second time — confirmation)
-    log('Step 7: Clicking OK (second)')
+    # Step 8 — Click OK (second time — confirmation)
+    log('Step 8: Clicking OK (second)')
     if not find_and_click('enroll_ok2.png', 'OK button (second)', timeout=10):
         print('ENROLLMENT_FAILED: Second OK button not found', flush=True)
         sys.exit(1)
