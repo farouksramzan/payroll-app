@@ -1505,10 +1505,18 @@ router.put('/:id/status', (req, res) => {
   if (!stub) return res.status(404).json({ error: 'Paystub not found' });
 
   const { status } = req.body;
-  const allowed = ['draft', 'printed', 'direct_deposit_sent', 'direct_deposit_cleared', 'voided', 'late'];
-  if (!allowed.includes(status)) return res.status(400).json({ error: 'Invalid status' });
 
-  db.prepare('UPDATE paystubs SET check_status = ? WHERE id = ?').run(status, req.params.id);
+  // EFTPS submission statuses → update the status column (drives liability view)
+  if (['submitted', 'pending', 'failed'].includes(status)) {
+    db.prepare('UPDATE paystubs SET status = ? WHERE id = ?').run(status, stub.id);
+    return res.json({ id: parseInt(req.params.id), status });
+  }
+
+  // Check lifecycle statuses → update check_status column
+  const checkAllowed = ['draft', 'printed', 'direct_deposit_sent', 'direct_deposit_cleared', 'voided', 'late'];
+  if (!checkAllowed.includes(status)) return res.status(400).json({ error: 'Invalid status' });
+
+  db.prepare('UPDATE paystubs SET check_status = ? WHERE id = ?').run(status, stub.id);
   res.json({ id: parseInt(req.params.id), checkStatus: status });
 });
 
