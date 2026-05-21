@@ -113,7 +113,7 @@ def main():
     # Step 6 — Press Enter again to confirm Open (more reliable than image search)
     log('Step 6: Pressing Enter to open file')
     pyautogui.press('enter')
-    time.sleep(2)
+    time.sleep(5)
 
     # Step 7 — Click OK (first time)
     log('Step 7: Clicking OK (first)')
