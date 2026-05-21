@@ -40,12 +40,12 @@ def img(filename):
     return os.path.join(IMAGES_DIR, filename)
 
 
-def find_and_click(filename, description, timeout=10):
+def find_and_click(filename, description, timeout=10, confidence=CONFIDENCE):
     log('Looking for ' + description + '...')
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            loc = pyautogui.locateOnScreen(img(filename), confidence=CONFIDENCE)
+            loc = pyautogui.locateOnScreen(img(filename), confidence=confidence)
             if loc:
                 cx, cy = pyautogui.center(loc)
                 log('Found ' + description + ' at (' + str(cx) + ', ' + str(cy) + ') — clicking')
@@ -108,10 +108,11 @@ def main():
     pyautogui.typewrite(filename, interval=0.15)
     time.sleep(0.3)
     pyautogui.press('enter')
+    time.sleep(4)
 
     # Step 6 — Click Open button
     log('Step 6: Clicking Open button')
-    if not find_and_click('enroll_open.png', 'Open button', timeout=10):
+    if not find_and_click('enroll_open.png', 'Open button', timeout=10, confidence=0.7):
         print('ENROLLMENT_FAILED: Open button not found', flush=True)
         sys.exit(1)
     time.sleep(2)
