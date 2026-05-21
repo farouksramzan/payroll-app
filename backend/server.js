@@ -59,6 +59,12 @@ app.use('/api/reports',     reportRoutes);
 app.use('/api/paystubs',    paystubRoutes);
 app.use('/api/pay-groups',  payGroupRoutes);
 app.get('/api/health',      (req, res) => res.json({ status: 'ok', env: process.env.NODE_ENV }));
+app.get('/api/bridge/job-status/:jobId', (req, res) => {
+  const status = bridgeManager.getJobStatus(req.params.jobId);
+  if (!status) return res.status(404).json({ error: 'Job not found' });
+  res.json(status);
+});
+
 app.get('/api/bridge/status', (req, res) => {
   const connected = bridgeManager.isConnected;
   // Log every poll in dev so Railway's log stream shows the real-time state

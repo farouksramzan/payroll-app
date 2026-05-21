@@ -13,8 +13,9 @@ class BridgeManager extends EventEmitter {
     this._ws         = null;
     this._wss        = null;
     this._pingTimer  = null;
-    this._pending    = new Map(); // jobId → { resolve, reject, timeout }
+    this._pending    = new Map(); // jobId → { resolve?, reject?, onResult?, timeout, async }
     this._jobSeq     = 0;
+    this._jobStatuses = new Map(); // jobId → { status, message, updatedAt, confirmation? }
   }
 
   attach(httpServer) {
@@ -115,10 +116,11 @@ class BridgeManager extends EventEmitter {
     }
 
     switch (msg.type) {
-      case 'result': this._handleResult(msg); break;
-      case 'ping':   ws.send(JSON.stringify({ type: 'pong' })); break;
-      case 'pong':   ws.isAlive = true; break;
-      default:       console.log(`[Bridge WS] Unknown type: ${msg.type}`);
+      case 'result':        this._handleResult(msg);       break;
+      case 'status_update': this._handleStatusUpdate(msg); break;
+      case 'ping':          ws.send(JSON.stringify({ type: 'pong' })); break;
+      case 'pong':          ws.isAlive = true;             break;
+      default:              console.log(`[Bridge WS] Unknown type: ${msg.type}`);
     }
   }
 
@@ -143,13 +145,72 @@ class BridgeManager extends EventEmitter {
     }, SERVER_PING_MS);
   }
 
+  _handleStatusUpdate(msg) {
+    if (msg.jobId) {
+      this._jobStatuses.set(msg.jobId, {
+        status:    msg.status  || 'processing',
+        message:   msg.message || '',
+        updatedAt: new Date().toISOString(),
+      });
+    }
+    this.emit('statusUpdate', msg);
+    console.log(`[Bridge WS] Status update for job ${msg.jobId}: ${msg.status} — ${msg.message}`);
+  }
+
   _handleResult(msg) {
     const p = this._pending.get(msg.jobId);
     if (!p) return;
     clearTimeout(p.timeout);
     this._pending.delete(msg.jobId);
-    if (msg.success) p.resolve(msg);
-    else p.reject(new Error(msg.error || 'Bridge processing failed'));
+
+    if (p.async) {
+      // Async/fire-and-forget job — call result callback and update status store
+      this._jobStatuses.set(msg.jobId, {
+        status:       msg.success ? 'completed' : 'failed',
+        message:      msg.success ? 'Your payment is sent!' : (msg.error || 'Bridge processing failed'),
+        confirmation: msg.confirmation || null,
+        updatedAt:    new Date().toISOString(),
+      });
+      p.onResult?.(msg.success, msg);
+    } else {
+      // Sync/promise-based job
+      if (msg.success) p.resolve(msg);
+      else p.reject(new Error(msg.error || 'Bridge processing failed'));
+    }
+  }
+
+  getJobStatus(jobId) {
+    return this._jobStatuses.get(jobId) || null;
+  }
+
+  // Fire-and-forget variant — returns jobId immediately, calls onResult when complete.
+  // Use for jobs that may take a long time (e.g. first enrollment + payment).
+  queueJob(job, onResult, timeoutMs = 6 * 60 * 60 * 1000) {
+    if (!this.isConnected) {
+      throw new Error('ACH Bridge is not connected. Start the bridge service on Computer 2.');
+    }
+    const jobId  = `job_${Date.now()}_${++this._jobSeq}`;
+    const payload = { type: 'submit', jobId, ...job };
+
+    this._jobStatuses.set(jobId, {
+      status:    'processing',
+      message:   'Bridge job queued',
+      updatedAt: new Date().toISOString(),
+    });
+
+    const timeout = setTimeout(() => {
+      this._jobStatuses.set(jobId, {
+        status:    'failed',
+        message:   `Timed out after ${Math.round(timeoutMs / 3_600_000)}h`,
+        updatedAt: new Date().toISOString(),
+      });
+      this._pending.delete(jobId);
+      onResult?.(false, { error: 'Bridge job timed out' });
+    }, timeoutMs);
+
+    this._pending.set(jobId, { onResult, timeout, async: true });
+    this._ws.send(JSON.stringify(payload));
+    return jobId;
   }
 
   get isConnected() {

@@ -35,6 +35,17 @@ EFTPS Batch Provider on this machine.
 
 ---
 
+## Enrollment status check images (`bp_enrollment_check.py`)
+
+| Filename | What to capture | When visible |
+|---|---|---|
+| `enrollments_tab.png` | The **Enrollments** tab at the top of Batch Provider | Always visible (shared with above) |
+| `enrollment_inquiry.png` | The **Enrollment Inquiry** button on the Enrollments screen | After clicking the Enrollments tab |
+| `enroll_sync.png` | The **Sync** button in the Enrollment Inquiry screen | After the inquiry window opens |
+| `enroll_ok.png` | The **OK / Close** button to dismiss any confirmation dialog | After sync completes (shared with above) |
+
+---
+
 ## How to capture each image
 
 1. Open EFTPS Batch Provider and navigate to the screen where the button appears.

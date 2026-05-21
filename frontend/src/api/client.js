@@ -73,6 +73,7 @@ const api = {
   getPaystubCredits: (clientId) => request(`/paystubs/credits?clientId=${clientId}`),
   markLateChecks: () => request('/paystubs/mark-late', { method: 'POST' }),
   batchSubmitPaystubs: (data) => request('/paystubs/batch-submit', { method: 'POST', body: JSON.stringify(data) }),
+  getBridgeJobStatus: (jobId) => request(`/bridge/job-status/${jobId}`),
   printSelectedChecks: async (clientId, paystubIds) => {
     const token = localStorage.getItem('token');
     const res = await fetch('/api/paystubs/print-selected', {

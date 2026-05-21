@@ -22,9 +22,10 @@ const { generateBatchProviderFile }  = require('./achGenerator');
 const { generateEnrollmentFile }     = require('./enrollmentGenerator');
 const { saveACHFile, WATCHED_FOLDER } = require('./batchProvider');
 
-const BP_SCRIPT          = path.join(__dirname, '..', 'bp_automation.py');
-const BP_ENROLL_SCRIPT   = path.join(__dirname, '..', 'bp_enrollment.py');
-const ENROLLED_JSON      = path.join(__dirname, '..', 'enrolled_clients.json');
+const BP_SCRIPT               = path.join(__dirname, '..', 'bp_automation.py');
+const BP_ENROLL_SCRIPT        = path.join(__dirname, '..', 'bp_enrollment.py');
+const BP_ENROLL_CHECK_SCRIPT  = path.join(__dirname, '..', 'bp_enrollment_check.py');
+const ENROLLED_JSON           = path.join(__dirname, '..', 'enrolled_clients.json');
 const ENROLL_FOLDER      = path.join(__dirname, '..', 'data', 'enrollments-out');
 
 // ── Enrollment tracking ───────────────────────────────────────────────────────
@@ -91,6 +92,21 @@ function runEnrollmentAutomation(enrollFilePath, logFn) {
     timeout:      120000,
     successToken: 'ENROLLMENT_COMPLETE',
     failToken:    'ENROLLMENT_FAILED',
+  });
+}
+
+// Returns true if EFTPS confirms the EIN is Active, false otherwise (never rejects).
+function checkEnrollmentActive(ein, logFn) {
+  return new Promise((resolve) => {
+    const { execFile } = require('child_process');
+    execFile('python', [BP_ENROLL_CHECK_SCRIPT, cleanEin(ein)], { windowsHide: true, timeout: 120000 },
+      (err, stdout, stderr) => {
+        if (stdout) stdout.split('\n').filter(Boolean).forEach(l => logFn(l));
+        if (stderr) stderr.split('\n').filter(Boolean).forEach(l => logFn(`[stderr] ${l}`));
+        if (err) logFn(`[ENROLL CHECK] Script error: ${err.message}`);
+        resolve(!!(stdout && stdout.includes('ENROLLMENT_ACTIVE')));
+      }
+    );
   });
 }
 
@@ -252,8 +268,46 @@ class BridgeClient extends EventEmitter {
 
         markEnrolled(job.ein);
         log(`EIN ${cleanEin(job.ein)} added to enrolled_clients.json`);
-        log('Waiting 5s for Batch Provider to sync enrollment with EFTPS...');
+        log('Waiting 5s before polling EFTPS for Active enrollment status...');
         await new Promise(resolve => setTimeout(resolve, 5000));
+
+        // Notify web app that we are waiting for EFTPS to activate the enrollment
+        this._send({
+          type:    'status_update',
+          jobId,
+          status:  'enrollment_pending',
+          message: 'Processing. Since this is your first payment with us, it can take 15 mins to 1 hour.',
+        });
+
+        // Poll up to 10 times, every 30 minutes, until EFTPS shows Active
+        const MAX_RETRIES    = 10;
+        const POLL_INTERVAL  = 30 * 60 * 1000; // 30 min
+        let enrollmentActive = false;
+
+        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+          log(`[ENROLL] Waiting 30 minutes before enrollment status check (attempt ${attempt}/${MAX_RETRIES})...`);
+          await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
+
+          log(`[ENROLL] Running enrollment status check for EIN ${cleanEin(job.ein)}...`);
+          enrollmentActive = await checkEnrollmentActive(job.ein, log);
+
+          if (enrollmentActive) {
+            log(`[ENROLL] EIN ${cleanEin(job.ein)} confirmed Active — proceeding with payment`);
+            break;
+          }
+
+          log(`[ENROLL] Enrollment not yet Active (attempt ${attempt}/${MAX_RETRIES})`);
+          this._send({
+            type:    'status_update',
+            jobId,
+            status:  'enrollment_pending',
+            message: `Enrollment pending — checking again in 30 minutes (attempt ${attempt}/${MAX_RETRIES}).`,
+          });
+        }
+
+        if (!enrollmentActive) {
+          throw new Error('Enrollment could not be confirmed after 10 attempts. Please contact support.');
+        }
       } else {
         log(`EIN ${cleanEin(job.ein)} already enrolled — skipping enrollment`);
       }

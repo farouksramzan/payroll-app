@@ -2046,6 +2046,10 @@ function PayLiabilitiesTab({ clientId, client }) {
   const [sentOpen, setSentOpen] = useState(false);
   const [statusDropdownId, setStatusDropdownId] = useState(null);
   const [updatingStatus, setUpdatingStatus] = useState(null);
+  const [activeJobId, setActiveJobId]       = useState(null);
+  const [jobStatus,   setJobStatus]         = useState(null);   // 'enrollment_pending' | 'completed' | 'failed'
+  const [jobMessage,  setJobMessage]        = useState('');
+  const pollRef = useRef(null);
 
   const todayStr = new Date().toISOString().slice(0, 10);
 
@@ -2101,6 +2105,27 @@ function PayLiabilitiesTab({ clientId, client }) {
   const total940 = sel940.reduce((s, p) => s + p.futa_tax, 0) + credit940;
   const totalSUI = eSUI.filter(s => selected.has(s.id)).reduce((s, p) => s + (p.suta_tax || 0), 0);
 
+  // Poll job status every 60s while a bridge job is active
+  useEffect(() => {
+    if (!activeJobId) return;
+    pollRef.current = setInterval(async () => {
+      try {
+        const s = await api.getBridgeJobStatus(activeJobId);
+        setJobStatus(s.status);
+        setJobMessage(s.message || '');
+        if (s.status === 'completed' || s.status === 'failed') {
+          clearInterval(pollRef.current);
+          setActiveJobId(null);
+          await reload();
+        }
+      } catch { /* ignore transient errors */ }
+    }, 60_000);
+    return () => clearInterval(pollRef.current);
+  }, [activeJobId]);
+
+  // Clear polling on unmount
+  useEffect(() => () => clearInterval(pollRef.current), []);
+
   async function handleSubmit(taxType) {
     const sel = taxType === '941' ? sel941 : sel940;
     const ids = sel.map(s => s.id);
@@ -2110,7 +2135,13 @@ function PayLiabilitiesTab({ clientId, client }) {
     setSubmitting(taxType); setResult(null);
     try {
       const res = await api.batchSubmitPaystubs({ clientId, paystubIds: ids, taxType });
-      setResult(res); await reload();
+      setResult(res);
+      if (res.jobId) {
+        setActiveJobId(res.jobId);
+        setJobStatus('processing');
+        setJobMessage(res.message || 'Bridge job queued — polling for updates');
+      }
+      await reload();
     } catch (e) { setResult({ error: e.message }); }
     finally { setSubmitting(null); }
   }
@@ -2305,7 +2336,32 @@ function PayLiabilitiesTab({ clientId, client }) {
         </div>
       </div>
 
-      {result && (
+      {/* Live job status banner (polling) */}
+      {activeJobId && (
+        <div className="alert alert-info" style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span className="spinner spinner-dark" style={{ width: 14, height: 14, flexShrink: 0 }} />
+          <span style={{ flex: 1 }}>
+            {jobStatus === 'enrollment_pending'
+              ? 'Processing. Since this is your first payment with us, it can take 15 mins to 1 hour.'
+              : (jobMessage || 'Submitting to EFTPS — checking status…')}
+          </span>
+        </div>
+      )}
+      {!activeJobId && jobStatus === 'completed' && (
+        <div className="alert alert-success" style={{ marginBottom: 16 }}>
+          <span>✓</span>
+          <span>Your payment is sent!</span>
+          <button onClick={() => { setJobStatus(null); setJobMessage(''); }} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button>
+        </div>
+      )}
+      {!activeJobId && jobStatus === 'failed' && (
+        <div className="alert alert-error" style={{ marginBottom: 16 }}>
+          <span>⚠</span>
+          <span>{jobMessage || 'Bridge processing failed.'}</span>
+          <button onClick={() => { setJobStatus(null); setJobMessage(''); }} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button>
+        </div>
+      )}
+      {result && !activeJobId && jobStatus !== 'completed' && jobStatus !== 'failed' && (
         <div className={`alert ${result.error ? 'alert-error' : 'alert-success'}`} style={{ marginBottom: 16 }}>
           <span>{result.error ? '⚠' : '✓'}</span>
           <span>{result.error ? result.error : `Submitted ${result.submitted} paystub${result.submitted !== 1 ? 's' : ''} — ${fmt(result.totalDeposit)}${result.confirmation ? ` · Conf: ${result.confirmation}` : ''}`}</span>

@@ -39,7 +39,9 @@
       "Bash(node -e \"require\\('./src/routes/submissions.js'\\); console.log\\('submissions.js OK'\\)\")",
       "Bash(node -e \"require\\('./src/routes/paystubs.js'\\); console.log\\('paystubs.js OK'\\)\")",
       "Bash(node -e \"require\\('./src/enrollmentGenerator.js'\\); console.log\\('enrollmentGenerator.js OK'\\)\")",
-      "Bash(node -e \"require\\('./src/wsClient.js'\\); console.log\\('wsClient.js OK'\\)\")"
+      "Bash(node -e \"require\\('./src/wsClient.js'\\); console.log\\('wsClient.js OK'\\)\")",
+      "Bash(git commit -m 'Lower bp_enrollment.py confidence threshold to 0.7 *)",
+      "Bash(git commit -m 'Type only filename in enrollment file browser, not full path *)"
     ]
   }
 }

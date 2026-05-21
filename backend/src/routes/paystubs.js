@@ -1162,7 +1162,7 @@ router.post('/batch-submit', async (req, res) => {
         ? pending.reduce((s, p) => s + p.futa_tax, 0)
         : pending.reduce((s, p) => s + p.total_deposit, 0);
 
-      result = await bridgeManager.sendJob({
+      const jobPayload = {
         submissionId:   `batch-${taxType}-${Date.now()}`,
         ein:            client.ein,
         pin,
@@ -1176,6 +1176,35 @@ router.post('/batch-submit', async (req, res) => {
         taxForm:        taxType,
         taxTypeCode:    taxType === '940' ? '94007' : '94105',
         taxData:        { totalDeposit: Math.round(totalDeposit * 100) / 100 },
+      };
+
+      const jobId = bridgeManager.queueJob(jobPayload, (success, msg) => {
+        const dbInst = getDb();
+        const ph = ids.map(() => '?').join(',');
+        if (success) {
+          const confirmation = msg.confirmation || msg.achFilePath || null;
+          if (taxType === '940') {
+            dbInst.prepare(`UPDATE paystubs SET status_940='submitted', eftps_940_confirmation=?, eftps_940_submitted_at=CURRENT_TIMESTAMP WHERE id IN (${ph})`).run(confirmation, ...ids);
+          } else {
+            dbInst.prepare(`UPDATE paystubs SET status='submitted', eftps_confirmation=?, submitted_at=CURRENT_TIMESTAMP, submission_error=NULL WHERE id IN (${ph})`).run(confirmation, ...ids);
+          }
+        } else {
+          const errMsg = msg.error || 'Bridge processing failed';
+          if (taxType === '941') {
+            dbInst.prepare(`UPDATE paystubs SET status='failed', submission_error=? WHERE id IN (${ph})`).run(errMsg, ...ids);
+          } else {
+            dbInst.prepare(`UPDATE paystubs SET status_940='failed' WHERE id IN (${ph})`).run(...ids);
+          }
+        }
+      });
+
+      return res.json({
+        jobId,
+        submitted: ids.length,
+        taxType,
+        totalDeposit: Math.round(totalDeposit * 100) / 100,
+        status:  'processing',
+        message: 'Bridge job queued — polling for updates',
       });
     } else {
       const internetPassword = client.eftps_internet_password_encrypted
