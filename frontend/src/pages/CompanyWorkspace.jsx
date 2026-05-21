@@ -1133,7 +1133,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
           return { employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay };
         });
         const res = await api.runPayroll({ clientId, payPeriodStart: period.start, payPeriodEnd: period.end, settlementDate: period.payDate, payGroupId: currentGroupId, employees: payrollEmps });
-        if (res?.created) res.created.forEach(s => allNewIds.push(s.id));
+        if (res?.paystubs) res.paystubs.forEach(s => allNewIds.push(s.id));
       }
       // Include selected late stubs in print batch (NOT EFTPS — late checks are payroll, not tax deposits)
       selectedLateStubs.forEach(id => allNewIds.push(id));
@@ -1212,7 +1212,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
         clientId, payPeriodStart: start, payPeriodEnd: end, settlementDate: payDate,
         employees: [{ employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay }],
       });
-      const newIds = (res?.created || []).map(s => s.id);
+      const newIds = (res?.paystubs || []).map(s => s.id);
       await Promise.all(newIds.map(id => api.updatePaystubStatus(id, 'printed').catch(() => {})));
       await reloadStubs();
       setUngroupedModal(false);

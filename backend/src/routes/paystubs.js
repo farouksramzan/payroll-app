@@ -713,6 +713,7 @@ function advanceDate(dateStr, frequency) {
 }
 
 router.post('/payroll-run', (req, res) => {
+  try {
   const db = getDb();
   const { clientId, payPeriodStart, payPeriodEnd, settlementDate, employees, paymentMethod, payGroupId } = req.body;
   if (!clientId || !payPeriodStart || !payPeriodEnd || !Array.isArray(employees)) {
@@ -846,6 +847,10 @@ router.post('/payroll-run', (req, res) => {
   })();
 
   res.json({ runId, count: results.length, paystubs: results });
+  } catch (err) {
+    console.error('[payroll-run]', err);
+    res.status(500).json({ error: err.message || 'Payroll run failed' });
+  }
 });
 
 // ── POST /api/paystubs/batch-submit ──────────────────────────────────────────
