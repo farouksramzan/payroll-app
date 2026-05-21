@@ -112,7 +112,7 @@ def main():
 
     # Step 6 — Click Open button
     log('Step 6: Clicking Open button')
-    if not find_and_click('enroll_open.png', 'Open button', timeout=10, confidence=0.7):
+    if not find_and_click('open.png', 'Open button', timeout=10, confidence=0.7):
         print('ENROLLMENT_FAILED: Open button not found', flush=True)
         sys.exit(1)
     time.sleep(2)
