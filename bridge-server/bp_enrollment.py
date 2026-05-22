@@ -104,51 +104,44 @@ def main():
     log('Step 4 complete: Add button clicked — waiting 2s for file browser')
     time.sleep(2)
 
-    # Step 5 — Select all text in filename field and type filename
+    # Step 5 — Select all text in filename field, type filename, press Enter once
+    # (matches bp_automation.py exactly — one Enter submits the file browser)
     filename = os.path.basename(enroll_file_path)
     log('Executing step 5: select all in filename field')
     pyautogui.hotkey('ctrl', 'a')
     log('Step 5a complete: Ctrl+A sent')
-    time.sleep(0.3)
+    time.sleep(0.2)
     log('Executing step 5b: type filename — ' + filename)
     pyautogui.typewrite(filename, interval=0.15)
     log('Step 5b complete: filename typed')
-    time.sleep(0.3)
-    log('Executing step 5c: press Enter to submit filename')
+    time.sleep(0.2)
+    log('Executing step 5c: press Enter once to close file browser')
     pyautogui.press('enter')
-    log('Step 5c complete: Enter pressed — waiting 4s for file browser to process')
-    time.sleep(4)
-
-    # Step 6 — Press Enter to confirm Open
-    log('Executing step 6: press Enter to confirm Open')
-    pyautogui.press('enter')
-    log('Step 6 complete: Enter pressed — waiting 5s for dialog to appear')
-    time.sleep(5)
+    log('Step 5c complete: Enter pressed — waiting 2s for File Format Selector to return')
+    time.sleep(2)
 
     # Debug screenshot — shows what is on screen before looking for enroll_ok.png
     debug_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
     os.makedirs(debug_dir, exist_ok=True)
     debug_path = os.path.join(debug_dir, 'debug_after_enter.png')
-    log('Executing step 6d: saving debug screenshot to ' + debug_path)
+    log('Executing step 5d: saving debug screenshot to ' + debug_path)
     pyautogui.screenshot(debug_path)
-    log('Step 6d complete: debug screenshot saved')
+    log('Step 5d complete: debug screenshot saved')
 
-    # Step 7 — Wait for dialog to fully render then click OK (first time)
-    log('Executing step 7: waiting 5s for File Format Selector dialog to fully render')
-    time.sleep(5)
-    log('Executing step 7: click OK button (first)')
+    # Step 6 — Click OK in the File Format Selector (file is now loaded)
+    log('Executing step 6: click OK button (first)')
     if not find_and_click('enroll_ok.png', 'OK button (first)', timeout=10, confidence=0.6):
         print('ENROLLMENT_FAILED: First OK button not found', flush=True)
         sys.exit(1)
-    log('Step 7 complete: first OK clicked — waiting 2s')
+    log('Step 6 complete: first OK clicked — waiting 2s')
     time.sleep(2)
 
-    # Step 8 — Click OK (second time — confirmation/summary)
-    log('Executing step 8: click OK button (second — confirmation)')
+    # Step 7 — Click OK (second time — confirmation/summary)
+    log('Executing step 7: click OK button (second — confirmation)')
     if not find_and_click('enroll_ok2.png', 'OK button (second)', timeout=10, confidence=0.6):
         print('ENROLLMENT_FAILED: Second OK button not found', flush=True)
         sys.exit(1)
-    log('Step 8 complete: second OK clicked')
+    log('Step 7 complete: second OK clicked')
     time.sleep(1)
 
     log('All steps complete — enrollment import finished successfully')
