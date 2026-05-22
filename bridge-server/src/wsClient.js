@@ -266,8 +266,8 @@ class BridgeClient extends EventEmitter {
 
         await runEnrollmentAutomation(enrollFilePath, log);
 
-        markEnrolled(job.ein);
-        log(`EIN ${cleanEin(job.ein)} added to enrolled_clients.json`);
+        // Do NOT mark enrolled yet — only add to enrolled_clients.json once EFTPS confirms Active.
+        // If the check fails or times out the EIN stays out so the next job retries enrollment.
 
         // Immediately check — EFTPS sometimes activates within seconds
         log(`[ENROLL] Checking enrollment status immediately after ENROLLMENT_COMPLETE...`);
@@ -312,6 +312,10 @@ class BridgeClient extends EventEmitter {
         if (!enrollmentActive) {
           throw new Error('Enrollment could not be confirmed after 1.5 hours. Please contact support.');
         }
+
+        // Only mark enrolled once EFTPS has confirmed Active status
+        markEnrolled(job.ein);
+        log(`EIN ${cleanEin(job.ein)} confirmed Active and added to enrolled_clients.json`);
       } else {
         log(`EIN ${cleanEin(job.ein)} already enrolled — skipping enrollment`);
       }
