@@ -142,20 +142,20 @@ def main():
     pyautogui.typewrite(MASTER_PIN, interval=0.15)
     time.sleep(0.3)
 
-    # ── Step 5: Click Password field and type Master Password ─────────────────
-    log('Step 5: Clicking Password field')
-    if not find_and_click('enroll_sync_password.png', 'Password field', timeout=10):
-        print('ENROLLMENT_PENDING: Password field not found', flush=True)
-        sys.exit(1)
+    # ── Step 5: Click Password field at fixed coordinates and type Master Password
+    log('Step 5: Clicking Password field at (972, 494)')
+    time.sleep(0.5)
+    pyautogui.click(972, 494)
+    log('Step 5 complete: Password field clicked')
     pyautogui.hotkey('ctrl', 'a')
     time.sleep(0.2)
     pyautogui.typewrite(MASTER_PASSWORD, interval=0.15)
     time.sleep(0.3)
 
     # ── Step 6: Click Submit at fixed coordinates ─────────────────────────────
-    log('Step 6: Clicking Submit at (1862, 961)')
+    log('Step 6: Clicking Submit at (1844, 959)')
     time.sleep(0.5)
-    pyautogui.click(1862, 961)
+    pyautogui.click(1844, 959)
     log('Step 6 complete: Submit clicked')
     time.sleep(3)  # wait for sync to complete
 
