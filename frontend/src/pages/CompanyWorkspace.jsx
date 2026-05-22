@@ -2070,12 +2070,9 @@ function PayLiabilitiesTab({ clientId, client }) {
     finally { setUpdatingStatus(null); }
   }
 
-  // Checks that belong in Pay Liabilities: issued to employees AND tax deposit not yet confirmed.
-  // 'late' included — a late check has been issued and its taxes are still owed.
-  const ISSUED = new Set(['printed', 'direct_deposit_sent', 'direct_deposit_cleared', 'late']);
-  // 'processing' = submission attempted but not yet confirmed by EFTPS bridge.
-  const UNPAID_941 = (s) => s.status     === 'pending' || s.status     === 'failed' || s.status     === 'processing';
-  const UNPAID_940 = (s) => s.status_940 === 'pending' || s.status_940 === 'failed' || s.status_940 === 'processing';
+  const ISSUED    = new Set(['printed', 'deposited']);
+  const UNPAID_941 = (s) => s.status     === 'pending' || s.status     === 'processing';
+  const UNPAID_940 = (s) => s.status_940 === 'pending' || s.status_940 === 'processing';
 
   async function reload() {
     const [stubs, crds] = await Promise.all([api.getPaystubs(clientId), api.getPaystubCredits(clientId)]);
