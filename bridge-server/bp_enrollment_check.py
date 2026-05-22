@@ -112,37 +112,37 @@ def main():
         log('WARNING: BATCH_PROVIDER_MASTER_PASSWORD not set — sync dialog may fail')
 
     # ── Step 1: Click Enrollments tab ────────────────────────────────────────
-    log('Step 1: Clicking Enrollments tab')
-    if not find_and_click('enrollments_tab.png', 'Enrollments tab', timeout=15):
-        print('ENROLLMENT_PENDING: Enrollments tab not found', flush=True)
-        sys.exit(1)
+    log('Step 1: Clicking Enrollments tab at (312, 103)')
+    time.sleep(0.5)
+    pyautogui.click(312, 103)
+    log('Step 1 complete: Enrollments tab clicked')
     time.sleep(1)
 
     # ── Step 2: Click Enrollment Inquiry ─────────────────────────────────────
-    log('Step 2: Clicking Enrollment Inquiry')
-    if not find_and_click('enrollment_inquiry.png', 'Enrollment Inquiry button', timeout=10):
-        print('ENROLLMENT_PENDING: Enrollment Inquiry button not found', flush=True)
-        sys.exit(1)
+    log('Step 2: Clicking Enrollment Inquiry at (189, 134)')
+    time.sleep(0.5)
+    pyautogui.click(189, 134)
+    log('Step 2 complete: Enrollment Inquiry clicked')
     time.sleep(1)
 
     # ── Step 3: Click Sync ───────────────────────────────────────────────────
-    log('Step 3: Clicking Sync')
-    if not find_and_click('enroll_sync.png', 'Sync button', timeout=10):
-        print('ENROLLMENT_PENDING: Sync button not found', flush=True)
-        sys.exit(1)
+    log('Step 3: Clicking Sync at (1830, 964)')
+    time.sleep(0.5)
+    pyautogui.click(1830, 964)
+    log('Step 3 complete: Sync clicked')
     time.sleep(2)  # wait for PIN/Password dialog to appear
 
     # ── Step 4: Click PIN field and type Master PIN ───────────────────────────
-    log('Step 4: Clicking PIN field')
-    if not find_and_click('enroll_sync_pin.png', 'PIN field', timeout=10):
-        print('ENROLLMENT_PENDING: PIN field not found', flush=True)
-        sys.exit(1)
+    log('Step 4: Clicking PIN field at (934, 472)')
+    time.sleep(0.5)
+    pyautogui.click(934, 472)
+    log('Step 4 complete: PIN field clicked')
     pyautogui.hotkey('ctrl', 'a')
     time.sleep(0.2)
     pyautogui.typewrite(MASTER_PIN, interval=0.15)
     time.sleep(0.3)
 
-    # ── Step 5: Click Password field at fixed coordinates and type Master Password
+    # ── Step 5: Click Password field and type Master Password ─────────────────
     log('Step 5: Clicking Password field at (972, 494)')
     time.sleep(0.5)
     pyautogui.click(972, 494)
@@ -152,7 +152,7 @@ def main():
     pyautogui.typewrite(MASTER_PASSWORD, interval=0.15)
     time.sleep(0.3)
 
-    # ── Step 6: Click Submit at fixed coordinates ─────────────────────────────
+    # ── Step 6: Click Submit ──────────────────────────────────────────────────
     log('Step 6: Clicking Submit at (1844, 959)')
     time.sleep(0.5)
     pyautogui.click(1844, 959)
@@ -160,9 +160,10 @@ def main():
     time.sleep(3)  # wait for sync to complete
 
     # ── Step 7: Click OK to dismiss confirmation ──────────────────────────────
-    log('Step 7: Clicking OK after sync')
-    if not find_and_click('enroll_sync_ok.png', 'OK button', timeout=10):
-        log('WARNING: OK button not found after sync — continuing anyway')
+    log('Step 7: Clicking OK at (821, 683)')
+    time.sleep(0.5)
+    pyautogui.click(821, 683)
+    log('Step 7 complete: OK clicked')
     time.sleep(5)  # wait for enrollment list to fully load
 
     # ── Step 8: OCR the screen and look for EIN with Active status ────────────

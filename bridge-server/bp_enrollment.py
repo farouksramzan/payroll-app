@@ -73,34 +73,30 @@ def main():
         sys.exit(1)
 
     # Step 1 — Click Enrollments tab
-    log('Executing step 1: click Enrollments tab')
-    if not find_and_click('enrollments_tab.png', 'Enrollments tab', timeout=15):
-        print('ENROLLMENT_FAILED: Enrollments tab not found', flush=True)
-        sys.exit(1)
+    log('Executing step 1: click Enrollments tab at (312, 103)')
+    time.sleep(0.5)
+    pyautogui.click(312, 103)
     log('Step 1 complete: Enrollments tab clicked')
     time.sleep(1)
 
     # Step 2 — Click Send Enrollments button
-    log('Executing step 2: click Send Enrollments button')
-    if not find_and_click('send_enrollments.png', 'Send Enrollments button', timeout=10):
-        print('ENROLLMENT_FAILED: Send Enrollments button not found', flush=True)
-        sys.exit(1)
+    log('Executing step 2: click Send Enrollments button at (73, 131)')
+    time.sleep(0.5)
+    pyautogui.click(73, 131)
     log('Step 2 complete: Send Enrollments button clicked')
     time.sleep(1)
 
     # Step 3 — Click Import button
-    log('Executing step 3: click Import button')
-    if not find_and_click('enroll_import.png', 'Import button', timeout=10):
-        print('ENROLLMENT_FAILED: Import button not found', flush=True)
-        sys.exit(1)
+    log('Executing step 3: click Import button at (373, 968)')
+    time.sleep(0.5)
+    pyautogui.click(373, 968)
     log('Step 3 complete: Import button clicked — waiting 2s for File Format Selector')
     time.sleep(2)
 
     # Step 4 — Click Add button in File Format Selector dialog
-    log('Executing step 4: click Add button in File Format Selector')
-    if not find_and_click('enroll_add.png', 'Add button', timeout=10):
-        print('ENROLLMENT_FAILED: Add button not found', flush=True)
-        sys.exit(1)
+    log('Executing step 4: click Add button at (808, 505)')
+    time.sleep(0.5)
+    pyautogui.click(808, 505)
     log('Step 4 complete: Add button clicked — waiting 2s for file browser')
     time.sleep(2)
 
@@ -129,51 +125,30 @@ def main():
     log('Step 5d complete: debug screenshot saved')
 
     # Step 6 — Click OK in the File Format Selector (file is now loaded)
-    log('Executing step 6: click OK button (first)')
-    if not find_and_click('enroll_ok.png', 'OK button (first)', timeout=10, confidence=0.6):
-        print('ENROLLMENT_FAILED: First OK button not found', flush=True)
-        sys.exit(1)
+    log('Executing step 6: click OK button (first) at (1129, 641)')
+    time.sleep(0.5)
+    pyautogui.click(1129, 641)
     log('Step 6 complete: first OK clicked — waiting 2s')
     time.sleep(2)
 
     # Step 7 — Click OK (second time — confirmation/summary)
-    log('Executing step 7: click OK button (second — confirmation)')
-    if not find_and_click('enroll_ok2.png', 'OK button (second)', timeout=10, confidence=0.6):
-        print('ENROLLMENT_FAILED: Second OK button not found', flush=True)
-        sys.exit(1)
+    log('Executing step 7: click OK button (second) at (812, 670)')
+    time.sleep(0.5)
+    pyautogui.click(812, 670)
     log('Step 7 complete: second OK clicked')
     time.sleep(2)
 
-    # Step 8 — Select enrollment checkboxes
-    log('Executing step 8: finding enrollment checkboxes')
-    checkboxes = list(pyautogui.locateAllOnScreen(
-        img('enroll_checkbox.png'), confidence=0.6
-    ))
-    if not checkboxes:
-        print('ENROLLMENT_FAILED: No enrollment checkboxes found', flush=True)
-        sys.exit(1)
-    log('Step 8 complete: found ' + str(len(checkboxes)) + ' checkbox(es)')
-
-    first = pyautogui.center(checkboxes[0])
-    log('Executing step 8a: clicking first checkbox at ' + str(first))
-    pyautogui.click(first)
+    # Step 8 — Select enrollment checkbox
+    log('Executing step 8: clicking enrollment checkbox at (906, 234)')
     time.sleep(0.5)
-    log('Step 8a complete: first checkbox clicked')
-
-    for box in checkboxes[1:]:
-        center = pyautogui.center(box)
-        log('Executing step 8b: shift-clicking checkbox at ' + str(center))
-        pyautogui.keyDown('shift')
-        pyautogui.click(center)
-        pyautogui.keyUp('shift')
-        time.sleep(0.2)
-    log('Step 8b complete: all checkboxes selected')
+    pyautogui.click(906, 234)
+    log('Step 8 complete: enrollment checkbox clicked')
+    time.sleep(0.5)
 
     # Step 9 — Click Submit
-    log('Executing step 9: click Submit button')
-    if not find_and_click('submit.png', 'Submit button', timeout=10):
-        print('ENROLLMENT_FAILED: Submit button not found', flush=True)
-        sys.exit(1)
+    log('Executing step 9: click Submit button at (1845, 960)')
+    time.sleep(0.5)
+    pyautogui.click(1845, 960)
     log('Step 9 complete: Submit clicked — waiting 2s for PIN dialog')
     time.sleep(2)
 

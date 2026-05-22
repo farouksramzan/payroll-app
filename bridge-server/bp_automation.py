@@ -67,17 +67,17 @@ def main():
     time.sleep(1)
 
     # Step 1 — Import button
-    log('Step 1: Clicking Import button')
-    if not find_and_click('import.png', 'Import button'):
-        print('IMPORT_FAILED: Import button not found', flush=True)
-        sys.exit(1)
+    log('Step 1: Clicking Import button at (386, 966)')
+    time.sleep(0.5)
+    pyautogui.click(386, 966)
+    log('Step 1 complete: Import button clicked')
     time.sleep(2)
 
     # Step 2 — Add button (File Format Selector dialog)
-    log('Step 2: Clicking Add button')
-    if not find_and_click('add.png', 'Add button'):
-        print('IMPORT_FAILED: Add button not found', flush=True)
-        sys.exit(1)
+    log('Step 2: Clicking Add button at (833, 482)')
+    time.sleep(0.5)
+    pyautogui.click(833, 482)
+    log('Step 2 complete: Add button clicked')
     time.sleep(2)
 
     # Step 3 — Type ACH file path in filename field and press Enter
@@ -91,17 +91,17 @@ def main():
     time.sleep(2)
 
     # Step 4 — First OK button
-    log('Step 4: Clicking OK button')
-    if not find_and_click('ok.png', 'OK button'):
-        print('IMPORT_FAILED: OK button not found', flush=True)
-        sys.exit(1)
+    log('Step 4: Clicking OK button at (1111, 639)')
+    time.sleep(0.5)
+    pyautogui.click(1111, 639)
+    log('Step 4 complete: OK button clicked')
     time.sleep(2)
 
     # Step 5 — Second OK button
-    log('Step 5: Clicking second OK button')
-    if not find_and_click('ok2.png', 'second OK button'):
-        print('IMPORT_FAILED: Second OK button not found', flush=True)
-        sys.exit(1)
+    log('Step 5: Clicking second OK button at (798, 629)')
+    time.sleep(0.5)
+    pyautogui.click(798, 629)
+    log('Step 5 complete: second OK button clicked')
     time.sleep(2)
 
     # Step 6 — Select all unsubmitted payment checkboxes
