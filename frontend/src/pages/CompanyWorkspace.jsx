@@ -2071,8 +2071,8 @@ function PayLiabilitiesTab({ clientId, client }) {
   }
 
   const ISSUED    = new Set(['printed', 'deposited']);
-  const UNPAID_941 = (s) => s.status     === 'pending' || s.status     === 'processing';
-  const UNPAID_940 = (s) => s.status_940 === 'pending' || s.status_940 === 'processing';
+  const UNPAID_941 = (s) => s.status     === 'pending' || s.status     === 'processing' || s.status     === 'failed';
+  const UNPAID_940 = (s) => s.status_940 === 'pending' || s.status_940 === 'processing' || s.status_940 === 'failed';
 
   async function reload() {
     const [stubs, crds] = await Promise.all([api.getPaystubs(clientId), api.getPaystubCredits(clientId)]);
