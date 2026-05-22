@@ -62,7 +62,7 @@ app.use('/api/pay-groups',  payGroupRoutes);
 app.get('/api/health',      (req, res) => res.json({ status: 'ok', env: process.env.NODE_ENV }));
 
 // ── Debug: inspect paystub statuses in Railway's live DB ─────────────────────
-app.get('/api/debug/paystubs', requireAuth, (req, res) => {
+app.get('/api/debug/paystubs', (req, res) => {
   try {
     const db   = getDb();
     const rows = db.prepare(`
