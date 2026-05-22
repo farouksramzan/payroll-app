@@ -2070,24 +2070,26 @@ function PayLiabilitiesTab({ clientId, client }) {
     finally { setUpdatingStatus(null); }
   }
 
-  // Only checks that have actually been issued to employees belong in Pay Liabilities.
-  // Drafts, late (un-printed), and voided checks have no tax deposit obligation yet.
-  const ISSUED = new Set(['printed', 'direct_deposit_sent', 'direct_deposit_cleared']);
+  // Checks that belong in Pay Liabilities: issued to employees AND tax deposit not yet confirmed.
+  // 'late' included — a late check has been issued and its taxes are still owed.
+  const ISSUED = new Set(['printed', 'direct_deposit_sent', 'direct_deposit_cleared', 'late']);
+  // 'processing' = submission attempted but not yet confirmed by EFTPS bridge.
+  const UNPAID_941 = (s) => s.status     === 'pending' || s.status     === 'failed' || s.status     === 'processing';
+  const UNPAID_940 = (s) => s.status_940 === 'pending' || s.status_940 === 'failed' || s.status_940 === 'processing';
 
   async function reload() {
     const [stubs, crds] = await Promise.all([api.getPaystubs(clientId), api.getPaystubCredits(clientId)]);
     setPaystubs(stubs); setCredits(crds);
     const pending = stubs.filter(s =>
-      ISSUED.has(s.check_status) &&
-      (s.status === 'pending' || s.status === 'failed' || s.status_940 === 'pending' || s.status_940 === 'failed')
+      ISSUED.has(s.check_status) && (UNPAID_941(s) || UNPAID_940(s))
     );
     setSelected(new Set(pending.map(s => s.id)));
   }
   useEffect(() => { reload().finally(() => setLoading(false)); }, [clientId]);
 
-  const pending941 = paystubs.filter(s => ISSUED.has(s.check_status) && (s.status === 'pending' || s.status === 'failed'));
-  const pending940 = paystubs.filter(s => ISSUED.has(s.check_status) && (s.status_940 === 'pending' || s.status_940 === 'failed') && s.futa_tax > 0);
-  const pendingSUI = paystubs.filter(s => ISSUED.has(s.check_status) && s.suta_tax > 0 && (s.status === 'pending' || s.status === 'failed'));
+  const pending941 = paystubs.filter(s => ISSUED.has(s.check_status) && UNPAID_941(s));
+  const pending940 = paystubs.filter(s => ISSUED.has(s.check_status) && UNPAID_940(s) && s.futa_tax > 0);
+  const pendingSUI = paystubs.filter(s => ISSUED.has(s.check_status) && s.suta_tax > 0 && UNPAID_941(s));
 
   const unappCredits = credits.filter(c => !c.applied);
   const credit941 = unappCredits.reduce((s, c) => s + (c.total_941_credit || 0), 0);
