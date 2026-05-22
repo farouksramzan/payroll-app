@@ -19,6 +19,7 @@ const employeeRoutes   = require('./src/routes/employees');
 const reportRoutes     = require('./src/routes/reports');
 const paystubRoutes    = require('./src/routes/paystubs');
 const payGroupRoutes   = require('./src/routes/payGroups');
+const { requireAuth }  = require('./src/middleware/auth');
 
 const app  = express();
 const PORT = process.env.PORT || 3001;
@@ -59,6 +60,24 @@ app.use('/api/reports',     reportRoutes);
 app.use('/api/paystubs',    paystubRoutes);
 app.use('/api/pay-groups',  payGroupRoutes);
 app.get('/api/health',      (req, res) => res.json({ status: 'ok', env: process.env.NODE_ENV }));
+
+// ── Debug: inspect paystub statuses in Railway's live DB ─────────────────────
+app.get('/api/debug/paystubs', requireAuth, (req, res) => {
+  try {
+    const db   = getDb();
+    const rows = db.prepare(`
+      SELECT id, client_id, employee_id, employee_name,
+             check_status, status, status_940,
+             gross_wages, total_deposit, pay_period_end, created_at
+      FROM   paystubs
+      ORDER  BY created_at DESC
+      LIMIT  50
+    `).all();
+    res.json({ count: rows.length, dbPath: process.env.DB_PATH || 'default (data/payroll.db)', rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 app.get('/api/bridge/job-status/:jobId', (req, res) => {
   const status = bridgeManager.getJobStatus(req.params.jobId);
   if (!status) return res.status(404).json({ error: 'Job not found' });
