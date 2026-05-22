@@ -1,26 +1,3 @@
-"""
-EFTPS Batch Provider enrollment import automation using pyautogui.
-
-Usage:
-    python bp_enrollment.py <enrollment_file_path>
-
-Exit codes:
-    0  success  (prints ENROLLMENT_COMPLETE)
-    1  failure  (prints ENROLLMENT_FAILED: <reason>)
-
-Requires:
-    pip install pyautogui opencv-python pillow
-
-Screenshots needed in button_images/:
-    enrollments_tab.png   - Enrollments tab at the top of Batch Provider
-    send_enrollments.png  - Send Enrollments button on the Enrollments screen
-    enroll_import.png     - Import button in the Send Enrollments dialog
-    enroll_add.png        - Add button in the File Format Selector dialog
-    enroll_open.png       - Open button in the file browser
-    enroll_ok.png         - First OK button (after file is loaded)
-    enroll_ok2.png        - Second OK button (confirmation/summary)
-"""
-
 import sys
 import os
 import time
@@ -100,8 +77,7 @@ def main():
     log('Step 4 complete: Add button clicked - waiting 2s for file browser')
     time.sleep(2)
 
-    # Step 5 - Select all text in filename field, type filename, press Enter once
-    # (matches bp_automation.py exactly - one Enter submits the file browser)
+    # Step 5 - Type filename and press Enter to submit file browser
     filename = os.path.basename(enroll_file_path)
     log('Executing step 5: select all in filename field')
     pyautogui.hotkey('ctrl', 'a')
@@ -116,7 +92,7 @@ def main():
     log('Step 5c complete: Enter pressed - waiting 2s for File Format Selector to return')
     time.sleep(2)
 
-    # Debug screenshot - shows what is on screen before looking for enroll_ok.png
+    # Step 5d - Save debug screenshot
     debug_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
     os.makedirs(debug_dir, exist_ok=True)
     debug_path = os.path.join(debug_dir, 'debug_after_enter.png')
@@ -124,14 +100,14 @@ def main():
     pyautogui.screenshot(debug_path)
     log('Step 5d complete: debug screenshot saved')
 
-    # Step 6 - Click OK in the File Format Selector (file is now loaded)
+    # Step 6 - Click first OK button in File Format Selector
     log('Executing step 6: click OK button (first) at (1129, 641)')
     time.sleep(0.5)
     pyautogui.click(1129, 641)
     log('Step 6 complete: first OK clicked - waiting 2s')
     time.sleep(2)
 
-    # Step 7 - Click OK (second time - confirmation/summary)
+    # Step 7 - Click second OK button (confirmation/summary)
     log('Executing step 7: click OK button (second) at (812, 670)')
     time.sleep(0.5)
     pyautogui.click(812, 670)
@@ -152,7 +128,7 @@ def main():
     log('Step 9 complete: Submit clicked - waiting 2s for PIN dialog')
     time.sleep(2)
 
-    # Step 10 - Enter PIN
+    # Step 10 - Click PIN field and type PIN
     log('Executing step 10: click PIN field')
     if not find_and_click('pin_field.png', 'PIN field', timeout=10):
         print('ENROLLMENT_FAILED: PIN field not found', flush=True)
@@ -165,7 +141,7 @@ def main():
     log('Step 10 complete: PIN entered')
     time.sleep(0.3)
 
-    # Step 11 - Enter Password
+    # Step 11 - Click Password field and type password
     log('Executing step 11: click Password field')
     if not find_and_click('password_field.png', 'Password field', timeout=10):
         print('ENROLLMENT_FAILED: Password field not found', flush=True)
@@ -178,14 +154,14 @@ def main():
     log('Step 11 complete: password entered')
     time.sleep(0.3)
 
-    # Step 12 - Click pin_submit at fixed coordinates
+    # Step 12 - Click PIN submit at fixed coordinates
     log('Executing step 12: click PIN submit button at (1096, 631)')
     time.sleep(0.5)
     pyautogui.click(1096, 631)
     log('Step 12 complete: PIN submit clicked - waiting 2s')
     time.sleep(2)
 
-    # Step 13 - Click submit_ok
+    # Step 13 - Click submit OK
     log('Executing step 13: click submit OK button')
     if not find_and_click('submit_ok.png', 'Submit OK button', timeout=10):
         print('ENROLLMENT_FAILED: Submit OK button not found', flush=True)
