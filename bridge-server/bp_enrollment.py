@@ -142,9 +142,85 @@ def main():
         print('ENROLLMENT_FAILED: Second OK button not found', flush=True)
         sys.exit(1)
     log('Step 7 complete: second OK clicked')
+    time.sleep(2)
+
+    # Step 8 — Select enrollment checkboxes
+    log('Executing step 8: finding enrollment checkboxes')
+    checkbox_region = (1600, 200, 300, 700)
+    checkboxes = list(pyautogui.locateAllOnScreen(
+        img('checkbox.png'), confidence=0.8, region=checkbox_region
+    ))
+    if not checkboxes:
+        print('ENROLLMENT_FAILED: No enrollment checkboxes found', flush=True)
+        sys.exit(1)
+    log('Step 8 complete: found ' + str(len(checkboxes)) + ' checkbox(es)')
+
+    first = pyautogui.center(checkboxes[0])
+    log('Executing step 8a: clicking first checkbox at ' + str(first))
+    pyautogui.click(first)
+    time.sleep(0.5)
+    log('Step 8a complete: first checkbox clicked')
+
+    for box in checkboxes[1:]:
+        center = pyautogui.center(box)
+        log('Executing step 8b: shift-clicking checkbox at ' + str(center))
+        pyautogui.keyDown('shift')
+        pyautogui.click(center)
+        pyautogui.keyUp('shift')
+        time.sleep(0.2)
+    log('Step 8b complete: all checkboxes selected')
+
+    # Step 9 — Click Submit
+    log('Executing step 9: click Submit button')
+    if not find_and_click('submit.png', 'Submit button', timeout=10):
+        print('ENROLLMENT_FAILED: Submit button not found', flush=True)
+        sys.exit(1)
+    log('Step 9 complete: Submit clicked — waiting 2s for PIN dialog')
+    time.sleep(2)
+
+    # Step 10 — Enter PIN
+    log('Executing step 10: click PIN field')
+    if not find_and_click('pin_field.png', 'PIN field', timeout=10):
+        print('ENROLLMENT_FAILED: PIN field not found', flush=True)
+        sys.exit(1)
+    pyautogui.hotkey('ctrl', 'a')
+    time.sleep(0.2)
+    master_pin = os.environ.get('BATCH_PROVIDER_MASTER_PIN', '')
+    log('Executing step 10a: typing PIN (' + str(len(master_pin)) + ' chars)')
+    pyautogui.typewrite(master_pin, interval=0.15)
+    log('Step 10 complete: PIN entered')
+    time.sleep(0.3)
+
+    # Step 11 — Enter Password
+    log('Executing step 11: click Password field')
+    if not find_and_click('password_field.png', 'Password field', timeout=10):
+        print('ENROLLMENT_FAILED: Password field not found', flush=True)
+        sys.exit(1)
+    pyautogui.hotkey('ctrl', 'a')
+    time.sleep(0.2)
+    master_password = os.environ.get('BATCH_PROVIDER_MASTER_PASSWORD', '')
+    log('Executing step 11a: typing password (' + str(len(master_password)) + ' chars)')
+    pyautogui.typewrite(master_password, interval=0.15)
+    log('Step 11 complete: password entered')
+    time.sleep(0.3)
+
+    # Step 12 — Click pin_submit
+    log('Executing step 12: click PIN submit button')
+    if not find_and_click('pin_submit.png', 'PIN submit button', timeout=10):
+        print('ENROLLMENT_FAILED: PIN submit button not found', flush=True)
+        sys.exit(1)
+    log('Step 12 complete: PIN submit clicked — waiting 2s')
+    time.sleep(2)
+
+    # Step 13 — Click submit_ok
+    log('Executing step 13: click submit OK button')
+    if not find_and_click('submit_ok.png', 'Submit OK button', timeout=10):
+        print('ENROLLMENT_FAILED: Submit OK button not found', flush=True)
+        sys.exit(1)
+    log('Step 13 complete: submit OK clicked')
     time.sleep(1)
 
-    log('All steps complete — enrollment import finished successfully')
+    log('All steps complete — enrollment submitted successfully')
     print('ENROLLMENT_COMPLETE', flush=True)
     sys.exit(0)
 
