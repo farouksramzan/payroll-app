@@ -146,9 +146,8 @@ def main():
 
     # Step 8 — Select enrollment checkboxes
     log('Executing step 8: finding enrollment checkboxes')
-    checkbox_region = (1600, 200, 300, 700)
     checkboxes = list(pyautogui.locateAllOnScreen(
-        img('checkbox.png'), confidence=0.8, region=checkbox_region
+        img('enroll_checkbox.png'), confidence=0.6
     ))
     if not checkboxes:
         print('ENROLLMENT_FAILED: No enrollment checkboxes found', flush=True)
