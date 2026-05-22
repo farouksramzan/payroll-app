@@ -203,11 +203,10 @@ def main():
     log('Step 11 complete: password entered')
     time.sleep(0.3)
 
-    # Step 12 — Click pin_submit
-    log('Executing step 12: click PIN submit button')
-    if not find_and_click('pin_submit.png', 'PIN submit button', timeout=10):
-        print('ENROLLMENT_FAILED: PIN submit button not found', flush=True)
-        sys.exit(1)
+    # Step 12 — Click pin_submit at fixed coordinates
+    log('Executing step 12: click PIN submit button at (1096, 631)')
+    time.sleep(0.5)
+    pyautogui.click(1096, 631)
     log('Step 12 complete: PIN submit clicked — waiting 2s')
     time.sleep(2)
 
