@@ -1169,6 +1169,7 @@ router.post('/batch-submit', async (req, res) => {
 
       const jobPayload = {
         submissionId:   `batch-${taxType}-${Date.now()}`,
+        clientId:       client.id,
         ein:            client.ein,
         pin,
         businessName:   client.business_name,
@@ -1192,6 +1193,17 @@ router.post('/batch-submit', async (req, res) => {
             dbInst.prepare(`UPDATE paystubs SET status_940='submitted', eftps_940_confirmation=?, eftps_940_submitted_at=CURRENT_TIMESTAMP WHERE id IN (${ph})`).run(confirmation, ...ids);
           } else {
             dbInst.prepare(`UPDATE paystubs SET status='submitted', eftps_confirmation=?, submitted_at=CURRENT_TIMESTAMP, submission_error=NULL WHERE id IN (${ph})`).run(confirmation, ...ids);
+          }
+          // If the bridge generated a new PIN for enrollment, persist it in the client record
+          if (msg.enrollmentPin) {
+            try {
+              const { encrypt: enc } = require('../services/cryptoService');
+              dbInst.prepare('UPDATE clients SET batch_provider_pin_encrypted = ? WHERE id = ?')
+                .run(enc(msg.enrollmentPin), client.id);
+              console.log(`[batch-submit] Stored bridge-generated enrollment PIN for client ${client.id}`);
+            } catch (e) {
+              console.error('[batch-submit] Failed to store enrollment PIN:', e.message);
+            }
           }
         } else {
           const errMsg = msg.error || 'Bridge processing failed';

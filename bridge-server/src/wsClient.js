@@ -19,7 +19,7 @@ const { execFile }                   = require('child_process');
 const fs                             = require('fs');
 const path                           = require('path');
 const { generateBatchProviderFile }  = require('./achGenerator');
-const { generateEnrollmentFile }     = require('./enrollmentGenerator');
+const { generateEnrollmentFile, generatePin } = require('./enrollmentGenerator');
 const { saveACHFile, WATCHED_FOLDER } = require('./batchProvider');
 
 const BP_SCRIPT               = path.join(__dirname, '..', 'bp_automation.py');
@@ -249,13 +249,23 @@ class BridgeClient extends EventEmitter {
     try {
       const log = (msg) => this.emit('log', msg);
 
+      // PIN used throughout this job — generate a fresh one for new enrollments
+      let effectivePin = job.pin || null;
+      let generatedEnrollmentPin = null;  // set only when we generate a new PIN
+
       // 1. Enroll client if not already enrolled
       if (!isEnrolled(job.ein)) {
         log(`EIN ${cleanEin(job.ein)} not in enrolled_clients.json — running enrollment first`);
 
+        // Generate a fresh PIN for the enrollment file regardless of what the server sent.
+        // This guarantees the PIN stored in EFTPS matches what we record back in the DB.
+        generatedEnrollmentPin = generatePin();
+        effectivePin = generatedEnrollmentPin;
+        log(`[ENROLL] Generated enrollment PIN: ${generatedEnrollmentPin} (will be stored in client record after Active confirmation)`);
+
         const enrollContent = generateEnrollmentFile({
           ein:           job.ein,
-          pin:           job.pin,
+          pin:           effectivePin,
           businessName:  job.businessName,
           routingNumber: job.routingNumber,
           accountNumber: job.accountNumber,
@@ -320,10 +330,10 @@ class BridgeClient extends EventEmitter {
         log(`EIN ${cleanEin(job.ein)} already enrolled — skipping enrollment`);
       }
 
-      // 2. Generate Batch Provider payment record
+      // 2. Generate Batch Provider payment record (use effectivePin — may be newly generated)
       const achContent = generateBatchProviderFile({
         ein:            job.ein,
-        pin:            job.pin,
+        pin:            effectivePin,
         taxYear:        job.taxYear,
         taxQuarter:     job.taxQuarter,
         settlementDate: job.settlementDate,
@@ -344,14 +354,16 @@ class BridgeClient extends EventEmitter {
       this.emit('jobComplete', { job, result, success: true });
 
       this._send({
-        type:         'result',
+        type:            'result',
         jobId,
         submissionId,
-        success:      true,
-        confirmation: result.confirmation,
-        achFilePath:  result.achFilePath,
-        warning:      result.warning || null,
-        message:      'Your payment is sent!',
+        success:         true,
+        confirmation:    result.confirmation,
+        achFilePath:     result.achFilePath,
+        warning:         result.warning || null,
+        message:         'Your payment is sent!',
+        // Include generated PIN so Railway can persist it in the client record
+        enrollmentPin:   generatedEnrollmentPin || null,
       });
 
     } catch (err) {
