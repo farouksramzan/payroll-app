@@ -152,11 +152,11 @@ def main():
     pyautogui.typewrite(MASTER_PASSWORD, interval=0.15)
     time.sleep(0.3)
 
-    # ── Step 6: Click Submit ──────────────────────────────────────────────────
-    log('Step 6: Clicking Submit')
-    if not find_and_click('enroll_sync_submit.png', 'Submit button', timeout=10):
-        print('ENROLLMENT_PENDING: Submit button not found', flush=True)
-        sys.exit(1)
+    # ── Step 6: Click Submit at fixed coordinates ─────────────────────────────
+    log('Step 6: Clicking Submit at (1862, 961)')
+    time.sleep(0.5)
+    pyautogui.click(1862, 961)
+    log('Step 6 complete: Submit clicked')
     time.sleep(3)  # wait for sync to complete
 
     # ── Step 7: Click OK to dismiss confirmation ──────────────────────────────
