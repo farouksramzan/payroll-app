@@ -1116,27 +1116,27 @@ router.post('/batch-submit', async (req, res) => {
     const ph = paystubIds.map(() => '?').join(',');
     if (taxType === '940') {
       pending = db.prepare(
-        `SELECT * FROM paystubs WHERE client_id = ? AND status_940 IN ('pending','failed') AND futa_tax > 0 AND id IN (${ph})`
+        `SELECT * FROM paystubs WHERE client_id = ? AND status_940 IN ('pending','processing','failed') AND futa_tax > 0 AND id IN (${ph})`
       ).all(clientId, ...paystubIds);
     } else {
       pending = db.prepare(
-        `SELECT * FROM paystubs WHERE client_id = ? AND status IN ('pending','failed') AND id IN (${ph})`
+        `SELECT * FROM paystubs WHERE client_id = ? AND status IN ('pending','processing','failed') AND id IN (${ph})`
       ).all(clientId, ...paystubIds);
     }
   } else if (taxType === '940') {
     const yearFilter = taxYear ? ' AND tax_year = ?' : '';
     pending = db.prepare(
-      `SELECT * FROM paystubs WHERE client_id = ? AND status_940 IN ('pending','failed') AND futa_tax > 0${yearFilter} ORDER BY pay_period_end ASC`
+      `SELECT * FROM paystubs WHERE client_id = ? AND status_940 IN ('pending','processing','failed') AND futa_tax > 0${yearFilter} ORDER BY pay_period_end ASC`
     ).all(...[clientId, taxYear].filter((v) => v !== undefined && v !== null));
   } else {
     // 941 — filter by quarter if provided
     if (taxYear && taxQuarter) {
       pending = db.prepare(
-        "SELECT * FROM paystubs WHERE client_id = ? AND status IN ('pending','failed') AND tax_year = ? AND tax_quarter = ? ORDER BY pay_period_end ASC"
+        "SELECT * FROM paystubs WHERE client_id = ? AND status IN ('pending','processing','failed') AND tax_year = ? AND tax_quarter = ? ORDER BY pay_period_end ASC"
       ).all(clientId, taxYear, taxQuarter);
     } else {
       pending = db.prepare(
-        "SELECT * FROM paystubs WHERE client_id = ? AND status IN ('pending','failed') ORDER BY pay_period_end ASC"
+        "SELECT * FROM paystubs WHERE client_id = ? AND status IN ('pending','processing','failed') ORDER BY pay_period_end ASC"
       ).all(clientId);
     }
   }
