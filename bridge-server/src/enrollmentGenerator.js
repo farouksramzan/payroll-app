@@ -38,17 +38,22 @@ const digits = (s) => String(s ?? '').replace(/\D/g, '');
 const lz     = (s, n) => String(s ?? '').padStart(n, '0').slice(-n);
 
 /**
- * Generate a cryptographically-random 4-digit Batch Provider PIN.
- * Rejects 0000, 9999, 1234, and any 4-digit ascending sequential run.
+ * Generate a random 4-digit Batch Provider PIN between 1000–9999.
+ * Excludes all-same-digit PINs (0000–9999 repeated), sequential runs
+ * (1234, 4321), and any other known EFTPS-rejected values.
  */
 function generatePin() {
-  const BLOCKED = new Set(['0000', '9999', '1234']);
+  const BLOCKED = new Set([
+    '0000', '1111', '2222', '3333', '4444',
+    '5555', '6666', '7777', '8888', '9999',
+    '1234', '4321',
+  ]);
   let pin;
   do {
     pin = String(Math.floor(Math.random() * 9000) + 1000); // 1000–9999
-    const isSequential = [0, 1, 2].every(i => Number(pin[i + 1]) === Number(pin[i]) + 1);
-    if (BLOCKED.has(pin) || isSequential) pin = null;
+    if (BLOCKED.has(pin)) pin = null;
   } while (!pin);
+  console.log('[enrollmentGenerator] Generated PIN:', pin);
   return pin;
 }
 
