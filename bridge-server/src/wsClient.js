@@ -268,45 +268,49 @@ class BridgeClient extends EventEmitter {
 
         markEnrolled(job.ein);
         log(`EIN ${cleanEin(job.ein)} added to enrolled_clients.json`);
-        log('Waiting 5s before polling EFTPS for Active enrollment status...');
-        await new Promise(resolve => setTimeout(resolve, 5000));
 
-        // Notify web app that we are waiting for EFTPS to activate the enrollment
-        this._send({
-          type:    'status_update',
-          jobId,
-          status:  'enrollment_pending',
-          message: 'Processing. Since this is your first payment with us, it can take 15 mins to 1 hour.',
-        });
+        // Immediately check — EFTPS sometimes activates within seconds
+        log(`[ENROLL] Checking enrollment status immediately after ENROLLMENT_COMPLETE...`);
+        let enrollmentActive = await checkEnrollmentActive(job.ein, log);
 
-        // Poll up to 10 times, every 30 minutes, until EFTPS shows Active
-        const MAX_RETRIES    = 10;
-        const POLL_INTERVAL  = 30 * 60 * 1000; // 30 min
-        let enrollmentActive = false;
-
-        for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-          log(`[ENROLL] Waiting 30 minutes before enrollment status check (attempt ${attempt}/${MAX_RETRIES})...`);
-          await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
-
-          log(`[ENROLL] Running enrollment status check for EIN ${cleanEin(job.ein)}...`);
-          enrollmentActive = await checkEnrollmentActive(job.ein, log);
-
-          if (enrollmentActive) {
-            log(`[ENROLL] EIN ${cleanEin(job.ein)} confirmed Active — proceeding with payment`);
-            break;
-          }
-
-          log(`[ENROLL] Enrollment not yet Active (attempt ${attempt}/${MAX_RETRIES})`);
+        if (enrollmentActive) {
+          log(`[ENROLL] EIN ${cleanEin(job.ein)} confirmed Active immediately — proceeding with payment`);
+        } else {
+          // Not yet Active — notify web app and retry every 15 min for up to 1.5 hours (6 retries)
           this._send({
             type:    'status_update',
             jobId,
             status:  'enrollment_pending',
-            message: `Enrollment pending — checking again in 30 minutes (attempt ${attempt}/${MAX_RETRIES}).`,
+            message: 'Processing. Since this is your first payment with us, it can take 15 mins to 1 hour.',
           });
+
+          const MAX_RETRIES   = 6;
+          const POLL_INTERVAL = 15 * 60 * 1000; // 15 min
+
+          for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            log(`[ENROLL] Enrollment not yet Active — waiting 15 minutes before retry ${attempt}/${MAX_RETRIES}...`);
+            await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
+
+            log(`[ENROLL] Running enrollment status check (retry ${attempt}/${MAX_RETRIES}) for EIN ${cleanEin(job.ein)}...`);
+            enrollmentActive = await checkEnrollmentActive(job.ein, log);
+
+            if (enrollmentActive) {
+              log(`[ENROLL] EIN ${cleanEin(job.ein)} confirmed Active on retry ${attempt} — proceeding with payment`);
+              break;
+            }
+
+            log(`[ENROLL] Still not Active after retry ${attempt}/${MAX_RETRIES}`);
+            this._send({
+              type:    'status_update',
+              jobId,
+              status:  'enrollment_pending',
+              message: `Enrollment pending — checking again in 15 minutes (attempt ${attempt}/${MAX_RETRIES}).`,
+            });
+          }
         }
 
         if (!enrollmentActive) {
-          throw new Error('Enrollment could not be confirmed after 10 attempts. Please contact support.');
+          throw new Error('Enrollment could not be confirmed after 1.5 hours. Please contact support.');
         }
       } else {
         log(`EIN ${cleanEin(job.ein)} already enrolled — skipping enrollment`);
