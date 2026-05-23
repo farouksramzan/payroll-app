@@ -5,6 +5,17 @@ import pyautogui
 
 pyautogui.FAILSAFE = False
 
+# Load .env from the bridge-server directory so credentials are available
+# when the script is run directly from the terminal
+_env_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env')
+if os.path.isfile(_env_path):
+    with open(_env_path) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith('#') and '=' in _line:
+                _k, _v = _line.split('=', 1)
+                os.environ.setdefault(_k.strip(), _v.strip())
+
 CONFIDENCE = 0.8
 IMAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'button_images')
 
