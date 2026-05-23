@@ -73,7 +73,8 @@ function cleanEin(ein) {
 function isEnrolled(ein) {
   try {
     const list = JSON.parse(fs.readFileSync(ENROLLED_JSON, 'utf8'));
-    return list.includes(cleanEin(ein));
+    const normalized = cleanEin(ein);
+    return list.some(e => cleanEin(e) === normalized);
   } catch {
     return false;
   }
