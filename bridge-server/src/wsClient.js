@@ -27,6 +27,27 @@ const BP_ENROLL_SCRIPT        = path.join(__dirname, '..', 'bp_enrollment.py');
 const BP_ENROLL_CHECK_SCRIPT  = path.join(__dirname, '..', 'bp_enrollment_check.py');
 const ENROLLED_JSON           = path.join(__dirname, '..', 'enrolled_clients.json');
 const ENROLL_FOLDER           = path.join(__dirname, '..', 'data', 'enrollments-out');
+const PENDING_FILE            = path.join(__dirname, '..', 'data', 'pending_enrollments.json');
+
+// ── Pending enrollment persistence ───────────────────────────────────────────
+// Survives Ctrl+C, crashes, and reboots. Bridge resumes all pending enrollment
+// check loops automatically on reconnect.
+
+function loadPendingEnrollments() {
+  try { return JSON.parse(fs.readFileSync(PENDING_FILE, 'utf8')); } catch { return []; }
+}
+
+function upsertPendingEnrollment(entry) {
+  const list = loadPendingEnrollments().filter(e => cleanEin(e.ein) !== cleanEin(entry.ein));
+  list.push({ ...entry, updatedAt: new Date().toISOString() });
+  fs.mkdirSync(path.dirname(PENDING_FILE), { recursive: true });
+  fs.writeFileSync(PENDING_FILE, JSON.stringify(list, null, 2));
+}
+
+function removePendingEnrollment(ein) {
+  const list = loadPendingEnrollments().filter(e => cleanEin(e.ein) !== cleanEin(ein));
+  fs.writeFileSync(PENDING_FILE, JSON.stringify(list, null, 2));
+}
 
 // ── Computer 2 lock ───────────────────────────────────────────────────────────
 // Only one Python automation script can run on Computer 2 at a time.
@@ -235,6 +256,7 @@ class BridgeClient extends EventEmitter {
         this.emit('statusChange', 'connected');
         this.emit('log', 'Authenticated — bridge is live');
         this._startPing();
+        this._resumePendingEnrollments();
         break;
 
       case 'auth_fail':
@@ -309,55 +331,23 @@ class BridgeClient extends EventEmitter {
 
         await c2.run('enrollment', () => runEnrollmentAutomation(enrollFilePath, log));
 
-        // Do NOT mark enrolled yet — only add to enrolled_clients.json once EFTPS confirms Active.
-        // If the check fails or times out the EIN stays out so the next job retries enrollment.
-
-        // Immediately check — EFTPS sometimes activates within seconds
-        log(`[ENROLL] Checking enrollment status immediately after ENROLLMENT_COMPLETE...`);
-        let enrollmentActive = await c2.run('enroll-check', () => checkEnrollmentActive(job.ein, log));
-
-        if (enrollmentActive) {
-          log(`[ENROLL] EIN ${cleanEin(job.ein)} confirmed Active immediately — proceeding with payment`);
-        } else {
-          // Not yet Active — notify web app and retry every 15 min for up to 1.5 hours (6 retries)
-          this._send({
-            type:    'status_update',
-            jobId,
-            status:  'enrollment_pending',
-            message: 'Processing. Since this is your first payment with us, it can take 15 mins to 1 hour.',
-          });
-
-          const MAX_RETRIES   = 6;
-          const POLL_INTERVAL = 15 * 60 * 1000; // 15 min
-
-          for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-            log(`[ENROLL] Enrollment not yet Active — waiting 15 minutes before retry ${attempt}/${MAX_RETRIES}...`);
-            await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
-
-            log(`[ENROLL] Running enrollment status check (retry ${attempt}/${MAX_RETRIES}) for EIN ${cleanEin(job.ein)}...`);
-            enrollmentActive = await c2.run('enroll-check', () => checkEnrollmentActive(job.ein, log));
-
-            if (enrollmentActive) {
-              log(`[ENROLL] EIN ${cleanEin(job.ein)} confirmed Active on retry ${attempt} — proceeding with payment`);
-              break;
-            }
-
-            log(`[ENROLL] Still not Active after retry ${attempt}/${MAX_RETRIES}`);
-            this._send({
-              type:    'status_update',
-              jobId,
-              status:  'enrollment_pending',
-              message: `Enrollment pending — checking again in 15 minutes (attempt ${attempt}/${MAX_RETRIES}).`,
-            });
-          }
-        }
+        // Poll until Active — persists to disk so a restart resumes automatically
+        const enrollmentActive = await this._pollEnrollmentUntilActive({
+          ein:           job.ein,
+          jobId,
+          submissionId,
+          achFilePath:   achFilePathEarly,
+          clientId:      job.clientId,
+          enrollmentPin: generatedEnrollmentPin,
+          startAtAttempt: 0,
+        });
 
         if (!enrollmentActive) {
           throw new Error('Enrollment could not be confirmed after 1.5 hours. Please contact support.');
         }
 
-        // Only mark enrolled once EFTPS has confirmed Active status
         markEnrolled(job.ein);
+        removePendingEnrollment(job.ein);
         log(`EIN ${cleanEin(job.ein)} confirmed Active and added to enrolled_clients.json`);
       } else {
         log(`EIN ${cleanEin(job.ein)} already enrolled (eftpsEnrolled=${job.eftpsEnrolled}, localJson=${isEnrolled(job.ein)}) — skipping enrollment`);
@@ -426,6 +416,100 @@ class BridgeClient extends EventEmitter {
                         ? 'Enrollment could not be confirmed. Please contact support.'
                         : 'Bridge processing failed',
       });
+    }
+  }
+
+  // ── Enrollment polling — shared by new jobs and resumed jobs ─────────────────
+
+  async _pollEnrollmentUntilActive({ ein, jobId, submissionId, achFilePath, clientId, enrollmentPin, startAtAttempt }) {
+    const log          = (msg) => this.emit('log', msg);
+    const MAX_RETRIES  = 6;
+    const POLL_INTERVAL = 15 * 60 * 1000;
+
+    // Persist to disk immediately so a restart can resume from here
+    upsertPendingEnrollment({ ein, jobId, submissionId, achFilePath, clientId, enrollmentPin, attempt: startAtAttempt, maxRetries: MAX_RETRIES });
+
+    // Immediate check first (only on the first call, not when resuming mid-sequence)
+    let active = false;
+    if (startAtAttempt === 0) {
+      log(`[ENROLL] Checking enrollment status immediately after ENROLLMENT_COMPLETE...`);
+      active = await c2.run('enroll-check', () => checkEnrollmentActive(ein, log));
+      if (active) log(`[ENROLL] EIN ${cleanEin(ein)} confirmed Active immediately`);
+    }
+
+    if (!active) {
+      this._send({ type: 'status_update', jobId, status: 'enrollment_pending', message: 'Processing. Since this is your first payment with us, it can take 15 mins to 1 hour.' });
+
+      for (let attempt = startAtAttempt + 1; attempt <= MAX_RETRIES; attempt++) {
+        log(`[ENROLL] Waiting 15 minutes before retry ${attempt}/${MAX_RETRIES}...`);
+        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
+
+        // Update attempt count in persisted file before running check
+        upsertPendingEnrollment({ ein, jobId, submissionId, achFilePath, clientId, enrollmentPin, attempt, maxRetries: MAX_RETRIES });
+
+        log(`[ENROLL] Running enrollment check (retry ${attempt}/${MAX_RETRIES}) for EIN ${cleanEin(ein)}...`);
+        active = await c2.run('enroll-check', () => checkEnrollmentActive(ein, log));
+
+        if (active) {
+          log(`[ENROLL] EIN ${cleanEin(ein)} confirmed Active on retry ${attempt}`);
+          break;
+        }
+
+        log(`[ENROLL] Still not Active after retry ${attempt}/${MAX_RETRIES}`);
+        this._send({ type: 'status_update', jobId, status: 'enrollment_pending', message: `Enrollment pending — checking again in 15 minutes (attempt ${attempt}/${MAX_RETRIES}).` });
+      }
+    }
+
+    return active;
+  }
+
+  // ── Resume pending enrollments on reconnect ───────────────────────────────────
+
+  _resumePendingEnrollments() {
+    const pending = loadPendingEnrollments();
+    if (pending.length === 0) return;
+    this.emit('log', `[RESUME] Found ${pending.length} pending enrollment(s) — resuming...`);
+    for (const entry of pending) {
+      this.emit('log', `[RESUME] Resuming EIN ${cleanEin(entry.ein)} from attempt ${entry.attempt}/${entry.maxRetries}`);
+      this._runResumedEnrollment(entry).catch((err) => {
+        this.emit('log', `[RESUME] Error for EIN ${cleanEin(entry.ein)}: ${err.message}`);
+      });
+    }
+  }
+
+  async _runResumedEnrollment(entry) {
+    const { ein, jobId, submissionId, achFilePath, clientId, enrollmentPin, attempt } = entry;
+    const log = (msg) => this.emit('log', msg);
+
+    log(`[RESUME] Resuming enrollment check for EIN ${cleanEin(ein)}`);
+
+    const active = await this._pollEnrollmentUntilActive({
+      ein, jobId, submissionId, achFilePath, clientId, enrollmentPin, startAtAttempt: attempt,
+    });
+
+    if (!active) {
+      removePendingEnrollment(ein);
+      this._send({ type: 'result', jobId, submissionId, success: false, error: 'Enrollment could not be confirmed after 1.5 hours. Please contact support.' });
+      return;
+    }
+
+    markEnrolled(ein);
+    removePendingEnrollment(ein);
+    log(`[RESUME] EIN ${cleanEin(ein)} Active — running payment automation`);
+
+    if (!fs.existsSync(achFilePath)) {
+      log(`[RESUME] ACH file not found: ${achFilePath} — cannot complete payment`);
+      this._send({ type: 'result', jobId, submissionId, success: false, error: 'ACH file missing after resume. Please resubmit payment.' });
+      return;
+    }
+
+    try {
+      const result = await c2.run('payment', () => runPaymentAutomation(achFilePath, log));
+      log(`[RESUME] Payment complete for EIN ${cleanEin(ein)}`);
+      this._send({ type: 'result', jobId, submissionId, success: true, confirmation: result.confirmation, achFilePath: result.achFilePath, message: 'Your payment is sent!', enrollmentPin: enrollmentPin || null });
+    } catch (err) {
+      log(`[RESUME] Payment failed for EIN ${cleanEin(ein)}: ${err.message}`);
+      this._send({ type: 'result', jobId, submissionId, success: false, error: err.message });
     }
   }
 }
