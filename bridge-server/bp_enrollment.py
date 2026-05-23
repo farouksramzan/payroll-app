@@ -61,14 +61,16 @@ def find_and_click(filename, description, timeout=10, confidence=CONFIDENCE):
 
 def find_new_rows():
     # OCR the screen and return (checkbox_x, center_y) for every row whose
-    # status column reads New. The checkbox x is derived from the x position
-    # of the "New" word on that row plus CHECKBOX_OFFSET_X, so it works at
-    # any resolution or window position without hardcoded coordinates.
+    # status column reads New. Uses psm 11 (sparse text) which works better
+    # for table layouts than psm 6 (uniform block).
     log('OCR scan: looking for New status rows...')
     screenshot = pyautogui.screenshot()
     data = pytesseract.image_to_data(
-        screenshot, config='--psm 6', output_type=pytesseract.Output.DICT
+        screenshot, config='--psm 11', output_type=pytesseract.Output.DICT
     )
+    # Log all non-empty words OCR found so we can diagnose misreads
+    all_words = [t for t in data['text'] if t.strip()]
+    log('OCR words found: ' + str(all_words))
     rows = []
     for i, text in enumerate(data['text']):
         if text.strip() in ('New', 'NEW', 'new'):
