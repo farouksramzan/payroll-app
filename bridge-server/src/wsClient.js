@@ -274,6 +274,21 @@ class BridgeClient extends EventEmitter {
         const enrollFilePath = saveEnrollmentFile(enrollContent, job.ein);
         log(`Enrollment file saved: ${enrollFilePath}`);
 
+        // Generate and save the payment ACH file now while we have the PIN,
+        // so it is ready on disk before we wait for enrollment to go Active.
+        const achContentEarly = generateBatchProviderFile({
+          ein:            job.ein,
+          pin:            effectivePin,
+          taxYear:        job.taxYear,
+          taxQuarter:     job.taxQuarter,
+          settlementDate: job.settlementDate,
+          taxData:        job.taxData,
+          taxTypeCode:    job.taxTypeCode || '94105',
+          sequenceNumber: job.sequenceNumber || 1,
+        });
+        const achFilePathEarly = saveACHFile(achContentEarly, submissionId);
+        log(`Payment ACH file saved early: ${achFilePathEarly}`);
+
         await runEnrollmentAutomation(enrollFilePath, log);
 
         // Do NOT mark enrolled yet — only add to enrolled_clients.json once EFTPS confirms Active.
@@ -330,21 +345,25 @@ class BridgeClient extends EventEmitter {
         log(`EIN ${cleanEin(job.ein)} already enrolled — skipping enrollment`);
       }
 
-      // 2. Generate Batch Provider payment record (use effectivePin — may be newly generated)
-      const achContent = generateBatchProviderFile({
-        ein:            job.ein,
-        pin:            effectivePin,
-        taxYear:        job.taxYear,
-        taxQuarter:     job.taxQuarter,
-        settlementDate: job.settlementDate,
-        taxData:        job.taxData,
-        taxTypeCode:    job.taxTypeCode || '94105',
-        sequenceNumber: job.sequenceNumber || 1,
-      });
-
-      // 3. Save payment ACH file to disk
-      const achFilePath = saveACHFile(achContent, submissionId);
-      log(`ACH file saved: ${achFilePath}`);
+      // 2. Generate and save payment ACH file (reuse early-saved file if enrollment just ran)
+      let achFilePath;
+      if (typeof achFilePathEarly !== 'undefined') {
+        achFilePath = achFilePathEarly;
+        log(`Reusing payment ACH file saved before enrollment wait: ${achFilePath}`);
+      } else {
+        const achContent = generateBatchProviderFile({
+          ein:            job.ein,
+          pin:            effectivePin,
+          taxYear:        job.taxYear,
+          taxQuarter:     job.taxQuarter,
+          settlementDate: job.settlementDate,
+          taxData:        job.taxData,
+          taxTypeCode:    job.taxTypeCode || '94105',
+          sequenceNumber: job.sequenceNumber || 1,
+        });
+        achFilePath = saveACHFile(achContent, submissionId);
+        log(`ACH file saved: ${achFilePath}`);
+      }
 
       // 4. Run payment automation (bp_automation.py clicks Payments tab as step 0)
       const result = await runPaymentAutomation(achFilePath, log);
