@@ -268,9 +268,12 @@ class BridgeClient extends EventEmitter {
       let effectivePin = job.pin || null;
       let generatedEnrollmentPin = null;  // set only when we generate a new PIN
 
-      // 1. Enroll client if not already enrolled
-      if (!isEnrolled(job.ein)) {
-        log(`EIN ${cleanEin(job.ein)} not in enrolled_clients.json — running enrollment first`);
+      // 1. Enroll client if not already enrolled.
+      // Railway DB is authoritative (job.eftpsEnrolled). Local JSON is a fallback
+      // in case the Railway DB is reset or the client was enrolled on a previous machine.
+      const alreadyEnrolled = job.eftpsEnrolled === 1 || isEnrolled(job.ein);
+      if (!alreadyEnrolled) {
+        log(`EIN ${cleanEin(job.ein)} not enrolled (Railway DB + local JSON both show unenrolled) — running enrollment first`);
 
         // Generate a fresh PIN for the enrollment file regardless of what the server sent.
         // This guarantees the PIN stored in EFTPS matches what we record back in the DB.
@@ -357,7 +360,12 @@ class BridgeClient extends EventEmitter {
         markEnrolled(job.ein);
         log(`EIN ${cleanEin(job.ein)} confirmed Active and added to enrolled_clients.json`);
       } else {
-        log(`EIN ${cleanEin(job.ein)} already enrolled — skipping enrollment`);
+        log(`EIN ${cleanEin(job.ein)} already enrolled (eftpsEnrolled=${job.eftpsEnrolled}, localJson=${isEnrolled(job.ein)}) — skipping enrollment`);
+        // Sync local JSON cache if Railway says enrolled but local file doesn't know yet
+        if (job.eftpsEnrolled === 1 && !isEnrolled(job.ein)) {
+          markEnrolled(job.ein);
+          log(`EIN ${cleanEin(job.ein)} synced to local enrolled_clients.json from Railway DB`);
+        }
       }
 
       // 2. Generate and save payment ACH file (reuse early-saved file if enrollment just ran)

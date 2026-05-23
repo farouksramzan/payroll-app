@@ -328,6 +328,11 @@ function migrate() {
     { name: 'notification_phone', def: 'TEXT' },
   ]);
 
+  // EFTPS enrollment status — set to 1 once EFTPS confirms Active
+  addCols('clients', [
+    { name: 'eftps_enrolled', def: 'INTEGER DEFAULT 0' },
+  ]);
+
   // paystub_credits — negative entries for voided checks
   db.exec(`
     CREATE TABLE IF NOT EXISTS paystub_credits (

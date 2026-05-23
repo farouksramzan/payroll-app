@@ -1172,6 +1172,7 @@ router.post('/batch-submit', async (req, res) => {
         clientId:       client.id,
         ein:            client.ein,
         pin,
+        eftpsEnrolled:  client.eftps_enrolled ? 1 : 0,
         businessName:   client.business_name,
         routingNumber:  client.bank_routing_number,
         accountNumber,
@@ -1194,13 +1195,13 @@ router.post('/batch-submit', async (req, res) => {
           } else {
             dbInst.prepare(`UPDATE paystubs SET status='submitted', eftps_confirmation=?, submitted_at=CURRENT_TIMESTAMP, submission_error=NULL WHERE id IN (${ph})`).run(confirmation, ...ids);
           }
-          // If the bridge generated a new PIN for enrollment, persist it in the client record
+          // If the bridge generated a new PIN during enrollment, persist it and mark client enrolled
           if (msg.enrollmentPin) {
             try {
               const { encrypt: enc } = require('../services/cryptoService');
-              dbInst.prepare('UPDATE clients SET batch_provider_pin_encrypted = ? WHERE id = ?')
+              dbInst.prepare('UPDATE clients SET batch_provider_pin_encrypted = ?, eftps_enrolled = 1 WHERE id = ?')
                 .run(enc(msg.enrollmentPin), client.id);
-              console.log(`[batch-submit] Stored bridge-generated enrollment PIN for client ${client.id}`);
+              console.log(`[batch-submit] Client ${client.id} marked eftps_enrolled=1, PIN stored`);
             } catch (e) {
               console.error('[batch-submit] Failed to store enrollment PIN:', e.message);
             }
