@@ -8,7 +8,9 @@ pyautogui.FAILSAFE = False
 
 CONFIDENCE = 0.7
 IMAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'button_images')
-CHECKBOX_X = 710  # x-coordinate of the Master Account checkbox column in Send Enrollments list
+# Pixel offset from the left edge of the "New" word to the checkbox in the same row.
+# Negative because the checkbox column is to the LEFT of the Status column.
+CHECKBOX_OFFSET_X = -357
 
 pytesseract.pytesseract.tesseract_cmd = os.environ.get(
     'TESSERACT_PATH', r'C:\Users\mramz\OneDrive\Desktop\tesseract.exe'
@@ -57,22 +59,27 @@ def find_and_click(filename, description, timeout=10, confidence=CONFIDENCE):
     return False
 
 
-def find_new_row_ys():
-    # OCR the screen and return center-y for every row whose status column reads New
+def find_new_rows():
+    # OCR the screen and return (checkbox_x, center_y) for every row whose
+    # status column reads New. The checkbox x is derived from the x position
+    # of the "New" word on that row plus CHECKBOX_OFFSET_X, so it works at
+    # any resolution or window position without hardcoded coordinates.
     log('OCR scan: looking for New status rows...')
     screenshot = pyautogui.screenshot()
     data = pytesseract.image_to_data(
         screenshot, config='--psm 6', output_type=pytesseract.Output.DICT
     )
-    ys = []
+    rows = []
     for i, text in enumerate(data['text']):
         if text.strip() in ('New', 'NEW', 'new'):
+            new_x    = data['left'][i]
             center_y = data['top'][i] + data['height'][i] // 2
-            # Deduplicate rows that are within 10 pixels of each other
-            if not any(abs(center_y - y) < 10 for y in ys):
-                ys.append(center_y)
-                log('Found New row at y=' + str(center_y))
-    return ys
+            chk_x    = new_x + CHECKBOX_OFFSET_X
+            # Deduplicate rows within 10 pixels of each other
+            if not any(abs(center_y - r[1]) < 10 for r in rows):
+                rows.append((chk_x, center_y))
+                log('Found New row at y=' + str(center_y) + ' -> checkbox at x=' + str(chk_x))
+    return rows
 
 
 def main():
@@ -160,14 +167,14 @@ def main():
     ocr_debug_path = os.path.join(debug_dir, 'debug_before_ocr.png')
     pyautogui.screenshot(ocr_debug_path)
     log('Executing step 8: debug screenshot saved to ' + ocr_debug_path)
-    new_ys = find_new_row_ys()
-    if not new_ys:
+    new_rows = find_new_rows()
+    if not new_rows:
         print('ENROLLMENT_FAILED: No New status rows found in Send Enrollments list', flush=True)
         sys.exit(1)
-    log('Step 8: found ' + str(len(new_ys)) + ' New row(s) - clicking checkboxes')
-    for i, cy in enumerate(new_ys):
-        log('Step 8: clicking checkbox ' + str(i + 1) + ' at (' + str(CHECKBOX_X) + ', ' + str(cy) + ')')
-        pyautogui.click(CHECKBOX_X, cy)
+    log('Step 8: found ' + str(len(new_rows)) + ' New row(s) - clicking checkboxes')
+    for i, (chk_x, cy) in enumerate(new_rows):
+        log('Step 8: clicking checkbox ' + str(i + 1) + ' at (' + str(chk_x) + ', ' + str(cy) + ')')
+        pyautogui.click(chk_x, cy)
         time.sleep(0.3)
     log('Step 8 complete: all New checkboxes clicked')
     time.sleep(0.5)
