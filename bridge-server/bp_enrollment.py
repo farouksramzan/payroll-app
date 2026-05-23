@@ -114,17 +114,30 @@ def main():
     log('Step 7 complete: second OK clicked')
     time.sleep(2)
 
-    # Step 8 - Select enrollment checkbox
-    log('Executing step 8: clicking enrollment checkbox at (906, 234)')
-    time.sleep(0.5)
-    pyautogui.click(906, 234)
-    log('Step 8 complete: enrollment checkbox clicked')
+    # Step 8 - Find all rows with status New and click their checkboxes
+    # new_status.png is a tight crop of the word "New" as it appears in the status column.
+    # The checkbox for each row sits 870 pixels to the left of the New label.
+    CHECKBOX_X_OFFSET = -870
+    log('Executing step 8: scanning for New status rows')
+    new_rows = list(pyautogui.locateAllOnScreen(img('new_status.png'), confidence=0.7))
+    if not new_rows:
+        print('ENROLLMENT_FAILED: No New status rows found in Send Enrollments list', flush=True)
+        sys.exit(1)
+    log('Step 8: found ' + str(len(new_rows)) + ' New row(s)')
+    for i, row in enumerate(new_rows):
+        cx, cy = pyautogui.center(row)
+        chk_x = cx + CHECKBOX_X_OFFSET
+        log('Step 8: clicking checkbox for row ' + str(i + 1) + ' at (' + str(chk_x) + ', ' + str(cy) + ')')
+        pyautogui.click(chk_x, cy)
+        time.sleep(0.3)
+    log('Step 8 complete: all New checkboxes clicked')
     time.sleep(0.5)
 
     # Step 9 - Click Submit
-    log('Executing step 9: click Submit button at (1845, 960)')
-    time.sleep(0.5)
-    pyautogui.click(1845, 960)
+    log('Executing step 9: click Submit button')
+    if not find_and_click('submit.png', 'Submit button', timeout=10):
+        print('ENROLLMENT_FAILED: Submit button not found', flush=True)
+        sys.exit(1)
     log('Step 9 complete: Submit clicked - waiting 2s for PIN dialog')
     time.sleep(2)
 
