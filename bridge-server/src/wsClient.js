@@ -26,7 +26,22 @@ const BP_SCRIPT               = path.join(__dirname, '..', 'bp_automation.py');
 const BP_ENROLL_SCRIPT        = path.join(__dirname, '..', 'bp_enrollment.py');
 const BP_ENROLL_CHECK_SCRIPT  = path.join(__dirname, '..', 'bp_enrollment_check.py');
 const ENROLLED_JSON           = path.join(__dirname, '..', 'enrolled_clients.json');
-const ENROLL_FOLDER      = path.join(__dirname, '..', 'data', 'enrollments-out');
+const ENROLL_FOLDER           = path.join(__dirname, '..', 'data', 'enrollments-out');
+
+// ── Computer 2 lock ───────────────────────────────────────────────────────────
+// Only one Python automation script can run on Computer 2 at a time.
+// Jobs acquire this lock only while their script is executing — NOT during
+// the 15-minute enrollment polling waits — so payment jobs for already-enrolled
+// clients can run freely while new enrollments are waiting between checks.
+class Computer2Lock {
+  constructor() { this._chain = Promise.resolve(); }
+  run(label, fn) {
+    const next = this._chain.then(() => fn());
+    this._chain = next.catch(() => {});
+    return next;
+  }
+}
+const c2 = new Computer2Lock();
 
 // ── Enrollment tracking ───────────────────────────────────────────────────────
 
@@ -289,14 +304,14 @@ class BridgeClient extends EventEmitter {
         const achFilePathEarly = saveACHFile(achContentEarly, submissionId);
         log(`Payment ACH file saved early: ${achFilePathEarly}`);
 
-        await runEnrollmentAutomation(enrollFilePath, log);
+        await c2.run('enrollment', () => runEnrollmentAutomation(enrollFilePath, log));
 
         // Do NOT mark enrolled yet — only add to enrolled_clients.json once EFTPS confirms Active.
         // If the check fails or times out the EIN stays out so the next job retries enrollment.
 
         // Immediately check — EFTPS sometimes activates within seconds
         log(`[ENROLL] Checking enrollment status immediately after ENROLLMENT_COMPLETE...`);
-        let enrollmentActive = await checkEnrollmentActive(job.ein, log);
+        let enrollmentActive = await c2.run('enroll-check', () => checkEnrollmentActive(job.ein, log));
 
         if (enrollmentActive) {
           log(`[ENROLL] EIN ${cleanEin(job.ein)} confirmed Active immediately — proceeding with payment`);
@@ -317,7 +332,7 @@ class BridgeClient extends EventEmitter {
             await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
 
             log(`[ENROLL] Running enrollment status check (retry ${attempt}/${MAX_RETRIES}) for EIN ${cleanEin(job.ein)}...`);
-            enrollmentActive = await checkEnrollmentActive(job.ein, log);
+            enrollmentActive = await c2.run('enroll-check', () => checkEnrollmentActive(job.ein, log));
 
             if (enrollmentActive) {
               log(`[ENROLL] EIN ${cleanEin(job.ein)} confirmed Active on retry ${attempt} — proceeding with payment`);
@@ -366,7 +381,7 @@ class BridgeClient extends EventEmitter {
       }
 
       // 4. Run payment automation (bp_automation.py clicks Payments tab as step 0)
-      const result = await runPaymentAutomation(achFilePath, log);
+      const result = await c2.run('payment', () => runPaymentAutomation(achFilePath, log));
 
       this.stats.jobsSucceeded++;
       this.emit('log', `Job ${submissionId} succeeded — confirmation: ${result.confirmation}`);
