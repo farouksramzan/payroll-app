@@ -8,7 +8,7 @@ pyautogui.FAILSAFE = False
 
 CONFIDENCE = 0.7
 IMAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'button_images')
-CHECKBOX_X = 906  # x-coordinate of the checkbox column in Send Enrollments list
+CHECKBOX_X = 710  # x-coordinate of the Master Account checkbox column in Send Enrollments list
 
 pytesseract.pytesseract.tesseract_cmd = os.environ.get(
     'TESSERACT_PATH', r'C:\Users\mramz\OneDrive\Desktop\tesseract.exe'
@@ -150,12 +150,16 @@ def main():
     log('Executing step 7: click OK button (second) at (806, 634)')
     time.sleep(2)
     pyautogui.click(806, 634)
-    log('Step 7 complete: second OK clicked - waiting 2s')
-    time.sleep(2)
+    log('Step 7 complete: second OK clicked - waiting 4s for Send Enrollments list to load')
+    time.sleep(4)
 
     # Step 8 - OCR scan to find all New status rows and click their checkboxes
-    # The checkbox column is always at x=CHECKBOX_X regardless of how many rows exist
-    log('Executing step 8: OCR scan for New enrollment rows')
+    # Save debug screenshot so we can verify what is on screen when OCR runs
+    debug_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+    os.makedirs(debug_dir, exist_ok=True)
+    ocr_debug_path = os.path.join(debug_dir, 'debug_before_ocr.png')
+    pyautogui.screenshot(ocr_debug_path)
+    log('Executing step 8: debug screenshot saved to ' + ocr_debug_path)
     new_ys = find_new_row_ys()
     if not new_ys:
         print('ENROLLMENT_FAILED: No New status rows found in Send Enrollments list', flush=True)
