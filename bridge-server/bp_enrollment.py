@@ -2,11 +2,17 @@ import sys
 import os
 import time
 import pyautogui
+import pytesseract
 
 pyautogui.FAILSAFE = False
 
 CONFIDENCE = 0.7
 IMAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'button_images')
+CHECKBOX_X = 906  # x-coordinate of the checkbox column in Send Enrollments list
+
+pytesseract.pytesseract.tesseract_cmd = os.environ.get(
+    'TESSERACT_PATH', r'C:\Users\mramz\OneDrive\Desktop\tesseract.exe'
+)
 
 
 def log(msg):
@@ -15,6 +21,21 @@ def log(msg):
 
 def img(filename):
     return os.path.join(IMAGES_DIR, filename)
+
+
+def maximize_bp():
+    # Maximize Batch Provider window so all coordinates are deterministic
+    try:
+        import pygetwindow as gw
+        wins = [w for w in gw.getAllWindows() if 'Batch Provider' in w.title]
+        if wins:
+            wins[0].maximize()
+            log('Batch Provider window maximized')
+            time.sleep(1)
+        else:
+            log('WARNING: Batch Provider window not found by title - continuing')
+    except Exception as e:
+        log('WARNING: Could not maximize window (' + str(e) + ') - continuing')
 
 
 def find_and_click(filename, description, timeout=10, confidence=CONFIDENCE):
@@ -36,6 +57,24 @@ def find_and_click(filename, description, timeout=10, confidence=CONFIDENCE):
     return False
 
 
+def find_new_row_ys():
+    # OCR the screen and return center-y for every row whose status column reads New
+    log('OCR scan: looking for New status rows...')
+    screenshot = pyautogui.screenshot()
+    data = pytesseract.image_to_data(
+        screenshot, config='--psm 6', output_type=pytesseract.Output.DICT
+    )
+    ys = []
+    for i, text in enumerate(data['text']):
+        if text.strip() in ('New', 'NEW', 'new'):
+            center_y = data['top'][i] + data['height'][i] // 2
+            # Deduplicate rows that are within 10 pixels of each other
+            if not any(abs(center_y - y) < 10 for y in ys):
+                ys.append(center_y)
+                log('Found New row at y=' + str(center_y))
+    return ys
+
+
 def main():
     if len(sys.argv) < 2:
         print('ENROLLMENT_FAILED: No enrollment file path provided', flush=True)
@@ -48,6 +87,9 @@ def main():
     if not os.path.isfile(enroll_file_path):
         print('ENROLLMENT_FAILED: Enrollment file not found: ' + enroll_file_path, flush=True)
         sys.exit(1)
+
+    # Maximize BP window before any clicks so coordinates are deterministic
+    maximize_bp()
 
     # Step 1 - Click Enrollments tab
     log('Executing step 1: click Enrollments tab at (312, 103)')
@@ -71,34 +113,31 @@ def main():
     time.sleep(2)
 
     # Step 4 - Click Add button in File Format Selector dialog
-    log('Executing step 4: click Add button at (808, 505)')
+    log('Executing step 4: click Add button at (793, 484)')
     time.sleep(0.5)
-    pyautogui.click(808, 505)
+    pyautogui.click(793, 484)
     log('Step 4 complete: Add button clicked - waiting 2s for file browser')
     time.sleep(2)
 
     # Step 5 - Type filename and press Enter to submit file browser
     filename = os.path.basename(enroll_file_path)
-    log('Executing step 5: select all in filename field')
+    log('Executing step 5a: Ctrl+A in filename field')
     pyautogui.hotkey('ctrl', 'a')
-    log('Step 5a complete: Ctrl+A sent')
     time.sleep(0.2)
     log('Executing step 5b: type filename - ' + filename)
     pyautogui.typewrite(filename, interval=0.15)
-    log('Step 5b complete: filename typed')
     time.sleep(0.2)
-    log('Executing step 5c: press Enter once to close file browser')
+    log('Executing step 5c: press Enter to close file browser')
     pyautogui.press('enter')
-    log('Step 5c complete: Enter pressed - waiting 2s for File Format Selector to return')
+    log('Step 5c complete: Enter pressed - waiting 2s')
     time.sleep(2)
 
-    # Step 5d - Save debug screenshot
+    # Step 5d - Save debug screenshot before clicking OK
     debug_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
     os.makedirs(debug_dir, exist_ok=True)
     debug_path = os.path.join(debug_dir, 'debug_after_enter.png')
-    log('Executing step 5d: saving debug screenshot to ' + debug_path)
     pyautogui.screenshot(debug_path)
-    log('Step 5d complete: debug screenshot saved')
+    log('Step 5d complete: debug screenshot saved to ' + debug_path)
 
     # Step 6 - Click first OK button in File Format Selector
     log('Executing step 6: click OK button (first) at (1129, 641)')
@@ -108,40 +147,35 @@ def main():
     time.sleep(2)
 
     # Step 7 - Click second OK button (confirmation/summary)
-    log('Executing step 7: click OK button (second) at (812, 670)')
-    time.sleep(0.5)
-    pyautogui.click(812, 670)
-    log('Step 7 complete: second OK clicked')
+    log('Executing step 7: click OK button (second) at (806, 634)')
+    time.sleep(2)
+    pyautogui.click(806, 634)
+    log('Step 7 complete: second OK clicked - waiting 2s')
     time.sleep(2)
 
-    # Step 8 - Find all rows with status New and click their checkboxes
-    # new_status.png is a tight crop of the word "New" as it appears in the status column.
-    # The checkbox for each row sits 870 pixels to the left of the New label.
-    CHECKBOX_X_OFFSET = -870
-    log('Executing step 8: scanning for New status rows')
-    new_rows = list(pyautogui.locateAllOnScreen(img('new_status.png'), confidence=0.7))
-    if not new_rows:
+    # Step 8 - OCR scan to find all New status rows and click their checkboxes
+    # The checkbox column is always at x=CHECKBOX_X regardless of how many rows exist
+    log('Executing step 8: OCR scan for New enrollment rows')
+    new_ys = find_new_row_ys()
+    if not new_ys:
         print('ENROLLMENT_FAILED: No New status rows found in Send Enrollments list', flush=True)
         sys.exit(1)
-    log('Step 8: found ' + str(len(new_rows)) + ' New row(s)')
-    for i, row in enumerate(new_rows):
-        cx, cy = pyautogui.center(row)
-        chk_x = cx + CHECKBOX_X_OFFSET
-        log('Step 8: clicking checkbox for row ' + str(i + 1) + ' at (' + str(chk_x) + ', ' + str(cy) + ')')
-        pyautogui.click(chk_x, cy)
+    log('Step 8: found ' + str(len(new_ys)) + ' New row(s) - clicking checkboxes')
+    for i, cy in enumerate(new_ys):
+        log('Step 8: clicking checkbox ' + str(i + 1) + ' at (' + str(CHECKBOX_X) + ', ' + str(cy) + ')')
+        pyautogui.click(CHECKBOX_X, cy)
         time.sleep(0.3)
     log('Step 8 complete: all New checkboxes clicked')
     time.sleep(0.5)
 
     # Step 9 - Click Submit
-    log('Executing step 9: click Submit button')
-    if not find_and_click('submit.png', 'Submit button', timeout=10):
-        print('ENROLLMENT_FAILED: Submit button not found', flush=True)
-        sys.exit(1)
+    log('Executing step 9: click Submit button at (1852, 969)')
+    time.sleep(0.5)
+    pyautogui.click(1852, 969)
     log('Step 9 complete: Submit clicked - waiting 2s for PIN dialog')
     time.sleep(2)
 
-    # Step 10 - Click PIN field and type PIN
+    # Step 10 - Click PIN field and type PIN (image recognition - modal dialog)
     log('Executing step 10: click PIN field')
     if not find_and_click('pin_field.png', 'PIN field', timeout=10):
         print('ENROLLMENT_FAILED: PIN field not found', flush=True)
@@ -154,7 +188,7 @@ def main():
     log('Step 10 complete: PIN entered')
     time.sleep(0.3)
 
-    # Step 11 - Click Password field and type password
+    # Step 11 - Click Password field and type password (image recognition - modal dialog)
     log('Executing step 11: click Password field')
     if not find_and_click('password_field.png', 'Password field', timeout=10):
         print('ENROLLMENT_FAILED: Password field not found', flush=True)
@@ -168,13 +202,13 @@ def main():
     time.sleep(0.3)
 
     # Step 12 - Click PIN submit at fixed coordinates
-    log('Executing step 12: click PIN submit button at (1096, 631)')
+    log('Executing step 12: click PIN submit button at (1124, 630)')
     time.sleep(0.5)
-    pyautogui.click(1096, 631)
+    pyautogui.click(1124, 630)
     log('Step 12 complete: PIN submit clicked - waiting 2s')
     time.sleep(2)
 
-    # Step 13 - Click submit OK
+    # Step 13 - Click submit OK (image recognition - confirmation dialog)
     log('Executing step 13: click submit OK button')
     if not find_and_click('submit_ok.png', 'Submit OK button', timeout=10):
         print('ENROLLMENT_FAILED: Submit OK button not found', flush=True)
