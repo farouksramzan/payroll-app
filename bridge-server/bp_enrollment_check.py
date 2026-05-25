@@ -90,22 +90,37 @@ def ocr_screen_for_ein(ein):
     ein_clean = ''.join(c for c in ein if c.isdigit())
     lines = text.splitlines()
 
+    # Find the line containing our EIN
+    ein_line_idx = None
     for i, line in enumerate(lines):
-        line_digits = ''.join(c for c in line if c.isdigit())
-        if ein_clean in line_digits:
-            # EIN found on line i - check this line and the 4 surrounding lines for Active
-            window_start = max(0, i - 2)
-            window_end   = min(len(lines), i + 3)
-            window_text  = ' '.join(lines[window_start:window_end])
+        if ein_clean in ''.join(c for c in line if c.isdigit()):
+            ein_line_idx = i
             log('EIN ' + ein_clean + ' found on line ' + str(i) + ': ' + line.strip())
-            log('Context window: ' + window_text.strip())
-            if 'active' in window_text.lower():
-                log('Active status confirmed for EIN ' + ein_clean)
-                return True
-            else:
-                log('EIN found but Active not in surrounding lines')
+            break
 
-    log('EIN ' + ein_clean + ' not found as Active in OCR output')
+    if ein_line_idx is None:
+        log('EIN ' + ein_clean + ' not found in OCR output')
+        log('Raw OCR (first 2000 chars): ' + text[:2000])
+        return False
+
+    # Scan forward from EIN line until we hit the next row's EIN or 10 lines max.
+    # Table columns often split across many OCR lines so we need a wide window.
+    window_end = min(len(lines), ein_line_idx + 10)
+    for j in range(ein_line_idx + 1, window_end):
+        other_digits = ''.join(c for c in lines[j] if c.isdigit())
+        # A 9-digit number that isn't ours signals the start of the next table row
+        if len(other_digits) >= 9 and ein_clean not in other_digits:
+            window_end = j
+            break
+
+    window_text = ' '.join(lines[ein_line_idx:window_end])
+    log('Row window (lines ' + str(ein_line_idx) + '-' + str(window_end) + '): ' + window_text.strip())
+
+    if 'active' in window_text.lower():
+        log('Active status confirmed for EIN ' + ein_clean)
+        return True
+
+    log('EIN found but Active not in row window')
     log('Raw OCR (first 2000 chars): ' + text[:2000])
     return False
 
