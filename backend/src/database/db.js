@@ -388,6 +388,12 @@ function migrate() {
     { name: 'pay_group_id', def: 'INTEGER' },
   ]);
 
+  // bridge job tracking — persists across page reloads
+  addCols('paystubs', [
+    { name: 'bridge_job_id',  def: 'TEXT' },
+    { name: 'bridge_status',  def: 'TEXT' },
+  ]);
+
   // Clean up orphaned draft paystubs that were never issued.
   // These accumulate when payroll runs fail mid-flight or employees are deleted.
   // Only draft records are removed — printed/deposited history is always preserved.

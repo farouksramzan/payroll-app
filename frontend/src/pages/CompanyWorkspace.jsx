@@ -2081,6 +2081,15 @@ function PayLiabilitiesTab({ clientId, client }) {
       ISSUED.has(s.check_status) && (UNPAID_941(s) || UNPAID_940(s))
     );
     setSelected(new Set(pending.map(s => s.id)));
+
+    // Restore polling if a paystub is still processing (e.g. after page reload)
+    const processingStub = stubs.find(s =>
+      (s.status === 'processing' || s.status_940 === 'processing') && s.bridge_job_id
+    );
+    if (processingStub) {
+      setActiveJobId(prev => prev || processingStub.bridge_job_id);
+      setJobStatus(prev => prev || processingStub.bridge_status || 'processing');
+    }
   }
   useEffect(() => { reload().finally(() => setLoading(false)); }, [clientId]);
 
@@ -2347,8 +2356,8 @@ function PayLiabilitiesTab({ clientId, client }) {
         <div className="alert alert-info" style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
           <span className="spinner spinner-dark" style={{ width: 14, height: 14, flexShrink: 0 }} />
           <span style={{ flex: 1 }}>
-            {jobStatus === 'enrollment_pending'
-              ? 'Processing. Since this is your first payment with us, it can take 15 mins to 1 hour.'
+            {(jobStatus === 'enrollment_pending' || paystubs.some(s => s.bridge_status === 'enrollment_pending'))
+              ? 'This is your first time submitting a payment with us. It will take some time before your payment is submitted. Check back in later.'
               : (jobMessage || 'Submitting to EFTPS — checking status…')}
           </span>
         </div>
@@ -2360,11 +2369,10 @@ function PayLiabilitiesTab({ clientId, client }) {
           <button onClick={() => { setJobStatus(null); setJobMessage(''); }} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button>
         </div>
       )}
-      {!activeJobId && jobStatus === 'failed' && (
+      {paystubs.some(s => s.submission_error === 'BRIDGE_DISCONNECTED' && s.status === 'failed') && (
         <div className="alert alert-error" style={{ marginBottom: 16 }}>
           <span>⚠</span>
-          <span>{jobMessage || 'Bridge processing failed.'}</span>
-          <button onClick={() => { setJobStatus(null); setJobMessage(''); }} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button>
+          <span>There was a technical issue. Please call 210-238-6850.</span>
         </div>
       )}
       {result && !activeJobId && jobStatus !== 'completed' && jobStatus !== 'failed' && (

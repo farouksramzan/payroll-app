@@ -13,6 +13,17 @@ const { calcSettlementDueDate } = require('../services/federalHolidays');
 const router = express.Router();
 router.use(requireAuth);
 
+// Persist enrollment_pending bridge status updates so the frontend can
+// restore the "first time" loading banner after a page reload.
+bridgeManager.on('statusUpdate', (msg) => {
+  if (msg.status === 'enrollment_pending' && msg.jobId) {
+    try {
+      const db = getDb();
+      db.prepare("UPDATE paystubs SET bridge_status = 'enrollment_pending' WHERE bridge_job_id = ?").run(msg.jobId);
+    } catch { /* non-critical */ }
+  }
+});
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function generatePin() {
@@ -1191,9 +1202,9 @@ router.post('/batch-submit', async (req, res) => {
         if (success) {
           const confirmation = msg.confirmation || msg.achFilePath || null;
           if (taxType === '940') {
-            dbInst.prepare(`UPDATE paystubs SET status_940='submitted', eftps_940_confirmation=?, eftps_940_submitted_at=CURRENT_TIMESTAMP WHERE id IN (${ph})`).run(confirmation, ...ids);
+            dbInst.prepare(`UPDATE paystubs SET status_940='submitted', bridge_job_id=NULL, bridge_status=NULL, eftps_940_confirmation=?, eftps_940_submitted_at=CURRENT_TIMESTAMP WHERE id IN (${ph})`).run(confirmation, ...ids);
           } else {
-            dbInst.prepare(`UPDATE paystubs SET status='submitted', eftps_confirmation=?, submitted_at=CURRENT_TIMESTAMP, submission_error=NULL WHERE id IN (${ph})`).run(confirmation, ...ids);
+            dbInst.prepare(`UPDATE paystubs SET status='submitted', bridge_job_id=NULL, bridge_status=NULL, eftps_confirmation=?, submitted_at=CURRENT_TIMESTAMP, submission_error=NULL WHERE id IN (${ph})`).run(confirmation, ...ids);
           }
           // If the bridge generated a new PIN during enrollment, persist it and mark client enrolled
           if (msg.enrollmentPin) {
@@ -1207,14 +1218,18 @@ router.post('/batch-submit', async (req, res) => {
             }
           }
         } else {
-          const errMsg = msg.error || 'Bridge processing failed';
+          const isBridgeDisconnect = msg.error === 'Bridge disconnected';
+          const errMsg = isBridgeDisconnect ? 'BRIDGE_DISCONNECTED' : (msg.error || 'Bridge processing failed');
           if (taxType === '941') {
-            dbInst.prepare(`UPDATE paystubs SET status='failed', submission_error=? WHERE id IN (${ph})`).run(errMsg, ...ids);
+            dbInst.prepare(`UPDATE paystubs SET status='failed', bridge_job_id=NULL, bridge_status=NULL, submission_error=? WHERE id IN (${ph})`).run(errMsg, ...ids);
           } else {
-            dbInst.prepare(`UPDATE paystubs SET status_940='failed' WHERE id IN (${ph})`).run(...ids);
+            dbInst.prepare(`UPDATE paystubs SET status_940='failed', bridge_job_id=NULL, bridge_status=NULL WHERE id IN (${ph})`).run(...ids);
           }
         }
       });
+
+      // Persist jobId so the frontend can restore polling across page reloads
+      db.prepare(`UPDATE paystubs SET bridge_job_id = ? WHERE id IN (${ids.map(() => '?').join(',')})`).run(jobId, ...ids);
 
       return res.json({
         jobId,
