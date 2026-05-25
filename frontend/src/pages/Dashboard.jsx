@@ -63,6 +63,18 @@ function initials(name) {
   return name ? name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : '?';
 }
 
+const LIAB_STATUS = {
+  overdue:    { label: 'Tax Overdue',  cls: 'badge-error',   title: 'Has overdue EFTPS deposits' },
+  'due-soon': { label: 'Due Soon',     cls: 'badge-warning', title: 'EFTPS deposit due within 7 days' },
+  clear:      { label: 'All Clear',    cls: 'badge-success', title: 'No pending tax deposits' },
+};
+
+function LiabStatusBadge({ status }) {
+  const cfg = LIAB_STATUS[status];
+  if (!cfg) return <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>—</span>;
+  return <span className={`badge ${cfg.cls}`} style={{ fontSize: 10 }} title={cfg.title}>{cfg.label}</span>;
+}
+
 const ISSUED = new Set(['printed', 'deposited']);
 
 // ── Tax detail modal ───────────────────────────────────────────────────────────
@@ -410,6 +422,7 @@ export default function Dashboard() {
                   </div>
                 )}
                 <div className="tile-badges">
+                  <LiabStatusBadge status={client.liabilityStatus} />
                   {ps && <span className={`badge ${ps.cls}`}>{ps.label}</span>}
                   <span className="badge badge-neutral" style={{ textTransform: 'capitalize' }}>{client.payrollFrequency || 'biweekly'}</span>
                   <span className="badge badge-neutral">{client.state || 'TX'}</span>
@@ -489,10 +502,7 @@ export default function Dashboard() {
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{client.depositSchedule || '—'}</div>
                   <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{client.state || 'TX'}</div>
-                  <div>
-                    {ps ? <span className={`badge ${ps.cls}`} style={{ fontSize: 10 }}>{ps.label}</span>
-                        : <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>—</span>}
-                  </div>
+                  <div><LiabStatusBadge status={client.liabilityStatus} /></div>
 
                   {/* Delete */}
                   <div onClick={e => e.stopPropagation()}>

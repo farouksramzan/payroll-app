@@ -66,10 +66,32 @@ router.get('/', (req, res) => {
       WHERE client_id = ?
         AND settlement_due_date IS NOT NULL
         AND settlement_due_date < ?
-        AND (status = 'pending' OR status_940 = 'pending')
+        AND check_status IN ('printed','deposited')
+        AND (status IN ('pending','processing','failed') OR status_940 IN ('pending','processing','failed'))
     `).get(c.id, today);
 
-    const overdueAmount = (overdueRow?.amount941 || 0) + (overdueRow?.amount940 || 0);
+    // Due soon = settlement_due_date within next 7 days
+    const in7Days = new Date(today); in7Days.setDate(in7Days.getDate() + 7);
+    const in7DaysStr = in7Days.toISOString().slice(0, 10);
+    const dueSoonRow = db.prepare(`
+      SELECT COALESCE(SUM(total_deposit),0) as amount941,
+             COALESCE(SUM(futa_tax),0) as amount940
+      FROM paystubs
+      WHERE client_id = ?
+        AND settlement_due_date IS NOT NULL
+        AND settlement_due_date >= ?
+        AND settlement_due_date <= ?
+        AND check_status IN ('printed','deposited')
+        AND (status IN ('pending','processing','failed') OR status_940 IN ('pending','processing','failed'))
+    `).get(c.id, today, in7DaysStr);
+
+    const overdueAmount  = (overdueRow?.amount941  || 0) + (overdueRow?.amount940  || 0);
+    const dueSoonAmount  = (dueSoonRow?.amount941  || 0) + (dueSoonRow?.amount940  || 0);
+
+    // Derive a single liability status for the dashboard badge
+    const liabilityStatus = overdueAmount > 0 ? 'overdue'
+      : dueSoonAmount > 0 ? 'due-soon'
+      : 'clear';
 
     return {
       ...sanitizeClient(c),
@@ -79,6 +101,8 @@ router.get('/', (req, res) => {
       lastSubmissionStatus: lastSub?.eftps_status || null,
       lastSubmissionDate:   lastSub?.created_at   || null,
       overdueAmount,
+      dueSoonAmount,
+      liabilityStatus,
     };
   });
 
