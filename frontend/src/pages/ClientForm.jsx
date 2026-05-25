@@ -170,6 +170,7 @@ export default function ClientForm() {
               <input
                 className="form-input mono"
                 type="password"
+                autoComplete="new-password"
                 value={form.batchProviderPin}
                 onChange={set('batchProviderPin')}
                 placeholder={isEdit ? '••••  (leave blank to keep current)' : '4-digit PIN'}
