@@ -17,7 +17,7 @@ const US_STATES = [
 ];
 
 const EMPTY = {
-  businessName: '', ein: '', state: 'TX', batchProviderPin: '', eftpsInternetPassword: '', eftpsEnrollmentNumber: '',
+  businessName: '', ein: '', state: 'TX', batchProviderPin: '',
   depositSchedule: 'monthly', sutaRate: '2.7',
   bankAccountNumber: '', bankRoutingNumber: '', bankAccountType: 'checking',
   contactName: '', contactEmail: '', contactPhone: '',
@@ -42,8 +42,6 @@ export default function ClientForm() {
         ein: c.ein || '',
         state: c.state || 'TX',
         batchProviderPin: '',
-        eftpsInternetPassword: '',
-        eftpsEnrollmentNumber: c.eftpsEnrollmentNumber || '',
         depositSchedule: c.depositSchedule || 'monthly',
         sutaRate: c.sutaRate != null ? String(parseFloat(c.sutaRate) * 100) : '2.7',
         bankAccountNumber: '',
@@ -68,7 +66,6 @@ export default function ClientForm() {
     if (!form.businessName.trim()) e.businessName = 'Required';
     if (!form.ein.trim()) e.ein = 'Required';
     else if (!/^\d{2}-?\d{7}$/.test(form.ein.trim())) e.ein = 'Format: XX-XXXXXXX';
-    if (!isEdit && !form.batchProviderPin) e.batchProviderPin = 'Required';
     if (form.batchProviderPin && !/^\d{4}$/.test(form.batchProviderPin)) e.batchProviderPin = 'Must be exactly 4 digits';
     if (form.bankRoutingNumber && !/^\d{9}$/.test(form.bankRoutingNumber)) e.bankRoutingNumber = 'Must be 9 digits';
     return e;
@@ -84,7 +81,6 @@ export default function ClientForm() {
       const payload = { ...form, sutaRate: parseFloat(form.sutaRate || 2.7) / 100 };
       if (!payload.bankAccountNumber) delete payload.bankAccountNumber;
       if (!payload.batchProviderPin) delete payload.batchProviderPin;
-      if (!payload.eftpsInternetPassword) delete payload.eftpsInternetPassword;
       if (isEdit) {
         await api.updateClient(id, payload);
         navigate(`/clients/${id}`);
@@ -160,46 +156,25 @@ export default function ClientForm() {
               <p className="form-hint">Used for SUI wage base and state income tax calculations. Employees can override individually.</p>
             </div>
 
-            <p className="form-section-title">EFTPS Credentials</p>
-
-            <div className="form-group">
-              <label className="form-label">Batch Provider PIN {!isEdit && <span>*</span>}</label>
-              <input
-                className="form-input mono"
-                type="text"
-                inputMode="numeric"
-                value={form.batchProviderPin}
-                onChange={set('batchProviderPin')}
-                placeholder={isEdit ? '(leave blank to keep current)' : '4-digit PIN'}
-                maxLength={4}
-              />
-              {errors.batchProviderPin && <p className="form-error-msg">{errors.batchProviderPin}</p>}
-              <p className="form-hint">Stored encrypted with AES-256. Never stored in plaintext.</p>
-            </div>
-
-            <div className="form-grid">
-              <div className="form-group">
-                <label className="form-label">EFTPS Internet Password</label>
-                <input
-                  className="form-input mono"
-                  type="password"
-                  autoComplete="new-password"
-                  value={form.eftpsInternetPassword}
-                  onChange={set('eftpsInternetPassword')}
-                  placeholder={isEdit ? '(leave blank to keep current)' : 'Internet password for eftps.gov'}
-                />
-                <p className="form-hint">Required for online login automation. Stored encrypted.</p>
-              </div>
-              <div className="form-group">
-                <label className="form-label">EFTPS Enrollment Number</label>
-                <input
-                  className="form-input mono"
-                  value={form.eftpsEnrollmentNumber}
-                  onChange={set('eftpsEnrollmentNumber')}
-                  placeholder="Optional — from EFTPS enrollment letter"
-                />
-              </div>
-            </div>
+            {isEdit && (
+              <>
+                <p className="form-section-title">EFTPS</p>
+                <div className="form-group" style={{ maxWidth: 200 }}>
+                  <label className="form-label">Self-Enrollment PIN</label>
+                  <input
+                    className="form-input mono"
+                    type="text"
+                    inputMode="numeric"
+                    value={form.batchProviderPin}
+                    onChange={set('batchProviderPin')}
+                    placeholder="Leave blank to keep current"
+                    maxLength={4}
+                  />
+                  {errors.batchProviderPin && <p className="form-error-msg">{errors.batchProviderPin}</p>}
+                  <p className="form-hint">Auto-generated on first enrollment. Only change if EFTPS has a different PIN on record.</p>
+                </div>
+              </>
+            )}
 
             <div className="form-group">
               <label className="form-label">SUI (State Unemployment) Rate (%)</label>
