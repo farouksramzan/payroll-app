@@ -58,6 +58,21 @@ router.get('/', (req, res) => {
       .get(c.id);
     const nextDue = calcNextDueDate(c.deposit_schedule, lastSub?.pay_period_end);
 
+    // Calculate next payroll date from most recent pay_period_end + frequency
+    const lastPaystub = db
+      .prepare('SELECT pay_period_end FROM paystubs WHERE client_id = ? ORDER BY pay_period_end DESC LIMIT 1')
+      .get(c.id);
+    let calcNextPayroll = null;
+    if (lastPaystub?.pay_period_end) {
+      const freq = c.payroll_frequency || 'biweekly';
+      const d = new Date(lastPaystub.pay_period_end + 'T00:00:00');
+      if (freq === 'weekly')         d.setDate(d.getDate() + 7);
+      else if (freq === 'biweekly')  d.setDate(d.getDate() + 14);
+      else if (freq === 'semimonthly') d.setDate(d.getDate() + 15);
+      else if (freq === 'monthly')   d.setMonth(d.getMonth() + 1);
+      calcNextPayroll = d.toISOString().slice(0, 10);
+    }
+
     // Overdue = settlement_due_date < today and still pending
     const overdueRow = db.prepare(`
       SELECT COALESCE(SUM(total_deposit),0) as amount941,
@@ -96,7 +111,7 @@ router.get('/', (req, res) => {
     return {
       ...sanitizeClient(c),
       nextDueDate:          nextDue,
-      nextPayrollDate:      c.next_payroll_date  || null,
+      nextPayrollDate:      calcNextPayroll || c.next_payroll_date || null,
       payrollFrequency:     c.payroll_frequency  || 'biweekly',
       lastSubmissionStatus: lastSub?.eftps_status || null,
       lastSubmissionDate:   lastSub?.created_at   || null,
