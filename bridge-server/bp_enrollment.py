@@ -139,13 +139,13 @@ def main():
     log('Step 4 complete: Add button clicked - waiting 2s for file browser')
     time.sleep(2)
 
-    # Step 5 - Type full path and press Enter to submit file browser
-    # Use full path so the dialog navigates correctly regardless of its starting directory
+    # Step 5 - Type filename and press Enter to submit file browser
+    filename = os.path.basename(enroll_file_path)
     log('Executing step 5a: Ctrl+A in filename field')
     pyautogui.hotkey('ctrl', 'a')
     time.sleep(0.2)
-    log('Executing step 5b: type full path - ' + enroll_file_path)
-    pyautogui.typewrite(enroll_file_path, interval=0.05)
+    log('Executing step 5b: type filename - ' + filename)
+    pyautogui.typewrite(filename, interval=0.15)
     time.sleep(0.2)
     log('Executing step 5c: press Enter to close file browser')
     pyautogui.press('enter')
@@ -239,13 +239,6 @@ def main():
         sys.exit(1)
     log('Step 13 complete: submit OK clicked')
     time.sleep(1)
-
-    # Delete the enrollment file so it cannot be accidentally re-imported
-    try:
-        os.remove(enroll_file_path)
-        log('Enrollment file deleted after successful submission: ' + enroll_file_path)
-    except Exception as e:
-        log('WARNING: Could not delete enrollment file: ' + str(e))
 
     log('All steps complete - enrollment submitted successfully')
     print('ENROLLMENT_COMPLETE', flush=True)
