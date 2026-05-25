@@ -60,10 +60,7 @@ export default function ClientForm() {
   }, [id, isEdit]);
 
   function set(field) {
-    return (e) => {
-      setForm((f) => ({ ...f, [field]: e.target.value }));
-      setErrors((err) => ({ ...err, [field]: '' }));
-    };
+    return (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
   }
 
   function validate() {
@@ -169,11 +166,11 @@ export default function ClientForm() {
               <label className="form-label">Batch Provider PIN {!isEdit && <span>*</span>}</label>
               <input
                 className="form-input mono"
-                type="password"
-                autoComplete="new-password"
+                type="text"
+                inputMode="numeric"
                 value={form.batchProviderPin}
                 onChange={set('batchProviderPin')}
-                placeholder={isEdit ? '••••  (leave blank to keep current)' : '4-digit PIN'}
+                placeholder={isEdit ? '(leave blank to keep current)' : '4-digit PIN'}
                 maxLength={4}
               />
               {errors.batchProviderPin && <p className="form-error-msg">{errors.batchProviderPin}</p>}
@@ -186,6 +183,7 @@ export default function ClientForm() {
                 <input
                   className="form-input mono"
                   type="password"
+                  autoComplete="new-password"
                   value={form.eftpsInternetPassword}
                   onChange={set('eftpsInternetPassword')}
                   placeholder={isEdit ? '(leave blank to keep current)' : 'Internet password for eftps.gov'}
