@@ -6,6 +6,18 @@ import api from '../api/client';
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function fmt(n) { return `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 function fmtDate(d) { if (!d) return '—'; return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
+function fmtShort(d) { if (!d) return '—'; return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
+function fmtPeriod(start, end) {
+  if (!start && !end) return '—';
+  const s = start ? new Date(start + 'T00:00:00') : null;
+  const e = end   ? new Date(end   + 'T00:00:00') : null;
+  const mo = { month: 'short', day: 'numeric' };
+  if (!s) return e.toLocaleDateString('en-US', mo);
+  if (!e) return s.toLocaleDateString('en-US', mo);
+  const sStr = s.toLocaleDateString('en-US', mo);
+  const eStr = s.getMonth() === e.getMonth() ? e.getDate() : e.toLocaleDateString('en-US', mo);
+  return `${sStr} – ${eStr}`;
+}
 function r2(n) { return Math.round((n || 0) * 100) / 100; }
 function initials(name) { return name ? name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : '?'; }
 const PERIODS_PER_YEAR = { weekly: 52, biweekly: 26, semimonthly: 24, monthly: 12 };
@@ -2419,12 +2431,23 @@ function PayLiabilitiesTab({ clientId, client }) {
                 <colgroup>
                   <col style={{ width: 36 }} />
                   <col />
-                  <col style={{ width: 150 }} />
-                  <col style={{ width: 84 }} />
-                  <col style={{ width: 84 }} />
-                  <col style={{ width: 96 }} />
+                  <col style={{ width: 130 }} />
+                  <col style={{ width: 80 }} />
+                  <col style={{ width: 80 }} />
+                  <col style={{ width: 90 }} />
                   <col style={{ width: 100 }} />
                 </colgroup>
+                <thead>
+                  <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
+                    <th style={{ width: 36 }} />
+                    <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' }}>Employee</th>
+                    <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' }}>Pay Period</th>
+                    <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' }}>Send By</th>
+                    <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' }}>IRS Due</th>
+                    <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'right' }}>Amount</th>
+                    <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'right' }}>Status</th>
+                  </tr>
+                </thead>
                 <tbody>
                   {enriched.map((stub, idx) => {
                     const voided   = stub.check_status === 'voided';
@@ -2446,14 +2469,14 @@ function PayLiabilitiesTab({ clientId, client }) {
                           <span style={{ fontWeight: 600, textDecoration: voided ? 'line-through' : 'none' }}>{stub.employee_name || '—'}</span>
                           {stub.check_number && <span style={{ marginLeft: 5, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--accent)' }}>#{stub.check_number}</span>}
                         </td>
-                        <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: '#222' }}>
-                          {fmtDate(stub.pay_period_start)} – {fmtDate(stub.pay_period_end)}
+                        <td style={{ padding: '8px 8px', fontSize: 12, color: '#555' }}>
+                          {fmtPeriod(stub.pay_period_start, stub.pay_period_end)}
                         </td>
                         <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 700, color: stub._status === 'late' ? '#dc2626' : stub._status === 'due-soon' ? '#d97706' : '#222' }}>
-                          {fmtDate(stub._sendBy)}
+                          {fmtShort(stub._sendBy)}
                         </td>
                         <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 700, color: stub._status === 'late' ? '#dc2626' : '#222' }}>
-                          {fmtDate(stub._due)}
+                          {fmtShort(stub._due)}
                         </td>
                         <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, color: '#111', fontSize: 13 }}>
                           {fmt(amount)}
@@ -2501,10 +2524,10 @@ function PayLiabilitiesTab({ clientId, client }) {
     <div>
       {/* Frequency selectors */}
       <div className="card" style={{ marginBottom: 16, padding: '12px 20px' }}>
-        <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>941 Deposit Schedule</div>
-            <select className="form-select" value={sched941} onChange={e => setSched941(e.target.value)} style={{ fontSize: 12, height: 30, minWidth: 280 }}>
+            <select className="form-select" value={sched941} onChange={e => setSched941(e.target.value)} style={{ fontSize: 12, height: 30, width: '100%' }}>
               <option value="monthly">Monthly — 15th of following month</option>
               <option value="semiweekly">Semi-weekly — Wed/Fri after pay date</option>
               <option value="quarterly">Quarterly — when filing Form 941</option>
@@ -2512,14 +2535,14 @@ function PayLiabilitiesTab({ clientId, client }) {
           </div>
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>940 Payment Schedule</div>
-            <select className="form-select" value={sched940} onChange={e => setSched940(e.target.value)} style={{ fontSize: 12, height: 30, minWidth: 260 }}>
+            <select className="form-select" value={sched940} onChange={e => setSched940(e.target.value)} style={{ fontSize: 12, height: 30, width: '100%' }}>
               <option value="quarterly">Quarterly — if liability over $500</option>
               <option value="annually">Annually — Jan 31 (if under $500)</option>
             </select>
           </div>
           <div>
             <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>State SUI Schedule</div>
-            <select className="form-select" value={schedSUI} onChange={e => setSchedSUI(e.target.value)} style={{ fontSize: 12, height: 30, minWidth: 160 }}>
+            <select className="form-select" value={schedSUI} onChange={e => setSchedSUI(e.target.value)} style={{ fontSize: 12, height: 30, width: '100%' }}>
               <option value="quarterly">Quarterly</option>
               <option value="monthly">Monthly</option>
               <option value="annually">Annually</option>
