@@ -79,6 +79,7 @@ function buildRecord(p) {
   const regId   = digits(p.registrationId).slice(0, 9).padStart(9, '0');
   const ein     = digits(p.ein).slice(0, 9).padStart(9, '0');
   const pin     = digits(p.pin).slice(0, 4).padStart(4, '0');
+  if (pin === '0000') throw new Error('Payment PIN resolved to 0000 — PIN was missing or invalid.');
   const taxCode = String(p.taxTypeCode || '94105').slice(0, 5).padEnd(5, ' ');
   const created = yyyymmdd(p.createdDate || new Date().toISOString().slice(0, 10));
   const seq     = lz(p.sequenceNumber ?? 1, 7);

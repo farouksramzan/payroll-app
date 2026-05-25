@@ -294,7 +294,11 @@ class BridgeClient extends EventEmitter {
       // 1. Enroll client if not already enrolled.
       // Railway DB is authoritative (job.eftpsEnrolled). Local JSON is a fallback
       // in case the Railway DB is reset or the client was enrolled on a previous machine.
-      const alreadyEnrolled = job.eftpsEnrolled === 1 || isEnrolled(job.ein);
+      const enrollmentInProgress = loadPendingEnrollments().some(e => cleanEin(e.ein) === cleanEin(job.ein));
+      const alreadyEnrolled = job.eftpsEnrolled === 1 || isEnrolled(job.ein) || enrollmentInProgress;
+      if (enrollmentInProgress) {
+        log(`[ENROLL] EIN ${cleanEin(job.ein)} enrollment already in progress — skipping re-enrollment`);
+      }
       if (!alreadyEnrolled) {
         log(`EIN ${cleanEin(job.ein)} not enrolled (Railway DB + local JSON both show unenrolled) — running enrollment first`);
 
