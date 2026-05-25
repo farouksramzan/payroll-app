@@ -1,6 +1,6 @@
 'use strict';
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -2749,7 +2749,8 @@ function FileFormsTab({ clientId }) {
 
 // ── Payroll Tab ───────────────────────────────────────────────────────────────
 function PayrollTab({ clientId, client, employees, onRefresh }) {
-  const [sub, setSub] = useState('pay');
+  const [searchParams] = useSearchParams();
+  const [sub, setSub] = useState(() => searchParams.get('tab') === 'liabilities' ? 'liabilities' : 'pay');
   return (
     <div>
       <div className="pay-subtabs">

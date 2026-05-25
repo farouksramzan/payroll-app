@@ -44,6 +44,21 @@ function fmtDate(d) {
   if (!d) return '—';
   return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
+function fmtShort(d) {
+  if (!d) return '—';
+  return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+function fmtPeriod(start, end) {
+  if (!start && !end) return '—';
+  const s = start ? new Date(start + 'T00:00:00') : null;
+  const e = end   ? new Date(end   + 'T00:00:00') : null;
+  const mo = { month: 'short', day: 'numeric' };
+  if (!s) return e.toLocaleDateString('en-US', mo);
+  if (!e) return s.toLocaleDateString('en-US', mo);
+  const sStr = s.toLocaleDateString('en-US', mo);
+  const eStr = s.getMonth() === e.getMonth() ? e.getDate() : e.toLocaleDateString('en-US', mo);
+  return `${sStr} – ${eStr}`;
+}
 function fmt(n) {
   return '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
@@ -152,10 +167,12 @@ function TaxDetailModal({ row, onClose }) {
 
 // ── Merged liabilities panel ───────────────────────────────────────────────────
 function MultiLiabPanel({ clientIds, clients }) {
-  const [rows, setRows]         = useState([]);
-  const [loading, setLoading]   = useState(false);
+  const [rows, setRows]           = useState([]);
+  const [loading, setLoading]     = useState(false);
   const [detailRow, setDetailRow] = useState(null);
+  const [filter, setFilter]       = useState('all'); // 'all' | 'late' | 'due-soon'
   const prevIds = useRef('');
+  const navigate = useNavigate();
 
   useEffect(() => {
     const key = [...clientIds].sort().join(',');
@@ -167,44 +184,46 @@ function MultiLiabPanel({ clientIds, clients }) {
     Promise.all(clientIds.map(id => api.getPaystubs(id).then(stubs => ({ id, stubs }))))
       .then(results => {
         const today = new Date().toISOString().slice(0, 10);
+        const in5 = new Date(); in5.setDate(in5.getDate() + 5);
+        const in5Str = in5.toISOString().slice(0, 10);
         const merged = [];
         results.forEach(({ id, stubs }) => {
           const client = clients.find(c => c.id === id);
           const schedule = client?.depositSchedule || 'monthly';
+          stubs.filter(s => ISSUED.has(s.check_status)).forEach(s => {
+            const refDate = s.settlement_date || s.pay_period_end;
+            const due941 = s.settlement_due_date || (refDate ? calcIRSDepositDue(refDate, schedule) : null);
+            const due940 = refDate ? calcFutaQuarterlyDue(refDate) : null;
+            const dueSUI = due940;
+            const pending941 = s.status     === 'pending' || s.status     === 'processing' || s.status     === 'failed';
+            const pending940 = (s.status_940 === 'pending' || s.status_940 === 'processing' || s.status_940 === 'failed') && (s.futa_tax || 0) > 0;
+            const pendingSUI = pending941 && (s.suta_tax || 0) > 0;
+            if (!pending941 && !pending940 && !pendingSUI) return;
 
-          stubs
-            .filter(s => ISSUED.has(s.check_status))
-            .forEach(s => {
-              const refDate = s.settlement_date || s.pay_period_end;
+            const late941    = pending941 && due941 && today > due941;
+            const late940    = pending940 && due940 && today > due940;
+            const lateSUI    = pendingSUI && dueSUI && today > dueSUI;
+            const dueSoon941 = !late941 && pending941 && due941 && due941 <= in5Str;
+            const dueSoon940 = !late940 && pending940 && due940 && due940 <= in5Str;
+            const dueSoonSUI = !lateSUI && pendingSUI && dueSUI && dueSUI <= in5Str;
 
-              // 941 due date: use stored field, fall back to calculation
-              const due941 = s.settlement_due_date || (refDate ? calcIRSDepositDue(refDate, schedule) : null);
-              // 940 due date: quarterly
-              const due940 = refDate ? calcFutaQuarterlyDue(refDate) : null;
-              // SUI due date: same as 940 quarterly (common default)
-              const dueSUI = due940;
+            const isLate    = late941 || late940 || lateSUI;
+            const isDueSoon = !isLate && (dueSoon941 || dueSoon940 || dueSoonSUI);
 
-              const pending941 = s.status     === 'pending' || s.status     === 'processing' || s.status     === 'failed';
-              const pending940 = (s.status_940 === 'pending' || s.status_940 === 'processing' || s.status_940 === 'failed') && (s.futa_tax || 0) > 0;
-              const pendingSUI = pending941 && (s.suta_tax || 0) > 0;
-
-              if (!pending941 && !pending940 && !pendingSUI) return;
-
-              merged.push({
-                ...s,
-                _clientName: client?.businessName || '—',
-                _clientId:   id,
-                _due941:     pending941 ? due941 : null,
-                _due940:     pending940 ? due940 : null,
-                _dueSUI:     pendingSUI ? dueSUI : null,
-                _late941:    pending941 && due941 ? today > due941 : false,
-                _late940:    pending940 && due940 ? today > due940 : false,
-                _lateSUI:    pendingSUI && dueSUI ? today > dueSUI : false,
-                _pending941: pending941,
-                _pending940: pending940,
-                _pendingSUI: pendingSUI,
-              });
+            merged.push({
+              ...s,
+              _clientName: client?.businessName || '—',
+              _clientId:   id,
+              _due941: pending941 ? due941 : null,
+              _due940: pending940 ? due940 : null,
+              _dueSUI: pendingSUI ? dueSUI : null,
+              _late941, _late940, _lateSUI,
+              _dueSoon941: dueSoon941, _dueSoon940: dueSoon940, _dueSoonSUI: dueSoonSUI,
+              _pending941, _pending940, _pendingSUI,
+              _isLate: isLate,
+              _isDueSoon: isDueSoon,
             });
+          });
         });
         merged.sort((a, b) => {
           const aMin = [a._due941, a._due940, a._dueSUI].filter(Boolean).sort()[0] || 'zzzz';
@@ -217,15 +236,33 @@ function MultiLiabPanel({ clientIds, clients }) {
       .finally(() => setLoading(false));
   }, [clientIds, clients]);
 
-  const total941 = rows.filter(r => r._pending941).reduce((s, r) => s + (r.total_deposit || 0), 0);
-  const total940 = rows.filter(r => r._pending940).reduce((s, r) => s + (r.futa_tax || 0), 0);
-  const totalSUI = rows.filter(r => r._pendingSUI).reduce((s, r) => s + (r.suta_tax || 0), 0);
+  const lateRows    = rows.filter(r => r._isLate);
+  const dueSoonRows = rows.filter(r => r._isDueSoon);
+  const lateAmt    = lateRows.reduce((s, r) => s + (r._pending941 ? r.total_deposit||0 : 0) + (r._pending940 ? r.futa_tax||0 : 0) + (r._pendingSUI ? r.suta_tax||0 : 0), 0);
+  const dueSoonAmt = dueSoonRows.reduce((s, r) => s + (r._pending941 ? r.total_deposit||0 : 0) + (r._pending940 ? r.futa_tax||0 : 0) + (r._pendingSUI ? r.suta_tax||0 : 0), 0);
+
+  const visibleRows = filter === 'late' ? lateRows : filter === 'due-soon' ? dueSoonRows : rows;
+
+  const total941   = rows.filter(r => r._pending941).reduce((s, r) => s + (r.total_deposit || 0), 0);
+  const total940   = rows.filter(r => r._pending940).reduce((s, r) => s + (r.futa_tax || 0), 0);
+  const totalSUI   = rows.filter(r => r._pendingSUI).reduce((s, r) => s + (r.suta_tax || 0), 0);
   const grandTotal = total941 + total940 + totalSUI;
 
-  const DueCell = ({ due, late }) => (
-    <td style={{ padding: '7px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11,
-      color: late ? '#dc2626' : due ? '#d97706' : 'var(--text-muted)', fontWeight: late ? 700 : 400 }}>
-      {due ? (late ? '⚠ ' : '') + fmtDate(due) : '—'}
+  // Group visible rows by company (for filtered views)
+  const grouped = [];
+  const seenClients = [];
+  visibleRows.forEach(r => {
+    if (!seenClients.includes(r._clientId)) seenClients.push(r._clientId);
+  });
+  seenClients.forEach(cid => {
+    grouped.push({ clientId: cid, clientName: visibleRows.find(r => r._clientId === cid)?._clientName || '—', rows: visibleRows.filter(r => r._clientId === cid) });
+  });
+
+  const DueCell = ({ due, late, dueSoon }) => (
+    <td style={{ padding: '7px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11,
+      color: late ? '#dc2626' : dueSoon ? '#d97706' : due ? 'var(--text-secondary)' : 'var(--text-muted)',
+      fontWeight: (late || dueSoon) ? 700 : 400 }}>
+      {due ? fmtShort(due) : '—'}
     </td>
   );
 
@@ -233,18 +270,71 @@ function MultiLiabPanel({ clientIds, clients }) {
     <>
       {detailRow && <TaxDetailModal row={detailRow} onClose={() => setDetailRow(null)} />}
       <div className="card" style={{ marginTop: 20, padding: 0, overflow: 'hidden' }}>
+
+        {/* Header */}
         <div style={{ padding: '13px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
           <div style={{ fontWeight: 700, fontSize: 14, flex: 1 }}>
             Pending Liabilities — {clientIds.length} {clientIds.length === 1 ? 'company' : 'companies'}
           </div>
           {loading && <span className="spinner spinner-dark" style={{ width: 14, height: 14 }} />}
-          <div style={{ display: 'flex', gap: 20 }}>
+          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
             {total941 > 0 && <div style={{ fontSize: 12, textAlign: 'right' }}><div style={{ color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>941</div><div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, color: 'var(--accent)' }}>{fmt(total941)}</div></div>}
             {total940 > 0 && <div style={{ fontSize: 12, textAlign: 'right' }}><div style={{ color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>940</div><div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, color: 'var(--accent)' }}>{fmt(total940)}</div></div>}
             {totalSUI > 0 && <div style={{ fontSize: 12, textAlign: 'right' }}><div style={{ color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>SUI</div><div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, color: 'var(--accent)' }}>{fmt(totalSUI)}</div></div>}
-            <div style={{ fontSize: 12, textAlign: 'right', borderLeft: '1px solid var(--border)', paddingLeft: 16 }}><div style={{ color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total</div><div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 15, color: 'var(--accent)' }}>{fmt(grandTotal)}</div></div>
+            <div style={{ fontSize: 12, textAlign: 'right', borderLeft: '1px solid var(--border)', paddingLeft: 16 }}>
+              <div style={{ color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total</div>
+              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 15, color: 'var(--accent)' }}>{fmt(grandTotal)}</div>
+            </div>
           </div>
         </div>
+
+        {/* Action bar */}
+        {rows.length > 0 && (
+          <div style={{ padding: '10px 20px', borderBottom: '1px solid var(--border)', background: '#fafafa', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* Late chip */}
+            {lateRows.length > 0 && (
+              <button onClick={() => setFilter(f => f === 'late' ? 'all' : 'late')}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 14px', borderRadius: 8,
+                  background: filter === 'late' ? '#fef2f2' : '#fff',
+                  border: `1.5px solid ${filter === 'late' ? '#dc2626' : '#fca5a5'}`,
+                  cursor: 'pointer', transition: 'all 0.15s' }}>
+                <span style={{ fontSize: 14 }}>⚠️</span>
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#dc2626' }}>Overdue</div>
+                  <div style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, color: '#b91c1c' }}>{fmt(lateAmt)}</div>
+                </div>
+                <span style={{ fontSize: 10, color: '#dc2626', fontWeight: 600, background: '#fee2e2', borderRadius: 99, padding: '2px 7px' }}>{lateRows.length} check{lateRows.length !== 1 ? 's' : ''}</span>
+              </button>
+            )}
+
+            {/* Due Soon chip */}
+            {dueSoonRows.length > 0 && (
+              <button onClick={() => setFilter(f => f === 'due-soon' ? 'all' : 'due-soon')}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 14px', borderRadius: 8,
+                  background: filter === 'due-soon' ? '#fffbeb' : '#fff',
+                  border: `1.5px solid ${filter === 'due-soon' ? '#d97706' : '#fcd34d'}`,
+                  cursor: 'pointer', transition: 'all 0.15s' }}>
+                <span style={{ fontSize: 14 }}>⏰</span>
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#d97706' }}>Due Soon</div>
+                  <div style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, color: '#b45309' }}>{fmt(dueSoonAmt)}</div>
+                </div>
+                <span style={{ fontSize: 10, color: '#d97706', fontWeight: 600, background: '#fef3c7', borderRadius: 99, padding: '2px 7px' }}>{dueSoonRows.length} check{dueSoonRows.length !== 1 ? 's' : ''}</span>
+              </button>
+            )}
+
+            {filter !== 'all' && (
+              <button onClick={() => setFilter('all')}
+                style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', marginLeft: 4 }}>
+                Show all
+              </button>
+            )}
+
+            {lateRows.length === 0 && dueSoonRows.length === 0 && (
+              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>All payments on schedule</span>
+            )}
+          </div>
+        )}
 
         {!loading && rows.length === 0 && (
           <div style={{ padding: '28px 20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
@@ -252,53 +342,90 @@ function MultiLiabPanel({ clientIds, clients }) {
           </div>
         )}
 
-        {rows.length > 0 && (
+        {visibleRows.length > 0 && (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
             <thead>
               <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
-                {['Company', 'Employee', 'Period', '941 Deposit', '941 Due', '940 (FUTA)', '940 Due', 'SUI', 'SUI Due'].map(h => (
-                  <th key={h} style={{ padding: '8px 12px', textAlign: h.includes('Deposit') || h.includes('FUTA') || h === 'SUI' ? 'right' : 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em', whiteSpace: 'nowrap' }}>{h}</th>
-                ))}
+                {filter !== 'all' && <th style={{ width: 4 }} />}
+                <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Company</th>
+                <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Employee</th>
+                <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Period</th>
+                <th style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>941</th>
+                <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>941 Due</th>
+                <th style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>940</th>
+                <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>940 Due</th>
+                <th style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>SUI</th>
+                <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>SUI Due</th>
+                {filter !== 'all' && <th style={{ width: 100 }} />}
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => (
-                <tr key={r.id}
-                  style={{ background: i % 2 === 0 ? '#fff' : '#f8fafc', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
-                  onClick={() => setDetailRow(r)}
-                  title="Click to view tax breakdown">
-                  <td style={{ padding: '8px 12px', fontWeight: 600, whiteSpace: 'nowrap' }}>{r._clientName}</td>
-                  <td style={{ padding: '8px 12px', whiteSpace: 'nowrap' }}>{r.employee_name || '—'}</td>
-                  <td style={{ padding: '8px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, whiteSpace: 'nowrap' }}>
-                    {fmtDate(r.pay_period_start)} – {fmtDate(r.pay_period_end)}
-                  </td>
-                  {/* 941 */}
-                  <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>
-                    {r._pending941 ? fmt(r.total_deposit) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
-                  </td>
-                  <DueCell due={r._due941} late={r._late941} />
-                  {/* 940 */}
-                  <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>
-                    {r._pending940 ? fmt(r.futa_tax) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
-                  </td>
-                  <DueCell due={r._due940} late={r._late940} />
-                  {/* SUI */}
-                  <td style={{ padding: '8px 12px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>
-                    {r._pendingSUI ? fmt(r.suta_tax) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
-                  </td>
-                  <DueCell due={r._dueSUI} late={r._lateSUI} />
-                </tr>
-              ))}
+              {filter === 'all' ? (
+                /* Flat rows when showing all */
+                visibleRows.map((r, i) => {
+                  const stripe = i % 2 === 0 ? '#fff' : '#f8fafc';
+                  const bg = r._isLate ? '#fff5f5' : r._isDueSoon ? '#fffdf0' : stripe;
+                  return (
+                    <tr key={r.id} style={{ background: bg, borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                      onClick={() => setDetailRow(r)}>
+                      <td style={{ padding: '8px 10px', fontWeight: 600, whiteSpace: 'nowrap' }}>{r._clientName}</td>
+                      <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', color: '#555' }}>{r.employee_name || '—'}</td>
+                      <td style={{ padding: '8px 10px', fontSize: 11, whiteSpace: 'nowrap', color: '#555' }}>{fmtPeriod(r.pay_period_start, r.pay_period_end)}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{r._pending941 ? fmt(r.total_deposit) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                      <DueCell due={r._due941} late={r._late941} dueSoon={r._dueSoon941} />
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{r._pending940 ? fmt(r.futa_tax) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                      <DueCell due={r._due940} late={r._late940} dueSoon={r._dueSoon940} />
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{r._pendingSUI ? fmt(r.suta_tax) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                      <DueCell due={r._dueSUI} late={r._lateSUI} dueSoon={r._dueSoonSUI} />
+                    </tr>
+                  );
+                })
+              ) : (
+                /* Grouped by company when filtered */
+                grouped.map(group => (
+                  <>
+                    {/* Company group header */}
+                    <tr key={`hdr-${group.clientId}`} style={{ background: filter === 'late' ? '#fef2f2' : '#fffbeb', borderBottom: '1px solid var(--border)' }}>
+                      <td style={{ width: 4, background: filter === 'late' ? '#dc2626' : '#d97706', padding: 0 }} />
+                      <td colSpan={9} style={{ padding: '8px 10px', fontWeight: 700, fontSize: 13 }}>{group.clientName}</td>
+                      <td style={{ padding: '6px 10px', textAlign: 'right' }}>
+                        <button onClick={() => navigate(`/clients/${group.clientId}?tab=liabilities`)}
+                          style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', background: 'var(--accent-light)', border: 'none', borderRadius: 6, padding: '5px 12px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+                          Go Pay →
+                        </button>
+                      </td>
+                    </tr>
+                    {/* Check rows for this company */}
+                    {group.rows.map((r, i) => (
+                      <tr key={r.id} style={{ background: i % 2 === 0 ? '#fff' : '#f8fafc', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                        onClick={() => setDetailRow(r)}>
+                        <td style={{ width: 4, background: filter === 'late' ? '#fca5a5' : '#fcd34d', padding: 0 }} />
+                        <td style={{ padding: '7px 10px', color: 'var(--text-muted)', fontSize: 11 }}></td>
+                        <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', color: '#555' }}>{r.employee_name || '—'}</td>
+                        <td style={{ padding: '7px 10px', fontSize: 11, whiteSpace: 'nowrap', color: '#555' }}>{fmtPeriod(r.pay_period_start, r.pay_period_end)}</td>
+                        <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{r._pending941 ? fmt(r.total_deposit) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                        <DueCell due={r._due941} late={r._late941} dueSoon={r._dueSoon941} />
+                        <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{r._pending940 ? fmt(r.futa_tax) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                        <DueCell due={r._due940} late={r._late940} dueSoon={r._dueSoon940} />
+                        <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{r._pendingSUI ? fmt(r.suta_tax) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
+                        <DueCell due={r._dueSUI} late={r._lateSUI} dueSoon={r._dueSoonSUI} />
+                        <td />
+                      </tr>
+                    ))}
+                  </>
+                ))
+              )}
             </tbody>
             <tfoot>
               <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--bg-secondary)' }}>
-                <td colSpan={3} style={{ padding: '10px 12px', fontWeight: 700, fontSize: 12 }}>Total</td>
-                <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 13, color: 'var(--accent)' }}>{fmt(total941)}</td>
+                {filter !== 'all' && <td style={{ width: 4 }} />}
+                <td colSpan={3} style={{ padding: '9px 10px', fontWeight: 700, fontSize: 12 }}>Total</td>
+                <td style={{ padding: '9px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, color: 'var(--accent)' }}>{fmt(total941)}</td>
                 <td />
-                <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 13, color: 'var(--accent)' }}>{fmt(total940)}</td>
+                <td style={{ padding: '9px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, color: 'var(--accent)' }}>{fmt(total940)}</td>
                 <td />
-                <td style={{ padding: '10px 12px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 13, color: 'var(--accent)' }}>{fmt(totalSUI)}</td>
-                <td />
+                <td style={{ padding: '9px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, color: 'var(--accent)' }}>{fmt(totalSUI)}</td>
+                <td />{filter !== 'all' && <td />}
               </tr>
             </tfoot>
           </table>
