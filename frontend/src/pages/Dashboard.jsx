@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../api/client';
 
@@ -171,17 +171,15 @@ function MultiLiabPanel({ clientIds, clients }) {
   const [loading, setLoading]     = useState(false);
   const [detailRow, setDetailRow] = useState(null);
   const [filter, setFilter]       = useState('all'); // 'all' | 'late' | 'due-soon'
-  const prevIds = useRef('');
   const navigate = useNavigate();
 
-  useEffect(() => {
-    const key = [...clientIds].sort().join(',');
-    if (key === prevIds.current) return;
-    prevIds.current = key;
+  const clientKey = useMemo(() => [...clientIds].sort().join(','), [clientIds]);
 
-    if (clientIds.length === 0) { setRows([]); return; }
+  useEffect(() => {
+    if (!clientKey) { setRows([]); return; }
     setLoading(true);
-    Promise.all(clientIds.map(id => api.getPaystubs(id).then(stubs => ({ id, stubs }))))
+    const ids = clientKey.split(',').filter(Boolean);
+    Promise.all(ids.map(id => api.getPaystubs(id).then(stubs => ({ id, stubs }))))
       .then(results => {
         const today = new Date().toISOString().slice(0, 10);
         const in5 = new Date(); in5.setDate(in5.getDate() + 5);
@@ -234,7 +232,7 @@ function MultiLiabPanel({ clientIds, clients }) {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [clientIds, clients]);
+  }, [clientKey]);
 
   const lateRows    = rows.filter(r => r._isLate);
   const dueSoonRows = rows.filter(r => r._isDueSoon);
