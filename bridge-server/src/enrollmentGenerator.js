@@ -42,11 +42,15 @@ const lz     = (s, n) => String(s ?? '').padStart(n, '0').slice(-n);
  * Excludes all-same-digit PINs (0000, 1111 … 9999).
  */
 function generatePin() {
+  const BLOCKED = new Set(['0000','1111','2222','3333','4444','5555','6666','7777','8888','9999',
+    '1234','2345','3456','4567','5678','6789','7890','0123',
+    '9876','8765','7654','6543','5432','4321','3210',
+    '1000','2000','3000','4000','5000','6000','7000','8000','9000',
+    '1100','2200','3300','4400','5500','6600','7700','8800','9900']);
   let pin;
   do {
-    pin = Math.floor(1000 + Math.random() * 8999).toString();
-  } while (pin === '0000' || pin === '9999' || /^(\d)\1{3}$/.test(pin));
-  console.log('[enrollmentGenerator] Generated PIN:', pin);
+    pin = String(Math.floor(Math.random() * 9000) + 1000);
+  } while (BLOCKED.has(pin));
   return pin;
 }
 
