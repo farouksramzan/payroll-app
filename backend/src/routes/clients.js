@@ -70,9 +70,9 @@ router.get('/', (req, res) => {
         AND (status IN ('pending','processing','failed') OR status_940 IN ('pending','processing','failed'))
     `).get(c.id, today);
 
-    // Due soon = settlement_due_date within next 7 days
-    const in7Days = new Date(today); in7Days.setDate(in7Days.getDate() + 7);
-    const in7DaysStr = in7Days.toISOString().slice(0, 10);
+    // Due soon = settlement_due_date within next 5 days
+    const in5Days = new Date(today); in5Days.setDate(in5Days.getDate() + 5);
+    const in5DaysStr = in5Days.toISOString().slice(0, 10);
     const dueSoonRow = db.prepare(`
       SELECT COALESCE(SUM(total_deposit),0) as amount941,
              COALESCE(SUM(futa_tax),0) as amount940
@@ -83,7 +83,7 @@ router.get('/', (req, res) => {
         AND settlement_due_date <= ?
         AND check_status IN ('printed','deposited')
         AND (status IN ('pending','processing','failed') OR status_940 IN ('pending','processing','failed'))
-    `).get(c.id, today, in7DaysStr);
+    `).get(c.id, today, in5DaysStr);
 
     const overdueAmount  = (overdueRow?.amount941  || 0) + (overdueRow?.amount940  || 0);
     const dueSoonAmount  = (dueSoonRow?.amount941  || 0) + (dueSoonRow?.amount940  || 0);

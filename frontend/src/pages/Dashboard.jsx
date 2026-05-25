@@ -64,14 +64,13 @@ function initials(name) {
 }
 
 const LIAB_STATUS = {
-  overdue:    { label: 'Tax Overdue',  cls: 'badge-error',   title: 'Has overdue EFTPS deposits' },
-  'due-soon': { label: 'Due Soon',     cls: 'badge-warning', title: 'EFTPS deposit due within 7 days' },
-  clear:      { label: 'All Clear',    cls: 'badge-success', title: 'No pending tax deposits' },
+  overdue:    { label: 'Tax Overdue', cls: 'badge-error',   title: 'Has overdue EFTPS deposits' },
+  'due-soon': { label: 'Due Soon',    cls: 'badge-warning', title: 'EFTPS deposit due within 5 days' },
 };
 
 function LiabStatusBadge({ status }) {
   const cfg = LIAB_STATUS[status];
-  if (!cfg) return <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>—</span>;
+  if (!cfg) return null;
   return <span className={`badge ${cfg.cls}`} style={{ fontSize: 10 }} title={cfg.title}>{cfg.label}</span>;
 }
 
@@ -438,12 +437,6 @@ export default function Dashboard() {
                     <span className="tile-meta-label">Deposit schedule</span>
                     <span className="tile-meta-value" style={{ textTransform: 'capitalize' }}>{client.depositSchedule}</span>
                   </div>
-                  {client.lastSubmissionDate && (
-                    <div className="tile-meta-row">
-                      <span className="tile-meta-label">Last submission</span>
-                      <span className="tile-meta-value">{fmtDate(client.lastSubmissionDate)}</span>
-                    </div>
-                  )}
                 </div>
               </div>
             );
