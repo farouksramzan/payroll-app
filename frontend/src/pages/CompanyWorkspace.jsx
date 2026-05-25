@@ -1231,19 +1231,43 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
   // Check detail modal — shows full breakdown for pending or history rows
   function CheckDetailModal({ rowData, onClose }) {
     if (!rowData) return null;
-    const DL = ({ label, value, mono, color, bold }) => (
-      <div style={{ minWidth: 120 }}>
-        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
-        <div style={{ fontFamily: mono ? 'JetBrains Mono, monospace' : undefined, fontWeight: bold !== false ? 600 : 400, fontSize: 13, color: color || 'inherit' }}>{value}</div>
-      </div>
+
+    const MONO = { fontFamily: 'JetBrains Mono, monospace' };
+
+    // Reusable table row: label | amount | ytd amount
+    const TR = ({ label, amount, ytdAmount, color, bold, borderTop, negative }) => {
+      const display = negative ? (amount > 0 ? -amount : amount) : amount;
+      return (
+        <tr style={{ borderTop: borderTop ? '2px solid var(--border)' : undefined }}>
+          <td style={{ padding: '6px 0 6px 0', fontSize: 13, color: bold ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: bold ? 700 : 400, whiteSpace: 'nowrap' }}>{label}</td>
+          <td style={{ padding: '6px 0 6px 12px', textAlign: 'right', ...MONO, fontSize: 13, fontWeight: bold ? 700 : 500, color: color || (negative && amount > 0 ? '#dc2626' : 'inherit') }}>
+            {typeof display === 'number' ? fmt(display) : display}
+          </td>
+          {ytdAmount !== undefined && (
+            <td style={{ padding: '6px 0 6px 12px', textAlign: 'right', ...MONO, fontSize: 12, color: 'var(--text-muted)', fontWeight: 400 }}>{fmt(ytdAmount)}</td>
+          )}
+        </tr>
+      );
+    };
+
+    const ColHeader = ({ hasYTD }) => (
+      <thead>
+        <tr>
+          <th style={{ padding: '0 0 6px 0', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Item Name</th>
+          <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Amount</th>
+          {hasYTD && <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>YTD</th>}
+        </tr>
+      </thead>
     );
-    const Section = ({ title, children }) => (
-      <div style={{ marginBottom: 18 }}>
-        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10, paddingBottom: 4, borderBottom: '1px solid var(--border)' }}>{title}</div>
-        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>{children}</div>
+
+    const Overlay = ({ children }) => (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}
+        onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+        {children}
       </div>
     );
 
+    // ── Pending row ──────────────────────────────────────────────────────────────
     if (rowData.type === 'pending') {
       const { period, emp } = rowData;
       const row      = getRow(period.end, emp.id);
@@ -1256,128 +1280,213 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
       const otPay    = isSalary ? 0 : r2(otH * rate * 1.5);
       const gross    = r2(regPay + otPay);
       const ytd      = calcEmpYTD(emp.id, null);
+
       return (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}
-          onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-          <div className="card" style={{ width: 580, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', padding: 24, position: 'relative' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-              <div>
-                <div style={{ fontWeight: 700, fontSize: 16 }}>{emp.firstName} {emp.lastName}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{isSalary ? 'Salary' : 'Hourly'} · {period.isLate ? <span style={{ color: '#dc2626' }}>LATE</span> : 'Pending'}</div>
+        <Overlay>
+          <div className="card" style={{ width: 640, maxWidth: '95vw', maxHeight: '92vh', overflowY: 'auto', padding: 0, borderRadius: 12 }}>
+            {/* Header */}
+            <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 20 }}>{emp.firstName} {emp.lastName}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                    {isSalary ? 'Salary' : 'Hourly'} · {period.isLate ? <span style={{ color: '#dc2626', fontWeight: 700 }}>LATE</span> : 'Pending'}
+                  </div>
+                </div>
+                <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
               </div>
-              <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+              {/* Pay period strip */}
+              <div style={{ display: 'flex', marginTop: 14, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
+                {[
+                  { label: 'Period Start', value: fmtDate(period.start) },
+                  { label: 'Period End',   value: fmtDate(period.end) },
+                  { label: 'Pay Date',     value: fmtDate(period.payDate), color: period.isLate ? '#dc2626' : null },
+                ].map(({ label, value, color }, i, arr) => (
+                  <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
+                    <div style={{ ...MONO, fontSize: 13, fontWeight: 600, color: color || 'var(--text-primary)' }}>{value}</div>
+                  </div>
+                ))}
+              </div>
             </div>
-            <Section title="Pay Period">
-              <DL label="Period Start" value={fmtDate(period.start)} mono />
-              <DL label="Period End"   value={fmtDate(period.end)}   mono />
-              <DL label="Pay Date"     value={fmtDate(period.payDate)} mono color={period.isLate ? '#dc2626' : undefined} />
-            </Section>
-            <Section title="Earnings">
-              {isSalary ? (
-                <DL label="Salary / Period" value={fmt(salAmt)} mono />
-              ) : (
-                <>
-                  <DL label="Reg Hours" value={regH > 0 ? regH : '—'} mono />
-                  <DL label="Reg Pay"   value={regPay > 0 ? fmt(regPay) : '—'} mono />
-                  <DL label="OT Hours"  value={otH > 0 ? otH : '—'} mono />
-                  <DL label="OT Pay"    value={otPay > 0 ? fmt(otPay) : '—'} mono />
-                </>
-              )}
-              <DL label="Gross Pay" value={gross > 0 ? fmt(gross) : '—'} mono color="var(--accent)" />
-            </Section>
-            <div style={{ padding: '10px 14px', background: 'var(--bg-secondary)', borderRadius: 8, marginBottom: 18, fontSize: 12, color: 'var(--text-muted)' }}>
-              Exact taxes (FIT, SS, Medicare, FUTA, SUI) are calculated when payroll is run.
+
+            {/* Body: two columns */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid var(--border)' }}>
+              {/* Left — this period earnings */}
+              <div style={{ padding: '18px 20px 18px 24px', borderRight: '1px solid var(--border)' }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Employee Summary</div>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <ColHeader hasYTD={false} />
+                  <tbody>
+                    {isSalary
+                      ? <TR label="Salary / Period" amount={salAmt} color="var(--accent)" />
+                      : <>
+                          {regH > 0 && <TR label={`Hourly  (${regH} hrs)`} amount={regPay} color="var(--accent)" />}
+                          {otH  > 0 && <TR label={`Overtime  (${otH} hrs)`} amount={otPay} color="var(--accent)" />}
+                        </>
+                    }
+                    <TR label="Gross Pay" amount={gross} color="var(--accent)" bold borderTop />
+                    <TR label="—" amount="Taxes calculated at run time" color="var(--text-muted)" />
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Right — YTD to date */}
+              <div style={{ padding: '18px 24px 18px 20px' }}>
+                <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Year-to-Date {curYear}</div>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <ColHeader hasYTD={false} />
+                  <tbody>
+                    <TR label="Gross Pay"          amount={ytd.gross}    color="var(--accent)" />
+                    <TR label="Federal Income Tax" amount={-ytd.fit}     color={ytd.fit > 0 ? '#dc2626' : 'var(--text-muted)'} />
+                    <TR label="Social Security"    amount={-ytd.eeSS}    color={ytd.eeSS > 0 ? '#dc2626' : 'var(--text-muted)'} />
+                    <TR label="Medicare"           amount={-ytd.eeMed}   color={ytd.eeMed > 0 ? '#dc2626' : 'var(--text-muted)'} />
+                    <TR label="State Income Tax"   amount={-ytd.stateTax} color={ytd.stateTax > 0 ? '#dc2626' : 'var(--text-muted)'} />
+                    <TR label="Net Pay"            amount={ytd.netPay}   color="#16a34a" bold borderTop />
+                  </tbody>
+                </table>
+              </div>
             </div>
-            <Section title={`YTD ${curYear}`}>
-              <DL label="Gross"      value={fmt(ytd.gross)}    mono />
-              <DL label="FIT"        value={fmt(ytd.fit)}      mono />
-              <DL label="EE SS"      value={fmt(ytd.eeSS)}     mono />
-              <DL label="Medicare"   value={fmt(ytd.eeMed)}    mono />
-              <DL label="State Tax"  value={fmt(ytd.stateTax)} mono />
-              <DL label="FUTA"       value={fmt(ytd.futa)}     mono />
-              <DL label="SUI"        value={fmt(ytd.suta)}     mono />
-              <DL label="Net Pay"    value={fmt(ytd.netPay)}   mono color="var(--success, #16a34a)" />
-            </Section>
+
+            <div style={{ padding: '12px 24px 18px', display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+              {[
+                { label: 'YTD FUTA', value: fmt(ytd.futa) },
+                { label: 'YTD SUI',  value: fmt(ytd.suta) },
+              ].map(({ label, value }) => (
+                <div key={label}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>{label}</div>
+                  <div style={{ ...MONO, fontSize: 13, fontWeight: 600 }}>{value}</div>
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        </Overlay>
       );
     }
 
-    // History row modal
+    // ── History (printed/deposited) row ──────────────────────────────────────────
     const { stub } = rowData;
-    const isLate   = stub.check_status === 'late';
     const isVoided = stub.check_status === 'voided';
-    const totalDeductions = r2(
-      (stub.fit_withholding    || 0) +
-      (stub.employee_ss        || 0) +
-      (stub.employee_medicare  || 0) +
-      (stub.additional_medicare|| 0) +
-      (stub.state_income_tax   || 0) +
-      (stub.deduction          || 0) +
-      (stub.garnishment        || 0)
-    );
     const ytd = calcEmpYTD(stub.employee_id, stub.pay_period_end);
+
+    const earningRows = [
+      stub.regular_hours != null && stub.regular_pay != null && { label: `Hourly  (${stub.regular_hours} hrs)`, amount: stub.regular_pay, ytd: null },
+      stub.overtime_hours > 0 && stub.overtime_pay > 0       && { label: `Overtime  (${stub.overtime_hours} hrs)`, amount: stub.overtime_pay, ytd: null },
+      stub.bonus         > 0 && { label: 'Bonus',         amount: stub.bonus },
+      stub.commission    > 0 && { label: 'Commission',    amount: stub.commission },
+      stub.reimbursement > 0 && { label: 'Reimbursement', amount: stub.reimbursement },
+    ].filter(Boolean);
+    const showGrossOnly = earningRows.length === 0;
+
+    const deductionRows = [
+      { label: 'Federal Income Tax',           amount: stub.fit_withholding    || 0, ytd: ytd.fit },
+      { label: 'Social Security',              amount: stub.employee_ss        || 0, ytd: ytd.eeSS },
+      { label: 'Medicare',                     amount: stub.employee_medicare  || 0, ytd: ytd.eeMed },
+      (stub.additional_medicare || 0) > 0 && { label: 'Addl Medicare', amount: stub.additional_medicare, ytd: 0 },
+      { label: 'State Income Tax',             amount: stub.state_income_tax   || 0, ytd: ytd.stateTax },
+      (stub.deduction   || 0) > 0 && { label: 'Deduction',   amount: stub.deduction },
+      (stub.garnishment || 0) > 0 && { label: 'Garnishment', amount: stub.garnishment },
+    ].filter(Boolean);
+
+    const employerRows = [
+      { label: 'SS Match (Company)',       amount: stub.employer_ss      || 0, ytd: ytd.erSS   ?? 0 },
+      { label: 'Medicare Match (Company)', amount: stub.employer_medicare || 0, ytd: ytd.erMed  ?? 0 },
+      { label: 'Federal Unemployment',     amount: stub.futa_tax         || 0, ytd: ytd.futa },
+      { label: `${stub.work_state || 'State'} Unemployment`, amount: stub.suta_tax || 0, ytd: ytd.suta },
+    ];
+    const employerTotal = r2(employerRows.reduce((s, r) => s + r.amount, 0));
+    const employerYTD   = r2(employerRows.reduce((s, r) => s + (r.ytd || 0), 0));
+
     return (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}
-        onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-        <div className="card" style={{ width: 620, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', padding: 24, position: 'relative' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 16, textDecoration: isVoided ? 'line-through' : 'none' }}>{stub.employee_name}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 8 }}>
-                <StatusBadge status={stub.check_status || 'draft'} />
-                {stub.check_number && <span style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--accent)' }}>#{stub.check_number}</span>}
+      <Overlay>
+        <div className="card" style={{ width: 740, maxWidth: '96vw', maxHeight: '92vh', overflowY: 'auto', padding: 0, borderRadius: 12 }}>
+
+          {/* Header */}
+          <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 20, textDecoration: isVoided ? 'line-through' : 'none' }}>{stub.employee_name}</div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
+                  <StatusBadge status={stub.check_status || 'draft'} />
+                  {stub.check_number && <span style={{ ...MONO, fontSize: 13, color: 'var(--accent)', fontWeight: 700 }}>Check #{stub.check_number}</span>}
+                </div>
               </div>
+              <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
             </div>
-            <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+            {/* Pay period strip */}
+            <div style={{ display: 'flex', marginTop: 14, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
+              {[
+                { label: 'Period Start', value: fmtDate(stub.pay_period_start) },
+                { label: 'Period End',   value: fmtDate(stub.pay_period_end) },
+                { label: 'Pay Date',     value: fmtDate(stub.settlement_date) },
+              ].map(({ label, value }, i, arr) => (
+                <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
+                  <div style={{ ...MONO, fontSize: 13, fontWeight: 600 }}>{value}</div>
+                </div>
+              ))}
+            </div>
           </div>
-          <Section title="Pay Period">
-            <DL label="Period Start" value={fmtDate(stub.pay_period_start)} mono />
-            <DL label="Period End"   value={fmtDate(stub.pay_period_end)}   mono />
-            <DL label="Pay Date"     value={fmtDate(stub.settlement_date)}  mono color={isLate ? '#dc2626' : undefined} />
-          </Section>
-          <Section title="Earnings">
-            {stub.regular_hours  != null && <DL label="Reg Hours" value={stub.regular_hours}  mono />}
-            {stub.regular_pay    != null && <DL label="Reg Pay"   value={fmt(stub.regular_pay)}   mono />}
-            {stub.overtime_hours > 0     && <DL label="OT Hours"  value={stub.overtime_hours}  mono />}
-            {stub.overtime_pay   > 0     && <DL label="OT Pay"    value={fmt(stub.overtime_pay)}   mono />}
-            {stub.bonus         > 0      && <DL label="Bonus"         value={fmt(stub.bonus)}         mono />}
-            {stub.commission    > 0      && <DL label="Commission"    value={fmt(stub.commission)}    mono />}
-            {stub.reimbursement > 0      && <DL label="Reimbursement" value={fmt(stub.reimbursement)} mono />}
-            <DL label="Gross Pay" value={fmt(stub.gross_wages || 0)} mono color="var(--accent)" />
-          </Section>
-          <Section title="Employee Contributions">
-            <DL label="Federal Income Tax" value={fmt(stub.fit_withholding   || 0)} mono />
-            <DL label="Social Security"    value={fmt(stub.employee_ss       || 0)} mono />
-            <DL label="Medicare"           value={fmt(stub.employee_medicare  || 0)} mono />
-            {(stub.additional_medicare || 0) > 0 && <DL label="Add'l Medicare" value={fmt(stub.additional_medicare)} mono />}
-            <DL label="State Income Tax"   value={fmt(stub.state_income_tax  || 0)} mono />
-            {(stub.deduction   || 0) > 0 && <DL label="Deduction"   value={fmt(stub.deduction)}   mono />}
-            {(stub.garnishment || 0) > 0 && <DL label="Garnishment" value={fmt(stub.garnishment)} mono />}
-          </Section>
-          <Section title="Employer Contributions">
-            <DL label="SS Match"  value={fmt(stub.employer_ss       || 0)} mono />
-            <DL label="Med Match" value={fmt(stub.employer_medicare  || 0)} mono />
-            <DL label="FUTA"      value={fmt(stub.futa_tax           || 0)} mono />
-            <DL label="SUI"       value={fmt(stub.suta_tax           || 0)} mono />
-          </Section>
-          <div style={{ display: 'flex', gap: 16, padding: '12px 16px', background: 'var(--bg-secondary)', borderRadius: 8, marginBottom: 18 }}>
-            <DL label="Gross Pay"        value={fmt(stub.gross_wages    || 0)} mono color="var(--accent)" />
-            <DL label="Total Deductions" value={fmt(totalDeductions)}          mono color="#dc2626" />
-            <DL label="Net Pay"          value={fmt(stub.net_pay        || 0)} mono color="var(--success, #16a34a)" />
+
+          {/* Two-column body */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+
+            {/* Left — Employee Summary */}
+            <div style={{ padding: '18px 20px 0 24px', borderRight: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Employee Summary</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <ColHeader hasYTD={true} />
+                <tbody>
+                  {/* Earnings */}
+                  {showGrossOnly
+                    ? <TR label="Gross Pay" amount={stub.gross_wages || 0} ytdAmount={ytd.gross} color="var(--accent)" />
+                    : <>
+                        {earningRows.map(r => <TR key={r.label} label={r.label} amount={r.amount} color="var(--accent)" />)}
+                        <TR label="Gross Pay" amount={stub.gross_wages || 0} ytdAmount={ytd.gross} color="var(--accent)" bold borderTop />
+                      </>
+                  }
+                  {/* Deductions */}
+                  {deductionRows.map(r => (
+                    <TR key={r.label} label={r.label} amount={r.amount} ytdAmount={r.ytd} negative color={r.amount > 0 ? '#dc2626' : 'var(--text-muted)'} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Right — Company Summary */}
+            <div style={{ padding: '18px 24px 0 20px' }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Company Summary</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <ColHeader hasYTD={true} />
+                <tbody>
+                  {employerRows.map(r => <TR key={r.label} label={r.label} amount={r.amount} ytdAmount={r.ytd} />)}
+                  <TR label="Total Company Cost" amount={employerTotal} ytdAmount={employerYTD} bold borderTop color="var(--text-primary)" />
+                </tbody>
+              </table>
+            </div>
           </div>
-          <Section title={`YTD ${curYear}`}>
-            <DL label="Gross"     value={fmt(ytd.gross)}    mono />
-            <DL label="FIT"       value={fmt(ytd.fit)}      mono />
-            <DL label="EE SS"     value={fmt(ytd.eeSS)}     mono />
-            <DL label="Medicare"  value={fmt(ytd.eeMed)}    mono />
-            <DL label="State Tax" value={fmt(ytd.stateTax)} mono />
-            <DL label="FUTA"      value={fmt(ytd.futa)}     mono />
-            <DL label="SUI"       value={fmt(ytd.suta)}     mono />
-            <DL label="Net Pay"   value={fmt(ytd.netPay)}   mono color="var(--success, #16a34a)" />
-          </Section>
+
+          {/* Check Amount + tax bar */}
+          <div style={{ margin: '16px 24px 0', borderTop: '2px solid var(--border)' }} />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px 4px' }}>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>Check Amount</div>
+            <div style={{ ...MONO, fontSize: 22, fontWeight: 800, color: '#16a34a' }}>{fmt(stub.net_pay || 0)}</div>
+          </div>
+          <div style={{ display: 'flex', gap: 0, margin: '12px 24px 20px', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
+            {[
+              { label: '941 Tax Deposit', value: fmt(stub.total_deposit || 0) },
+              { label: '940 FUTA',        value: fmt(stub.futa_tax      || 0) },
+              { label: 'State SUI',       value: fmt(stub.suta_tax      || 0) },
+              { label: 'Total Tax Costs', value: fmt(r2((stub.total_deposit || 0) + (stub.futa_tax || 0) + (stub.suta_tax || 0))), accent: true },
+            ].map(({ label, value, accent }, i, arr) => (
+              <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none', background: accent ? 'var(--accent-light)' : undefined }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
+                <div style={{ ...MONO, fontSize: 14, fontWeight: 800, color: accent ? 'var(--accent)' : 'var(--text-primary)' }}>{value}</div>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      </Overlay>
     );
   }
 
