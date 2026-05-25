@@ -179,8 +179,10 @@ function MultiLiabPanel({ clientIds, clients }) {
     if (!clientKey) { setRows([]); return; }
     setLoading(true);
     const ids = clientKey.split(',').filter(Boolean);
+    console.log('[MultiLiab] fetching for ids:', ids);
     Promise.allSettled(ids.map(id => api.getPaystubs(id).then(stubs => ({ id, stubs }))))
       .then(settled => {
+        console.log('[MultiLiab] settled:', settled.map(r => r.status === 'fulfilled' ? `ok(${r.value.stubs.length} stubs)` : `fail: ${r.reason?.message}`));
         const results = settled.filter(r => r.status === 'fulfilled').map(r => r.value);
         const today = new Date().toISOString().slice(0, 10);
         const in5 = new Date(); in5.setDate(in5.getDate() + 5);
@@ -230,6 +232,7 @@ function MultiLiabPanel({ clientIds, clients }) {
           const bMin = [b._due941, b._due940, b._dueSUI].filter(Boolean).sort()[0] || 'zzzz';
           return aMin.localeCompare(bMin);
         });
+        console.log('[MultiLiab] merged rows:', merged.length, merged.map(r => ({ client: r._clientName, status: r.check_status, s941: r.status, amt: r.total_deposit })));
         setRows(merged);
       })
       .finally(() => setLoading(false));
