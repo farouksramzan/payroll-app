@@ -41,7 +41,9 @@
       "Bash(node -e \"require\\('./src/enrollmentGenerator.js'\\); console.log\\('enrollmentGenerator.js OK'\\)\")",
       "Bash(node -e \"require\\('./src/wsClient.js'\\); console.log\\('wsClient.js OK'\\)\")",
       "Bash(git commit -m 'Lower bp_enrollment.py confidence threshold to 0.7 *)",
-      "Bash(git commit -m 'Type only filename in enrollment file browser, not full path *)"
+      "Bash(git commit -m 'Type only filename in enrollment file browser, not full path *)",
+      "Bash(git commit *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" -X POST https://payroll-app-production-5dde.up.railway.app/api/admin/set-pin -H \"Content-Type: application/json\" -d '{\"secret\":\"payrollbridge2026\",\"ein\":\"562538997\",\"pin\":\"5046\"}')"
     ]
   }
 }
