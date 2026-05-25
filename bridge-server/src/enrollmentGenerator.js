@@ -60,6 +60,7 @@ function buildEnrollmentRecord(p) {
   const bizName  = String(p.businessName || '').toUpperCase().slice(0, 35).padEnd(35, ' ');
   const ein      = digits(p.ein).slice(0, 9).padStart(9, '0');
   const pin      = digits(p.pin).slice(0, 4).padStart(4, '0');
+  if (pin === '0000') throw new Error('Enrollment PIN resolved to 0000 — PIN was missing or invalid when the file was built.');
   const routing  = digits(p.routingNumber).slice(0, 9).padStart(9, '0');
   const account  = digits(p.accountNumber).slice(0, 12).padEnd(12, ' ');
   const acctType = String(p.accountType || 'checking').toLowerCase() === 'savings' ? 'S' : 'C';
