@@ -133,10 +133,12 @@ function runEnrollmentAutomation(enrollFilePath, logFn) {
 }
 
 // Returns true if EFTPS confirms the EIN is Active, false otherwise (never rejects).
-function checkEnrollmentActive(ein, logFn) {
+function checkEnrollmentActive(ein, businessName, logFn) {
   return new Promise((resolve) => {
     const { execFile } = require('child_process');
-    execFile('python', [BP_ENROLL_CHECK_SCRIPT, cleanEin(ein)], { windowsHide: true, timeout: 120000 },
+    const args = [BP_ENROLL_CHECK_SCRIPT, cleanEin(ein)];
+    if (businessName) args.push(businessName);
+    execFile('python', args, { windowsHide: true, timeout: 120000 },
       (err, stdout, stderr) => {
         if (stdout) stdout.split('\n').filter(Boolean).forEach(l => logFn(l));
         if (stderr) stderr.split('\n').filter(Boolean).forEach(l => logFn(`[stderr] ${l}`));
@@ -339,6 +341,7 @@ class BridgeClient extends EventEmitter {
         // Poll until Active — persists to disk so a restart resumes automatically
         const enrollmentActive = await this._pollEnrollmentUntilActive({
           ein:           job.ein,
+          businessName:  job.businessName || '',
           jobId,
           submissionId,
           achFilePath:   achFilePathEarly,
@@ -426,19 +429,19 @@ class BridgeClient extends EventEmitter {
 
   // ── Enrollment polling — shared by new jobs and resumed jobs ─────────────────
 
-  async _pollEnrollmentUntilActive({ ein, jobId, submissionId, achFilePath, clientId, enrollmentPin, startAtAttempt }) {
+  async _pollEnrollmentUntilActive({ ein, businessName, jobId, submissionId, achFilePath, clientId, enrollmentPin, startAtAttempt }) {
     const log          = (msg) => this.emit('log', msg);
     const MAX_RETRIES  = 6;
     const POLL_INTERVAL = 15 * 60 * 1000;
 
     // Persist to disk immediately so a restart can resume from here
-    upsertPendingEnrollment({ ein, jobId, submissionId, achFilePath, clientId, enrollmentPin, attempt: startAtAttempt, maxRetries: MAX_RETRIES });
+    upsertPendingEnrollment({ ein, businessName, jobId, submissionId, achFilePath, clientId, enrollmentPin, attempt: startAtAttempt, maxRetries: MAX_RETRIES });
 
     // Immediate check first (only on the first call, not when resuming mid-sequence)
     let active = false;
     if (startAtAttempt === 0) {
       log(`[ENROLL] Checking enrollment status immediately after ENROLLMENT_COMPLETE...`);
-      active = await c2.run('enroll-check', () => checkEnrollmentActive(ein, log));
+      active = await c2.run('enroll-check', () => checkEnrollmentActive(ein, businessName, log));
       if (active) log(`[ENROLL] EIN ${cleanEin(ein)} confirmed Active immediately`);
     }
 
@@ -450,10 +453,10 @@ class BridgeClient extends EventEmitter {
         await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
 
         // Update attempt count in persisted file before running check
-        upsertPendingEnrollment({ ein, jobId, submissionId, achFilePath, clientId, enrollmentPin, attempt, maxRetries: MAX_RETRIES });
+        upsertPendingEnrollment({ ein, businessName, jobId, submissionId, achFilePath, clientId, enrollmentPin, attempt, maxRetries: MAX_RETRIES });
 
         log(`[ENROLL] Running enrollment check (retry ${attempt}/${MAX_RETRIES}) for EIN ${cleanEin(ein)}...`);
-        active = await c2.run('enroll-check', () => checkEnrollmentActive(ein, log));
+        active = await c2.run('enroll-check', () => checkEnrollmentActive(ein, businessName, log));
 
         if (active) {
           log(`[ENROLL] EIN ${cleanEin(ein)} confirmed Active on retry ${attempt}`);
@@ -483,13 +486,13 @@ class BridgeClient extends EventEmitter {
   }
 
   async _runResumedEnrollment(entry) {
-    const { ein, jobId, submissionId, achFilePath, clientId, enrollmentPin, attempt } = entry;
+    const { ein, businessName, jobId, submissionId, achFilePath, clientId, enrollmentPin, attempt } = entry;
     const log = (msg) => this.emit('log', msg);
 
     log(`[RESUME] Resuming enrollment check for EIN ${cleanEin(ein)}`);
 
     const active = await this._pollEnrollmentUntilActive({
-      ein, jobId, submissionId, achFilePath, clientId, enrollmentPin, startAtAttempt: attempt,
+      ein, businessName: businessName || '', jobId, submissionId, achFilePath, clientId, enrollmentPin, startAtAttempt: attempt,
     });
 
     if (!active) {

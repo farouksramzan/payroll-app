@@ -70,7 +70,7 @@ def find_and_click(filename, description, timeout=10, confidence=CONFIDENCE):
     return False
 
 
-def ocr_screen_for_ein(ein):
+def ocr_screen_for_ein(ein, name_words=None):
     # Take a full screenshot and use OCR to find the EIN with Active status.
     # OCR often inserts spaces into numbers and splits table rows across lines,
     # so we find the EIN line then check a window of surrounding lines for Active.
@@ -87,40 +87,47 @@ def ocr_screen_for_ein(ein):
     text = pytesseract.image_to_string(screenshot, config='--psm 6')
     log('OCR text length: ' + str(len(text)) + ' chars')
 
+    import re
     ein_clean = ''.join(c for c in ein if c.isdigit())
+    # Matches 'active', 'actve', 'actlve' — common OCR misreads
+    active_re = re.compile(r'act.{0,2}v', re.IGNORECASE)
     lines = text.splitlines()
 
-    # Find the line containing our EIN
-    ein_line_idx = None
+    # Find the company row by EIN digits first, then fall back to business name words.
+    # OCR often reads EIN digits as letters, but company name words come through reliably.
+    company_line_idx = None
     for i, line in enumerate(lines):
         if ein_clean in ''.join(c for c in line if c.isdigit()):
-            ein_line_idx = i
-            log('EIN ' + ein_clean + ' found on line ' + str(i) + ': ' + line.strip())
+            company_line_idx = i
+            log('Company row found by EIN on line ' + str(i) + ': ' + line.strip())
             break
 
-    if ein_line_idx is None:
-        log('EIN ' + ein_clean + ' not found in OCR output')
+    if company_line_idx is None and name_words:
+        for i, line in enumerate(lines):
+            line_upper = line.upper()
+            for word in name_words:
+                if word in line_upper:
+                    company_line_idx = i
+                    log('Company row found by name word "' + word + '" on line ' + str(i) + ': ' + line.strip())
+                    break
+            if company_line_idx is not None:
+                break
+
+    if company_line_idx is None:
+        log('Company row not found by EIN or name — EIN: ' + ein_clean + ', name words: ' + str(name_words))
         log('Raw OCR (first 2000 chars): ' + text[:2000])
         return False
 
-    # Scan forward from EIN line until we hit the next row's EIN or 10 lines max.
-    # Table columns often split across many OCR lines so we need a wide window.
-    window_end = min(len(lines), ein_line_idx + 10)
-    for j in range(ein_line_idx + 1, window_end):
-        other_digits = ''.join(c for c in lines[j] if c.isdigit())
-        # A 9-digit number that isn't ours signals the start of the next table row
-        if len(other_digits) >= 9 and ein_clean not in other_digits:
-            window_end = j
-            break
+    # Scan up to 10 lines forward from the company row to find the Status value
+    window_end = min(len(lines), company_line_idx + 10)
+    window_text = ' '.join(lines[company_line_idx:window_end])
+    log('Row window (lines ' + str(company_line_idx) + '-' + str(window_end) + '): ' + window_text.strip())
 
-    window_text = ' '.join(lines[ein_line_idx:window_end])
-    log('Row window (lines ' + str(ein_line_idx) + '-' + str(window_end) + '): ' + window_text.strip())
-
-    if 'active' in window_text.lower():
+    if active_re.search(window_text):
         log('Active status confirmed for EIN ' + ein_clean)
         return True
 
-    log('EIN found but Active not in row window')
+    log('Company row found but Active pattern not detected in window')
     log('Raw OCR (first 2000 chars): ' + text[:2000])
     return False
 
@@ -131,7 +138,9 @@ def main():
         sys.exit(1)
 
     ein = sys.argv[1].replace('-', '').strip()
-    log('Checking enrollment status for EIN: ' + ein)
+    business_name = sys.argv[2].strip() if len(sys.argv) > 2 else ''
+    name_words = [w.upper() for w in business_name.split() if len(w) >= 4]
+    log('Checking enrollment status for EIN: ' + ein + ' / name words: ' + str(name_words))
 
     if not MASTER_PIN:
         log('WARNING: BATCH_PROVIDER_MASTER_PIN not set - sync dialog may fail')
@@ -205,7 +214,7 @@ def main():
 
     # Step 8 - OCR the screen and look for EIN with Active status
     log('Step 8: Running OCR to check enrollment status')
-    active = ocr_screen_for_ein(ein)
+    active = ocr_screen_for_ein(ein, name_words)
 
     if active:
         log('Enrollment confirmed Active for EIN ' + ein)
