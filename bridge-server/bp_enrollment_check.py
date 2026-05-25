@@ -72,21 +72,38 @@ def find_and_click(filename, description, timeout=10, confidence=CONFIDENCE):
 
 def ocr_screen_for_ein(ein):
     # Take a full screenshot and use OCR to find the EIN with Active status.
-    # OCR often inserts spaces into numbers, so we normalize both sides.
+    # OCR often inserts spaces into numbers and splits table rows across lines,
+    # so we find the EIN line then check a window of surrounding lines for Active.
     log('Taking screenshot for OCR...')
     screenshot = pyautogui.screenshot()
+
+    # Save debug screenshot so failures can be diagnosed
+    debug_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
+    os.makedirs(debug_dir, exist_ok=True)
+    debug_path = os.path.join(debug_dir, 'debug_enrollment_check.png')
+    screenshot.save(debug_path)
+    log('Debug screenshot saved to ' + debug_path)
+
     text = pytesseract.image_to_string(screenshot, config='--psm 6')
     log('OCR text length: ' + str(len(text)) + ' chars')
 
     ein_clean = ''.join(c for c in ein if c.isdigit())
+    lines = text.splitlines()
 
-    for line in text.splitlines():
-        line_stripped = line.strip()
-        # Normalize the OCR line by stripping all non-digit chars for EIN comparison
-        line_digits = ''.join(c for c in line_stripped if c.isdigit())
-        if ein_clean in line_digits and 'Active' in line_stripped:
-            log('Found Active enrollment for EIN ' + ein_clean + ': ' + line_stripped)
-            return True
+    for i, line in enumerate(lines):
+        line_digits = ''.join(c for c in line if c.isdigit())
+        if ein_clean in line_digits:
+            # EIN found on line i - check this line and the 4 surrounding lines for Active
+            window_start = max(0, i - 2)
+            window_end   = min(len(lines), i + 3)
+            window_text  = ' '.join(lines[window_start:window_end])
+            log('EIN ' + ein_clean + ' found on line ' + str(i) + ': ' + line.strip())
+            log('Context window: ' + window_text.strip())
+            if 'active' in window_text.lower():
+                log('Active status confirmed for EIN ' + ein_clean)
+                return True
+            else:
+                log('EIN found but Active not in surrounding lines')
 
     log('EIN ' + ein_clean + ' not found as Active in OCR output')
     log('Raw OCR (first 2000 chars): ' + text[:2000])
