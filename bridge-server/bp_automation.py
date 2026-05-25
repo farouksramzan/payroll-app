@@ -95,12 +95,12 @@ def main():
     log('Step 2 complete: Add button clicked')
     time.sleep(2)
 
-    # Step 3 - Type ACH filename and press Enter
-    filename = os.path.basename(ach_file_path)
-    log('Step 3: Typing filename: ' + filename)
+    # Step 3 - Type full ACH file path and press Enter
+    # Use full path so the dialog navigates correctly regardless of its starting directory
+    log('Step 3: Typing full path: ' + ach_file_path)
     pyautogui.hotkey('ctrl', 'a')
     time.sleep(0.2)
-    pyautogui.typewrite(filename, interval=0.15)
+    pyautogui.typewrite(ach_file_path, interval=0.05)
     time.sleep(0.2)
     pyautogui.press('enter')
     time.sleep(2)
@@ -202,6 +202,13 @@ def main():
     if not find_and_click('submit_ok.png', 'submission confirmation OK'):
         print('IMPORT_FAILED: Submission confirmation OK button not found', flush=True)
         sys.exit(1)
+
+    # Delete the ACH file so it cannot be accidentally re-imported
+    try:
+        os.remove(ach_file_path)
+        log('ACH file deleted after successful submission: ' + ach_file_path)
+    except Exception as e:
+        log('WARNING: Could not delete ACH file: ' + str(e))
 
     log('Import completed successfully')
     print('IMPORT_COMPLETE', flush=True)
