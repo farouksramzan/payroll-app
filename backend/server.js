@@ -88,7 +88,7 @@ app.post('/api/admin/set-pin', (req, res) => {
   const { secret, ein, pin } = req.body;
   if (secret !== process.env.BRIDGE_SECRET) return res.status(403).json({ error: 'forbidden' });
   const { getDb } = require('./src/database/db');
-  const { encrypt } = require('./src/utils/crypto');
+  const { encrypt } = require('./src/services/cryptoService');
   const db = getDb();
   db.prepare('UPDATE clients SET batch_provider_pin_encrypted = ? WHERE ein = ?').run(encrypt(pin), ein);
   const row = db.prepare('SELECT business_name, ein, eftps_enrolled FROM clients WHERE ein = ?').get(ein);
