@@ -179,14 +179,16 @@ function MultiLiabPanel({ clientIds, clients }) {
     if (!clientKey) { setRows([]); return; }
     setLoading(true);
     const ids = clientKey.split(',').filter(Boolean);
-    Promise.all(ids.map(id => api.getPaystubs(id).then(stubs => ({ id, stubs }))))
-      .then(results => {
+    Promise.allSettled(ids.map(id => api.getPaystubs(id).then(stubs => ({ id, stubs }))))
+      .then(settled => {
+        const results = settled.filter(r => r.status === 'fulfilled').map(r => r.value);
         const today = new Date().toISOString().slice(0, 10);
         const in5 = new Date(); in5.setDate(in5.getDate() + 5);
         const in5Str = in5.toISOString().slice(0, 10);
         const merged = [];
         results.forEach(({ id, stubs }) => {
-          const client = clients.find(c => c.id === id);
+          // id is a string from split; c.id is a number from API — use loose equality
+          const client = clients.find(c => c.id == id);
           const schedule = client?.depositSchedule || 'monthly';
           stubs.filter(s => ISSUED.has(s.check_status)).forEach(s => {
             const refDate = s.settlement_date || s.pay_period_end;
@@ -230,7 +232,6 @@ function MultiLiabPanel({ clientIds, clients }) {
         });
         setRows(merged);
       })
-      .catch(() => {})
       .finally(() => setLoading(false));
   }, [clientKey]);
 
