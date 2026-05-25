@@ -58,18 +58,19 @@ router.get('/', (req, res) => {
       .get(c.id);
     const nextDue = calcNextDueDate(c.deposit_schedule, lastSub?.pay_period_end);
 
-    // Calculate next payroll date from most recent pay_period_end + frequency
+    // Calculate next payroll date from most recent pay_date (or pay_period_end) + frequency
     const lastPaystub = db
-      .prepare('SELECT pay_period_end FROM paystubs WHERE client_id = ? ORDER BY pay_period_end DESC LIMIT 1')
+      .prepare('SELECT pay_date, pay_period_end FROM paystubs WHERE client_id = ? ORDER BY pay_period_end DESC LIMIT 1')
       .get(c.id);
     let calcNextPayroll = null;
-    if (lastPaystub?.pay_period_end) {
+    const anchorDate = lastPaystub?.pay_date || lastPaystub?.pay_period_end;
+    if (anchorDate) {
       const freq = c.payroll_frequency || 'biweekly';
-      const d = new Date(lastPaystub.pay_period_end + 'T00:00:00');
-      if (freq === 'weekly')         d.setDate(d.getDate() + 7);
-      else if (freq === 'biweekly')  d.setDate(d.getDate() + 14);
+      const d = new Date(anchorDate + 'T00:00:00');
+      if (freq === 'weekly')           d.setDate(d.getDate() + 7);
+      else if (freq === 'biweekly')    d.setDate(d.getDate() + 14);
       else if (freq === 'semimonthly') d.setDate(d.getDate() + 15);
-      else if (freq === 'monthly')   d.setMonth(d.getMonth() + 1);
+      else if (freq === 'monthly')     d.setMonth(d.getMonth() + 1);
       calcNextPayroll = d.toISOString().slice(0, 10);
     }
 
