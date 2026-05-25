@@ -63,16 +63,20 @@ router.get('/', (req, res) => {
       .prepare('SELECT pay_date, pay_period_end FROM paystubs WHERE client_id = ? ORDER BY pay_period_end DESC LIMIT 1')
       .get(c.id);
     let calcNextPayroll = null;
-    const anchorDate = lastPaystub?.pay_date || lastPaystub?.pay_period_end;
-    if (anchorDate) {
-      const freq = c.payroll_frequency || 'biweekly';
-      const d = new Date(anchorDate + 'T00:00:00');
-      if (freq === 'weekly')           d.setDate(d.getDate() + 7);
-      else if (freq === 'biweekly')    d.setDate(d.getDate() + 14);
-      else if (freq === 'semimonthly') d.setDate(d.getDate() + 15);
-      else if (freq === 'monthly')     d.setMonth(d.getMonth() + 1);
-      calcNextPayroll = d.toISOString().slice(0, 10);
-    }
+    try {
+      const rawAnchor = lastPaystub?.pay_date || lastPaystub?.pay_period_end;
+      // Normalize to YYYY-MM-DD only (strip any time component)
+      const anchorDate = rawAnchor ? rawAnchor.slice(0, 10) : null;
+      if (anchorDate) {
+        const freq = c.payroll_frequency || 'biweekly';
+        const d = new Date(anchorDate + 'T00:00:00');
+        if (freq === 'weekly')           d.setDate(d.getDate() + 7);
+        else if (freq === 'biweekly')    d.setDate(d.getDate() + 14);
+        else if (freq === 'semimonthly') d.setDate(d.getDate() + 15);
+        else if (freq === 'monthly')     d.setMonth(d.getMonth() + 1);
+        if (!isNaN(d.getTime())) calcNextPayroll = d.toISOString().slice(0, 10);
+      }
+    } catch { /* non-critical — leave calcNextPayroll null */ }
 
     // Overdue = settlement_due_date < today and still pending
     const overdueRow = db.prepare(`
