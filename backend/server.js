@@ -84,6 +84,17 @@ app.get('/api/bridge/job-status/:jobId', (req, res) => {
   res.json(status);
 });
 
+// TEMP admin endpoint — remove after use
+app.post('/api/admin/set-enrolled', (req, res) => {
+  const { secret, ein } = req.body;
+  if (secret !== process.env.BRIDGE_SECRET) return res.status(403).json({ error: 'forbidden' });
+  const { getDb } = require('./src/database/db');
+  const db = getDb();
+  db.prepare('UPDATE clients SET eftps_enrolled = 1 WHERE ein = ?').run(ein);
+  const row = db.prepare('SELECT business_name, ein, eftps_enrolled FROM clients WHERE ein = ?').get(ein);
+  res.json(row || { error: 'not found' });
+});
+
 app.get('/api/bridge/status', (req, res) => {
   const connected = bridgeManager.isConnected;
   // Log every poll in dev so Railway's log stream shows the real-time state
