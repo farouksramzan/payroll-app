@@ -459,79 +459,110 @@ router.put('/:id', (req, res) => {
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(stub.client_id);
 
   const items = Array.isArray(lineItems) && lineItems.length > 0 ? lineItems : null;
-  const computedGross = items
-    ? items.reduce((s, li) => s + parseFloat(li.amount || 0), 0)
-    : stub.gross_wages;
 
-  const effectiveWorkState = ((workState || stub.work_state || client.state || 'TX')).toUpperCase();
-  const ytdBefore = parseFloat(ytdGross ?? stub.ytd_wages_before ?? 0);
-
-  const taxes = calculateWithholding({
-    grossWages:    computedGross,
-    payFrequency:  payFrequency || stub.pay_frequency,
-    filingStatus:  filingStatus || stub.filing_status,
-    step2Checkbox: step2Checkbox !== undefined ? !!step2Checkbox : !!stub.step2_checkbox,
-    step3Children: parseInt(step3Children ?? stub.step3_children ?? 0, 10),
-    step3Other:    parseInt(step3Other    ?? stub.step3_other    ?? 0, 10),
-    step4a: parseFloat(step4a ?? 0),
-    step4b: parseFloat(step4b ?? 0),
-    step4c: parseFloat(step4c ?? 0),
-    workState:  effectiveWorkState,
-    ytdGross:   ytdBefore,
-    sutaRate:   client.suta_rate || null,
-  });
-
-  const step3Credits =
-    (parseInt(step3Children ?? stub.step3_children ?? 0, 10) * 2200) +
-    (parseInt(step3Other    ?? stub.step3_other    ?? 0, 10) * 500);
+  // Detect whether tax-affecting fields are actually being changed
+  const taxFieldsChanged = items !== null || workState !== undefined || ytdGross !== undefined ||
+    payFrequency !== undefined || filingStatus !== undefined || step2Checkbox !== undefined ||
+    step3Children !== undefined || step3Other !== undefined ||
+    step4a !== undefined || step4b !== undefined || step4c !== undefined;
 
   const { quarter, year } = getTaxPeriod(payPeriodEnd || stub.pay_period_end);
 
-  db.prepare(`
-    UPDATE paystubs SET
-      pay_period_start = ?, pay_period_end = ?, settlement_date = ?, settlement_due_date = ?,
-      pay_frequency = ?, filing_status = ?, step2_checkbox = ?, step3_credits = ?, work_state = ?,
-      gross_wages = ?, fit_withholding = ?, employee_ss = ?, employee_medicare = ?,
-      additional_medicare = ?, employer_ss = ?, employer_medicare = ?,
-      state_income_tax = ?, futa_tax = ?, suta_tax = ?,
-      total_deposit = ?, net_pay = ?, ytd_wages_before = ?,
-      tax_year = ?, tax_quarter = ?, notes = ?, check_status = ?
-    WHERE id = ?
-  `).run(
-    payPeriodStart  || stub.pay_period_start,
-    payPeriodEnd    || stub.pay_period_end,
-    settlementDate     !== undefined ? (settlementDate     || null) : stub.settlement_date,
-    settlementDueDate  !== undefined ? (settlementDueDate  || null) : stub.settlement_due_date,
-    payFrequency    || stub.pay_frequency,
-    filingStatus    || stub.filing_status,
-    step2Checkbox !== undefined ? (step2Checkbox ? 1 : 0) : stub.step2_checkbox,
-    step3Credits,
-    effectiveWorkState,
-    taxes.grossWages, taxes.fitWithholding, taxes.employeeSS, taxes.employeeMedicare,
-    taxes.additionalMedicare || 0, taxes.employerSS, taxes.employerMedicare,
-    taxes.stateIncomeTax, taxes.futaTax, taxes.sutaTax,
-    taxes.totalDeposit, taxes.netPay, ytdBefore,
-    year, quarter, notes !== undefined ? (notes || null) : stub.notes,
-    checkStatus || stub.check_status,
-    stub.id,
-  );
+  if (taxFieldsChanged) {
+    const computedGross = items
+      ? items.reduce((s, li) => s + parseFloat(li.amount || 0), 0)
+      : stub.gross_wages;
 
-  if (items) {
-    db.prepare('DELETE FROM paystub_line_items WHERE paystub_id = ?').run(stub.id);
-    const insertItem = db.prepare(`
-      INSERT INTO paystub_line_items (paystub_id, pay_type, description, hours, rate, amount)
-      VALUES (?,?,?,?,?,?)
-    `);
-    for (const li of items) {
-      insertItem.run(
-        stub.id,
-        li.payType || li.pay_type || 'regular',
-        li.description || null,
-        li.hours ? parseFloat(li.hours) : null,
-        li.rate  ? parseFloat(li.rate)  : null,
-        parseFloat(li.amount || 0),
-      );
+    const effectiveWorkState = ((workState || stub.work_state || client.state || 'TX')).toUpperCase();
+    const ytdBefore = parseFloat(ytdGross ?? stub.ytd_wages_before ?? 0);
+
+    // Look up employee step4 values when not supplied in request
+    const emp = stub.employee_id
+      ? db.prepare('SELECT step4a, step4b, step4c FROM employees WHERE id = ?').get(stub.employee_id)
+      : null;
+
+    const taxes = calculateWithholding({
+      grossWages:    computedGross,
+      payFrequency:  payFrequency || stub.pay_frequency,
+      filingStatus:  filingStatus || stub.filing_status,
+      step2Checkbox: step2Checkbox !== undefined ? !!step2Checkbox : !!stub.step2_checkbox,
+      step3Children: parseInt(step3Children ?? stub.step3_children ?? 0, 10),
+      step3Other:    parseInt(step3Other    ?? stub.step3_other    ?? 0, 10),
+      step4a: parseFloat(step4a ?? emp?.step4a ?? 0),
+      step4b: parseFloat(step4b ?? emp?.step4b ?? 0),
+      step4c: parseFloat(step4c ?? emp?.step4c ?? 0),
+      workState:  effectiveWorkState,
+      ytdGross:   ytdBefore,
+      sutaRate:   client.suta_rate || null,
+    });
+
+    const step3Credits =
+      (parseInt(step3Children ?? stub.step3_children ?? 0, 10) * 2200) +
+      (parseInt(step3Other    ?? stub.step3_other    ?? 0, 10) * 500);
+
+    db.prepare(`
+      UPDATE paystubs SET
+        pay_period_start = ?, pay_period_end = ?, settlement_date = ?, settlement_due_date = ?,
+        pay_frequency = ?, filing_status = ?, step2_checkbox = ?, step3_credits = ?, work_state = ?,
+        gross_wages = ?, fit_withholding = ?, employee_ss = ?, employee_medicare = ?,
+        additional_medicare = ?, employer_ss = ?, employer_medicare = ?,
+        state_income_tax = ?, futa_tax = ?, suta_tax = ?,
+        total_deposit = ?, net_pay = ?, ytd_wages_before = ?,
+        tax_year = ?, tax_quarter = ?, notes = ?, check_status = ?
+      WHERE id = ?
+    `).run(
+      payPeriodStart  || stub.pay_period_start,
+      payPeriodEnd    || stub.pay_period_end,
+      settlementDate     !== undefined ? (settlementDate     || null) : stub.settlement_date,
+      settlementDueDate  !== undefined ? (settlementDueDate  || null) : stub.settlement_due_date,
+      payFrequency    || stub.pay_frequency,
+      filingStatus    || stub.filing_status,
+      step2Checkbox !== undefined ? (step2Checkbox ? 1 : 0) : stub.step2_checkbox,
+      step3Credits,
+      effectiveWorkState,
+      taxes.grossWages, taxes.fitWithholding, taxes.employeeSS, taxes.employeeMedicare,
+      taxes.additionalMedicare || 0, taxes.employerSS, taxes.employerMedicare,
+      taxes.stateIncomeTax, taxes.futaTax, taxes.sutaTax,
+      taxes.totalDeposit, taxes.netPay, ytdBefore,
+      year, quarter, notes !== undefined ? (notes || null) : stub.notes,
+      checkStatus || stub.check_status,
+      stub.id,
+    );
+
+    if (items) {
+      db.prepare('DELETE FROM paystub_line_items WHERE paystub_id = ?').run(stub.id);
+      const insertItem = db.prepare(`
+        INSERT INTO paystub_line_items (paystub_id, pay_type, description, hours, rate, amount)
+        VALUES (?,?,?,?,?,?)
+      `);
+      for (const li of items) {
+        insertItem.run(
+          stub.id,
+          li.payType || li.pay_type || 'regular',
+          li.description || null,
+          li.hours ? parseFloat(li.hours) : null,
+          li.rate  ? parseFloat(li.rate)  : null,
+          parseFloat(li.amount || 0),
+        );
+      }
     }
+  } else {
+    // Only metadata changed — update dates, notes, status without touching tax values
+    db.prepare(`
+      UPDATE paystubs SET
+        pay_period_start = ?, pay_period_end = ?, settlement_date = ?, settlement_due_date = ?,
+        tax_year = ?, tax_quarter = ?, notes = ?, check_status = ?
+      WHERE id = ?
+    `).run(
+      payPeriodStart  || stub.pay_period_start,
+      payPeriodEnd    || stub.pay_period_end,
+      settlementDate     !== undefined ? (settlementDate     || null) : stub.settlement_date,
+      settlementDueDate  !== undefined ? (settlementDueDate  || null) : stub.settlement_due_date,
+      year, quarter,
+      notes !== undefined ? (notes || null) : stub.notes,
+      checkStatus || stub.check_status,
+      stub.id,
+    );
   }
 
   const updated = db.prepare('SELECT * FROM paystubs WHERE id = ?').get(stub.id);

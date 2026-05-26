@@ -4,6 +4,9 @@ import { useParams, Link, useNavigate, useLocation, useSearchParams } from 'reac
 import api from '../api/client';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+const EE_SS_RATE       = 0.062;
+const EE_MEDICARE_RATE = 0.0145;
+
 function fmt(n) { return `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 function fmtDate(d) { if (!d) return '—'; return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
 function fmtShort(d) { if (!d) return '—'; return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
@@ -1197,18 +1200,27 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
       } else {
         // Pending row — run payroll for this one employee, then set status
         const { period, emp } = drop;
+        const isSalary = emp.payType === 'salary';
+        const rate     = emp.hourlyRate || 0;
+        const regH     = isSalary ? 0 : parseFloat(getRow(period.end, emp.id).regHours || 0);
+        const otH      = isSalary ? 0 : parseFloat(getRow(period.end, emp.id).otHours  || 0);
+        const regPay   = isSalary ? r2((emp.annualSalary || 0) / ppy) : r2(Math.min(regH, 40) * rate);
+        const otPay    = isSalary ? 0 : r2(otH * rate * 1.5);
+        const lineItems = isSalary
+          ? [{ payType: 'salary', description: 'Salary', amount: regPay }]
+          : [
+              ...(regPay > 0 ? [{ payType: 'regular',  description: 'Regular Pay',  hours: Math.min(regH, 40), rate, amount: regPay }] : []),
+              ...(otPay  > 0 ? [{ payType: 'overtime', description: 'Overtime Pay', hours: otH, rate: rate * 1.5, amount: otPay }] : []),
+            ];
+        const ytd = calcEmpYTD(emp.id, null);
         const payrollEmp = {
           employeeId: emp.id,
-          payType: emp.payType,
-          salary: emp.annualSalary,
-          hourlyRate: emp.hourlyRate,
-          regHours: emp.payType === 'salary' ? null : parseFloat(getRow(period.end, emp.id).regHours || 0),
-          otHours:  emp.payType === 'salary' ? null : parseFloat(getRow(period.end, emp.id).otHours  || 0),
-          filingStatus: emp.filingStatus,
-          step2Checkbox: emp.step2Checkbox,
-          step3Children: emp.step3Children,
-          step3Other: emp.step3Other,
-          step4a: emp.step4a, step4b: emp.step4b, step4c: emp.step4c,
+          lineItems,
+          ytdGross:    ytd.gross,
+          regularHours: isSalary ? null : regH,
+          overtimeHours: isSalary ? null : otH,
+          regularPay: regPay,
+          overtimePay: otPay,
         };
         const res = await api.runPayroll({
           clientId,
@@ -1673,6 +1685,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
               const regH     = parseFloat(row.regHours || 0);
               const otH      = parseFloat(row.otHours  || 0);
               const grossPreview = isSalary ? salAmt : r2(Math.min(regH, 40) * rate + otH * rate * 1.5);
+              const estEeSS    = r2(grossPreview * EE_SS_RATE);
+              const estEeMed   = r2(grossPreview * EE_MEDICARE_RATE);
+              const estNetPay  = r2(grossPreview - estEeSS - estEeMed);
               const daysToPayDate = daysUntil(period.payDate);
               const isLate   = period.payDate < new Date().toISOString().slice(0, 10);
               const status   = isLate ? 'late' : (daysToPayDate !== null && daysToPayDate <= 5 ? 'due-soon' : 'upcoming');
@@ -1716,7 +1731,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                     </>
                   )}
                   <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: grossPreview > 0 ? 'var(--success, #16a34a)' : '#aaa', fontSize: 13 }}>
-                    {grossPreview > 0 ? fmt(grossPreview) : '—'}
+                    {grossPreview > 0 ? fmt(estNetPay) : '—'}
                   </td>
                   <td style={{ padding: '7px 8px', textAlign: 'right' }}>
                     <span style={{ cursor: 'pointer' }} title="Click to change status"
