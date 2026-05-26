@@ -955,8 +955,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
   const [drawerEmpId, setDrawerEmpId]             = useState(null);
   const [periodEdit, setPeriodEdit]               = useState(null); // { id, start, end, payDate }
   const [savingPeriod, setSavingPeriod]           = useState(false);
-  const [checkEditModal, setCheckEditModal]       = useState(null); // stub object
-  const [savingCheckEdit, setSavingCheckEdit]     = useState(false);
+  const [empStatusDrop, setEmpStatusDrop]         = useState(null); // { stub, top, right }
   const [ungroupedModal, setUngroupedModal]       = useState(false);
   const [ugForm, setUgForm]                       = useState({ employeeId: '', start: '', end: '', payDate: '', regHours: '', otHours: '', payType: 'regular' });
   const [ugRunning, setUgRunning]                 = useState(false);
@@ -1179,23 +1178,19 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     finally { setSavingPeriod(false); }
   }
 
-  async function handleSaveCheckEdit(stub, form) {
-    setSavingCheckEdit(true);
+  useEffect(() => {
+    if (!empStatusDrop) return;
+    const close = () => setEmpStatusDrop(null);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [empStatusDrop]);
+
+  async function handleEmpStatusChange(stub, newStatus) {
+    setEmpStatusDrop(null);
     try {
-      const payload = {
-        payPeriodStart: form.start   || stub.pay_period_start,
-        payPeriodEnd:   form.end     || stub.pay_period_end,
-        settlementDate: form.payDate || stub.settlement_date,
-        checkStatus:    form.checkStatus,
-      };
-      if (form.grossOverride && parseFloat(form.grossOverride) > 0) {
-        payload.lineItems = [{ payType: 'salary', amount: parseFloat(form.grossOverride) }];
-      }
-      await api.updatePaystub(stub.id, payload);
+      await api.updatePaystub(stub.id, { checkStatus: newStatus });
       await reloadStubs();
-      setCheckEditModal(null);
     } catch (e) { alert(e.message); }
-    finally { setSavingCheckEdit(false); }
   }
 
   // Select-all helper — selects Late + Due Soon (within 5 days), toggles on repeat click
@@ -1261,82 +1256,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
   const hasLateRows    = pendingPeriods.some(p => p.isLate) || history.some(p => p.stubs.some(s => s.check_status === 'late'));
   const hasDueSoonRows = pendingPeriods.some(p => !p.isLate && daysUntil(p.payDate) !== null && daysUntil(p.payDate) <= 5);
 
-  // Check edit modal — change status, dates, or gross pay for any history check
-  function CheckEditModal({ stub, onClose }) {
-    const [form, setForm] = useState({
-      start:         stub.pay_period_start || '',
-      end:           stub.pay_period_end   || '',
-      payDate:       stub.settlement_date  || '',
-      checkStatus:   stub.check_status     || 'draft',
-      grossOverride: stub.gross_wages != null ? String(stub.gross_wages) : '',
-    });
-    const LABEL = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 5 };
-    return (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)' }}
-        onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-        <div className="card" style={{ width: 480, maxWidth: '95vw', padding: 0, borderRadius: 12 }}>
-          <div style={{ padding: '18px 24px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div>
-              <div style={{ fontWeight: 800, fontSize: 17 }}>Edit Check</div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                {stub.employee_name}{stub.check_number ? ` — #${stub.check_number}` : ''}
-              </div>
-            </div>
-            <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
-          </div>
-          <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
-            {/* Status */}
-            <div>
-              <label style={LABEL}>Check Status</label>
-              <select className="form-input" value={form.checkStatus} onChange={e => setForm(f => ({ ...f, checkStatus: e.target.value }))}
-                style={{ width: '100%', height: 34, fontSize: 13 }}>
-                <option value="draft">Draft — shows as Upcoming / Due Soon / Late</option>
-                <option value="printed">Printed</option>
-                <option value="deposited">Deposited</option>
-              </select>
-            </div>
-            {/* Period dates */}
-            <div>
-              <label style={LABEL}>Pay Period &amp; Pay Date</label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-                {[
-                  { key: 'start',   label: 'Period Start' },
-                  { key: 'end',     label: 'Period End'   },
-                  { key: 'payDate', label: 'Pay Date'     },
-                ].map(({ key, label }) => (
-                  <div key={key}>
-                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>{label}</div>
-                    <input type="date" className="form-input" value={form[key]}
-                      onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                      style={{ width: '100%', height: 30, fontSize: 12 }} />
-                  </div>
-                ))}
-              </div>
-            </div>
-            {/* Gross override */}
-            <div>
-              <label style={LABEL}>Gross Pay Override</label>
-              <input type="number" className="form-input" value={form.grossOverride} placeholder="Leave blank to keep current gross"
-                min="0" step="0.01"
-                onChange={e => setForm(f => ({ ...f, grossOverride: e.target.value }))}
-                style={{ width: '100%', height: 34, fontSize: 13 }} />
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                All taxes are recalculated when you save. Use this to change the salary amount for a single paycheck.
-              </div>
-            </div>
-          </div>
-          <div style={{ padding: '12px 24px 18px', display: 'flex', gap: 10, justifyContent: 'flex-end', borderTop: '1px solid var(--border)' }}>
-            <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
-            <button className="btn btn-primary" disabled={savingCheckEdit} onClick={() => handleSaveCheckEdit(stub, form)}>
-              {savingCheckEdit ? <span className="spinner" style={{ width: 12, height: 12 }} /> : 'Save Changes'}
-            </button>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  // Check detail modal — shows full breakdown for pending or history rows
+  // Check detail modal — shows full breakdown for pending or history rows, with editable dates and gross
   function CheckDetailModal({ rowData, onClose }) {
     if (!rowData) return null;
 
@@ -1477,6 +1397,30 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     const isVoided = stub.check_status === 'voided';
     const ytd = calcEmpYTD(stub.employee_id, stub.pay_period_end);
 
+    // Editable date / gross state (hooks must be at top of history branch)
+    const [dateForm, setDateForm]     = useState({ start: stub.pay_period_start || '', end: stub.pay_period_end || '', payDate: stub.settlement_date || '' });
+    const [grossOverride, setGrossOverride] = useState('');
+    const [editSaving, setEditSaving] = useState(false);
+    const isDirty = !isVoided && (
+      dateForm.start !== (stub.pay_period_start || '') ||
+      dateForm.end   !== (stub.pay_period_end   || '') ||
+      dateForm.payDate !== (stub.settlement_date || '') ||
+      (grossOverride !== '' && parseFloat(grossOverride) > 0)
+    );
+    async function saveModalEdits() {
+      setEditSaving(true);
+      try {
+        const payload = { payPeriodStart: dateForm.start, payPeriodEnd: dateForm.end, settlementDate: dateForm.payDate };
+        if (grossOverride && parseFloat(grossOverride) > 0) {
+          payload.lineItems = [{ payType: 'salary', amount: parseFloat(grossOverride) }];
+        }
+        await api.updatePaystub(stub.id, payload);
+        await reloadStubs();
+        onClose();
+      } catch (e) { alert(e.message); }
+      finally { setEditSaving(false); }
+    }
+
     const earningRows = [
       stub.regular_hours != null && stub.regular_pay != null && { label: `Hourly  (${stub.regular_hours} hrs)`, amount: stub.regular_pay, ytd: null },
       stub.overtime_hours > 0 && stub.overtime_pay > 0       && { label: `Overtime  (${stub.overtime_hours} hrs)`, amount: stub.overtime_pay, ytd: null },
@@ -1521,16 +1465,21 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
               </div>
               <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
             </div>
-            {/* Pay period strip */}
-            <div style={{ display: 'flex', marginTop: 14, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
+            {/* Pay period strip — editable for non-voided checks */}
+            <div style={{ display: 'flex', marginTop: 14, borderRadius: 8, overflow: 'hidden', border: `1px solid ${isDirty ? 'var(--accent)' : 'var(--border)'}`, background: 'var(--bg-secondary)', transition: 'border-color 0.15s' }}>
               {[
-                { label: 'Period Start', value: fmtDate(stub.pay_period_start) },
-                { label: 'Period End',   value: fmtDate(stub.pay_period_end) },
-                { label: 'Pay Date',     value: fmtDate(stub.settlement_date) },
-              ].map(({ label, value }, i, arr) => (
+                { label: 'Period Start', key: 'start',   raw: stub.pay_period_start },
+                { label: 'Period End',   key: 'end',     raw: stub.pay_period_end   },
+                { label: 'Pay Date',     key: 'payDate', raw: stub.settlement_date  },
+              ].map(({ label, key, raw }, i, arr) => (
                 <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
                   <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
-                  <div style={{ ...MONO, fontSize: 13, fontWeight: 600 }}>{value}</div>
+                  {isVoided
+                    ? <div style={{ ...MONO, fontSize: 13, fontWeight: 600 }}>{fmtDate(raw)}</div>
+                    : <input type="date" value={dateForm[key]}
+                        onChange={e => setDateForm(f => ({ ...f, [key]: e.target.value }))}
+                        style={{ ...MONO, fontSize: 13, fontWeight: 600, background: 'transparent', border: 'none', outline: 'none', width: '100%', color: dateForm[key] !== (raw || '') ? 'var(--accent)' : 'var(--text-primary)', cursor: 'pointer' }} />
+                  }
                 </div>
               ))}
             </div>
@@ -1580,7 +1529,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
             <div style={{ fontSize: 15, fontWeight: 700 }}>Check Amount</div>
             <div style={{ ...MONO, fontSize: 22, fontWeight: 800, color: '#16a34a' }}>{fmt(stub.net_pay || 0)}</div>
           </div>
-          <div style={{ display: 'flex', gap: 0, margin: '12px 24px 20px', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
+          <div style={{ display: 'flex', gap: 0, margin: '12px 24px 0', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
             {[
               { label: '941 Tax Deposit', value: fmt(stub.total_deposit || 0) },
               { label: '940 FUTA',        value: fmt(stub.futa_tax      || 0) },
@@ -1592,6 +1541,26 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                 <div style={{ ...MONO, fontSize: 14, fontWeight: 800, color: accent ? 'var(--accent)' : 'var(--text-primary)' }}>{value}</div>
               </div>
             ))}
+          </div>
+
+          {/* Footer: gross override + save/close */}
+          <div style={{ padding: '12px 24px 18px', display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
+            {!isVoided && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input type="number" className="form-input" value={grossOverride} placeholder="Override gross pay…"
+                  min="0" step="0.01" onChange={e => setGrossOverride(e.target.value)}
+                  style={{ height: 30, fontSize: 12, width: 170 }} />
+                {grossOverride && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Taxes recalculate on save</span>}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+              <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: 12 }}>Close</button>
+              {isDirty && (
+                <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={editSaving} onClick={saveModalEdits}>
+                  {editSaving ? <span className="spinner" style={{ width: 12, height: 12 }} /> : 'Save Changes'}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </Overlay>
@@ -1763,16 +1732,14 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                   {stub.net_pay != null ? fmt(stub.net_pay) : '—'}
                 </td>
                 <td style={{ padding: '7px 8px', textAlign: 'right' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 5 }}>
+                  {PRINTED_STATUSES.has(stub.check_status) && !isVoided ? (
+                    <span style={{ cursor: 'pointer' }} title="Click to change status"
+                      onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setEmpStatusDrop(empStatusDrop?.stub?.id === stub.id ? null : { stub, top: r.bottom + 4, right: window.innerWidth - r.right }); }}>
+                      <StatusBadge status={stub.check_status} />
+                    </span>
+                  ) : (
                     <StatusBadge status={stub.check_status || 'draft'} />
-                    {!isVoided && (
-                      <button onClick={e => { e.stopPropagation(); setCheckEditModal(stub); }}
-                        title="Edit check"
-                        style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px', fontSize: 11, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1.4, flexShrink: 0 }}>
-                        ✏
-                      </button>
-                    )}
-                  </div>
+                  )}
                 </td>
               </tr>
             );
@@ -1879,8 +1846,26 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
       {/* Check detail modal */}
       {detailModal && <CheckDetailModal rowData={detailModal} onClose={() => setDetailModal(null)} />}
 
-      {/* Check edit modal */}
-      {checkEditModal && <CheckEditModal stub={checkEditModal} onClose={() => setCheckEditModal(null)} />}
+      {/* Employee status dropdown — fixed so it's never clipped by overflow:hidden */}
+      {empStatusDrop && (
+        <div onClick={e => e.stopPropagation()}
+          style={{ position: 'fixed', top: empStatusDrop.top, right: empStatusDrop.right, zIndex: 9999, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 20px rgba(0,0,0,0.15)', minWidth: 230, padding: '4px 0' }}>
+          {[
+            { value: 'draft',                  label: 'Upcoming / Due Soon / Late', badge: 'upcoming'              },
+            { value: 'printed',                label: 'Printed',                    badge: 'printed'               },
+            { value: 'direct_deposit_cleared', label: 'Deposited',                  badge: 'direct_deposit_cleared' },
+          ].map(({ value, label, badge }) => {
+            const isCur = empStatusDrop.stub.check_status === value;
+            return (
+              <button key={value} onClick={() => handleEmpStatusChange(empStatusDrop.stub, value)}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '8px 14px', background: isCur ? 'var(--accent-light)' : 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+                <StatusBadge status={badge} />
+                <span style={{ fontSize: 12, fontWeight: isCur ? 700 : 400 }}>{label}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Employee edit drawer */}
       {drawerEmpId && (
@@ -2175,7 +2160,7 @@ const LIAB_STATUS_CFG = {
   upcoming:  { label: 'Upcoming',  cls: 'badge-neutral' },
   'due-soon':{ label: 'Due Soon',  cls: 'badge-warning' },
   late:      { label: 'Late',      cls: 'badge-error'   },
-  completed: { label: 'Completed', cls: 'badge-success' },
+  completed: { label: 'Sent',      cls: 'badge-success' },
 };
 function LiabStatusBadge({ status }) {
   const cfg = LIAB_STATUS_CFG[status] || LIAB_STATUS_CFG.upcoming;
@@ -2341,7 +2326,7 @@ function PayLiabilitiesTab({ clientId, client }) {
   const [schedSUI, setSchedSUI] = useState('quarterly');
   const [markingPaid, setMarkingPaid] = useState(null);
   const [sentOpen, setSentOpen] = useState(false);
-  const [statusDropdownId, setStatusDropdownId] = useState(null);
+  const [statusDropdown, setStatusDropdown] = useState(null); // { stub, top, right }
   const [updatingStatus, setUpdatingStatus] = useState(null);
   const [activeJobId, setActiveJobId]       = useState(null);
   const [jobStatus,   setJobStatus]         = useState(null);   // 'enrollment_pending' | 'completed' | 'failed'
@@ -2350,17 +2335,17 @@ function PayLiabilitiesTab({ clientId, client }) {
 
   const todayStr = new Date().toISOString().slice(0, 10);
 
-  // Close status dropdown when clicking anywhere outside
+  // Close liability status dropdown on outside click
   useEffect(() => {
-    if (!statusDropdownId) return;
-    const close = () => setStatusDropdownId(null);
+    if (!statusDropdown) return;
+    const close = () => setStatusDropdown(null);
     document.addEventListener('click', close);
     return () => document.removeEventListener('click', close);
-  }, [statusDropdownId]);
+  }, [statusDropdown]);
 
   async function handleStatusChange(stub, newComputedStatus) {
     const dbStatus = newComputedStatus === 'completed' ? 'submitted' : 'pending';
-    setStatusDropdownId(null);
+    setStatusDropdown(null);
     setUpdatingStatus(stub.id);
     try { await api.updatePaystubStatus(stub.id, dbStatus); await reload(); }
     catch (e) { alert(e.message); }
@@ -2563,7 +2548,6 @@ function PayLiabilitiesTab({ clientId, client }) {
                     const lateBg   = stub._status === 'late' ? '#fff5f5' : stub._status === 'due-soon' ? '#fffbeb' : null;
                     const rowBg    = voided ? '#fef2f2' : lateBg || stripeBg;
                     const amount   = taxType === '941' ? (stub.total_deposit || 0) : taxType === '940' ? (stub.futa_tax || 0) : (stub.suta_tax || 0);
-                    const isOpen   = statusDropdownId === stub.id;
                     return (
                       <tr key={stub.id}
                         style={{ background: rowBg, opacity: voided ? 0.6 : 1, borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
@@ -2593,27 +2577,10 @@ function PayLiabilitiesTab({ clientId, client }) {
                           {updatingStatus === stub.id ? (
                             <span className="spinner" style={{ width: 12, height: 12 }} />
                           ) : (
-                            <div data-dropdown style={{ position: 'relative', display: 'inline-block' }}>
-                              <span style={{ cursor: 'pointer' }}
-                                onClick={e => { e.stopPropagation(); setStatusDropdownId(isOpen ? null : stub.id); }}>
-                                <LiabStatusBadge status={stub._status} />
-                              </span>
-                              {isOpen && (
-                                <div onClick={e => e.stopPropagation()}
-                                  style={{ position: 'absolute', right: 0, top: '100%', zIndex: 200, background: '#fff', border: '1px solid var(--border)', borderRadius: 6, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: 130, padding: '4px 0' }}>
-                                  {['upcoming', 'due-soon', 'late', 'completed'].map(s => {
-                                    const isCur = stub._status === s;
-                                    return (
-                                      <button key={s}
-                                        onClick={() => handleStatusChange(stub, s)}
-                                        style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '7px 12px', background: isCur ? 'var(--accent-light)' : 'none', border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: isCur ? 700 : 400, textAlign: 'left' }}>
-                                        <LiabStatusBadge status={s} />
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
+                            <span data-dropdown style={{ cursor: 'pointer' }}
+                              onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setStatusDropdown(statusDropdown?.stub?.id === stub.id ? null : { stub, top: r.bottom + 4, right: window.innerWidth - r.right }); }}>
+                              <LiabStatusBadge status={stub._status} />
+                            </span>
                           )}
                         </td>
                       </tr>
@@ -2820,6 +2787,23 @@ function PayLiabilitiesTab({ clientId, client }) {
         <LiabilityDetailModal stub={liabilityModal.stub} taxType={liabilityModal.taxType}
           due={liabilityModal.due} sendBy={liabilityModal.sendBy} todayStr={todayStr}
           onClose={() => setLiabilityModal(null)} />
+      )}
+
+      {/* Liability status dropdown — fixed position so it's never clipped by overflow:hidden */}
+      {statusDropdown && (
+        <div onClick={e => e.stopPropagation()}
+          style={{ position: 'fixed', top: statusDropdown.top, right: statusDropdown.right, zIndex: 9999, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 20px rgba(0,0,0,0.15)', minWidth: 150, padding: '4px 0' }}>
+          {['upcoming', 'due-soon', 'late', 'completed'].map(s => {
+            const isCur = statusDropdown.stub._status === s;
+            return (
+              <button key={s} onClick={() => handleStatusChange(statusDropdown.stub, s)}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 14px', background: isCur ? 'var(--accent-light)' : 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+                <LiabStatusBadge status={s} />
+                {isCur && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>✓</span>}
+              </button>
+            );
+          })}
+        </div>
       )}
     </div>
   );
