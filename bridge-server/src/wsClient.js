@@ -100,7 +100,7 @@ function saveEnrollmentFile(enrollContent, ein) {
 
 // ── Python automation runners ─────────────────────────────────────────────────
 
-function runPython(script, args, logFn, { timeout = 180000, successToken, failToken } = {}) {
+function runPython(script, args, logFn, { timeout = 180000, successToken, failToken, retryToken } = {}) {
   return new Promise((resolve, reject) => {
     execFile('python', [script, ...args], { windowsHide: true, timeout },
       (err, stdout, stderr) => {
@@ -108,6 +108,11 @@ function runPython(script, args, logFn, { timeout = 180000, successToken, failTo
         if (stderr) stderr.split('\n').filter(Boolean).forEach((l) => logFn(`[stderr] ${l}`));
         if (err) return reject(new Error(`${path.basename(script)} error: ${err.message}`));
         if (stdout.includes(successToken)) return resolve(stdout);
+        if (retryToken && stdout.includes(retryToken)) {
+          const retryErr = new Error('IMPORT_RETRY_NEEDED');
+          retryErr.stdout = stdout;
+          return reject(retryErr);
+        }
         const reason = stdout.match(new RegExp(failToken + ':\\s*(.+)'))?.[1] || 'Unknown — check bridge logs';
         reject(new Error(reason));
       }
@@ -120,7 +125,38 @@ function runPaymentAutomation(achFilePath, logFn) {
   return runPython(BP_SCRIPT, [achFilePath], logFn, {
     successToken: 'IMPORT_COMPLETE',
     failToken:    'IMPORT_FAILED',
+    retryToken:   'IMPORT_RETRY_NEEDED',
   }).then(() => ({ success: true, confirmation: 'BP_AUTOMATION_OK', achFilePath }));
+}
+
+const RETRY_DELAY_MS    = 10 * 60 * 1000; // 10 minutes
+const MAX_IMPORT_RETRIES = 3;
+
+async function runPaymentWithRetry(achFilePath, logFn) {
+  for (let attempt = 1; attempt <= MAX_IMPORT_RETRIES; attempt++) {
+    try {
+      return await c2.run('payment', () => runPaymentAutomation(achFilePath, logFn));
+    } catch (err) {
+      // bp_automation.py prints IMPORT_RETRY_NEEDED and exits 0, so runPython resolves —
+      // but if the stdout contains the retry token without the success token it rejects
+      // with an unknown-reason error. Detect it here.
+      const isRetrySignal = err.message.includes('IMPORT_RETRY_NEEDED')
+        || (err.stdout || '').includes('IMPORT_RETRY_NEEDED');
+
+      if (isRetrySignal && attempt < MAX_IMPORT_RETRIES) {
+        logFn(`[BP] Import error — will retry in 10 minutes (attempt ${attempt}/${MAX_IMPORT_RETRIES})`);
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+        logFn(`[BP] Retrying import now (attempt ${attempt + 1}/${MAX_IMPORT_RETRIES})`);
+        continue;
+      }
+
+      if (isRetrySignal) {
+        throw new Error(`Import failed after ${MAX_IMPORT_RETRIES} retries (persistent Error ID 88 or similar). Please retry manually.`);
+      }
+
+      throw err; // non-retriable error — propagate normally
+    }
+  }
 }
 
 function runEnrollmentAutomation(enrollFilePath, logFn) {
@@ -386,8 +422,8 @@ class BridgeClient extends EventEmitter {
         log(`ACH file saved: ${achFilePath}`);
       }
 
-      // 4. Run payment automation (bp_automation.py clicks Payments tab as step 0)
-      const result = await c2.run('payment', () => runPaymentAutomation(achFilePath, log));
+      // 4. Run payment automation (retries up to 3× on transient errors like Error ID 88)
+      const result = await runPaymentWithRetry(achFilePath, log);
 
       this.stats.jobsSucceeded++;
       this.emit('log', `Job ${submissionId} succeeded — confirmation: ${result.confirmation}`);
@@ -512,7 +548,7 @@ class BridgeClient extends EventEmitter {
     }
 
     try {
-      const result = await c2.run('payment', () => runPaymentAutomation(achFilePath, log));
+      const result = await runPaymentWithRetry(achFilePath, log);
       log(`[RESUME] Payment complete for EIN ${cleanEin(ein)}`);
       this._send({ type: 'result', jobId, submissionId, success: true, confirmation: result.confirmation, achFilePath: result.achFilePath, message: 'Your payment is sent!', enrollmentPin: enrollmentPin || null });
     } catch (err) {

@@ -43,6 +43,34 @@ def maximize_bp():
         log('WARNING: Could not maximize window (' + str(e) + ') - continuing')
 
 
+def is_file_format_selector_open():
+    """Return True if the File Format Selector dialog is still on screen."""
+    try:
+        import pygetwindow as gw
+        return any('File Format Selector' in w.title for w in gw.getAllWindows())
+    except Exception:
+        return False
+
+
+def dismiss_file_format_selector():
+    """
+    Dismiss the File Format Selector dialog by pressing Enter.
+    Works regardless of where the OK button is on screen — Enter always
+    activates the focused/default button in a Windows dialog, so no
+    coordinates are needed even when an error banner shifts the button down.
+    """
+    try:
+        import pygetwindow as gw
+        wins = [w for w in gw.getAllWindows() if 'File Format Selector' in w.title]
+        if wins:
+            wins[0].activate()
+            time.sleep(0.3)
+    except Exception as e:
+        log('Could not activate File Format Selector: ' + str(e))
+    pyautogui.press('enter')
+    time.sleep(0.8)
+
+
 def find_and_click(filename, description, timeout=10):
     log('Looking for ' + description + '...')
     deadline = time.time() + timeout
@@ -105,19 +133,32 @@ def main():
     pyautogui.press('enter')
     time.sleep(2)
 
-    # Step 4 - First OK button
+    # Step 4 - First OK button (confirms file selection in the dialog)
     log('Step 4: Clicking OK button at (1111, 639)')
     time.sleep(0.5)
     pyautogui.click(1111, 639)
     log('Step 4 complete: OK button clicked')
     time.sleep(2)
 
-    # Step 5 - Second OK button
+    # Step 5 - Second OK button (triggers the actual import)
     log('Step 5: Clicking second OK button at (798, 629)')
     time.sleep(0.5)
     pyautogui.click(798, 629)
     log('Step 5 complete: second OK button clicked')
-    time.sleep(2)
+
+    # Wait for the import to either succeed or fail (progress bar runs during this time)
+    time.sleep(4)
+
+    # Check if File Format Selector is still open — if it is, the import errored out.
+    # We press Enter to dismiss OK regardless of where the button moved on screen
+    # (an error banner shifts it down, so we never use coordinates here).
+    if is_file_format_selector_open():
+        log('File Format Selector still open after import — error detected')
+        log('Dismissing dialog with Enter key (coordinate-free)')
+        dismiss_file_format_selector()
+        log('Dialog dismissed — signaling retry in 10 minutes')
+        print('IMPORT_RETRY_NEEDED', flush=True)
+        sys.exit(0)
 
     # Step 6 - Select all unsubmitted payment checkboxes (image recognition - rows vary)
     log('Step 6: Finding payment checkboxes')
