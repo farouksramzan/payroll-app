@@ -2439,7 +2439,9 @@ function PayLiabilitiesTab({ clientId, client }) {
   const [paystubs, setPaystubs]     = useState([]);
   const [credits, setCredits]       = useState([]);
   const [loading,  setLoading]      = useState(true);
-  const [selected, setSelected]     = useState(new Set());
+  const [selected941, setSelected941] = useState(new Set());
+  const [selected940, setSelected940] = useState(new Set());
+  const [selectedSUI, setSelectedSUI] = useState(new Set());
   const [submitting, setSubmitting] = useState(null);
   const [result,   setResult]       = useState(null);
   const [expanded, setExpanded]     = useState({ '941': true, '940': false, 'sui': false });
@@ -2484,10 +2486,9 @@ function PayLiabilitiesTab({ clientId, client }) {
   async function reload() {
     const [stubs, crds] = await Promise.all([api.getPaystubs(clientId), api.getPaystubCredits(clientId)]);
     setPaystubs(stubs); setCredits(crds);
-    const pending = stubs.filter(s =>
-      ISSUED.has(s.check_status) && (UNPAID_941(s) || UNPAID_940(s))
-    );
-    setSelected(new Set(pending.map(s => s.id)));
+    setSelected941(new Set(stubs.filter(s => ISSUED.has(s.check_status) && UNPAID_941(s)).map(s => s.id)));
+    setSelected940(new Set(stubs.filter(s => ISSUED.has(s.check_status) && UNPAID_940(s) && s.futa_tax > 0).map(s => s.id)));
+    setSelectedSUI(new Set(stubs.filter(s => ISSUED.has(s.check_status) && s.suta_tax > 0 && UNPAID_SUI(s)).map(s => s.id)));
 
     // Restore polling if a paystub is still processing (e.g. after page reload)
     const processingStub = stubs.find(s =>
@@ -2521,11 +2522,11 @@ function PayLiabilitiesTab({ clientId, client }) {
   const e940 = enrichedStubs(pending940, '940', sched940);
   const eSUI = enrichedStubs(pendingSUI, 'sui', schedSUI);
 
-  const sel941 = e941.filter(s => selected.has(s.id));
-  const sel940 = e940.filter(s => selected.has(s.id));
+  const sel941 = e941.filter(s => selected941.has(s.id));
+  const sel940 = e940.filter(s => selected940.has(s.id));
   const total941 = sel941.reduce((s, p) => s + p.total_deposit, 0) + credit941;
   const total940 = sel940.reduce((s, p) => s + p.futa_tax, 0) + credit940;
-  const totalSUI = eSUI.filter(s => selected.has(s.id)).reduce((s, p) => s + (p.suta_tax || 0), 0);
+  const totalSUI = eSUI.filter(s => selectedSUI.has(s.id)).reduce((s, p) => s + (p.suta_tax || 0), 0);
 
   // Poll job status every 60s while a bridge job is active
   useEffect(() => {
@@ -2590,7 +2591,7 @@ function PayLiabilitiesTab({ clientId, client }) {
     return Object.values(map).sort((a, b) => (a.due || '').localeCompare(b.due || ''));
   }
 
-  function LiabilityGroup({ title, enriched, taxType, total, credit }) {
+  function LiabilityGroup({ title, enriched, taxType, total, credit, selected, setSelected }) {
     const isOpen = expanded[taxType];
     const lateCount    = enriched.filter(s => s._status === 'late').length;
     const dueSoonCount = enriched.filter(s => s._status === 'due-soon').length;
@@ -2785,17 +2786,21 @@ function PayLiabilitiesTab({ clientId, client }) {
 
       {/* Select All Due */}
       {(() => {
-        const allDue = [...e941, ...e940, ...eSUI].filter(s => s._status === 'due-soon' || s._status === 'late');
-        if (allDue.length === 0) return null;
-        const allSel = allDue.every(s => selected.has(s.id));
+        const due941 = e941.filter(s => s._status === 'due-soon' || s._status === 'late');
+        const due940 = e940.filter(s => s._status === 'due-soon' || s._status === 'late');
+        const dueSUI = eSUI.filter(s => s._status === 'due-soon' || s._status === 'late');
+        const totalDue = due941.length + due940.length + dueSUI.length;
+        if (totalDue === 0) return null;
+        const allSel = due941.every(s => selected941.has(s.id))
+                    && due940.every(s => selected940.has(s.id))
+                    && dueSUI.every(s => selectedSUI.has(s.id));
         return (
           <div style={{ marginBottom: 10 }}>
             <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}
               onClick={() => {
-                const next = new Set(selected);
-                if (allSel) allDue.forEach(s => next.delete(s.id));
-                else allDue.forEach(s => next.add(s.id));
-                setSelected(next);
+                setSelected941(prev => { const n = new Set(prev); if (allSel) due941.forEach(s => n.delete(s.id)); else due941.forEach(s => n.add(s.id)); return n; });
+                setSelected940(prev => { const n = new Set(prev); if (allSel) due940.forEach(s => n.delete(s.id)); else due940.forEach(s => n.add(s.id)); return n; });
+                setSelectedSUI(prev => { const n = new Set(prev); if (allSel) dueSUI.forEach(s => n.delete(s.id)); else dueSUI.forEach(s => n.add(s.id)); return n; });
               }}>
               {allSel ? 'Deselect All Due' : 'Select All Due'}
             </button>
@@ -2803,9 +2808,9 @@ function PayLiabilitiesTab({ clientId, client }) {
         );
       })()}
 
-      <LiabilityGroup title="Federal 941" enriched={e941} taxType="941" total={total941} credit={credit941} />
-      <LiabilityGroup title="Federal 940 (FUTA)" enriched={e940} taxType="940" total={total940} credit={credit940} />
-      <LiabilityGroup title="State SUI" enriched={eSUI} taxType="sui" total={totalSUI} credit={0} />
+      <LiabilityGroup title="Federal 941" enriched={e941} taxType="941" total={total941} credit={credit941} selected={selected941} setSelected={setSelected941} />
+      <LiabilityGroup title="Federal 940 (FUTA)" enriched={e940} taxType="940" total={total940} credit={credit940} selected={selected940} setSelected={setSelected940} />
+      <LiabilityGroup title="State SUI" enriched={eSUI} taxType="sui" total={totalSUI} credit={0} selected={selectedSUI} setSelected={setSelectedSUI} />
 
       {pending941.length === 0 && pending940.length === 0 && pendingSUI.length === 0 && (
         <div className="card"><div className="empty-state" style={{ padding: '32px 20px' }}><div className="empty-state-icon">✓</div><h3>All caught up</h3><p>No pending liabilities.</p></div></div>

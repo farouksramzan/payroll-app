@@ -3,19 +3,22 @@
 const { WebSocketServer, WebSocket } = require('ws');
 const EventEmitter = require('events');
 
-const BRIDGE_PATH       = '/ws/bridge';
-const AUTH_TIMEOUT_MS   = 15_000;   // close if no auth frame within 15s
-const SERVER_PING_MS    = 25_000;   // server → bridge ping every 25s (keeps Railway proxy alive)
+const BRIDGE_PATH          = '/ws/bridge';
+const AUTH_TIMEOUT_MS      = 15_000;        // close if no auth frame within 15s
+const SERVER_PING_MS       = 25_000;        // server → bridge ping every 25s (keeps Railway proxy alive)
+const RECONNECT_GRACE_MS   = 5 * 60_000;   // 5-minute window for bridge to reconnect before failing pending jobs
 
 class BridgeManager extends EventEmitter {
   constructor() {
     super();
-    this._ws         = null;
-    this._wss        = null;
-    this._pingTimer  = null;
-    this._pending    = new Map(); // jobId → { resolve?, reject?, onResult?, timeout, async }
-    this._jobSeq     = 0;
-    this._jobStatuses = new Map(); // jobId → { status, message, updatedAt, confirmation? }
+    this._ws              = null;
+    this._wss             = null;
+    this._pingTimer       = null;
+    this._disconnectTimer = null;  // fires after RECONNECT_GRACE_MS if bridge doesn't reconnect
+    this._pending         = new Map(); // jobId → { resolve?, reject?, onResult?, timeout, async }
+    this._jobPayloads     = new Map(); // jobId → full payload (for re-sending to a reconnected bridge)
+    this._jobSeq          = 0;
+    this._jobStatuses     = new Map(); // jobId → { status, message, updatedAt, confirmation? }
   }
 
   attach(httpServer) {
@@ -62,15 +65,15 @@ class BridgeManager extends EventEmitter {
         clearInterval(this._pingTimer);
         this._pingTimer = null;
         this.emit('disconnected');
-        for (const [, p] of this._pending) {
-          clearTimeout(p.timeout);
-          if (p.async) {
-            p.onResult?.(false, { error: 'Bridge disconnected' });
-          } else {
-            p.reject(new Error('Bridge disconnected'));
-          }
+
+        if (this._pending.size > 0) {
+          console.log(`[Bridge WS] ${this._pending.size} pending job(s) — waiting ${RECONNECT_GRACE_MS / 1000}s for bridge to reconnect before failing them`);
+          clearTimeout(this._disconnectTimer);
+          this._disconnectTimer = setTimeout(
+            () => this._failPendingJobs('Bridge disconnected and did not reconnect within 5 minutes'),
+            RECONNECT_GRACE_MS,
+          );
         }
-        this._pending.clear();
       }
     });
 
@@ -114,8 +117,14 @@ class BridgeManager extends EventEmitter {
       this._ws = ws;
       ws.send(JSON.stringify({ type: 'auth_ok' }));
       console.log('[Bridge WS] Authenticated — bridge is live');
+
+      // Cancel the disconnect grace timer — bridge came back in time
+      clearTimeout(this._disconnectTimer);
+      this._disconnectTimer = null;
+
       this.emit('connected');
       this._startServerPings();
+      this._resendPendingJobs();
       return;
     }
 
@@ -161,11 +170,55 @@ class BridgeManager extends EventEmitter {
     console.log(`[Bridge WS] Status update for job ${msg.jobId}: ${msg.status} — ${msg.message}`);
   }
 
+  _resendPendingJobs() {
+    if (this._pending.size === 0) return;
+    console.log(`[Bridge WS] Re-sending ${this._pending.size} pending job(s) to reconnected bridge`);
+    for (const [jobId] of this._pending) {
+      const payload = this._jobPayloads.get(jobId);
+      if (payload && this._ws?.readyState === WebSocket.OPEN) {
+        console.log(`[Bridge WS] Re-sending job ${jobId}`);
+        this._ws.send(JSON.stringify(payload));
+      }
+    }
+  }
+
+  _failPendingJobs(reason) {
+    console.log(`[Bridge WS] Failing ${this._pending.size} pending job(s): ${reason}`);
+    for (const [jobId, p] of this._pending) {
+      clearTimeout(p.timeout);
+      this._jobPayloads.delete(jobId);
+      this._jobStatuses.set(jobId, {
+        status:    'failed',
+        message:   reason,
+        updatedAt: new Date().toISOString(),
+      });
+      if (p.async) {
+        p.onResult?.(false, { error: reason });
+      } else {
+        p.reject(new Error(reason));
+      }
+    }
+    this._pending.clear();
+  }
+
   _handleResult(msg) {
     const p = this._pending.get(msg.jobId);
-    if (!p) return;
+    if (!p) {
+      // Late result — bridge finished a job after we already timed it out or failed it.
+      // Update the status store so the polling endpoint shows the real outcome.
+      console.log(`[Bridge WS] Late result for job ${msg.jobId} (${msg.success ? 'success' : 'failed'}) — updating status store`);
+      this._jobStatuses.set(msg.jobId, {
+        status:       msg.success ? 'completed' : 'failed',
+        message:      msg.success ? 'Payment completed (late result)' : (msg.error || 'Bridge processing failed'),
+        confirmation: msg.confirmation || null,
+        updatedAt:    new Date().toISOString(),
+      });
+      this.emit('lateResult', msg);
+      return;
+    }
     clearTimeout(p.timeout);
     this._pending.delete(msg.jobId);
+    this._jobPayloads.delete(msg.jobId);
 
     if (p.async) {
       // Async/fire-and-forget job — call result callback and update status store
@@ -209,9 +262,11 @@ class BridgeManager extends EventEmitter {
         updatedAt: new Date().toISOString(),
       });
       this._pending.delete(jobId);
+      this._jobPayloads.delete(jobId);
       onResult?.(false, { error: 'Bridge job timed out' });
     }, timeoutMs);
 
+    this._jobPayloads.set(jobId, payload);
     this._pending.set(jobId, { onResult, timeout, async: true });
     this._ws.send(JSON.stringify(payload));
     return jobId;
@@ -235,8 +290,10 @@ class BridgeManager extends EventEmitter {
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
         this._pending.delete(jobId);
+        this._jobPayloads.delete(jobId);
         reject(new Error(`Bridge job timed out after ${timeoutMs / 1000}s`));
       }, timeoutMs);
+      this._jobPayloads.set(jobId, payload);
       this._pending.set(jobId, { resolve, reject, timeout });
       this._ws.send(JSON.stringify(payload));
     });

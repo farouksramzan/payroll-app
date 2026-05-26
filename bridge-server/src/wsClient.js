@@ -70,14 +70,45 @@ const c2 = new Computer2Lock();
 // Enrollment checks still run freely via c2 during retry waits.
 const paymentLock = new Computer2Lock();
 
-// ── Job deduplication ─────────────────────────────────────────────────────────
-const _seenJobIds = new Map(); // jobId → timestamp
+// ── Persistent job tracking ───────────────────────────────────────────────────
+// Survives crashes. Lets the bridge skip already-completed jobs if Railway
+// re-sends them on reconnect, while still re-processing jobs that were
+// interrupted mid-flight (status = 'in-progress' when bridge crashed).
+const PENDING_JOBS_FILE = path.join(__dirname, '..', 'data', 'pending_jobs.json');
+
+function loadPendingJobs() {
+  try { return JSON.parse(fs.readFileSync(PENDING_JOBS_FILE, 'utf8')); } catch { return {}; }
+}
+
+function savePendingJobs(jobs) {
+  fs.mkdirSync(path.dirname(PENDING_JOBS_FILE), { recursive: true });
+  fs.writeFileSync(PENDING_JOBS_FILE, JSON.stringify(jobs, null, 2));
+}
+
+function markJobStatus(jobId, status) {
+  const jobs = loadPendingJobs();
+  jobs[jobId] = { ...jobs[jobId], status, updatedAt: new Date().toISOString() };
+  if (status === 'queued') jobs[jobId].createdAt = new Date().toISOString();
+  if (status === 'completed') {
+    // Evict entries older than 48 hours to prevent unbounded growth
+    const cutoff = Date.now() - 48 * 60 * 60 * 1000;
+    for (const [id, e] of Object.entries(jobs)) {
+      if (new Date(e.createdAt || 0).getTime() < cutoff) delete jobs[id];
+    }
+  }
+  savePendingJobs(jobs);
+}
+
+// In-memory guard prevents double-processing within the same session (e.g.
+// Railway sends a job twice before the first run finishes).
+const _activeJobIds = new Set();
+
 function isDuplicateJob(jobId) {
-  if (_seenJobIds.has(jobId)) return true;
-  _seenJobIds.set(jobId, Date.now());
-  // Evict entries older than 2 hours
-  const cutoff = Date.now() - 2 * 60 * 60 * 1000;
-  for (const [id, ts] of _seenJobIds) { if (ts < cutoff) _seenJobIds.delete(id); }
+  const jobs = loadPendingJobs();
+  // 'completed' → definitely done, skip
+  if (jobs[jobId]?.status === 'completed') return true;
+  // Currently being processed in this session
+  if (_activeJobIds.has(jobId)) return true;
   return false;
 }
 
@@ -384,11 +415,15 @@ class BridgeClient extends EventEmitter {
       return;
     }
 
+    _activeJobIds.add(jobId);
+    markJobStatus(jobId, 'queued');
+
     this.stats.jobsReceived++;
     this.emit('log', `Job received: submissionId=${submissionId} jobId=${jobId}`);
     this.emit('jobStart', job);
 
     try {
+      markJobStatus(jobId, 'in-progress');
       const log = (msg) => this.emit('log', msg);
 
       // PIN used throughout this job — generate a fresh one for new enrollments
@@ -495,6 +530,8 @@ class BridgeClient extends EventEmitter {
       this.emit('log', `Job ${submissionId} succeeded — confirmation: ${result.confirmation}`);
       this.emit('jobComplete', { job, result, success: true });
 
+      markJobStatus(jobId, 'completed');
+      _activeJobIds.delete(jobId);
       this._send({
         type:            'result',
         jobId,
@@ -513,6 +550,8 @@ class BridgeClient extends EventEmitter {
       this.emit('log', `Job ${submissionId} FAILED: ${err.message}`);
       this.emit('jobComplete', { job, error: err.message, success: false });
 
+      markJobStatus(jobId, 'completed');
+      _activeJobIds.delete(jobId);
       const isEnrollmentError = err.message.includes('Enrollment could not be confirmed');
       this._send({
         type:         'result',

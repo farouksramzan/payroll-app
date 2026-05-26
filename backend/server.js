@@ -50,6 +50,31 @@ app.use(limiter);
 // ── Initialize DB ─────────────────────────────────────────────────────────────
 getDb();
 
+// ── Stale job cleanup ─────────────────────────────────────────────────────────
+// Paystubs stuck in 'processing' for over 2 hours likely belong to a bridge
+// session that crashed without sending a result. Mark them failed so the UI
+// doesn't show a permanent spinner and the operator can resubmit.
+(function cleanStaleProcessingJobs() {
+  try {
+    const db = getDb();
+    const cutoff = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const r1 = db.prepare(`
+      UPDATE paystubs SET status = 'failed', updated_at = CURRENT_TIMESTAMP
+      WHERE  status = 'processing' AND updated_at < ?
+    `).run(cutoff);
+    const r2 = db.prepare(`
+      UPDATE paystubs SET status_940 = 'failed', updated_at = CURRENT_TIMESTAMP
+      WHERE  status_940 = 'processing' AND updated_at < ?
+    `).run(cutoff);
+    const changed = r1.changes + r2.changes;
+    if (changed > 0) {
+      console.log(`[Startup] Marked ${changed} stale 'processing' paystub(s) as 'failed' (941: ${r1.changes}, 940: ${r2.changes})`);
+    }
+  } catch (err) {
+    console.error('[Startup] Stale job cleanup failed:', err.message);
+  }
+})();
+
 // ── API routes ────────────────────────────────────────────────────────────────
 app.use('/api/auth',        authLimiter, authRoutes);
 app.use('/api/clients',     clientRoutes);
