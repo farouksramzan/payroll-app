@@ -51,4 +51,34 @@ function calcSettlementDueDate(payDate, depositSchedule) {
   return toBusinessDay(due).toISOString().slice(0, 10);
 }
 
-module.exports = { calcSettlementDueDate, toBusinessDay, isBusinessDay, isHoliday };
+// IRS deposit due date for the ACH settlement field — covers 941 and 940.
+// refDate  = pay_period_end (YYYY-MM-DD) of the paystub(s) being submitted
+// payDate  = employee pay date (YYYY-MM-DD) — needed for semiweekly 941
+// taxType  = '941' | '940'
+// schedule = client deposit_schedule ('monthly' | 'semiweekly' | 'quarterly' | 'annually')
+function calcIrsDepositDue(refDate, payDate, taxType, schedule) {
+  if (!refDate) return null;
+  const d = new Date(refDate + 'T00:00:00');
+  const q = Math.ceil((d.getMonth() + 1) / 3);
+  const qMons = [3, 6, 9, 0];   // Apr, Jul, Oct, Jan (month index, 0-based)
+  const qDays = [30, 31, 31, 31];
+  const qYear = q === 4 ? d.getFullYear() + 1 : d.getFullYear();
+
+  if (taxType === '940') {
+    if (schedule === 'annually')
+      return toBusinessDay(new Date(d.getFullYear() + 1, 0, 31)).toISOString().slice(0, 10);
+    // quarterly
+    return toBusinessDay(new Date(qYear, qMons[q - 1], qDays[q - 1])).toISOString().slice(0, 10);
+  }
+
+  if (schedule === 'quarterly')
+    return toBusinessDay(new Date(qYear, qMons[q - 1], qDays[q - 1])).toISOString().slice(0, 10);
+
+  if (schedule === 'semiweekly')
+    return calcSettlementDueDate(payDate || refDate, 'semiweekly');
+
+  // monthly (default for 941)
+  return toBusinessDay(new Date(d.getFullYear(), d.getMonth() + 1, 15)).toISOString().slice(0, 10);
+}
+
+module.exports = { calcSettlementDueDate, calcIrsDepositDue, toBusinessDay, isBusinessDay, isHoliday };

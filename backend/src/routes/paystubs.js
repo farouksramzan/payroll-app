@@ -8,7 +8,7 @@ const { decrypt, encrypt }  = require('../services/cryptoService');
 const { calculateWithholding, getTaxPeriod } = require('../services/taxCalculator');
 const { submitToEFTPS } = require('../services/eftpsAutomation');
 const bridgeManager = require('../ws/bridge');
-const { calcSettlementDueDate } = require('../services/federalHolidays');
+const { calcSettlementDueDate, calcIrsDepositDue } = require('../services/federalHolidays');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -651,12 +651,15 @@ router.post('/:id/submit', async (req, res) => {
     if (bridgeManager.isConnected) {
       const accountNumber = stub.bank_account_number_encrypted
         ? decrypt(stub.bank_account_number_encrypted) : null;
-      if (!stub.settlement_date) {
+      const irsSettlementDate = calcIrsDepositDue(
+        stub.pay_period_end, stub.settlement_date, taxType, stub.deposit_schedule
+      );
+      if (!irsSettlementDate) {
         const resetSql = taxType === '940'
           ? "UPDATE paystubs SET status_940 = 'pending' WHERE id = ?"
           : "UPDATE paystubs SET status = 'pending' WHERE id = ?";
         db.prepare(resetSql).run(stub.id);
-        return res.status(400).json({ error: 'Settlement date is required for ACH bridge submission' });
+        return res.status(400).json({ error: 'Could not determine IRS deposit due date — paystub is missing pay period end date' });
       }
       result = await bridgeManager.sendJob({
         submissionId:   stub.id,
@@ -668,7 +671,7 @@ router.post('/:id/submit', async (req, res) => {
         accountType:    stub.bank_account_type || 'checking',
         taxYear:        stub.tax_year,
         taxQuarter:     stub.tax_quarter,
-        settlementDate: stub.settlement_date,
+        settlementDate: irsSettlementDate,
         taxForm:        taxType,
         taxTypeCode:    taxType === '940' ? '94007' : '94105',
         taxData:        taxType === '940'
@@ -1197,14 +1200,20 @@ router.post('/batch-submit', async (req, res) => {
 
   try {
     let result;
-    const settlementDate = pending.find((p) => p.settlement_date)?.settlement_date || null;
+    // Use the last paystub's pay period end to compute the IRS deposit due date.
+    // The employee pay date (settlement_date) is NOT the ACH settlement date —
+    // the settlement date for EFTPS is when the tax deposit must arrive at the IRS.
+    const lastStub = pending[pending.length - 1];
+    const irsSettlementDate = calcIrsDepositDue(
+      lastStub.pay_period_end, lastStub.settlement_date, taxType, client.deposit_schedule
+    );
 
     if (bridgeManager.isConnected) {
       const accountNumber = client.bank_account_number_encrypted
         ? decrypt(client.bank_account_number_encrypted) : null;
-      if (!settlementDate) {
+      if (!irsSettlementDate) {
         db.prepare(`UPDATE paystubs SET ${processingCol} = 'pending' WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids);
-        return res.status(400).json({ error: 'At least one paystub must have a settlement date for ACH batch submission' });
+        return res.status(400).json({ error: 'Could not determine IRS deposit due date — paystubs are missing pay period end date' });
       }
       const totalDeposit = taxType === '940'
         ? pending.reduce((s, p) => s + p.futa_tax, 0)
@@ -1222,7 +1231,7 @@ router.post('/batch-submit', async (req, res) => {
         accountType:    client.bank_account_type || 'checking',
         taxYear:        taxYear || firstStub.tax_year,
         taxQuarter:     taxType === '940' ? null : (taxQuarter || firstStub.tax_quarter),
-        settlementDate,
+        settlementDate: irsSettlementDate,
         taxForm:        taxType,
         taxTypeCode:    taxType === '940' ? '94007' : '94105',
         taxData:        { totalDeposit: Math.round(totalDeposit * 100) / 100 },
@@ -1280,7 +1289,7 @@ router.post('/batch-submit', async (req, res) => {
         internetPassword,
         enrollmentNumber: client.eftps_enrollment_number || null,
         payPeriodEnd:    firstStub.pay_period_end,
-        settlementDate,
+        settlementDate:  irsSettlementDate,
         taxYear:         taxYear || firstStub.tax_year,
         taxQuarter:      taxType === '940' ? null : (taxQuarter || firstStub.tax_quarter),
         taxForm:         taxType,
