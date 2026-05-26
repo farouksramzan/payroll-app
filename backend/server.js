@@ -50,6 +50,62 @@ app.use(limiter);
 // ── Initialize DB ─────────────────────────────────────────────────────────────
 getDb();
 
+// ── Pre-enrolled client PINs ──────────────────────────────────────────────────
+// These clients were enrolled in EFTPS before the app existed.
+// Mark them enrolled and seed their PINs if not already set.
+(function seedPreEnrolledClients() {
+  try {
+    const { encrypt } = require('./src/services/cryptoService');
+    const db = getDb();
+    const PRE_ENROLLED = [
+      { ein: '842408534', pin: '2024' },
+      { ein: '990518604', pin: '2024' },
+      { ein: '931368386', pin: '2024' },
+      { ein: '473050580', pin: '6553' },
+      { ein: '853987275', pin: '2691' },
+      { ein: '562538997', pin: '4346' },
+      { ein: '991845999', pin: '2691' },
+      { ein: '993115196', pin: '2691' },
+      { ein: '205362094', pin: '2024' },
+      { ein: '872041441', pin: '2691' },
+      { ein: '863650369', pin: '2024' },
+      { ein: '991333276', pin: '2691' },
+      { ein: '331784993', pin: '5161' },
+      { ein: '825072557', pin: '4394' },
+      { ein: '395162505', pin: '7917' },
+      { ein: '731662921', pin: '5159' },
+      { ein: '872683407', pin: '7736' },
+      { ein: '850860201', pin: '4929' },
+      { ein: '462614605', pin: '1534' },
+      { ein: '332277526', pin: '6145' },
+      { ein: '205674633', pin: '0201' },
+      { ein: '414959515', pin: '2671' },
+      { ein: '475652843', pin: '7526' },
+      { ein: '412536879', pin: '2691' },
+      { ein: '412510760', pin: '2691' },
+    ];
+    const allClients = db.prepare('SELECT id, ein, eftps_enrolled, batch_provider_pin_encrypted FROM clients').all();
+    let updated = 0;
+    for (const { ein, pin } of PRE_ENROLLED) {
+      // Match by digits only so XX-XXXXXXX and XXXXXXXXX both work
+      const digits = ein.replace(/\D/g, '');
+      const client = allClients.find(c => c.ein.replace(/\D/g, '') === digits);
+      if (!client) continue;
+      // Always set enrolled=1; only set PIN if not already stored
+      const pinVal = client.batch_provider_pin_encrypted ? undefined : encrypt(pin);
+      if (pinVal !== undefined) {
+        db.prepare('UPDATE clients SET eftps_enrolled = 1, batch_provider_pin_encrypted = ? WHERE id = ?').run(pinVal, client.id);
+      } else {
+        db.prepare('UPDATE clients SET eftps_enrolled = 1 WHERE id = ?').run(client.id);
+      }
+      updated++;
+    }
+    if (updated > 0) console.log(`[Startup] Marked ${updated} pre-enrolled client(s) as eftps_enrolled=1 with PIN`);
+  } catch (err) {
+    console.error('[Startup] Pre-enrolled client seed failed:', err.message);
+  }
+})();
+
 // ── Stale job cleanup ─────────────────────────────────────────────────────────
 // Paystubs stuck in 'processing' for over 2 hours likely belong to a bridge
 // session that crashed without sending a result. Mark them failed so the UI
