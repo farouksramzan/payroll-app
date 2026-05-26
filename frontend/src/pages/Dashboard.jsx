@@ -91,6 +91,22 @@ function LiabStatusBadge({ status }) {
 
 const ISSUED = new Set(['printed', 'deposited']);
 
+const FEDERAL_HOLIDAYS = new Set([
+  '2025-01-01','2025-01-20','2025-02-17','2025-05-26','2025-06-19','2025-07-04',
+  '2025-09-01','2025-10-13','2025-11-11','2025-11-27','2025-12-25',
+  '2026-01-01','2026-01-19','2026-02-16','2026-05-25','2026-06-19','2026-07-03',
+  '2026-09-07','2026-10-12','2026-11-11','2026-11-26','2026-12-25',
+  '2027-01-01','2027-01-18','2027-02-15','2027-05-31','2027-06-19','2027-07-05',
+  '2027-09-06','2027-10-11','2027-11-11','2027-11-25','2027-12-24',
+]);
+function isBizDay(d) { const w = d.getDay(); return w !== 0 && w !== 6 && !FEDERAL_HOLIDAYS.has(d.toISOString().slice(0, 10)); }
+function calcSendByDate(dueDate) {
+  if (!dueDate) return null;
+  let d = new Date(dueDate + 'T00:00:00'), count = 0;
+  while (count < 2) { d.setDate(d.getDate() - 1); if (isBizDay(d)) count++; }
+  return d.toISOString().slice(0, 10);
+}
+
 // ── Tax detail modal ───────────────────────────────────────────────────────────
 function TaxDetailModal({ row, onClose }) {
   if (!row) return null;
@@ -275,8 +291,12 @@ function MultiLiabPanel({ clientIds, clients }) {
             const dueSoonSUI = !lateSUI && pendingSUI && dueSUI && dueSUI <= in5Str;
             const isLate = late941 || late940 || lateSUI;
             const isDueSoon = !isLate && (dueSoon941 || dueSoon940 || dueSoonSUI);
+            const sendBy941 = pending941 ? calcSendByDate(due941) : null;
+            const sendBy940 = pending940 ? calcSendByDate(due940) : null;
+            const sendBySUI = pendingSUI ? calcSendByDate(dueSUI) : null;
             merged.push({ ...s, _clientName: client?.businessName || '—', _clientId: id,
               _due941: pending941 ? due941 : null, _due940: pending940 ? due940 : null, _dueSUI: pendingSUI ? dueSUI : null,
+              _sendBy941: sendBy941, _sendBy940: sendBy940, _sendBySUI: sendBySUI,
               _late941: late941, _late940: late940, _lateSUI: lateSUI,
               _dueSoon941: dueSoon941, _dueSoon940: dueSoon940, _dueSoonSUI: dueSoonSUI,
               _pending941: pending941, _pending940: pending940, _pendingSUI: pendingSUI,
@@ -426,11 +446,11 @@ function MultiLiabPanel({ clientIds, clients }) {
                 <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Employee</th>
                 <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Period</th>
                 <th style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>941</th>
-                <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>941 Due</th>
+                <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>941 Send By</th>
                 <th style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>940</th>
-                <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>940 Due</th>
+                <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>940 Send By</th>
                 <th style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>SUI</th>
-                <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>SUI Due</th>
+                <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>SUI Send By</th>
                 {filter !== 'all' && <th style={{ width: 100 }} />}
               </tr>
             </thead>
@@ -447,11 +467,11 @@ function MultiLiabPanel({ clientIds, clients }) {
                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', color: '#555' }}>{r.employee_name || '—'}</td>
                       <td style={{ padding: '8px 10px', fontSize: 11, whiteSpace: 'nowrap', color: '#555' }}>{fmtPeriod(r.pay_period_start, r.pay_period_end)}</td>
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{r._pending941 ? fmt(r.total_deposit) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
-                      <DueCell due={r._due941} late={r._late941} dueSoon={r._dueSoon941} />
+                      <DueCell due={r._sendBy941} late={r._late941} dueSoon={r._dueSoon941} />
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{r._pending940 ? fmt(r.futa_tax) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
-                      <DueCell due={r._due940} late={r._late940} dueSoon={r._dueSoon940} />
+                      <DueCell due={r._sendBy940} late={r._late940} dueSoon={r._dueSoon940} />
                       <td style={{ padding: '8px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{r._pendingSUI ? fmt(r.suta_tax) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
-                      <DueCell due={r._dueSUI} late={r._lateSUI} dueSoon={r._dueSoonSUI} />
+                      <DueCell due={r._sendBySUI} late={r._lateSUI} dueSoon={r._dueSoonSUI} />
                     </tr>
                   );
                 })
@@ -499,11 +519,11 @@ function MultiLiabPanel({ clientIds, clients }) {
                         <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', color: '#555' }}>{r.employee_name || '—'}</td>
                         <td style={{ padding: '7px 10px', fontSize: 11, whiteSpace: 'nowrap', color: '#555' }}>{fmtPeriod(r.pay_period_start, r.pay_period_end)}</td>
                         <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{r._pending941 ? fmt(r.total_deposit) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
-                        <DueCell due={r._due941} late={r._late941} dueSoon={r._dueSoon941} />
+                        <DueCell due={r._sendBy941} late={r._late941} dueSoon={r._dueSoon941} />
                         <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{r._pending940 ? fmt(r.futa_tax) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
-                        <DueCell due={r._due940} late={r._late940} dueSoon={r._dueSoon940} />
+                        <DueCell due={r._sendBy940} late={r._late940} dueSoon={r._dueSoon940} />
                         <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{r._pendingSUI ? fmt(r.suta_tax) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
-                        <DueCell due={r._dueSUI} late={r._lateSUI} dueSoon={r._dueSoonSUI} />
+                        <DueCell due={r._sendBySUI} late={r._lateSUI} dueSoon={r._dueSoonSUI} />
                         <td />
                       </tr>
                     ))}
