@@ -171,6 +171,7 @@ function MultiLiabPanel({ clientIds, clients }) {
   const [loading, setLoading]     = useState(false);
   const [detailRow, setDetailRow] = useState(null);
   const [filter, setFilter]       = useState('all'); // 'all' | 'late' | 'due-soon'
+  const [submitting, setSubmitting] = useState(null); // `${clientId}-${taxType}`
   const navigate = useNavigate();
 
   const clientKey = useMemo(() => [...clientIds].sort().join(','), [clientIds]);
@@ -234,6 +235,74 @@ function MultiLiabPanel({ clientIds, clients }) {
       })
       .finally(() => setLoading(false));
   }, [clientKey]);
+
+  function triggerReload() {
+    // Reset key to force re-fetch by briefly clearing rows
+    setRows([]);
+    setLoading(true);
+    const ids = clientKey.split(',').filter(Boolean);
+    Promise.allSettled(ids.map(id => api.getPaystubs(id).then(stubs => ({ id, stubs }))))
+      .then(settled => {
+        const results = settled.filter(r => r.status === 'fulfilled').map(r => r.value);
+        const today = new Date().toISOString().slice(0, 10);
+        const in5 = new Date(); in5.setDate(in5.getDate() + 5);
+        const in5Str = in5.toISOString().slice(0, 10);
+        const merged = [];
+        results.forEach(({ id, stubs }) => {
+          const client = clients.find(c => c.id == id);
+          const schedule = client?.depositSchedule || 'monthly';
+          stubs.filter(s => ISSUED.has(s.check_status)).forEach(s => {
+            const refDate = s.settlement_date || s.pay_period_end;
+            const due941 = s.settlement_due_date || (refDate ? calcIRSDepositDue(refDate, schedule) : null);
+            const due940 = refDate ? calcFutaQuarterlyDue(refDate) : null;
+            const dueSUI = due940;
+            const pending941 = s.status === 'pending' || s.status === 'processing' || s.status === 'failed';
+            const pending940 = (s.status_940 === 'pending' || s.status_940 === 'processing' || s.status_940 === 'failed') && (s.futa_tax || 0) > 0;
+            const pendingSUI = pending941 && (s.suta_tax || 0) > 0;
+            if (!pending941 && !pending940 && !pendingSUI) return;
+            const late941 = pending941 && due941 && today > due941;
+            const late940 = pending940 && due940 && today > due940;
+            const lateSUI = pendingSUI && dueSUI && today > dueSUI;
+            const dueSoon941 = !late941 && pending941 && due941 && due941 <= in5Str;
+            const dueSoon940 = !late940 && pending940 && due940 && due940 <= in5Str;
+            const dueSoonSUI = !lateSUI && pendingSUI && dueSUI && dueSUI <= in5Str;
+            const isLate = late941 || late940 || lateSUI;
+            const isDueSoon = !isLate && (dueSoon941 || dueSoon940 || dueSoonSUI);
+            merged.push({ ...s, _clientName: client?.businessName || '—', _clientId: id,
+              _due941: pending941 ? due941 : null, _due940: pending940 ? due940 : null, _dueSUI: pendingSUI ? dueSUI : null,
+              _late941: late941, _late940: late940, _lateSUI: lateSUI,
+              _dueSoon941: dueSoon941, _dueSoon940: dueSoon940, _dueSoonSUI: dueSoonSUI,
+              _pending941: pending941, _pending940: pending940, _pendingSUI: pendingSUI,
+              _isLate: isLate, _isDueSoon: isDueSoon });
+          });
+        });
+        merged.sort((a, b) => {
+          const aMin = [a._due941, a._due940, a._dueSUI].filter(Boolean).sort()[0] || 'zzzz';
+          const bMin = [b._due941, b._due940, b._dueSUI].filter(Boolean).sort()[0] || 'zzzz';
+          return aMin.localeCompare(bMin);
+        });
+        setRows(merged);
+      })
+      .finally(() => setLoading(false));
+  }
+
+  async function handlePay(clientId, taxType, groupRows) {
+    const ids = groupRows.filter(r => taxType === '941' ? r._pending941 : r._pending940).map(r => r.id);
+    if (!ids.length) return;
+    const amt = groupRows.reduce((s, r) => s + (taxType === '941' ? (r.total_deposit || 0) : (r.futa_tax || 0)), 0);
+    const clientName = groupRows[0]?._clientName || 'this company';
+    if (!window.confirm(`Submit ${taxType} payment of ${fmt(amt)} for ${clientName} to EFTPS?`)) return;
+    const key = `${clientId}-${taxType}`;
+    setSubmitting(key);
+    try {
+      await api.batchSubmitPaystubs({ clientId, paystubIds: ids, taxType });
+      triggerReload();
+    } catch (e) {
+      alert(`Payment failed: ${e.message}`);
+    } finally {
+      setSubmitting(null);
+    }
+  }
 
   const lateRows    = rows.filter(r => r._isLate);
   const dueSoonRows = rows.filter(r => r._isDueSoon);
@@ -388,10 +457,30 @@ function MultiLiabPanel({ clientIds, clients }) {
                       <td style={{ width: 4, background: filter === 'late' ? '#dc2626' : '#d97706', padding: 0 }} />
                       <td colSpan={9} style={{ padding: '8px 10px', fontWeight: 700, fontSize: 13 }}>{group.clientName}</td>
                       <td style={{ padding: '6px 10px', textAlign: 'right' }}>
-                        <button onClick={() => navigate(`/clients/${group.clientId}?tab=liabilities`)}
-                          style={{ fontSize: 12, fontWeight: 600, color: 'var(--accent)', background: 'var(--accent-light)', border: 'none', borderRadius: 6, padding: '5px 12px', cursor: 'pointer', whiteSpace: 'nowrap' }}>
-                          Go Pay →
-                        </button>
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+                          {group.rows.some(r => r._pending941) && (() => {
+                            const amt = group.rows.reduce((s, r) => s + (r._pending941 ? (r.total_deposit || 0) : 0), 0);
+                            const key = `${group.clientId}-941`;
+                            return (
+                              <button key="pay941" onClick={() => handlePay(group.clientId, '941', group.rows)}
+                                disabled={submitting === key}
+                                style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: '#16a34a', border: 'none', borderRadius: 6, padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap', opacity: submitting === key ? 0.6 : 1 }}>
+                                {submitting === key ? '…' : `Pay 941 — ${fmt(amt)}`}
+                              </button>
+                            );
+                          })()}
+                          {group.rows.some(r => r._pending940) && (() => {
+                            const amt = group.rows.reduce((s, r) => s + (r._pending940 ? (r.futa_tax || 0) : 0), 0);
+                            const key = `${group.clientId}-940`;
+                            return (
+                              <button key="pay940" onClick={() => handlePay(group.clientId, '940', group.rows)}
+                                disabled={submitting === key}
+                                style={{ fontSize: 11, fontWeight: 700, color: '#fff', background: '#2563eb', border: 'none', borderRadius: 6, padding: '5px 10px', cursor: 'pointer', whiteSpace: 'nowrap', opacity: submitting === key ? 0.6 : 1 }}>
+                                {submitting === key ? '…' : `Pay 940 — ${fmt(amt)}`}
+                              </button>
+                            );
+                          })()}
+                        </div>
                       </td>
                     </tr>
                     {/* Check rows for this company */}
