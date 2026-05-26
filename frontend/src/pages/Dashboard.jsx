@@ -172,9 +172,16 @@ function MultiLiabPanel({ clientIds, clients }) {
   const [detailRow, setDetailRow] = useState(null);
   const [filter, setFilter]       = useState('all'); // 'all' | 'late' | 'due-soon'
   const [submitting, setSubmitting] = useState(null); // `${clientId}-${taxType}`
+  const [refreshTick, setRefreshTick] = useState(0);
   const navigate = useNavigate();
 
   const clientKey = useMemo(() => [...clientIds].sort().join(','), [clientIds]);
+
+  useEffect(() => {
+    const onFocus = () => setRefreshTick(t => t + 1);
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, []);
 
   useEffect(() => {
     if (!clientKey) { setRows([]); return; }
@@ -234,7 +241,7 @@ function MultiLiabPanel({ clientIds, clients }) {
         setRows(merged);
       })
       .finally(() => setLoading(false));
-  }, [clientKey]);
+  }, [clientKey, refreshTick]);
 
   function triggerReload() {
     // Reset key to force re-fetch by briefly clearing rows
@@ -534,6 +541,9 @@ export default function Dashboard() {
 
   useEffect(() => {
     api.getClients().then(setClients).finally(() => setLoading(false));
+    const onFocus = () => api.getClients().then(setClients);
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
   }, []);
 
   function switchView(v) {
