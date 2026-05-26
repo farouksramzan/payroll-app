@@ -453,7 +453,7 @@ router.put('/:id', (req, res) => {
     payPeriodStart, payPeriodEnd, settlementDate, settlementDueDate, payFrequency,
     filingStatus, step2Checkbox, step3Children, step3Other,
     step4a, step4b, step4c,
-    lineItems, workState, ytdGross, notes,
+    lineItems, workState, ytdGross, notes, checkStatus,
   } = req.body;
 
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(stub.client_id);
@@ -495,7 +495,7 @@ router.put('/:id', (req, res) => {
       additional_medicare = ?, employer_ss = ?, employer_medicare = ?,
       state_income_tax = ?, futa_tax = ?, suta_tax = ?,
       total_deposit = ?, net_pay = ?, ytd_wages_before = ?,
-      tax_year = ?, tax_quarter = ?, notes = ?
+      tax_year = ?, tax_quarter = ?, notes = ?, check_status = ?
     WHERE id = ?
   `).run(
     payPeriodStart  || stub.pay_period_start,
@@ -512,6 +512,7 @@ router.put('/:id', (req, res) => {
     taxes.stateIncomeTax, taxes.futaTax, taxes.sutaTax,
     taxes.totalDeposit, taxes.netPay, ytdBefore,
     year, quarter, notes !== undefined ? (notes || null) : stub.notes,
+    checkStatus || stub.check_status,
     stub.id,
   );
 

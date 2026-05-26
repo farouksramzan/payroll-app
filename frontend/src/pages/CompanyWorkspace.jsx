@@ -955,6 +955,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
   const [drawerEmpId, setDrawerEmpId]             = useState(null);
   const [periodEdit, setPeriodEdit]               = useState(null); // { id, start, end, payDate }
   const [savingPeriod, setSavingPeriod]           = useState(false);
+  const [checkEditModal, setCheckEditModal]       = useState(null); // stub object
+  const [savingCheckEdit, setSavingCheckEdit]     = useState(false);
   const [ungroupedModal, setUngroupedModal]       = useState(false);
   const [ugForm, setUgForm]                       = useState({ employeeId: '', start: '', end: '', payDate: '', regHours: '', otHours: '', payType: 'regular' });
   const [ugRunning, setUgRunning]                 = useState(false);
@@ -1177,6 +1179,25 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     finally { setSavingPeriod(false); }
   }
 
+  async function handleSaveCheckEdit(stub, form) {
+    setSavingCheckEdit(true);
+    try {
+      const payload = {
+        payPeriodStart: form.start   || stub.pay_period_start,
+        payPeriodEnd:   form.end     || stub.pay_period_end,
+        settlementDate: form.payDate || stub.settlement_date,
+        checkStatus:    form.checkStatus,
+      };
+      if (form.grossOverride && parseFloat(form.grossOverride) > 0) {
+        payload.lineItems = [{ payType: 'salary', amount: parseFloat(form.grossOverride) }];
+      }
+      await api.updatePaystub(stub.id, payload);
+      await reloadStubs();
+      setCheckEditModal(null);
+    } catch (e) { alert(e.message); }
+    finally { setSavingCheckEdit(false); }
+  }
+
   // Select-all helper — selects Late + Due Soon (within 5 days), toggles on repeat click
   function handleSelectAllDue() {
     const isDueSoon = p => !p.isLate && daysUntil(p.payDate) !== null && daysUntil(p.payDate) <= 5;
@@ -1239,6 +1260,81 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
 
   const hasLateRows    = pendingPeriods.some(p => p.isLate) || history.some(p => p.stubs.some(s => s.check_status === 'late'));
   const hasDueSoonRows = pendingPeriods.some(p => !p.isLate && daysUntil(p.payDate) !== null && daysUntil(p.payDate) <= 5);
+
+  // Check edit modal — change status, dates, or gross pay for any history check
+  function CheckEditModal({ stub, onClose }) {
+    const [form, setForm] = useState({
+      start:         stub.pay_period_start || '',
+      end:           stub.pay_period_end   || '',
+      payDate:       stub.settlement_date  || '',
+      checkStatus:   stub.check_status     || 'draft',
+      grossOverride: stub.gross_wages != null ? String(stub.gross_wages) : '',
+    });
+    const LABEL = { fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 5 };
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)' }}
+        onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+        <div className="card" style={{ width: 480, maxWidth: '95vw', padding: 0, borderRadius: 12 }}>
+          <div style={{ padding: '18px 24px 14px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 17 }}>Edit Check</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                {stub.employee_name}{stub.check_number ? ` — #${stub.check_number}` : ''}
+              </div>
+            </div>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+          </div>
+          <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {/* Status */}
+            <div>
+              <label style={LABEL}>Check Status</label>
+              <select className="form-input" value={form.checkStatus} onChange={e => setForm(f => ({ ...f, checkStatus: e.target.value }))}
+                style={{ width: '100%', height: 34, fontSize: 13 }}>
+                <option value="draft">Draft — shows as Upcoming / Due Soon / Late</option>
+                <option value="printed">Printed</option>
+                <option value="deposited">Deposited</option>
+              </select>
+            </div>
+            {/* Period dates */}
+            <div>
+              <label style={LABEL}>Pay Period &amp; Pay Date</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                {[
+                  { key: 'start',   label: 'Period Start' },
+                  { key: 'end',     label: 'Period End'   },
+                  { key: 'payDate', label: 'Pay Date'     },
+                ].map(({ key, label }) => (
+                  <div key={key}>
+                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3 }}>{label}</div>
+                    <input type="date" className="form-input" value={form[key]}
+                      onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+                      style={{ width: '100%', height: 30, fontSize: 12 }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+            {/* Gross override */}
+            <div>
+              <label style={LABEL}>Gross Pay Override</label>
+              <input type="number" className="form-input" value={form.grossOverride} placeholder="Leave blank to keep current gross"
+                min="0" step="0.01"
+                onChange={e => setForm(f => ({ ...f, grossOverride: e.target.value }))}
+                style={{ width: '100%', height: 34, fontSize: 13 }} />
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                All taxes are recalculated when you save. Use this to change the salary amount for a single paycheck.
+              </div>
+            </div>
+          </div>
+          <div style={{ padding: '12px 24px 18px', display: 'flex', gap: 10, justifyContent: 'flex-end', borderTop: '1px solid var(--border)' }}>
+            <button className="btn btn-ghost" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary" disabled={savingCheckEdit} onClick={() => handleSaveCheckEdit(stub, form)}>
+              {savingCheckEdit ? <span className="spinner" style={{ width: 12, height: 12 }} /> : 'Save Changes'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // Check detail modal — shows full breakdown for pending or history rows
   function CheckDetailModal({ rowData, onClose }) {
@@ -1599,7 +1695,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
             const isLateCheck    = stub.check_status === 'late';
             const isVoided       = stub.check_status === 'voided';
             const rowBg          = isLateCheck ? '#fff5f5' : stripeBg;
-            const canEditPeriod  = !PRINTED_STATUSES.has(stub.check_status) && !isVoided;
+            const canEditPeriod  = !isVoided;
             const isEditingPeriod = periodEdit?.id === stub.id;
             return (
               <tr key={rowData.key}
@@ -1667,7 +1763,16 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                   {stub.net_pay != null ? fmt(stub.net_pay) : '—'}
                 </td>
                 <td style={{ padding: '7px 8px', textAlign: 'right' }}>
-                  <StatusBadge status={stub.check_status || 'draft'} />
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 5 }}>
+                    <StatusBadge status={stub.check_status || 'draft'} />
+                    {!isVoided && (
+                      <button onClick={e => { e.stopPropagation(); setCheckEditModal(stub); }}
+                        title="Edit check"
+                        style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px', fontSize: 11, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1.4, flexShrink: 0 }}>
+                        ✏
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             );
@@ -1773,6 +1878,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
 
       {/* Check detail modal */}
       {detailModal && <CheckDetailModal rowData={detailModal} onClose={() => setDetailModal(null)} />}
+
+      {/* Check edit modal */}
+      {checkEditModal && <CheckEditModal stub={checkEditModal} onClose={() => setCheckEditModal(null)} />}
 
       {/* Employee edit drawer */}
       {drawerEmpId && (
