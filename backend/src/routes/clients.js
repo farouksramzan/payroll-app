@@ -23,7 +23,7 @@ function sanitizeClient(client, includeSecrets = false) {
     contactPhone: client.contact_phone,
     createdAt: client.created_at,
     updatedAt: client.updated_at,
-    hasBatchProviderPin: !!client.batch_provider_pin_encrypted,
+    hasBatchProviderPin: !!client.batch_provider_pin_encrypted && client.batch_provider_pin_encrypted !== '',
     hasBankAccount: !!client.bank_account_number_encrypted,
     hasInternetPassword: !!client.eftps_internet_password_encrypted,
     payrollFrequency: client.payroll_frequency || 'biweekly',
@@ -36,7 +36,7 @@ function sanitizeClient(client, includeSecrets = false) {
     notificationPhone:  client.notification_phone  || null,
   };
   if (includeSecrets) {
-    out.batchProviderPin = decrypt(client.batch_provider_pin_encrypted);
+    out.batchProviderPin = client.batch_provider_pin_encrypted ? decrypt(client.batch_provider_pin_encrypted) : null;
     out.bankAccountNumber = decrypt(client.bank_account_number_encrypted);
     out.eftpsInternetPassword = client.eftps_internet_password_encrypted
       ? decrypt(client.eftps_internet_password_encrypted) : null;
@@ -167,7 +167,7 @@ router.post('/', (req, res) => {
     bankAccountNumber ? encrypt(bankAccountNumber) : null,
     bankRoutingNumber || null,
     bankAccountType || 'checking',
-    batchProviderPin ? encrypt(batchProviderPin) : null,
+    batchProviderPin ? encrypt(batchProviderPin) : '',
     eftpsInternetPassword ? encrypt(eftpsInternetPassword) : null,
     eftpsEnrollmentNumber || null,
     depositSchedule || 'monthly',
