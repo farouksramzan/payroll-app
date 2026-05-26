@@ -294,7 +294,8 @@ function migrate() {
 
   // SUI independent status tracking
   addCols('paystubs', [
-    { name: 'status_sui', def: "TEXT DEFAULT 'pending'" },
+    { name: 'status_sui',           def: "TEXT DEFAULT 'pending'" },
+    { name: 'eftps_settlement_date', def: 'TEXT' },
   ]);
 
   // check number + payroll run grouping + payment details on paystubs

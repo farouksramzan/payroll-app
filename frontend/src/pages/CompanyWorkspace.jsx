@@ -2258,8 +2258,10 @@ function LiabStatusBadge({ status }) {
 }
 
 // Shared detail modal for both pending and sent liabilities
-function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose }) {
+function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, onStubChange }) {
   if (!stub) return null;
+  const [settlementDate, setSettlementDate] = React.useState(stub.eftps_settlement_date || due || '');
+  const [savingSettlement, setSavingSettlement] = React.useState(false);
   const liabStatus = calcLiabilityStatus(stub, taxType, sendBy, due, todayStr);
 
   // Employee paycheck rows
@@ -2328,14 +2330,36 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose })
               { label: 'Period Start',  value: fmtDate(stub.pay_period_start), color: null },
               { label: 'Period End',    value: fmtDate(stub.pay_period_end),   color: null },
               { label: 'Pay Date',      value: fmtDate(stub.settlement_date),  color: null },
-              sendBy && { label: 'Send By',     value: fmtDate(sendBy), color: liabStatus === 'due-soon' || liabStatus === 'late' ? dateColor : null },
-              due    && { label: 'IRS Due Date', value: fmtDate(due),   color: liabStatus === 'late' ? '#dc2626' : null },
+              sendBy && { label: 'Send By', value: fmtDate(sendBy), color: liabStatus === 'due-soon' || liabStatus === 'late' ? dateColor : null },
             ].filter(Boolean).map(({ label, value, color }, i, arr) => (
-              <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
+              <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: '1px solid var(--border)' }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
                 <div style={{ ...MONO, fontSize: 13, fontWeight: 600, color: color || 'var(--text-primary)' }}>{value}</div>
               </div>
             ))}
+            {due && (
+              <div style={{ flex: 1, padding: '10px 14px' }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Settlement Date</div>
+                <input
+                  type="date"
+                  value={settlementDate}
+                  max={due}
+                  onChange={e => setSettlementDate(e.target.value)}
+                  onBlur={async () => {
+                    const val = settlementDate || due;
+                    if (val === (stub.eftps_settlement_date || due)) return;
+                    setSavingSettlement(true);
+                    try {
+                      await api.updatePaystub(stub.id, { eftpsSettlementDate: val === due ? null : val });
+                      if (onStubChange) onStubChange(stub.id, { eftps_settlement_date: val === due ? null : val });
+                    } catch (e) { alert(e.message); }
+                    finally { setSavingSettlement(false); }
+                  }}
+                  style={{ ...MONO, fontSize: 13, fontWeight: 600, border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', color: liabStatus === 'late' ? '#dc2626' : 'var(--accent)', outline: 'none', width: '100%' }}
+                />
+                {savingSettlement && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>saving…</span>}
+              </div>
+            )}
           </div>
         </div>
 
@@ -2878,7 +2902,10 @@ function PayLiabilitiesTab({ clientId, client }) {
       {liabilityModal && (
         <LiabilityDetailModal stub={liabilityModal.stub} taxType={liabilityModal.taxType}
           due={liabilityModal.due} sendBy={liabilityModal.sendBy} todayStr={todayStr}
-          onClose={() => setLiabilityModal(null)} />
+          onClose={() => setLiabilityModal(null)}
+          onStubChange={(id, patch) => {
+            setPaystubs(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
+          }} />
       )}
 
       {/* Liability status dropdown — fixed position so it's never clipped by overflow:hidden */}

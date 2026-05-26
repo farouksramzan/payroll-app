@@ -450,7 +450,7 @@ router.put('/:id', (req, res) => {
   const alreadySubmitted = stub.status === 'submitted' || stub.status_940 === 'submitted';
 
   const {
-    payPeriodStart, payPeriodEnd, settlementDate, settlementDueDate, payFrequency,
+    payPeriodStart, payPeriodEnd, settlementDate, settlementDueDate, eftpsSettlementDate, payFrequency,
     filingStatus, step2Checkbox, step3Children, step3Other,
     step4a, step4b, step4c,
     lineItems, workState, ytdGross, notes, checkStatus,
@@ -503,6 +503,7 @@ router.put('/:id', (req, res) => {
     db.prepare(`
       UPDATE paystubs SET
         pay_period_start = ?, pay_period_end = ?, settlement_date = ?, settlement_due_date = ?,
+        eftps_settlement_date = ?,
         pay_frequency = ?, filing_status = ?, step2_checkbox = ?, step3_credits = ?, work_state = ?,
         gross_wages = ?, fit_withholding = ?, employee_ss = ?, employee_medicare = ?,
         additional_medicare = ?, employer_ss = ?, employer_medicare = ?,
@@ -513,8 +514,9 @@ router.put('/:id', (req, res) => {
     `).run(
       payPeriodStart  || stub.pay_period_start,
       payPeriodEnd    || stub.pay_period_end,
-      settlementDate     !== undefined ? (settlementDate     || null) : stub.settlement_date,
-      settlementDueDate  !== undefined ? (settlementDueDate  || null) : stub.settlement_due_date,
+      settlementDate        !== undefined ? (settlementDate        || null) : stub.settlement_date,
+      settlementDueDate     !== undefined ? (settlementDueDate     || null) : stub.settlement_due_date,
+      eftpsSettlementDate   !== undefined ? (eftpsSettlementDate   || null) : stub.eftps_settlement_date,
       payFrequency    || stub.pay_frequency,
       filingStatus    || stub.filing_status,
       step2Checkbox !== undefined ? (step2Checkbox ? 1 : 0) : stub.step2_checkbox,
@@ -551,13 +553,15 @@ router.put('/:id', (req, res) => {
     db.prepare(`
       UPDATE paystubs SET
         pay_period_start = ?, pay_period_end = ?, settlement_date = ?, settlement_due_date = ?,
+        eftps_settlement_date = ?,
         tax_year = ?, tax_quarter = ?, notes = ?, check_status = ?
       WHERE id = ?
     `).run(
       payPeriodStart  || stub.pay_period_start,
       payPeriodEnd    || stub.pay_period_end,
-      settlementDate     !== undefined ? (settlementDate     || null) : stub.settlement_date,
-      settlementDueDate  !== undefined ? (settlementDueDate  || null) : stub.settlement_due_date,
+      settlementDate      !== undefined ? (settlementDate      || null) : stub.settlement_date,
+      settlementDueDate   !== undefined ? (settlementDueDate   || null) : stub.settlement_due_date,
+      eftpsSettlementDate !== undefined ? (eftpsSettlementDate || null) : stub.eftps_settlement_date,
       year, quarter,
       notes !== undefined ? (notes || null) : stub.notes,
       checkStatus || stub.check_status,
@@ -651,7 +655,7 @@ router.post('/:id/submit', async (req, res) => {
     if (bridgeManager.isConnected) {
       const accountNumber = stub.bank_account_number_encrypted
         ? decrypt(stub.bank_account_number_encrypted) : null;
-      const irsSettlementDate = calcIrsDepositDue(
+      const irsSettlementDate = stub.eftps_settlement_date || calcIrsDepositDue(
         stub.pay_period_end, stub.settlement_date, taxType, stub.deposit_schedule
       );
       if (!irsSettlementDate) {
@@ -1204,7 +1208,7 @@ router.post('/batch-submit', async (req, res) => {
     // The employee pay date (settlement_date) is NOT the ACH settlement date —
     // the settlement date for EFTPS is when the tax deposit must arrive at the IRS.
     const lastStub = pending[pending.length - 1];
-    const irsSettlementDate = calcIrsDepositDue(
+    const irsSettlementDate = lastStub.eftps_settlement_date || calcIrsDepositDue(
       lastStub.pay_period_end, lastStub.settlement_date, taxType, client.deposit_schedule
     );
 
