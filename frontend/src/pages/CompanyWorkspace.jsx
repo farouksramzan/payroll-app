@@ -1732,10 +1732,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                   {stub.net_pay != null ? fmt(stub.net_pay) : '—'}
                 </td>
                 <td style={{ padding: '7px 8px', textAlign: 'right' }}>
-                  {PRINTED_STATUSES.has(stub.check_status) && !isVoided ? (
+                  {!isVoided ? (
                     <span style={{ cursor: 'pointer' }} title="Click to change status"
                       onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setEmpStatusDrop(empStatusDrop?.stub?.id === stub.id ? null : { stub, top: r.bottom + 4, right: window.innerWidth - r.right }); }}>
-                      <StatusBadge status={stub.check_status} />
+                      <StatusBadge status={stub.check_status || 'draft'} />
                     </span>
                   ) : (
                     <StatusBadge status={stub.check_status || 'draft'} />
