@@ -1185,12 +1185,43 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     return () => document.removeEventListener('click', close);
   }, [empStatusDrop]);
 
-  async function handleEmpStatusChange(stub, newStatus) {
+  async function handleEmpStatusChange(drop, newStatus) {
     setEmpStatusDrop(null);
     try {
-      await api.updatePaystub(stub.id, { checkStatus: newStatus });
+      if (drop.stub) {
+        // History row — just update the status
+        await api.updatePaystub(drop.stub.id, { checkStatus: newStatus });
+      } else {
+        // Pending row — run payroll for this one employee, then set status
+        const { period, emp } = drop;
+        const payrollEmp = {
+          employeeId: emp.id,
+          payType: emp.payType,
+          salary: emp.annualSalary,
+          hourlyRate: emp.hourlyRate,
+          regHours: emp.payType === 'salary' ? null : parseFloat(getRow(period.end, emp.id).regHours || 0),
+          otHours:  emp.payType === 'salary' ? null : parseFloat(getRow(period.end, emp.id).otHours  || 0),
+          filingStatus: emp.filingStatus,
+          step2Checkbox: emp.step2Checkbox,
+          step3Children: emp.step3Children,
+          step3Other: emp.step3Other,
+          step4a: emp.step4a, step4b: emp.step4b, step4c: emp.step4c,
+        };
+        const res = await api.runPayroll({
+          clientId,
+          payPeriodStart: period.start,
+          payPeriodEnd: period.end,
+          settlementDate: period.payDate,
+          payGroupId: currentGroupId,
+          employees: [payrollEmp],
+        });
+        const newId = res?.paystubs?.[0]?.id;
+        if (newId && newStatus !== 'draft') {
+          await api.updatePaystub(newId, { checkStatus: newStatus });
+        }
+      }
       await reloadStubs();
-    } catch (e) { alert(e.message); }
+    } catch (e) { alert(e.message || 'Failed to update status'); }
   }
 
   // Select-all helper — selects Late + Due Soon (within 5 days), toggles on repeat click
@@ -1653,7 +1684,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                     {grossPreview > 0 ? fmt(grossPreview) : '—'}
                   </td>
                   <td style={{ padding: '7px 8px', textAlign: 'right' }}>
-                    <StatusBadge status={status} />
+                    <span style={{ cursor: 'pointer' }} title="Click to change status"
+                      onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setEmpStatusDrop(empStatusDrop?.period?.end === period.end && empStatusDrop?.emp?.id === emp.id ? null : { period, emp, top: r.bottom + 4, right: window.innerWidth - r.right }); }}>
+                      <StatusBadge status={status} />
+                    </span>
                   </td>
                 </tr>
               );
@@ -1740,6 +1774,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                   ) : (
                     <StatusBadge status={stub.check_status || 'draft'} />
                   )}
+
                 </td>
               </tr>
             );
@@ -1855,9 +1890,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
             { value: 'printed',                label: 'Printed',                    badge: 'printed'               },
             { value: 'direct_deposit_cleared', label: 'Deposited',                  badge: 'direct_deposit_cleared' },
           ].map(({ value, label, badge }) => {
-            const isCur = empStatusDrop.stub.check_status === value;
+            const curStatus = empStatusDrop.stub?.check_status ?? (empStatusDrop.period ? 'draft' : 'draft');
+            const isCur = curStatus === value;
             return (
-              <button key={value} onClick={() => handleEmpStatusChange(empStatusDrop.stub, value)}
+              <button key={value} onClick={() => handleEmpStatusChange(empStatusDrop, value)}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '8px 14px', background: isCur ? 'var(--accent-light)' : 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
                 <StatusBadge status={badge} />
                 <span style={{ fontSize: 12, fontWeight: isCur ? 700 : 400 }}>{label}</span>
