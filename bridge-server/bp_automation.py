@@ -1,6 +1,7 @@
 import sys
 import os
 import time
+import subprocess
 import pyautogui
 
 pyautogui.FAILSAFE = False
@@ -19,6 +20,18 @@ if os.path.isfile(_env_path):
 CONFIDENCE = 0.8
 IMAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'button_images')
 
+# ── Coordinate overrides via .env ─────────────────────────────────────────────
+# If BP's layout shifts (different resolution/DPI/monitor), update these in .env
+# rather than touching the script.
+BP_IMPORT_X  = int(os.environ.get('BP_IMPORT_X',  '386'))
+BP_IMPORT_Y  = int(os.environ.get('BP_IMPORT_Y',  '966'))
+BP_ADD_X     = int(os.environ.get('BP_ADD_X',     '833'))
+BP_ADD_Y     = int(os.environ.get('BP_ADD_Y',     '482'))
+BP_OK1_X     = int(os.environ.get('BP_OK1_X',     '1111'))
+BP_OK1_Y     = int(os.environ.get('BP_OK1_Y',     '639'))
+BP_OK2_X     = int(os.environ.get('BP_OK2_X',     '798'))
+BP_OK2_Y     = int(os.environ.get('BP_OK2_Y',     '629'))
+
 
 def log(msg):
     print('[BP] ' + str(msg), flush=True)
@@ -29,7 +42,6 @@ def img(filename):
 
 
 def maximize_bp():
-    # Maximize Batch Provider window so all coordinates are deterministic
     try:
         import pygetwindow as gw
         wins = [w for w in gw.getAllWindows() if 'Batch Provider' in w.title]
@@ -90,6 +102,44 @@ def find_and_click(filename, description, timeout=10):
     return False
 
 
+def paste_text(text):
+    """
+    Paste text via the Windows clipboard — handles special characters that
+    pyautogui.typewrite() silently drops (non-ASCII, symbols, etc.).
+    Falls back to typewrite if clipboard write fails.
+    """
+    try:
+        proc = subprocess.Popen(['clip'], stdin=subprocess.PIPE, shell=True)
+        proc.communicate(input=text.encode('utf-16-le'))
+        time.sleep(0.15)
+        pyautogui.hotkey('ctrl', 'a')
+        time.sleep(0.1)
+        pyautogui.hotkey('ctrl', 'v')
+        time.sleep(0.2)
+    except Exception as e:
+        log('Clipboard paste failed (' + str(e) + ') — falling back to typewrite')
+        pyautogui.hotkey('ctrl', 'a')
+        time.sleep(0.1)
+        pyautogui.typewrite(text, interval=0.15)
+
+
+def wait_for_import(max_wait=30):
+    """
+    Poll until the File Format Selector dialog closes (success) or the
+    max wait is exceeded (error). Returns True on success, False on timeout.
+    """
+    log('Waiting for import to complete (up to ' + str(max_wait) + 's)...')
+    elapsed = 0
+    while elapsed < max_wait:
+        time.sleep(0.5)
+        elapsed += 0.5
+        if not is_file_format_selector_open():
+            log('Import dialog closed after ' + str(round(elapsed, 1)) + 's — import succeeded')
+            return True
+    log('Import dialog still open after ' + str(max_wait) + 's — error detected')
+    return False
+
+
 def main():
     if len(sys.argv) < 2:
         print('IMPORT_FAILED: No ACH file path provided', flush=True)
@@ -110,50 +160,44 @@ def main():
     time.sleep(1)
 
     # Step 1 - Import button
-    log('Step 1: Clicking Import button at (386, 966)')
+    log('Step 1: Clicking Import button at (' + str(BP_IMPORT_X) + ', ' + str(BP_IMPORT_Y) + ')')
     time.sleep(0.5)
-    pyautogui.click(386, 966)
+    pyautogui.click(BP_IMPORT_X, BP_IMPORT_Y)
     log('Step 1 complete: Import button clicked')
     time.sleep(2)
 
     # Step 2 - Add button in File Format Selector dialog
-    log('Step 2: Clicking Add button at (833, 482)')
+    log('Step 2: Clicking Add button at (' + str(BP_ADD_X) + ', ' + str(BP_ADD_Y) + ')')
     time.sleep(0.5)
-    pyautogui.click(833, 482)
+    pyautogui.click(BP_ADD_X, BP_ADD_Y)
     log('Step 2 complete: Add button clicked')
     time.sleep(2)
 
-    # Step 3 - Type ACH filename and press Enter
+    # Step 3 - Type ACH filename via clipboard (handles special chars)
     filename = os.path.basename(ach_file_path)
-    log('Step 3: Typing filename: ' + filename)
-    pyautogui.hotkey('ctrl', 'a')
-    time.sleep(0.2)
-    pyautogui.typewrite(filename, interval=0.15)
+    log('Step 3: Pasting filename via clipboard: ' + filename)
+    paste_text(filename)
     time.sleep(0.2)
     pyautogui.press('enter')
     time.sleep(2)
 
     # Step 4 - First OK button (confirms file selection in the dialog)
-    log('Step 4: Clicking OK button at (1111, 639)')
+    log('Step 4: Clicking OK button at (' + str(BP_OK1_X) + ', ' + str(BP_OK1_Y) + ')')
     time.sleep(0.5)
-    pyautogui.click(1111, 639)
+    pyautogui.click(BP_OK1_X, BP_OK1_Y)
     log('Step 4 complete: OK button clicked')
     time.sleep(2)
 
     # Step 5 - Second OK button (triggers the actual import)
-    log('Step 5: Clicking second OK button at (798, 629)')
+    log('Step 5: Clicking second OK button at (' + str(BP_OK2_X) + ', ' + str(BP_OK2_Y) + ')')
     time.sleep(0.5)
-    pyautogui.click(798, 629)
+    pyautogui.click(BP_OK2_X, BP_OK2_Y)
     log('Step 5 complete: second OK button clicked')
 
-    # Wait for the import to either succeed or fail (progress bar runs during this time)
-    time.sleep(4)
-
-    # Check if File Format Selector is still open — if it is, the import errored out.
-    # We press Enter to dismiss OK regardless of where the button moved on screen
-    # (an error banner shifts it down, so we never use coordinates here).
-    if is_file_format_selector_open():
-        log('File Format Selector still open after import — error detected')
+    # Poll until the import dialog closes (success) or times out (error).
+    # On success the File Format Selector closes automatically.
+    # On error (e.g. Error ID 88) it stays open with an error banner.
+    if not wait_for_import(max_wait=30):
         log('Dismissing dialog with Enter key (coordinate-free)')
         dismiss_file_format_selector()
         log('Dialog dismissed — signaling retry in 10 minutes')

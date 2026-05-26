@@ -1211,6 +1211,15 @@ router.post('/batch-submit', async (req, res) => {
     const irsSettlementDate = lastStub.eftps_settlement_date || calcIrsDepositDue(
       lastStub.pay_period_end, lastStub.settlement_date, taxType, client.deposit_schedule
     );
+    // Warn if batch spans multiple IRS deposit periods (settlement date may not cover all stubs)
+    if (pending.length > 1) {
+      const dueDates = new Set(pending.map(p =>
+        calcIrsDepositDue(p.pay_period_end, p.settlement_date, taxType, client.deposit_schedule)
+      ));
+      if (dueDates.size > 1) {
+        console.warn(`[batch-submit] WARNING: batch for client ${clientId} spans ${dueDates.size} IRS deposit periods. Using settlement date ${irsSettlementDate} for all ${pending.length} paystubs. Consider submitting per period.`);
+      }
+    }
 
     if (bridgeManager.isConnected) {
       const accountNumber = client.bank_account_number_encrypted

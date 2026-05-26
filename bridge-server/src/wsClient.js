@@ -64,6 +64,46 @@ class Computer2Lock {
 }
 const c2 = new Computer2Lock();
 
+// ── Payment serialization lock ────────────────────────────────────────────────
+// Serializes payment jobs including their retry waits, so a retrying payment
+// never interleaves with another payment job (which could put BP in a bad state).
+// Enrollment checks still run freely via c2 during retry waits.
+const paymentLock = new Computer2Lock();
+
+// ── Job deduplication ─────────────────────────────────────────────────────────
+const _seenJobIds = new Map(); // jobId → timestamp
+function isDuplicateJob(jobId) {
+  if (_seenJobIds.has(jobId)) return true;
+  _seenJobIds.set(jobId, Date.now());
+  // Evict entries older than 2 hours
+  const cutoff = Date.now() - 2 * 60 * 60 * 1000;
+  for (const [id, ts] of _seenJobIds) { if (ts < cutoff) _seenJobIds.delete(id); }
+  return false;
+}
+
+// ── Pending result persistence ────────────────────────────────────────────────
+// If the bridge disconnects before a result is sent, save it to disk and
+// re-send on reconnect so Railway always gets a response.
+const PENDING_RESULTS_FILE = path.join(__dirname, '..', 'data', 'pending_results.json');
+
+function loadPendingResults() {
+  try { return JSON.parse(fs.readFileSync(PENDING_RESULTS_FILE, 'utf8')); } catch { return []; }
+}
+
+function savePendingResult(result) {
+  fs.mkdirSync(path.dirname(PENDING_RESULTS_FILE), { recursive: true });
+  const list = loadPendingResults().filter(r => r.jobId !== result.jobId);
+  list.push({ ...result, savedAt: new Date().toISOString() });
+  fs.writeFileSync(PENDING_RESULTS_FILE, JSON.stringify(list, null, 2));
+}
+
+function clearPendingResult(jobId) {
+  try {
+    const list = loadPendingResults().filter(r => r.jobId !== jobId);
+    fs.writeFileSync(PENDING_RESULTS_FILE, JSON.stringify(list, null, 2));
+  } catch {}
+}
+
 // ── Enrollment tracking ───────────────────────────────────────────────────────
 
 function cleanEin(ein) {
@@ -133,30 +173,32 @@ const RETRY_DELAY_MS    = 10 * 60 * 1000; // 10 minutes
 const MAX_IMPORT_RETRIES = 3;
 
 async function runPaymentWithRetry(achFilePath, logFn) {
-  for (let attempt = 1; attempt <= MAX_IMPORT_RETRIES; attempt++) {
-    try {
-      return await c2.run('payment', () => runPaymentAutomation(achFilePath, logFn));
-    } catch (err) {
-      // bp_automation.py prints IMPORT_RETRY_NEEDED and exits 0, so runPython resolves —
-      // but if the stdout contains the retry token without the success token it rejects
-      // with an unknown-reason error. Detect it here.
-      const isRetrySignal = err.message.includes('IMPORT_RETRY_NEEDED')
-        || (err.stdout || '').includes('IMPORT_RETRY_NEEDED');
+  // paymentLock serializes the full retry sequence so no other payment job
+  // can interleave with BP while we're waiting between retries.
+  // c2 is re-acquired per attempt so enrollment checks can still run during waits.
+  return paymentLock.run('payment', async () => {
+    for (let attempt = 1; attempt <= MAX_IMPORT_RETRIES; attempt++) {
+      try {
+        return await c2.run('payment', () => runPaymentAutomation(achFilePath, logFn));
+      } catch (err) {
+        const isRetrySignal = err.message.includes('IMPORT_RETRY_NEEDED')
+          || (err.stdout || '').includes('IMPORT_RETRY_NEEDED');
 
-      if (isRetrySignal && attempt < MAX_IMPORT_RETRIES) {
-        logFn(`[BP] Import error — will retry in 10 minutes (attempt ${attempt}/${MAX_IMPORT_RETRIES})`);
-        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
-        logFn(`[BP] Retrying import now (attempt ${attempt + 1}/${MAX_IMPORT_RETRIES})`);
-        continue;
+        if (isRetrySignal && attempt < MAX_IMPORT_RETRIES) {
+          logFn(`[BP] Import error — will retry in 10 minutes (attempt ${attempt}/${MAX_IMPORT_RETRIES})`);
+          await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+          logFn(`[BP] Retrying import now (attempt ${attempt + 1}/${MAX_IMPORT_RETRIES})`);
+          continue;
+        }
+
+        if (isRetrySignal) {
+          throw new Error(`Import failed after ${MAX_IMPORT_RETRIES} retries (persistent Error ID 88 or similar). Please retry manually.`);
+        }
+
+        throw err;
       }
-
-      if (isRetrySignal) {
-        throw new Error(`Import failed after ${MAX_IMPORT_RETRIES} retries (persistent Error ID 88 or similar). Please retry manually.`);
-      }
-
-      throw err; // non-retriable error — propagate normally
     }
-  }
+  });
 }
 
 function runEnrollmentAutomation(enrollFilePath, logFn) {
@@ -279,8 +321,25 @@ class BridgeClient extends EventEmitter {
   }
 
   _send(obj) {
+    if (obj.type === 'result') savePendingResult(obj);
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(obj));
+      this.ws.send(JSON.stringify(obj), (err) => {
+        if (!err && obj.type === 'result') clearPendingResult(obj.jobId);
+      });
+    }
+  }
+
+  _resendPendingResults() {
+    const results = loadPendingResults();
+    if (results.length === 0) return;
+    this.emit('log', `[RESUME] Re-sending ${results.length} unacknowledged result(s) from previous session`);
+    for (const result of results) {
+      this.emit('log', `[RESUME] Re-sending result for jobId=${result.jobId}`);
+      if (this.ws?.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify(result), (err) => {
+          if (!err) clearPendingResult(result.jobId);
+        });
+      }
     }
   }
 
@@ -295,6 +354,7 @@ class BridgeClient extends EventEmitter {
         this.emit('statusChange', 'connected');
         this.emit('log', 'Authenticated — bridge is live');
         this._startPing();
+        this._resendPendingResults();
         this._resumePendingEnrollments();
         break;
 
@@ -318,6 +378,12 @@ class BridgeClient extends EventEmitter {
 
   async _handleJob(job) {
     const { jobId, submissionId } = job;
+
+    if (isDuplicateJob(jobId)) {
+      this.emit('log', `Duplicate job ${jobId} ignored — already processing or completed`);
+      return;
+    }
+
     this.stats.jobsReceived++;
     this.emit('log', `Job received: submissionId=${submissionId} jobId=${jobId}`);
     this.emit('jobStart', job);

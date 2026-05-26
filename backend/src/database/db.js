@@ -294,9 +294,11 @@ function migrate() {
 
   // SUI independent status tracking
   addCols('paystubs', [
-    { name: 'status_sui',           def: "TEXT DEFAULT 'pending'" },
+    { name: 'status_sui',            def: "TEXT DEFAULT 'pending'" },
     { name: 'eftps_settlement_date', def: 'TEXT' },
   ]);
+  // Sync status_sui for paystubs that were already submitted before the column existed
+  db.exec("UPDATE paystubs SET status_sui = 'submitted' WHERE status = 'submitted' AND status_sui = 'pending'");
 
   // check number + payroll run grouping + payment details on paystubs
   addCols('paystubs', [
