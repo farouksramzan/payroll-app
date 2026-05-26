@@ -23,6 +23,8 @@ IMAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'button_im
 # ── Coordinate overrides via .env ─────────────────────────────────────────────
 # If BP's layout shifts (different resolution/DPI/monitor), update these in .env
 # rather than touching the script.
+BP_SEND_PAYMENTS_X = int(os.environ.get('BP_SEND_PAYMENTS_X', '51'))
+BP_SEND_PAYMENTS_Y = int(os.environ.get('BP_SEND_PAYMENTS_Y', '133'))
 BP_IMPORT_X  = int(os.environ.get('BP_IMPORT_X',  '386'))
 BP_IMPORT_Y  = int(os.environ.get('BP_IMPORT_Y',  '966'))
 BP_ADD_X     = int(os.environ.get('BP_ADD_X',     '833'))
@@ -157,6 +159,12 @@ def main():
     if not find_and_click('payments_tab.png', 'Payments tab', timeout=15):
         print('IMPORT_FAILED: Payments tab not found', flush=True)
         sys.exit(1)
+    time.sleep(1)
+
+    # Step 0a - Click Send Payments sub-tab
+    log('Step 0a: Clicking Send Payments tab at (' + str(BP_SEND_PAYMENTS_X) + ', ' + str(BP_SEND_PAYMENTS_Y) + ')')
+    pyautogui.click(BP_SEND_PAYMENTS_X, BP_SEND_PAYMENTS_Y)
+    log('Step 0a complete: Send Payments tab clicked')
     time.sleep(1)
 
     # Step 1 - Import button
