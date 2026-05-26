@@ -15,6 +15,12 @@ const FEDERAL_HOLIDAYS = new Set([
 ]);
 function isBizDay(d) { const w = d.getDay(); return w !== 0 && w !== 6 && !FEDERAL_HOLIDAYS.has(d.toISOString().slice(0, 10)); }
 function nextBizDay(d) { const r = new Date(d); while (!isBizDay(r)) r.setDate(r.getDate() + 1); return r; }
+function calcSendByDate(dueDate) {
+  if (!dueDate) return null;
+  let d = new Date(dueDate + 'T00:00:00'), count = 0;
+  while (count < 2) { d.setDate(d.getDate() - 1); if (isBizDay(d)) count++; }
+  return d.toISOString().slice(0, 10);
+}
 
 function calcIRSDepositDue(payDate, depositSchedule) {
   if (!payDate) return null;
@@ -91,21 +97,6 @@ function LiabStatusBadge({ status }) {
 
 const ISSUED = new Set(['printed', 'deposited']);
 
-const FEDERAL_HOLIDAYS = new Set([
-  '2025-01-01','2025-01-20','2025-02-17','2025-05-26','2025-06-19','2025-07-04',
-  '2025-09-01','2025-10-13','2025-11-11','2025-11-27','2025-12-25',
-  '2026-01-01','2026-01-19','2026-02-16','2026-05-25','2026-06-19','2026-07-03',
-  '2026-09-07','2026-10-12','2026-11-11','2026-11-26','2026-12-25',
-  '2027-01-01','2027-01-18','2027-02-15','2027-05-31','2027-06-19','2027-07-05',
-  '2027-09-06','2027-10-11','2027-11-11','2027-11-25','2027-12-24',
-]);
-function isBizDay(d) { const w = d.getDay(); return w !== 0 && w !== 6 && !FEDERAL_HOLIDAYS.has(d.toISOString().slice(0, 10)); }
-function calcSendByDate(dueDate) {
-  if (!dueDate) return null;
-  let d = new Date(dueDate + 'T00:00:00'), count = 0;
-  while (count < 2) { d.setDate(d.getDate() - 1); if (isBizDay(d)) count++; }
-  return d.toISOString().slice(0, 10);
-}
 
 // ── Tax detail modal ───────────────────────────────────────────────────────────
 function TaxDetailModal({ row, onClose }) {
