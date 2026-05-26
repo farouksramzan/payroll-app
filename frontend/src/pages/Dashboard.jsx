@@ -219,7 +219,7 @@ function MultiLiabPanel({ clientIds, clients }) {
               _dueSUI: pendingSUI ? dueSUI : null,
               _late941: late941, _late940: late940, _lateSUI: lateSUI,
               _dueSoon941: dueSoon941, _dueSoon940: dueSoon940, _dueSoonSUI: dueSoonSUI,
-              _pending941, _pending940, _pendingSUI,
+              _pending941: pending941, _pending940: pending940, _pendingSUI: pendingSUI,
               _isLate: isLate,
               _isDueSoon: isDueSoon,
             });
