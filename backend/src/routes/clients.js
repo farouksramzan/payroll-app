@@ -142,13 +142,13 @@ router.post('/', (req, res) => {
     contactName, contactEmail, contactPhone,
     payrollFrequency, nextPayrollDate, nextCheckNumber } = req.body;
 
-  if (!businessName || !ein || !batchProviderPin) {
-    return res.status(400).json({ error: 'Business name, EIN, and Batch Provider PIN are required' });
+  if (!businessName || !ein) {
+    return res.status(400).json({ error: 'Business name and EIN are required' });
   }
   if (!/^\d{2}-?\d{7}$/.test(ein)) {
     return res.status(400).json({ error: 'EIN must be in format XX-XXXXXXX' });
   }
-  if (!/^\d{4}$/.test(batchProviderPin)) {
+  if (batchProviderPin && !/^\d{4}$/.test(batchProviderPin)) {
     return res.status(400).json({ error: 'Batch Provider PIN must be exactly 4 digits' });
   }
 
@@ -164,10 +164,10 @@ router.post('/', (req, res) => {
     businessName.trim(),
     ein.trim(),
     (state || 'TX').toUpperCase(),
-    encrypt(bankAccountNumber),
+    bankAccountNumber ? encrypt(bankAccountNumber) : null,
     bankRoutingNumber || null,
     bankAccountType || 'checking',
-    encrypt(batchProviderPin),
+    batchProviderPin ? encrypt(batchProviderPin) : null,
     eftpsInternetPassword ? encrypt(eftpsInternetPassword) : null,
     eftpsEnrollmentNumber || null,
     depositSchedule || 'monthly',
