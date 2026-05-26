@@ -1242,7 +1242,7 @@ router.post('/batch-submit', async (req, res) => {
         accountNumber,
         accountType:    client.bank_account_type || 'checking',
         taxYear:        taxYear || firstStub.tax_year,
-        taxQuarter:     taxType === '940' ? null : (taxQuarter || firstStub.tax_quarter),
+        taxQuarter:     taxType === '940' ? 4 : (taxQuarter || firstStub.tax_quarter),
         settlementDate: irsSettlementDate,
         taxForm:        taxType,
         taxTypeCode:    taxType === '940' ? '94007' : '94105',
