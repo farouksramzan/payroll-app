@@ -2483,12 +2483,22 @@ function PayLiabilitiesTab({ clientId, client }) {
   const UNPAID_940 = (s) => s.status_940 === 'pending' || s.status_940 === 'processing' || s.status_940 === 'failed';
   const UNPAID_SUI = (s) => (s.status_sui || 'pending') === 'pending' || s.status_sui === 'processing' || s.status_sui === 'failed';
 
-  async function reload() {
+  async function reload({ keepSelections = false } = {}) {
     const [stubs, crds] = await Promise.all([api.getPaystubs(clientId), api.getPaystubCredits(clientId)]);
     setPaystubs(stubs); setCredits(crds);
-    setSelected941(new Set(stubs.filter(s => ISSUED.has(s.check_status) && UNPAID_941(s)).map(s => s.id)));
-    setSelected940(new Set(stubs.filter(s => ISSUED.has(s.check_status) && UNPAID_940(s) && s.futa_tax > 0).map(s => s.id)));
-    setSelectedSUI(new Set(stubs.filter(s => ISSUED.has(s.check_status) && s.suta_tax > 0 && UNPAID_SUI(s)).map(s => s.id)));
+    const pending941Ids = new Set(stubs.filter(s => ISSUED.has(s.check_status) && UNPAID_941(s)).map(s => s.id));
+    const pending940Ids = new Set(stubs.filter(s => ISSUED.has(s.check_status) && UNPAID_940(s) && s.futa_tax > 0).map(s => s.id));
+    const pendingSUIIds = new Set(stubs.filter(s => ISSUED.has(s.check_status) && s.suta_tax > 0 && UNPAID_SUI(s)).map(s => s.id));
+    if (keepSelections) {
+      // Preserve the user's selection choices; only remove stubs that are no longer pending
+      setSelected941(prev => new Set([...prev].filter(id => pending941Ids.has(id))));
+      setSelected940(prev => new Set([...prev].filter(id => pending940Ids.has(id))));
+      setSelectedSUI(prev => new Set([...prev].filter(id => pendingSUIIds.has(id))));
+    } else {
+      setSelected941(pending941Ids);
+      setSelected940(pending940Ids);
+      setSelectedSUI(pendingSUIIds);
+    }
 
     // Restore polling if a paystub is still processing (e.g. after page reload)
     const processingStub = stubs.find(s =>
@@ -2562,9 +2572,9 @@ function PayLiabilitiesTab({ clientId, client }) {
       if (res.jobId) {
         setActiveJobId(res.jobId);
         setJobStatus('processing');
-        setJobMessage(res.message || 'Bridge job queued — polling for updates');
+        setJobMessage('');
       }
-      await reload();
+      await reload({ keepSelections: true });
     } catch (e) { setResult({ error: e.message }); }
     finally { setSubmitting(null); }
   }
@@ -2758,22 +2768,29 @@ function PayLiabilitiesTab({ clientId, client }) {
           <span className="spinner spinner-dark" style={{ width: 14, height: 14, flexShrink: 0 }} />
           <span style={{ flex: 1 }}>
             {(jobStatus === 'enrollment_pending' || paystubs.some(s => s.bridge_status === 'enrollment_pending'))
-              ? 'This is your first time submitting a payment with us. It will take some time before your payment is submitted. Check back in later.'
-              : (jobMessage || 'Submitting to EFTPS — checking status…')}
+              ? 'This is your first payment with us — enrollment is in progress. This can take 15 minutes to 1 hour. Please check back later.'
+              : 'Payment sent — please check back in 5–10 minutes to confirm it was processed.'}
           </span>
         </div>
       )}
       {!activeJobId && jobStatus === 'completed' && (
         <div className="alert alert-success" style={{ marginBottom: 16 }}>
           <span>✓</span>
-          <span>Your payment is sent!</span>
+          <span>Congrats! Your payment has been sent to EFTPS. To see if it has been settled, please visit the EFTPS website.</span>
+          <button onClick={() => { setJobStatus(null); setJobMessage(''); }} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button>
+        </div>
+      )}
+      {!activeJobId && jobStatus === 'failed' && (
+        <div className="alert alert-error" style={{ marginBottom: 16 }}>
+          <span>⚠</span>
+          <span>Please call or text (210) 238-6850. A technical error has occurred and will be fixed immediately if you reach out!</span>
           <button onClick={() => { setJobStatus(null); setJobMessage(''); }} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button>
         </div>
       )}
       {paystubs.some(s => s.submission_error === 'BRIDGE_DISCONNECTED' && s.status === 'failed') && (
         <div className="alert alert-error" style={{ marginBottom: 16 }}>
           <span>⚠</span>
-          <span>There was a technical issue. Please call 210-238-6850.</span>
+          <span>Please call or text (210) 238-6850. A technical error has occurred and will be fixed immediately if you reach out!</span>
         </div>
       )}
       {result && !activeJobId && jobStatus !== 'completed' && jobStatus !== 'failed' && (
