@@ -956,6 +956,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
   const [periodEdit, setPeriodEdit]               = useState(null); // { id, start, end, payDate }
   const [savingPeriod, setSavingPeriod]           = useState(false);
   const [empStatusDrop, setEmpStatusDrop]         = useState(null); // { stub, top, right }
+  const [periodOverrides, setPeriodOverrides]     = useState({}); // { [periodEnd]: { start, end, payDate } }
   const [ungroupedModal, setUngroupedModal]       = useState(false);
   const [ugForm, setUgForm]                       = useState({ employeeId: '', start: '', end: '', payDate: '', regHours: '', otHours: '', payType: 'regular' });
   const [ugRunning, setUgRunning]                 = useState(false);
@@ -1145,7 +1146,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
           const ytd = calcEmpYTD(emp.id, null);
           return { employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay };
         });
-        const res = await api.runPayroll({ clientId, payPeriodStart: period.start, payPeriodEnd: period.end, settlementDate: period.payDate, payGroupId: currentGroupId, employees: payrollEmps });
+        const ov = periodOverrides[period.end] || {};
+        const res = await api.runPayroll({ clientId, payPeriodStart: ov.start || period.start, payPeriodEnd: ov.end || period.end, settlementDate: ov.payDate || period.payDate, payGroupId: currentGroupId, employees: payrollEmps });
         if (res?.paystubs) res.paystubs.forEach(s => allNewIds.push(s.id));
       }
       // Include selected late stubs in print batch (NOT EFTPS — late checks are payroll, not tax deposits)
@@ -1154,6 +1156,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
       await Promise.all(allNewIds.map(id => api.updatePaystubStatus(id, 'printed').catch(() => {})));
       await reloadStubs();
       setPendingRows({});
+      setPeriodOverrides({});
       setSelectedLateStubs(new Set());
       if (allNewIds.length > 0) {
         setPrintModal(allNewIds);
@@ -1284,8 +1287,20 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     }
   }
 
-  const hasLateRows    = pendingPeriods.some(p => p.isLate) || history.some(p => p.stubs.some(s => s.check_status === 'late'));
+  const hasLateRows    = pendingPeriods.some(p => p.isLate) || history.some(p => p.stubs.some(s => s.check_status === 'late' || s.check_status === 'draft'));
   const hasDueSoonRows = pendingPeriods.some(p => !p.isLate && daysUntil(p.payDate) !== null && daysUntil(p.payDate) <= 5);
+
+  // For draft history checks, derive the visual status from the pay date instead of showing "Draft"
+  function deriveDisplayStatus(stub) {
+    if (stub.check_status !== 'draft') return stub.check_status || 'draft';
+    const payDate = stub.settlement_date;
+    if (!payDate) return 'upcoming';
+    const today = new Date().toISOString().slice(0, 10);
+    if (payDate < today) return 'late';
+    const days = daysUntil(payDate);
+    if (days !== null && days <= 5) return 'due-soon';
+    return 'upcoming';
+  }
 
   // Check detail modal — shows full breakdown for pending or history rows, with editable dates and gross
   function CheckDetailModal({ rowData, onClose }) {
@@ -1340,6 +1355,11 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
       const gross    = r2(regPay + otPay);
       const ytd      = calcEmpYTD(emp.id, null);
 
+      // Editable dates for pending rows (stored as overrides, used when payroll is run)
+      const ov = periodOverrides[period.end] || {};
+      const [dateForm, setDateForm] = useState({ start: ov.start || period.start || '', end: ov.end || period.end || '', payDate: ov.payDate || period.payDate || '' });
+      const pendingDirty = dateForm.start !== period.start || dateForm.end !== period.end || dateForm.payDate !== period.payDate;
+
       return (
         <Overlay>
           <div className="card" style={{ width: 640, maxWidth: '95vw', maxHeight: '92vh', overflowY: 'auto', padding: 0, borderRadius: 12 }}>
@@ -1354,16 +1374,17 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                 </div>
                 <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
               </div>
-              {/* Pay period strip */}
-              <div style={{ display: 'flex', marginTop: 14, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
+              {/* Pay period strip — editable */}
+              <div style={{ display: 'flex', marginTop: 14, borderRadius: 8, overflow: 'hidden', border: `1px solid ${pendingDirty ? 'var(--accent)' : 'var(--border)'}`, background: 'var(--bg-secondary)', transition: 'border-color 0.15s' }}>
                 {[
-                  { label: 'Period Start', value: fmtDate(period.start) },
-                  { label: 'Period End',   value: fmtDate(period.end) },
-                  { label: 'Pay Date',     value: fmtDate(period.payDate), color: period.isLate ? '#dc2626' : null },
-                ].map(({ label, value, color }, i, arr) => (
+                  { label: 'Period Start', key: 'start' },
+                  { label: 'Period End',   key: 'end'   },
+                  { label: 'Pay Date',     key: 'payDate' },
+                ].map(({ label, key }, i, arr) => (
                   <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
                     <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
-                    <div style={{ ...MONO, fontSize: 13, fontWeight: 600, color: color || 'var(--text-primary)' }}>{value}</div>
+                    <input type="date" value={dateForm[key]} onChange={e => setDateForm(f => ({ ...f, [key]: e.target.value }))}
+                      style={{ ...MONO, fontSize: 13, fontWeight: 600, background: 'transparent', border: 'none', outline: 'none', width: '100%', color: dateForm[key] !== (key === 'start' ? period.start : key === 'end' ? period.end : period.payDate) ? 'var(--accent)' : period.isLate && key === 'payDate' ? '#dc2626' : 'var(--text-primary)', cursor: 'pointer' }} />
                   </div>
                 ))}
               </div>
@@ -1407,7 +1428,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
               </div>
             </div>
 
-            <div style={{ padding: '12px 24px 18px', display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+            <div style={{ padding: '12px 24px 0', display: 'flex', gap: 20, flexWrap: 'wrap' }}>
               {[
                 { label: 'YTD FUTA', value: fmt(ytd.futa) },
                 { label: 'YTD SUI',  value: fmt(ytd.suta) },
@@ -1417,6 +1438,16 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                   <div style={{ ...MONO, fontSize: 13, fontWeight: 600 }}>{value}</div>
                 </div>
               ))}
+            </div>
+            {/* Save date overrides footer */}
+            <div style={{ padding: '10px 24px 18px', display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: pendingDirty ? '1px solid var(--border)' : 'none', marginTop: 10 }}>
+              <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: 12 }}>Close</button>
+              {pendingDirty && (
+                <button className="btn btn-primary" style={{ fontSize: 12 }}
+                  onClick={() => { setPeriodOverrides(prev => ({ ...prev, [period.end]: { start: dateForm.start, end: dateForm.end, payDate: dateForm.payDate } })); onClose(); }}>
+                  Save Dates
+                </button>
+              )}
             </div>
           </div>
         </Overlay>
@@ -1631,8 +1662,11 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
             const stripeBg = (startIdx + idx) % 2 === 0 ? 'var(--bg-primary, #fff)' : '#f8fafc';
 
             if (rowData.type === 'pending') {
-              const { period, emp } = rowData;
-              const row      = getRow(period.end, emp.id);
+              const { period: rawPeriod, emp } = rowData;
+              // Apply any saved date overrides from the detail modal
+              const ov = periodOverrides[rawPeriod.end] || {};
+              const period = { ...rawPeriod, start: ov.start || rawPeriod.start, end: ov.end || rawPeriod.end, payDate: ov.payDate || rawPeriod.payDate };
+              const row      = getRow(rawPeriod.end, emp.id);
               const isSalary = emp.payType === 'salary';
               const salAmt   = r2((emp.annualSalary || 0) / ppy);
               const rate     = emp.hourlyRate || 0;
@@ -1640,8 +1674,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
               const otH      = parseFloat(row.otHours  || 0);
               const grossPreview = isSalary ? salAmt : r2(Math.min(regH, 40) * rate + otH * rate * 1.5);
               const daysToPayDate = daysUntil(period.payDate);
-              const status   = period.isLate ? 'late' : (daysToPayDate !== null && daysToPayDate <= 5 ? 'due-soon' : 'upcoming');
-              const selBg    = period.isLate ? '#fff5f5' : status === 'due-soon' ? '#fffbeb' : 'var(--accent-light)';
+              const isLate   = period.payDate < new Date().toISOString().slice(0, 10);
+              const status   = isLate ? 'late' : (daysToPayDate !== null && daysToPayDate <= 5 ? 'due-soon' : 'upcoming');
+              const selBg    = isLate ? '#fff5f5' : status === 'due-soon' ? '#fffbeb' : 'var(--accent-light)';
               const rowBg    = row.selected ? selBg : stripeBg;
               return (
                 <tr key={rowData.key}
@@ -1659,9 +1694,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                       {emp.firstName} {emp.lastName}
                     </button>
                   </td>
-                  <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: '#222' }}>{fmtDate(period.start)}</td>
-                  <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: '#222' }}>{fmtDate(period.end)}</td>
-                  <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: period.isLate ? '#dc2626' : '#222' }}>{fmtDate(period.payDate)}</td>
+                  <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: ov.start ? 'var(--accent)' : '#222' }}>{fmtDate(period.start)}</td>
+                  <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: ov.end ? 'var(--accent)' : '#222' }}>{fmtDate(period.end)}</td>
+                  <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: isLate ? '#dc2626' : ov.payDate ? 'var(--accent)' : '#222' }}>{fmtDate(period.payDate)}</td>
                   {isSalary ? (
                     <>
                       <td colSpan={2} style={{ padding: '7px 8px', textAlign: 'right', color: 'var(--text-secondary)', fontSize: 11 }}>salary</td>
@@ -1696,8 +1731,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
             // History row
             const { stub } = rowData;
             const isLateCheck    = stub.check_status === 'late';
+            const isDraftCheck   = stub.check_status === 'draft';
             const isVoided       = stub.check_status === 'voided';
-            const rowBg          = isLateCheck ? '#fff5f5' : stripeBg;
+            const displayStatus  = deriveDisplayStatus(stub);
+            const rowBg          = (isLateCheck || (isDraftCheck && displayStatus === 'late')) ? '#fff5f5'
+                                 : displayStatus === 'due-soon' ? '#fffbeb'
+                                 : stripeBg;
             const canEditPeriod  = !isVoided;
             const isEditingPeriod = periodEdit?.id === stub.id;
             return (
@@ -1706,7 +1745,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                 onClick={e => { if (e.target.type !== 'checkbox' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') setDetailModal(rowData); }}
               >
                 <td style={{ padding: '0 0 0 12px' }}>
-                  {isLateCheck && (
+                  {(isLateCheck || isDraftCheck) && !isVoided && (
                     <input type="checkbox"
                       checked={selectedLateStubs.has(stub.id)}
                       onChange={() => setSelectedLateStubs(prev => {
@@ -1757,7 +1796,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                       {fmtDate(stub.pay_period_start)}{canEditPeriod && <span style={{ marginLeft: 3, opacity: 0.35, fontSize: 9 }}>✏</span>}
                     </td>
                     <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: '#222' }}>{fmtDate(stub.pay_period_end)}</td>
-                    <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: isLateCheck ? '#dc2626' : '#222' }}>{fmtDate(stub.settlement_date)}</td>
+                    <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: displayStatus === 'late' ? '#dc2626' : '#222' }}>{fmtDate(stub.settlement_date)}</td>
                   </>
                 )}
                 <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: 12 }}>{stub.regular_hours != null ? stub.regular_hours : '—'}</td>
@@ -1769,10 +1808,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                   {!isVoided ? (
                     <span style={{ cursor: 'pointer' }} title="Click to change status"
                       onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setEmpStatusDrop(empStatusDrop?.stub?.id === stub.id ? null : { stub, top: r.bottom + 4, right: window.innerWidth - r.right }); }}>
-                      <StatusBadge status={stub.check_status || 'draft'} />
+                      <StatusBadge status={displayStatus} />
                     </span>
                   ) : (
-                    <StatusBadge status={stub.check_status || 'draft'} />
+                    <StatusBadge status={displayStatus} />
                   )}
 
                 </td>
