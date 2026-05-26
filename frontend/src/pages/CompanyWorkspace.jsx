@@ -2453,9 +2453,10 @@ function PayLiabilitiesTab({ clientId, client }) {
   const [sentOpen, setSentOpen] = useState(false);
   const [statusDropdown, setStatusDropdown] = useState(null); // { stub, top, right }
   const [updatingStatus, setUpdatingStatus] = useState(null);
-  const [activeJobId, setActiveJobId]       = useState(null);
-  const [jobStatus,   setJobStatus]         = useState(null);   // 'enrollment_pending' | 'completed' | 'failed'
-  const [jobMessage,  setJobMessage]        = useState('');
+  const [activeJobId,      setActiveJobId]      = useState(null);
+  const [activeJobTaxType, setActiveJobTaxType] = useState(null);
+  const [jobStatus,        setJobStatus]        = useState(null);   // 'enrollment_pending' | 'completed' | 'failed'
+  const [jobMessage,       setJobMessage]       = useState('');
   const pollRef = useRef(null);
 
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -2506,6 +2507,7 @@ function PayLiabilitiesTab({ clientId, client }) {
     );
     if (processingStub) {
       setActiveJobId(prev => prev || processingStub.bridge_job_id);
+      setActiveJobTaxType(prev => prev || (processingStub.status === 'processing' ? '941' : '940'));
       setJobStatus(prev => prev || processingStub.bridge_status || 'processing');
     }
   }
@@ -2549,6 +2551,7 @@ function PayLiabilitiesTab({ clientId, client }) {
         if (s.status === 'completed' || s.status === 'failed') {
           clearInterval(pollRef.current);
           setActiveJobId(null);
+          setActiveJobTaxType(null);
           await reload();
         }
       } catch { /* ignore transient errors */ }
@@ -2571,6 +2574,7 @@ function PayLiabilitiesTab({ clientId, client }) {
       setResult(res);
       if (res.jobId) {
         setActiveJobId(res.jobId);
+        setActiveJobTaxType(taxType);
         setJobStatus('processing');
         setJobMessage('');
       }
@@ -2637,8 +2641,8 @@ function PayLiabilitiesTab({ clientId, client }) {
               {taxType !== 'sui' && (
                 <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }}
                   onClick={() => handleSubmit(taxType)}
-                  disabled={submitting !== null || (taxType === '941' ? sel941.length === 0 : sel940.length === 0)}>
-                  {submitting === taxType ? <span className="spinner" /> : `Pay to EFTPS — ${fmt(taxType === '941' ? total941 : total940)}`}
+                  disabled={submitting !== null || activeJobId !== null || (taxType === '941' ? sel941.length === 0 : sel940.length === 0)}>
+                  {(submitting === taxType || (activeJobId && activeJobTaxType === taxType)) ? 'Sent' : `Pay to EFTPS — ${fmt(taxType === '941' ? total941 : total940)}`}
                 </button>
               )}
             </div>

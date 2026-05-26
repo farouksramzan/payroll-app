@@ -729,10 +729,9 @@ router.post('/:id/submit', async (req, res) => {
       }
     } else {
       if (taxType === '940') {
-        db.prepare("UPDATE paystubs SET status_940 = 'failed' WHERE id = ?").run(stub.id);
+        db.prepare("UPDATE paystubs SET status_940 = 'pending' WHERE id = ?").run(stub.id);
       } else {
-        db.prepare("UPDATE paystubs SET status = 'failed', submission_error = ? WHERE id = ?")
-          .run(result.error, stub.id);
+        db.prepare("UPDATE paystubs SET status = 'pending', submission_error = NULL WHERE id = ?").run(stub.id);
       }
     }
 
@@ -1272,12 +1271,12 @@ router.post('/batch-submit', async (req, res) => {
             }
           }
         } else {
-          const isBridgeDisconnect = msg.error === 'Bridge disconnected';
-          const errMsg = isBridgeDisconnect ? 'BRIDGE_DISCONNECTED' : (msg.error || 'Bridge processing failed');
+          // Reset to 'pending' so stubs stay in the pending stack and can be retried cleanly.
+          // The failure banner in the UI already communicates the error to the operator.
           if (taxType === '941') {
-            dbInst.prepare(`UPDATE paystubs SET status='failed', bridge_job_id=NULL, bridge_status=NULL, submission_error=? WHERE id IN (${ph})`).run(errMsg, ...ids);
+            dbInst.prepare(`UPDATE paystubs SET status='pending', bridge_job_id=NULL, bridge_status=NULL, submission_error=NULL WHERE id IN (${ph})`).run(...ids);
           } else {
-            dbInst.prepare(`UPDATE paystubs SET status_940='failed', bridge_job_id=NULL, bridge_status=NULL WHERE id IN (${ph})`).run(...ids);
+            dbInst.prepare(`UPDATE paystubs SET status_940='pending', bridge_job_id=NULL, bridge_status=NULL WHERE id IN (${ph})`).run(...ids);
           }
         }
       });
