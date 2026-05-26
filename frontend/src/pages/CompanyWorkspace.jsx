@@ -2340,24 +2340,32 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
             {due && (
               <div style={{ flex: 1, padding: '10px 14px' }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Settlement Date</div>
-                <input
-                  type="date"
-                  value={settlementDate}
-                  max={due}
-                  onChange={e => setSettlementDate(e.target.value)}
-                  onBlur={async () => {
-                    const val = settlementDate || due;
-                    if (val === (stub.eftps_settlement_date || due)) return;
-                    setSavingSettlement(true);
-                    try {
-                      await api.updatePaystub(stub.id, { eftpsSettlementDate: val === due ? null : val });
-                      if (onStubChange) onStubChange(stub.id, { eftps_settlement_date: val === due ? null : val });
-                    } catch (e) { alert(e.message); }
-                    finally { setSavingSettlement(false); }
-                  }}
-                  style={{ ...MONO, fontSize: 13, fontWeight: 600, border: 'none', background: 'transparent', padding: 0, cursor: 'pointer', color: liabStatus === 'late' ? '#dc2626' : 'var(--accent)', outline: 'none', width: '100%' }}
-                />
-                {savingSettlement && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>saving…</span>}
+                <div style={{ position: 'relative', display: 'inline-block' }}>
+                  <div style={{ ...MONO, fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', pointerEvents: 'none', userSelect: 'none' }}>
+                    {fmtDate(settlementDate || due)}
+                  </div>
+                  <input
+                    type="date"
+                    value={settlementDate || due}
+                    max={due}
+                    onChange={e => setSettlementDate(e.target.value)}
+                    onBlur={async () => {
+                      const val = settlementDate || due;
+                      if (val === (stub.eftps_settlement_date || due)) return;
+                      setSavingSettlement(true);
+                      try {
+                        await api.updatePaystub(stub.id, { eftpsSettlementDate: val === due ? null : val });
+                        if (onStubChange) onStubChange(stub.id, { eftps_settlement_date: val === due ? null : val });
+                      } catch (e) { alert(e.message); }
+                      finally { setSavingSettlement(false); }
+                    }}
+                    style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%' }}
+                  />
+                </div>
+                {savingSettlement
+                  ? <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 2 }}>saving…</div>
+                  : (!settlementDate || settlementDate === due) && <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 2 }}>* IRS due date</div>
+                }
               </div>
             )}
           </div>
