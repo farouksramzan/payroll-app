@@ -84,7 +84,7 @@ router.get('/', (req, res) => {
       WHERE client_id = ?
         AND settlement_due_date IS NOT NULL
         AND settlement_due_date < ?
-        AND check_status IN ('printed','deposited')
+        AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
         AND (status IN ('pending','processing','failed') OR status_940 IN ('pending','processing','failed'))
     `).get(c.id, today);
 
@@ -99,7 +99,7 @@ router.get('/', (req, res) => {
         AND settlement_due_date IS NOT NULL
         AND settlement_due_date >= ?
         AND settlement_due_date <= ?
-        AND check_status IN ('printed','deposited')
+        AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
         AND (status IN ('pending','processing','failed') OR status_940 IN ('pending','processing','failed'))
     `).get(c.id, today, in5DaysStr);
 

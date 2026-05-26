@@ -2427,7 +2427,7 @@ function PayLiabilitiesTab({ clientId, client }) {
     finally { setUpdatingStatus(null); }
   }
 
-  const ISSUED    = new Set(['printed', 'deposited']);
+  const ISSUED    = new Set(['printed', 'deposited', 'direct_deposit_sent', 'direct_deposit_cleared']);
   const UNPAID_941 = (s) => s.status     === 'pending' || s.status     === 'processing' || s.status     === 'failed';
   const UNPAID_940 = (s) => s.status_940 === 'pending' || s.status_940 === 'processing' || s.status_940 === 'failed';
 
