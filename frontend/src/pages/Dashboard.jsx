@@ -179,10 +179,8 @@ function MultiLiabPanel({ clientIds, clients }) {
     if (!clientKey) { setRows([]); return; }
     setLoading(true);
     const ids = clientKey.split(',').filter(Boolean);
-    console.log('[MultiLiab] fetching for ids:', ids);
     Promise.allSettled(ids.map(id => api.getPaystubs(id).then(stubs => ({ id, stubs }))))
       .then(settled => {
-        console.log('[MultiLiab] settled:', settled.map(r => r.status === 'fulfilled' ? `ok(${r.value.stubs.length} stubs)` : `fail: ${r.reason?.message}`));
         const results = settled.filter(r => r.status === 'fulfilled').map(r => r.value);
         const today = new Date().toISOString().slice(0, 10);
         const in5 = new Date(); in5.setDate(in5.getDate() + 5);
@@ -219,7 +217,7 @@ function MultiLiabPanel({ clientIds, clients }) {
               _due941: pending941 ? due941 : null,
               _due940: pending940 ? due940 : null,
               _dueSUI: pendingSUI ? dueSUI : null,
-              _late941, _late940, _lateSUI,
+              _late941: late941, _late940: late940, _lateSUI: lateSUI,
               _dueSoon941: dueSoon941, _dueSoon940: dueSoon940, _dueSoonSUI: dueSoonSUI,
               _pending941, _pending940, _pendingSUI,
               _isLate: isLate,
@@ -232,7 +230,6 @@ function MultiLiabPanel({ clientIds, clients }) {
           const bMin = [b._due941, b._due940, b._dueSUI].filter(Boolean).sort()[0] || 'zzzz';
           return aMin.localeCompare(bMin);
         });
-        console.log('[MultiLiab] merged rows:', merged.length, merged.map(r => ({ client: r._clientName, status: r.check_status, s941: r.status, amt: r.total_deposit })));
         setRows(merged);
       })
       .finally(() => setLoading(false));
