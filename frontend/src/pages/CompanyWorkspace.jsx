@@ -2543,7 +2543,8 @@ function PayLiabilitiesTab({ clientId, client }) {
   // Poll job status every 60s while a bridge job is active
   useEffect(() => {
     if (!activeJobId) return;
-    pollRef.current = setInterval(async () => {
+
+    async function checkJobStatus() {
       try {
         const s = await api.getBridgeJobStatus(activeJobId);
         setJobStatus(s.status);
@@ -2554,8 +2555,22 @@ function PayLiabilitiesTab({ clientId, client }) {
           setActiveJobTaxType(null);
           await reload();
         }
-      } catch { /* ignore transient errors */ }
-    }, 60_000);
+      } catch (err) {
+        // 404 = Railway restarted and lost the job record — treat as failure
+        const msg = err?.message || '';
+        if (msg.includes('Job not found') || msg.includes('404')) {
+          clearInterval(pollRef.current);
+          setActiveJobId(null);
+          setActiveJobTaxType(null);
+          setJobStatus('failed');
+          await reload();
+        }
+        // All other errors (network blip, 5xx) are transient — keep polling
+      }
+    }
+
+    checkJobStatus(); // immediate check on mount (catches Railway restarts fast)
+    pollRef.current = setInterval(checkJobStatus, 60_000);
     return () => clearInterval(pollRef.current);
   }, [activeJobId]);
 
