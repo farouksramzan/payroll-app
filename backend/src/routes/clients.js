@@ -68,10 +68,16 @@ router.get('/', (req, res) => {
       if (anchorDate) {
         const freq = c.payroll_frequency || 'biweekly';
         const d = new Date(anchorDate + 'T00:00:00');
-        if (freq === 'weekly')           d.setDate(d.getDate() + 7);
-        else if (freq === 'biweekly')    d.setDate(d.getDate() + 14);
-        else if (freq === 'semimonthly') d.setDate(d.getDate() + 15);
-        else if (freq === 'monthly')     d.setMonth(d.getMonth() + 1);
+        const advance = () => {
+          if (freq === 'weekly')           d.setDate(d.getDate() + 7);
+          else if (freq === 'biweekly')    d.setDate(d.getDate() + 14);
+          else if (freq === 'semimonthly') d.setDate(d.getDate() + 15);
+          else if (freq === 'monthly')     d.setMonth(d.getMonth() + 1);
+        };
+        advance();
+        // Keep advancing until the date is in the future
+        const todayMs = new Date(today + 'T00:00:00').getTime();
+        while (!isNaN(d.getTime()) && d.getTime() < todayMs) advance();
         if (!isNaN(d.getTime())) calcNextPayroll = d.toISOString().slice(0, 10);
       }
     } catch (e) { /* non-critical — leave calcNextPayroll null */ }
