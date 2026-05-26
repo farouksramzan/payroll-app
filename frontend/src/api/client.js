@@ -68,7 +68,7 @@ const api = {
   updatePaystub: (id, data) => request(`/paystubs/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deletePaystub: (id) => request(`/paystubs/${id}`, { method: 'DELETE' }),
   submitPaystub: (id, taxType = '941') => request(`/paystubs/${id}/submit`, { method: 'POST', body: JSON.stringify({ taxType }) }),
-  updatePaystubStatus: (id, status) => request(`/paystubs/${id}/status`, { method: 'PUT', body: JSON.stringify({ status }) }),
+  updatePaystubStatus: (id, status, taxType) => request(`/paystubs/${id}/status`, { method: 'PUT', body: JSON.stringify({ status, taxType }) }),
   voidPaystub: (id, reason) => request(`/paystubs/${id}/void`, { method: 'POST', body: JSON.stringify({ reason }) }),
   getPaystubCredits: (clientId) => request(`/paystubs/credits?clientId=${clientId}`),
   markLateChecks: () => request('/paystubs/mark-late', { method: 'POST' }),

@@ -1598,11 +1598,17 @@ router.put('/:id/status', (req, res) => {
   `).get(req.params.id, req.user.id);
   if (!stub) return res.status(404).json({ error: 'Paystub not found' });
 
-  const { status } = req.body;
+  const { status, taxType } = req.body;
 
-  // EFTPS submission statuses → update the status column (drives liability view)
+  // EFTPS submission statuses → update the correct column based on taxType
   if (['submitted', 'pending', 'failed'].includes(status)) {
-    db.prepare('UPDATE paystubs SET status = ? WHERE id = ?').run(status, stub.id);
+    if (taxType === '940') {
+      db.prepare('UPDATE paystubs SET status_940 = ? WHERE id = ?').run(status, stub.id);
+    } else if (taxType === 'sui') {
+      db.prepare('UPDATE paystubs SET status_sui = ? WHERE id = ?').run(status, stub.id);
+    } else {
+      db.prepare('UPDATE paystubs SET status = ? WHERE id = ?').run(status, stub.id);
+    }
     return res.json({ id: parseInt(req.params.id), status });
   }
 

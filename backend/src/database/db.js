@@ -292,6 +292,11 @@ function migrate() {
     { name: 'business_zip',       def: 'TEXT' },
   ]);
 
+  // SUI independent status tracking
+  addCols('paystubs', [
+    { name: 'status_sui', def: "TEXT DEFAULT 'pending'" },
+  ]);
+
   // check number + payroll run grouping + payment details on paystubs
   addCols('paystubs', [
     { name: 'check_number',    def: 'INTEGER' },

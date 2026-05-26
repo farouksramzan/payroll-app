@@ -2236,7 +2236,7 @@ function calcSendByDate(dueDate) {
 }
 
 function calcLiabilityStatus(stub, taxType, sendBy, due, todayStr) {
-  const submitted = taxType === '940' ? stub.status_940 === 'submitted' : stub.status === 'submitted';
+  const submitted = taxType === '940' ? stub.status_940 === 'submitted' : taxType === 'sui' ? (stub.status_sui || 'pending') === 'submitted' : stub.status === 'submitted';
   if (submitted) return 'completed';
   if (!due) return 'upcoming';
   if (todayStr > due) return 'late';
@@ -2435,9 +2435,10 @@ function PayLiabilitiesTab({ clientId, client }) {
 
   async function handleStatusChange(stub, newComputedStatus) {
     const dbStatus = newComputedStatus === 'completed' ? 'submitted' : 'pending';
+    const taxType  = statusDropdown?.taxType;
     setStatusDropdown(null);
     setUpdatingStatus(stub.id);
-    try { await api.updatePaystubStatus(stub.id, dbStatus); await reload(); }
+    try { await api.updatePaystubStatus(stub.id, dbStatus, taxType); await reload(); }
     catch (e) { alert(e.message); }
     finally { setUpdatingStatus(null); }
   }
@@ -2445,6 +2446,7 @@ function PayLiabilitiesTab({ clientId, client }) {
   const ISSUED    = new Set(['printed', 'deposited', 'direct_deposit_sent', 'direct_deposit_cleared']);
   const UNPAID_941 = (s) => s.status     === 'pending' || s.status     === 'processing' || s.status     === 'failed';
   const UNPAID_940 = (s) => s.status_940 === 'pending' || s.status_940 === 'processing' || s.status_940 === 'failed';
+  const UNPAID_SUI = (s) => (s.status_sui || 'pending') === 'pending' || s.status_sui === 'processing' || s.status_sui === 'failed';
 
   async function reload() {
     const [stubs, crds] = await Promise.all([api.getPaystubs(clientId), api.getPaystubCredits(clientId)]);
@@ -2467,7 +2469,7 @@ function PayLiabilitiesTab({ clientId, client }) {
 
   const pending941 = paystubs.filter(s => ISSUED.has(s.check_status) && UNPAID_941(s));
   const pending940 = paystubs.filter(s => ISSUED.has(s.check_status) && UNPAID_940(s) && s.futa_tax > 0);
-  const pendingSUI = paystubs.filter(s => ISSUED.has(s.check_status) && s.suta_tax > 0 && UNPAID_941(s));
+  const pendingSUI = paystubs.filter(s => ISSUED.has(s.check_status) && s.suta_tax > 0 && UNPAID_SUI(s));
 
   const unappCredits = credits.filter(c => !c.applied);
   const credit941 = unappCredits.reduce((s, c) => s + (c.total_941_credit || 0), 0);
@@ -2536,7 +2538,7 @@ function PayLiabilitiesTab({ clientId, client }) {
   async function handleMarkPaid(stub, taxType) {
     setMarkingPaid(stub.id);
     try {
-      await api.updatePaystubStatus(stub.id, 'submitted');
+      await api.updatePaystubStatus(stub.id, 'submitted', taxType);
       await reload();
     } catch (e) { alert(e.message); }
     finally { setMarkingPaid(null); }
@@ -2668,7 +2670,7 @@ function PayLiabilitiesTab({ clientId, client }) {
                             <span className="spinner" style={{ width: 12, height: 12 }} />
                           ) : (
                             <span data-dropdown style={{ cursor: 'pointer' }}
-                              onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setStatusDropdown(statusDropdown?.stub?.id === stub.id ? null : { stub, top: r.bottom + 4, right: window.innerWidth - r.right }); }}>
+                              onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setStatusDropdown(statusDropdown?.stub?.id === stub.id ? null : { stub, taxType, top: r.bottom + 4, right: window.innerWidth - r.right }); }}>
                               <LiabStatusBadge status={stub._status} />
                             </span>
                           )}
@@ -2780,7 +2782,7 @@ function PayLiabilitiesTab({ clientId, client }) {
       {(() => {
         const sent941 = paystubs.filter(s => s.status === 'submitted');
         const sent940 = paystubs.filter(s => s.status_940 === 'submitted' && s.futa_tax > 0);
-        const sentSUI = paystubs.filter(s => s.suta_tax > 0 && s.status === 'submitted');
+        const sentSUI = paystubs.filter(s => s.suta_tax > 0 && (s.status_sui || 'pending') === 'submitted');
         const totalSent = sent941.length + sent940.length + sentSUI.length;
 
         function enrichSent(stubs, taxType, schedule) {
@@ -2832,7 +2834,7 @@ function PayLiabilitiesTab({ clientId, client }) {
                                   onClick={async e => {
                                     e.stopPropagation();
                                     if (!window.confirm('Mark this payment as pending again?')) return;
-                                    try { await api.updatePaystubStatus(stub.id, 'pending'); await reload(); } catch (ex) { alert(ex.message); }
+                                    try { await api.updatePaystubStatus(stub.id, 'pending', taxType); await reload(); } catch (ex) { alert(ex.message); }
                                   }}>
                                   Undo
                                 </button>
