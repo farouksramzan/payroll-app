@@ -451,16 +451,15 @@ def main():
         print('IMPORT_FAILED: PIN dialog Submit button not found', flush=True)
         sys.exit(1)
 
-    log('Waiting for confirmation (5s)...')
-    time.sleep(5)
+    log('Waiting for confirmation (3s)...')
+    time.sleep(3)
 
-    # Step 9 - Click submission confirmation OK if it appears (handles both the
-    # normal success dialog and the incomplete-payment error dialog, both of which
-    # have an OK button). We click it if found, but do NOT treat finding it as
-    # proof of success — the error dialog has the same OK button.
+    # Step 9 - Click submission confirmation OK if it appears.
+    # We click it if found but do NOT treat it as proof of success — the
+    # incomplete-payment error dialog has the same OK button layout.
     log('Step 9: Clicking submission confirmation OK (if present)')
-    find_and_click('submit_ok.png', 'submission confirmation OK', timeout=10)
-    time.sleep(2)
+    find_and_click('submit_ok.png', 'submission confirmation OK', timeout=5)
+    time.sleep(1)
 
     # Always run the recovery/override check after submission. If the payment
     # succeeded cleanly, R6 will find no incomplete checkboxes and exit with
