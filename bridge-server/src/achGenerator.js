@@ -130,7 +130,7 @@ function generateBatchProviderFile(params) {
   if (!taxYear)        throw new Error('taxYear is required.');
   // 940 (FUTA) is annual — default to Q4 (December) if quarter not provided
   if (!taxQuarter) {
-    if (taxTypeCode === '94007') taxQuarter = 4;
+    if (taxTypeCode === '09405') taxQuarter = 4;
     else throw new Error('taxQuarter is required (1–4).');
   }
   if (!settlementDate) throw new Error('settlementDate is required.');

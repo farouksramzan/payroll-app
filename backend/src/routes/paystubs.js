@@ -677,7 +677,7 @@ router.post('/:id/submit', async (req, res) => {
         taxQuarter:     stub.tax_quarter,
         settlementDate: irsSettlementDate,
         taxForm:        taxType,
-        taxTypeCode:    taxType === '940' ? '94007' : '94105',
+        taxTypeCode:    taxType === '940' ? '09405' : '94105',
         taxData:        taxType === '940'
           ? { futaTax: stub.futa_tax, totalDeposit: stub.futa_tax }
           : { totalDeposit: stub.total_deposit },
@@ -1245,7 +1245,7 @@ router.post('/batch-submit', async (req, res) => {
         taxQuarter:     taxType === '940' ? 4 : (taxQuarter || firstStub.tax_quarter),
         settlementDate: irsSettlementDate,
         taxForm:        taxType,
-        taxTypeCode:    taxType === '940' ? '94007' : '94105',
+        taxTypeCode:    taxType === '940' ? '09405' : '94105',
         taxData:        { totalDeposit: Math.round(totalDeposit * 100) / 100 },
       };
 
