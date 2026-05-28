@@ -58,7 +58,9 @@ router.get('/', (req, res) => {
       .get(c.id);
     const nextDue = calcNextDueDate(c.deposit_schedule, lastSub?.pay_period_end);
 
-    // Calculate next payroll date from most recent pay_period_end + frequency
+    // Next payroll date: use the most recent paystub's pay_period_end directly
+    // if it's already in the future (current period already entered in the system).
+    // Only fall back to frequency math when all paystubs are in the past.
     let calcNextPayroll = null;
     try {
       const lastPaystub = db
@@ -66,19 +68,24 @@ router.get('/', (req, res) => {
         .get(c.id);
       const anchorDate = lastPaystub?.pay_period_end ? lastPaystub.pay_period_end.slice(0, 10) : null;
       if (anchorDate) {
-        const freq = c.payroll_frequency || 'biweekly';
-        const d = new Date(anchorDate + 'T00:00:00');
-        const advance = () => {
-          if (freq === 'weekly')           d.setDate(d.getDate() + 7);
-          else if (freq === 'biweekly')    d.setDate(d.getDate() + 14);
-          else if (freq === 'semimonthly') d.setDate(d.getDate() + 15);
-          else if (freq === 'monthly')     d.setMonth(d.getMonth() + 1);
-        };
-        advance();
-        // Keep advancing until the date is in the future
-        const todayMs = new Date(today + 'T00:00:00').getTime();
-        while (!isNaN(d.getTime()) && d.getTime() < todayMs) advance();
-        if (!isNaN(d.getTime())) calcNextPayroll = d.toISOString().slice(0, 10);
+        if (anchorDate > today) {
+          // Current pay period is already entered — show its end date directly
+          calcNextPayroll = anchorDate;
+        } else {
+          // All paystubs are in the past — advance by frequency until future
+          const freq = c.payroll_frequency || 'biweekly';
+          const d = new Date(anchorDate + 'T00:00:00');
+          const advance = () => {
+            if (freq === 'weekly')           d.setDate(d.getDate() + 7);
+            else if (freq === 'biweekly')    d.setDate(d.getDate() + 14);
+            else if (freq === 'semimonthly') d.setDate(d.getDate() + 15);
+            else if (freq === 'monthly')     d.setMonth(d.getMonth() + 1);
+          };
+          advance();
+          const todayMs = new Date(today + 'T00:00:00').getTime();
+          while (!isNaN(d.getTime()) && d.getTime() < todayMs) advance();
+          if (!isNaN(d.getTime())) calcNextPayroll = d.toISOString().slice(0, 10);
+        }
       }
     } catch (e) { /* non-critical — leave calcNextPayroll null */ }
 
