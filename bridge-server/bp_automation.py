@@ -354,6 +354,10 @@ def handle_incomplete_payment_recovery():
         log('Recovery R13c: ERROR — PIN dialog Submit not found')
         return False
 
+    log('Recovery R13d: Waiting 3s then clicking OK at (790, 629)')
+    time.sleep(3)
+    pyautogui.click(790, 629)
+
     log('Recovery: Override and resubmission complete')
     time.sleep(3)
     return True
@@ -525,7 +529,13 @@ def main():
         print('IMPORT_FAILED: PIN dialog Submit button not found', flush=True)
         sys.exit(1)
 
-    log('Waiting for confirmation (5s)...')
+    # Step 8d - Click OK to confirm submission (always required after PIN submit)
+    log('Step 8d: Waiting 3s then clicking OK at (790, 629)')
+    time.sleep(3)
+    pyautogui.click(790, 629)
+    log('Step 8d complete: OK clicked')
+
+    log('Waiting for BP to process (5s)...')
     time.sleep(5)
 
     # Step 9 - Detect success vs error using window count (no image search = no hang).
@@ -543,8 +553,6 @@ def main():
 
     if not error_detected:
         log('Step 9: No new dialog — payment submitted successfully')
-        pyautogui.press('enter')  # dismiss success confirmation if present
-        time.sleep(1)
         print('IMPORT_COMPLETE', flush=True)
         sys.exit(0)
 
