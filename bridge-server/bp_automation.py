@@ -287,7 +287,66 @@ def handle_incomplete_payment_recovery():
     pyautogui.click(1169, 581)
     time.sleep(1)
 
-    log('Recovery: Incomplete payment override flow complete')
+    # R11 — Re-select payment checkboxes (same as Step 6 in main flow)
+    log('Recovery R11: Selecting payment checkboxes')
+    checkbox_region = (1600, 200, 300, 700)
+    checkboxes = list(pyautogui.locateAllOnScreen(
+        img('checkbox.png'), confidence=CONFIDENCE, region=checkbox_region
+    ))
+    if not checkboxes:
+        log('Recovery R11: No checkboxes found after override — treating as success')
+        return True
+    log('Recovery R11: Found ' + str(len(checkboxes)) + ' checkbox(es)')
+    first = pyautogui.center(checkboxes[0])
+    pyautogui.click(first)
+    time.sleep(0.5)
+    for box in checkboxes[1:]:
+        center = pyautogui.center(box)
+        pyautogui.keyDown('shift')
+        pyautogui.click(center)
+        pyautogui.keyUp('shift')
+        time.sleep(0.2)
+    time.sleep(0.5)
+
+    # R12 — Submit (same as Step 7)
+    log('Recovery R12: Clicking Submit button')
+    if not find_and_click('submit.png', 'Submit button'):
+        log('Recovery R12: ERROR — Submit button not found after override')
+        return False
+
+    # R13 — PIN/Password dialog (same as Steps 8–8c)
+    log('Recovery R13: Waiting for PIN/Password dialog (5s)...')
+    time.sleep(5)
+
+    batch_pin      = os.environ.get('BATCH_PROVIDER_PIN', '')
+    batch_password = os.environ.get('BATCH_PROVIDER_PASSWORD', '')
+
+    log('Recovery R13a: Clicking PIN field')
+    if not find_and_click('pin_field.png', 'PIN field'):
+        log('Recovery R13a: ERROR — PIN field not found')
+        return False
+    time.sleep(0.3)
+    pyautogui.hotkey('ctrl', 'a')
+    time.sleep(0.2)
+    pyautogui.typewrite(batch_pin, interval=0.15)
+    time.sleep(0.3)
+
+    log('Recovery R13b: Clicking Password field')
+    if not find_and_click('password_field.png', 'Password field'):
+        log('Recovery R13b: ERROR — Password field not found')
+        return False
+    pyautogui.hotkey('ctrl', 'a')
+    time.sleep(0.2)
+    pyautogui.typewrite(batch_password, interval=0.15)
+    time.sleep(0.3)
+
+    log('Recovery R13c: Clicking PIN dialog Submit')
+    if not find_and_click('pin_submit.png', 'PIN dialog Submit button'):
+        log('Recovery R13c: ERROR — PIN dialog Submit not found')
+        return False
+
+    log('Recovery: Override and resubmission complete')
+    time.sleep(3)
     return True
 
 
