@@ -163,6 +163,15 @@ def find_word_on_screen(word):
     return None
 
 
+def get_window_count():
+    """Return the number of visible titled windows (fast — no image capture)."""
+    try:
+        import pygetwindow as gw
+        return len([w for w in gw.getAllWindows() if w.title.strip()])
+    except Exception:
+        return -1
+
+
 def is_incomplete_error():
     """
     Return True if BP is showing the incomplete payment / override required error.
@@ -252,8 +261,8 @@ def handle_incomplete_payment_recovery():
         img('checkbox.png'), confidence=CONFIDENCE, region=checkbox_region
     ))
     if not checkboxes:
-        log('Recovery R6: No incomplete checkboxes found — payment already succeeded, nothing to override')
-        return True
+        log('Recovery R6: No incomplete checkboxes found — cannot locate payment to override')
+        return False
 
     log('Recovery R6: Found ' + str(len(checkboxes)) + ' checkbox(es)')
     first = pyautogui.center(checkboxes[0])
@@ -466,6 +475,8 @@ def main():
 
     # Step 7 - Submit button (image recognition - button position can vary)
     log('Step 7: Clicking Submit button')
+    windows_before_submit = get_window_count()
+    log('Step 7: Window count before submit = ' + str(windows_before_submit))
     if not find_and_click('submit.png', 'Submit button'):
         print('IMPORT_FAILED: Submit button not found', flush=True)
         sys.exit(1)
@@ -514,17 +525,32 @@ def main():
         print('IMPORT_FAILED: PIN dialog Submit button not found', flush=True)
         sys.exit(1)
 
-    log('Waiting for confirmation (3s)...')
-    time.sleep(3)
+    log('Waiting for confirmation (5s)...')
+    time.sleep(5)
 
-    # Step 9 - Run override/recovery check unconditionally.
-    # Whether the payment succeeded or BP showed the incomplete-payment error,
-    # recovery handles both: Cancel dismisses any dialog, then if no incomplete
-    # checkboxes are found in R6 it exits cleanly as success.
-    # submit_ok image search removed — locateOnScreen can hang on Windows.
-    log('Step 9: Running override/recovery check')
+    # Step 9 - Detect success vs error using window count (no image search = no hang).
+    # If BP opened a new dialog after PIN submit, it's the incomplete-payment error.
+    # If no new dialog appeared, the payment succeeded — press Enter to dismiss
+    # any success confirmation and exit.
+    windows_after_submit = get_window_count()
+    log('Step 9: Window count after submit = ' + str(windows_after_submit))
+
+    error_detected = (
+        windows_before_submit >= 0 and
+        windows_after_submit >= 0 and
+        windows_after_submit > windows_before_submit
+    )
+
+    if not error_detected:
+        log('Step 9: No new dialog — payment submitted successfully')
+        pyautogui.press('enter')  # dismiss success confirmation if present
+        time.sleep(1)
+        print('IMPORT_COMPLETE', flush=True)
+        sys.exit(0)
+
+    log('Step 9: New dialog detected — incomplete/override error — entering recovery flow')
     if handle_incomplete_payment_recovery():
-        log('Import completed (payment succeeded or override applied)')
+        log('Recovery complete — payment overridden and resubmitted')
         print('IMPORT_COMPLETE', flush=True)
         sys.exit(0)
     else:
