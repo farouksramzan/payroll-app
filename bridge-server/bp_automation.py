@@ -172,6 +172,59 @@ def get_window_count():
         return -1
 
 
+def parse_ach_file(ach_path):
+    """
+    Extract EIN and formatted dollar amount from the 77-char ACH record.
+    Returns (ein_str, dollar_str) e.g. ('462614605', '1,423.80'), or (None, None).
+    """
+    try:
+        with open(ach_path, 'r') as f:
+            line = f.readline().strip()
+        if len(line) < 77:
+            return None, None
+        ein        = line[29:38]           # positions 30-38
+        cents      = int(line[62:77])      # positions 63-77
+        dollar_str = '{:,.2f}'.format(cents / 100)
+        return ein, dollar_str
+    except Exception as e:
+        log('parse_ach_file error: ' + str(e))
+        return None, None
+
+
+def verify_payment_submitted(ein, amount_str):
+    """
+    Navigate to Cancel Payments tab and use OCR to confirm the payment
+    appears there (EIN visible on screen = payment successfully submitted).
+    Returns True if found, False if not.
+    """
+    log('Verify: Clicking Payments tab')
+    if not find_and_click('payments_tab.png', 'Payments tab', timeout=10):
+        log('Verify: Payments tab not found — cannot verify')
+        return False
+    time.sleep(1)
+
+    log('Verify: Clicking Cancel Payments tab at (162, 133)')
+    pyautogui.click(162, 133)
+    time.sleep(2)
+
+    if not ein:
+        log('Verify: No EIN to search for — cannot verify')
+        return False
+
+    log('Verify: Searching for EIN ' + ein + ' on screen via OCR')
+    if find_word_on_screen(ein):
+        log('Verify: EIN found on Cancel Payments screen — payment confirmed')
+        return True
+
+    # Try last 6 digits in case BP formats the EIN differently on screen
+    if find_word_on_screen(ein[-6:]):
+        log('Verify: Partial EIN found — payment confirmed')
+        return True
+
+    log('Verify: EIN not found on Cancel Payments screen — payment not submitted')
+    return False
+
+
 def is_incomplete_error():
     """
     Return True if BP is showing the incomplete payment / override required error.
@@ -529,38 +582,37 @@ def main():
         print('IMPORT_FAILED: PIN dialog Submit button not found', flush=True)
         sys.exit(1)
 
-    # Step 9 - Wait for BP to process, then check window count BEFORE clicking anything.
-    # If a new dialog appeared it's the incomplete-payment error; if not, it's success.
+    # Step 9 - Wait for BP to process, dismiss confirmation dialog, then verify
+    # by navigating to Cancel Payments and OCR-searching for the submitted EIN.
     log('Waiting for BP to process (5s)...')
     time.sleep(5)
 
-    windows_after_submit = get_window_count()
-    log('Step 9: Window count before submit = ' + str(windows_before_submit) + ', after = ' + str(windows_after_submit))
-
-    error_detected = (
-        windows_before_submit >= 0 and
-        windows_after_submit >= 0 and
-        windows_after_submit > windows_before_submit
-    )
-
-    # Step 8d - Click OK/Cancel at (790, 629) to dismiss whatever dialog is showing
+    # Step 8d - Dismiss confirmation/error dialog
     log('Step 8d: Clicking OK at (790, 629)')
     pyautogui.click(790, 629)
-    time.sleep(1)
+    time.sleep(2)
 
-    if not error_detected:
-        log('Step 9: No new dialog detected — payment submitted successfully')
+    # Step 9 - Verify payment appears on Cancel Payments screen
+    ein, amount_str = parse_ach_file(ach_file_path)
+    log('Step 9: Verifying payment for EIN=' + str(ein) + ' amount=$' + str(amount_str))
+
+    if verify_payment_submitted(ein, amount_str):
+        log('Step 9: Payment confirmed — IMPORT_COMPLETE')
         print('IMPORT_COMPLETE', flush=True)
         sys.exit(0)
 
-    log('Step 9: New dialog detected — incomplete/override error — entering recovery flow')
+    # Payment not on Cancel Payments screen → incomplete/override error → run recovery
+    log('Step 9: Payment not found — running override recovery flow')
     if handle_incomplete_payment_recovery():
-        log('Recovery complete — payment overridden and resubmitted')
-        print('IMPORT_COMPLETE', flush=True)
-        sys.exit(0)
-    else:
-        print('IMPORT_FAILED: Override/recovery flow failed — manual intervention needed', flush=True)
-        sys.exit(1)
+        # Verify once more after recovery + resubmit
+        log('Step 9: Re-verifying after recovery')
+        if verify_payment_submitted(ein, amount_str):
+            log('Step 9: Payment confirmed after recovery — IMPORT_COMPLETE')
+            print('IMPORT_COMPLETE', flush=True)
+            sys.exit(0)
+
+    print('IMPORT_FAILED: Payment not found on Cancel Payments screen after recovery', flush=True)
+    sys.exit(1)
 
 
 if __name__ == '__main__':
