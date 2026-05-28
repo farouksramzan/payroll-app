@@ -23,16 +23,29 @@ IMAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'button_im
 # ── Coordinate overrides via .env ─────────────────────────────────────────────
 # If BP's layout shifts (different resolution/DPI/monitor), update these in .env
 # rather than touching the script.
-BP_SEND_PAYMENTS_X = int(os.environ.get('BP_SEND_PAYMENTS_X', '51'))
-BP_SEND_PAYMENTS_Y = int(os.environ.get('BP_SEND_PAYMENTS_Y', '133'))
-BP_IMPORT_X  = int(os.environ.get('BP_IMPORT_X',  '386'))
-BP_IMPORT_Y  = int(os.environ.get('BP_IMPORT_Y',  '966'))
-BP_ADD_X     = int(os.environ.get('BP_ADD_X',     '833'))
-BP_ADD_Y     = int(os.environ.get('BP_ADD_Y',     '482'))
-BP_OK1_X     = int(os.environ.get('BP_OK1_X',     '1111'))
-BP_OK1_Y     = int(os.environ.get('BP_OK1_Y',     '639'))
-BP_OK2_X     = int(os.environ.get('BP_OK2_X',     '798'))
-BP_OK2_Y     = int(os.environ.get('BP_OK2_Y',     '629'))
+BP_SEND_PAYMENTS_X       = int(os.environ.get('BP_SEND_PAYMENTS_X',       '51'))
+BP_SEND_PAYMENTS_Y       = int(os.environ.get('BP_SEND_PAYMENTS_Y',       '133'))
+BP_IMPORT_X              = int(os.environ.get('BP_IMPORT_X',              '386'))
+BP_IMPORT_Y              = int(os.environ.get('BP_IMPORT_Y',              '966'))
+BP_ADD_X                 = int(os.environ.get('BP_ADD_X',                 '833'))
+BP_ADD_Y                 = int(os.environ.get('BP_ADD_Y',                 '482'))
+BP_OK1_X                 = int(os.environ.get('BP_OK1_X',                 '1111'))
+BP_OK1_Y                 = int(os.environ.get('BP_OK1_Y',                 '639'))
+BP_OK2_X                 = int(os.environ.get('BP_OK2_X',                 '798'))
+BP_OK2_Y                 = int(os.environ.get('BP_OK2_Y',                 '629'))
+# ── Recovery flow coordinates (set in .env) ───────────────────────────────────
+BP_ENROLLMENTS_X         = int(os.environ.get('BP_ENROLLMENTS_X',         '0'))
+BP_ENROLLMENTS_Y         = int(os.environ.get('BP_ENROLLMENTS_Y',         '0'))
+BP_ENROLLMENT_INQUIRY_X  = int(os.environ.get('BP_ENROLLMENT_INQUIRY_X',  '0'))
+BP_ENROLLMENT_INQUIRY_Y  = int(os.environ.get('BP_ENROLLMENT_INQUIRY_Y',  '0'))
+BP_SYNC_X                = int(os.environ.get('BP_SYNC_X',                '0'))
+BP_SYNC_Y                = int(os.environ.get('BP_SYNC_Y',                '0'))
+BP_EDIT_X                = int(os.environ.get('BP_EDIT_X',                '214'))
+BP_EDIT_Y                = int(os.environ.get('BP_EDIT_Y',                '963'))
+BP_SAVE_X                = int(os.environ.get('BP_SAVE_X',                '1149'))
+BP_SAVE_Y                = int(os.environ.get('BP_SAVE_Y',                '753'))
+BP_OVERRIDE_X            = int(os.environ.get('BP_OVERRIDE_X',            '0'))
+BP_OVERRIDE_Y            = int(os.environ.get('BP_OVERRIDE_Y',            '0'))
 
 
 def log(msg):
@@ -123,6 +136,133 @@ def paste_text(text):
         pyautogui.hotkey('ctrl', 'a')
         time.sleep(0.1)
         pyautogui.typewrite(text, interval=0.15)
+
+
+def is_incomplete_error():
+    """Return True if BP is showing the 'incomplete payment' error dialog."""
+    try:
+        import pygetwindow as gw
+        titles = [w.title for w in gw.getAllWindows()]
+        keywords = ('incomplete', 'unsuccessful', 'override', 'error', 'warning')
+        return any(any(k in t.lower() for k in keywords) for t in titles if t.strip())
+    except Exception:
+        return False
+
+
+def handle_incomplete_payment_recovery():
+    """
+    Recovery when BP reports: 'At least one payment selected for submission
+    was unsuccessful or requires an override.'
+    Flow: dismiss error → Enrollments → Enrollment Inquiry → Sync →
+          Payments → Send Payments → select incomplete → Edit → Save → Override
+    Returns True on success, False on unrecoverable failure.
+    """
+    log('Recovery: Incomplete payment detected — starting override flow')
+
+    # Dismiss the error dialog (Enter activates the focused OK button)
+    log('Recovery: Dismissing error dialog')
+    pyautogui.press('enter')
+    time.sleep(1.5)
+
+    # R1 — Enrollments tab (image recognition, fall back to env coords)
+    log('Recovery R1: Navigating to Enrollments tab')
+    if not find_and_click('enrollments_tab.png', 'Enrollments tab', timeout=8):
+        if BP_ENROLLMENTS_X and BP_ENROLLMENTS_Y:
+            pyautogui.click(BP_ENROLLMENTS_X, BP_ENROLLMENTS_Y)
+            log('Recovery R1: Clicked Enrollments at (' + str(BP_ENROLLMENTS_X) + ', ' + str(BP_ENROLLMENTS_Y) + ')')
+        else:
+            log('Recovery R1: ERROR — enrollments_tab.png not found and BP_ENROLLMENTS_X/Y not set in .env')
+            return False
+    time.sleep(1)
+
+    # R2 — Enrollment Inquiry
+    log('Recovery R2: Clicking Enrollment Inquiry')
+    if not find_and_click('enrollment_inquiry.png', 'Enrollment Inquiry', timeout=8):
+        if BP_ENROLLMENT_INQUIRY_X and BP_ENROLLMENT_INQUIRY_Y:
+            pyautogui.click(BP_ENROLLMENT_INQUIRY_X, BP_ENROLLMENT_INQUIRY_Y)
+            log('Recovery R2: Clicked Enrollment Inquiry at (' + str(BP_ENROLLMENT_INQUIRY_X) + ', ' + str(BP_ENROLLMENT_INQUIRY_Y) + ')')
+        else:
+            log('Recovery R2: ERROR — enrollment_inquiry.png not found and BP_ENROLLMENT_INQUIRY_X/Y not set in .env')
+            return False
+    time.sleep(1)
+
+    # R3 — Sync (may take several seconds to complete)
+    log('Recovery R3: Clicking Sync')
+    if not find_and_click('sync_btn.png', 'Sync button', timeout=8):
+        if BP_SYNC_X and BP_SYNC_Y:
+            pyautogui.click(BP_SYNC_X, BP_SYNC_Y)
+            log('Recovery R3: Clicked Sync at (' + str(BP_SYNC_X) + ', ' + str(BP_SYNC_Y) + ')')
+        else:
+            log('Recovery R3: ERROR — sync_btn.png not found and BP_SYNC_X/Y not set in .env')
+            return False
+    log('Recovery R3: Waiting for Sync to complete (5s)...')
+    time.sleep(5)
+
+    # R4 — Back to Payments tab
+    log('Recovery R4: Clicking Payments tab')
+    if not find_and_click('payments_tab.png', 'Payments tab', timeout=15):
+        log('Recovery R4: ERROR — Payments tab not found after Sync')
+        return False
+    time.sleep(1)
+
+    # R5 — Send Payments sub-tab
+    log('Recovery R5: Clicking Send Payments sub-tab')
+    pyautogui.click(BP_SEND_PAYMENTS_X, BP_SEND_PAYMENTS_Y)
+    time.sleep(1.5)
+
+    # R6 — Select all incomplete payment checkboxes (reuse same region as main flow)
+    log('Recovery R6: Looking for incomplete payment checkboxes')
+    checkbox_region = (1600, 200, 300, 700)
+    checkboxes = list(pyautogui.locateAllOnScreen(
+        img('checkbox.png'), confidence=CONFIDENCE, region=checkbox_region
+    ))
+    if not checkboxes:
+        log('Recovery R6: checkbox.png not found — trying incomplete_checkbox.png')
+        try:
+            checkboxes = list(pyautogui.locateAllOnScreen(
+                img('incomplete_checkbox.png'), confidence=CONFIDENCE, region=checkbox_region
+            ))
+        except Exception:
+            checkboxes = []
+    if not checkboxes:
+        log('Recovery R6: ERROR — no incomplete payment checkboxes found')
+        return False
+
+    log('Recovery R6: Found ' + str(len(checkboxes)) + ' checkbox(es)')
+    first = pyautogui.center(checkboxes[0])
+    pyautogui.click(first)
+    time.sleep(0.5)
+    for box in checkboxes[1:]:
+        center = pyautogui.center(box)
+        pyautogui.keyDown('shift')
+        pyautogui.click(center)
+        pyautogui.keyUp('shift')
+        time.sleep(0.2)
+    time.sleep(0.5)
+
+    # R7 — Edit
+    log('Recovery R7: Clicking Edit at (' + str(BP_EDIT_X) + ', ' + str(BP_EDIT_Y) + ')')
+    pyautogui.click(BP_EDIT_X, BP_EDIT_Y)
+    time.sleep(1.5)
+
+    # R8 — Save
+    log('Recovery R8: Clicking Save at (' + str(BP_SAVE_X) + ', ' + str(BP_SAVE_Y) + ')')
+    pyautogui.click(BP_SAVE_X, BP_SAVE_Y)
+    time.sleep(1.5)
+
+    # R9 — Override (image recognition with env coord fallback)
+    log('Recovery R9: Clicking Override')
+    if not find_and_click('override_btn.png', 'Override button', timeout=10):
+        if BP_OVERRIDE_X and BP_OVERRIDE_Y:
+            pyautogui.click(BP_OVERRIDE_X, BP_OVERRIDE_Y)
+            log('Recovery R9: Clicked Override at (' + str(BP_OVERRIDE_X) + ', ' + str(BP_OVERRIDE_Y) + ')')
+        else:
+            log('Recovery R9: WARNING — override_btn.png not found and BP_OVERRIDE_X/Y not set in .env. Set BP_OVERRIDE_X/Y to the Override button coordinates.')
+            return False
+    time.sleep(1)
+
+    log('Recovery: Incomplete payment override flow complete')
+    return True
 
 
 def wait_for_import(max_wait=30):
@@ -292,9 +432,29 @@ def main():
     log('Waiting for confirmation (3s)...')
     time.sleep(3)
 
+    # Check whether BP is showing the 'incomplete payment / requires override' error
+    # before looking for the normal success dialog.
+    if is_incomplete_error():
+        log('Step 9: Incomplete payment error detected — entering recovery flow')
+        if handle_incomplete_payment_recovery():
+            log('Recovery succeeded — payment overridden and submitted')
+            print('IMPORT_COMPLETE', flush=True)
+            sys.exit(0)
+        else:
+            print('IMPORT_FAILED: Incomplete payment recovery failed — manual intervention needed', flush=True)
+            sys.exit(1)
+
     # Step 9 - Click submission confirmation OK (image recognition - modal dialog)
     log('Step 9: Clicking submission confirmation OK')
-    if not find_and_click('submit_ok.png', 'submission confirmation OK'):
+    if not find_and_click('submit_ok.png', 'submission confirmation OK', timeout=15):
+        # submit_ok not found — BP may have shown the incomplete error dialog instead
+        log('Step 9: submit_ok.png not found — checking for incomplete payment error')
+        if is_incomplete_error() or True:  # attempt recovery either way
+            log('Step 9: Entering incomplete payment recovery flow')
+            if handle_incomplete_payment_recovery():
+                log('Recovery succeeded — payment overridden and submitted')
+                print('IMPORT_COMPLETE', flush=True)
+                sys.exit(0)
         print('IMPORT_FAILED: Submission confirmation OK button not found', flush=True)
         sys.exit(1)
 
