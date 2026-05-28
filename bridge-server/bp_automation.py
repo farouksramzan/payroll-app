@@ -34,18 +34,16 @@ BP_OK1_Y                 = int(os.environ.get('BP_OK1_Y',                 '639')
 BP_OK2_X                 = int(os.environ.get('BP_OK2_X',                 '798'))
 BP_OK2_Y                 = int(os.environ.get('BP_OK2_Y',                 '629'))
 # ── Recovery flow coordinates (set in .env) ───────────────────────────────────
-BP_ENROLLMENTS_X         = int(os.environ.get('BP_ENROLLMENTS_X',         '0'))
-BP_ENROLLMENTS_Y         = int(os.environ.get('BP_ENROLLMENTS_Y',         '0'))
-BP_ENROLLMENT_INQUIRY_X  = int(os.environ.get('BP_ENROLLMENT_INQUIRY_X',  '0'))
-BP_ENROLLMENT_INQUIRY_Y  = int(os.environ.get('BP_ENROLLMENT_INQUIRY_Y',  '0'))
-BP_SYNC_X                = int(os.environ.get('BP_SYNC_X',                '0'))
-BP_SYNC_Y                = int(os.environ.get('BP_SYNC_Y',                '0'))
+BP_ENROLLMENTS_X         = int(os.environ.get('BP_ENROLLMENTS_X',         '316'))
+BP_ENROLLMENTS_Y         = int(os.environ.get('BP_ENROLLMENTS_Y',         '100'))
+BP_ENROLLMENT_INQUIRY_X  = int(os.environ.get('BP_ENROLLMENT_INQUIRY_X',  '165'))
+BP_ENROLLMENT_INQUIRY_Y  = int(os.environ.get('BP_ENROLLMENT_INQUIRY_Y',  '129'))
+BP_SYNC_X                = int(os.environ.get('BP_SYNC_X',                '1848'))
+BP_SYNC_Y                = int(os.environ.get('BP_SYNC_Y',                '964'))
 BP_EDIT_X                = int(os.environ.get('BP_EDIT_X',                '214'))
 BP_EDIT_Y                = int(os.environ.get('BP_EDIT_Y',                '963'))
 BP_SAVE_X                = int(os.environ.get('BP_SAVE_X',                '1149'))
 BP_SAVE_Y                = int(os.environ.get('BP_SAVE_Y',                '753'))
-BP_OVERRIDE_X            = int(os.environ.get('BP_OVERRIDE_X',            '0'))
-BP_OVERRIDE_Y            = int(os.environ.get('BP_OVERRIDE_Y',            '0'))
 
 
 def log(msg):
@@ -136,6 +134,31 @@ def paste_text(text):
         pyautogui.hotkey('ctrl', 'a')
         time.sleep(0.1)
         pyautogui.typewrite(text, interval=0.15)
+
+
+def find_word_on_screen(word):
+    """
+    Use tesseract OCR to locate a word on screen.
+    Returns (cx, cy) center of the first match, or None if not found.
+    """
+    try:
+        import pytesseract
+        from PIL import Image
+        tesseract_path = os.environ.get('TESSERACT_PATH', '')
+        if tesseract_path:
+            pytesseract.pytesseract.tesseract_cmd = tesseract_path
+        screenshot = pyautogui.screenshot()
+        data = pytesseract.image_to_data(screenshot, output_type=pytesseract.Output.DICT)
+        word_lower = word.lower()
+        for i, text in enumerate(data['text']):
+            if word_lower in text.lower() and int(data['conf'][i]) > 40:
+                x = data['left'][i] + data['width'][i] // 2
+                y = data['top'][i] + data['height'][i] // 2
+                log('OCR found "' + word + '" at (' + str(x) + ', ' + str(y) + ')')
+                return (x, y)
+    except Exception as e:
+        log('OCR find_word_on_screen failed: ' + str(e))
+    return None
 
 
 def is_incomplete_error():
@@ -250,15 +273,17 @@ def handle_incomplete_payment_recovery():
     pyautogui.click(BP_SAVE_X, BP_SAVE_Y)
     time.sleep(1.5)
 
-    # R9 — Override (image recognition with env coord fallback)
-    log('Recovery R9: Clicking Override')
-    if not find_and_click('override_btn.png', 'Override button', timeout=10):
-        if BP_OVERRIDE_X and BP_OVERRIDE_Y:
-            pyautogui.click(BP_OVERRIDE_X, BP_OVERRIDE_Y)
-            log('Recovery R9: Clicked Override at (' + str(BP_OVERRIDE_X) + ', ' + str(BP_OVERRIDE_Y) + ')')
-        else:
-            log('Recovery R9: WARNING — override_btn.png not found and BP_OVERRIDE_X/Y not set in .env. Set BP_OVERRIDE_X/Y to the Override button coordinates.')
-            return False
+    # R9 — Override (OCR word search → image recognition → failure)
+    log('Recovery R9: Looking for Override button via OCR')
+    override_pos = find_word_on_screen('Override')
+    if override_pos:
+        pyautogui.click(override_pos[0], override_pos[1])
+        log('Recovery R9: Clicked Override via OCR at ' + str(override_pos))
+    elif find_and_click('override_btn.png', 'Override button', timeout=8):
+        log('Recovery R9: Clicked Override via image recognition')
+    else:
+        log('Recovery R9: ERROR — Override button not found by OCR or image recognition')
+        return False
     time.sleep(1)
 
     log('Recovery: Incomplete payment override flow complete')
