@@ -101,6 +101,28 @@ getDb();
   }
 })();
 
+// ── Payroll frequency corrections ────────────────────────────────────────────
+(function seedPayrollFrequencies() {
+  try {
+    const db = getDb();
+    const FREQUENCIES = [
+      { ein: '562538997', frequency: 'monthly' }, // Latchme Corp — pays on the 24th each month
+    ];
+    const allClients = db.prepare('SELECT id, ein FROM clients').all();
+    let updated = 0;
+    for (const { ein, frequency } of FREQUENCIES) {
+      const digits = ein.replace(/\D/g, '');
+      const client = allClients.find(c => c.ein.replace(/\D/g, '') === digits);
+      if (!client) continue;
+      db.prepare('UPDATE clients SET payroll_frequency = ? WHERE id = ?').run(frequency, client.id);
+      updated++;
+    }
+    if (updated > 0) console.log(`[Startup] Updated payroll frequency for ${updated} client(s)`);
+  } catch (err) {
+    console.error('[Startup] Payroll frequency seed failed:', err.message);
+  }
+})();
+
 // ── Stale job cleanup ─────────────────────────────────────────────────────────
 // Paystubs stuck in 'processing' for over 2 hours likely belong to a bridge
 // session that crashed without sending a result. Mark them failed so the UI
