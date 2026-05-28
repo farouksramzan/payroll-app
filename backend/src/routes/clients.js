@@ -67,7 +67,7 @@ router.get('/', (req, res) => {
         FROM paystubs
         WHERE client_id = ?
           AND COALESCE(pay_date, pay_period_end) >= ?
-          AND check_status NOT IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
+          AND (check_status IS NULL OR check_status NOT IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared'))
       `).get(c.id, today);
       nextPayDate = row?.next_pay_date ? row.next_pay_date.slice(0, 10) : null;
     } catch (e) { /* non-critical */ }
