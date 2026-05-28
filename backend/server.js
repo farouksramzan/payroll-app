@@ -106,15 +106,16 @@ getDb();
   try {
     const db = getDb();
     const FREQUENCIES = [
-      { ein: '562538997', frequency: 'monthly' }, // Latchme Corp — pays on the 24th each month
+      { ein: '562538997', frequency: 'monthly', next_payroll_date: '2026-06-24' }, // Latchme Corp
     ];
     const allClients = db.prepare('SELECT id, ein FROM clients').all();
     let updated = 0;
-    for (const { ein, frequency } of FREQUENCIES) {
+    for (const { ein, frequency, next_payroll_date } of FREQUENCIES) {
       const digits = ein.replace(/\D/g, '');
       const client = allClients.find(c => c.ein.replace(/\D/g, '') === digits);
       if (!client) continue;
-      db.prepare('UPDATE clients SET payroll_frequency = ? WHERE id = ?').run(frequency, client.id);
+      db.prepare('UPDATE clients SET payroll_frequency = ?, next_payroll_date = ? WHERE id = ?')
+        .run(frequency, next_payroll_date, client.id);
       updated++;
     }
     if (updated > 0) console.log(`[Startup] Updated payroll frequency for ${updated} client(s)`);
