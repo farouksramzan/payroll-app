@@ -162,14 +162,15 @@ def find_word_on_screen(word):
 
 
 def is_incomplete_error():
-    """Return True if BP is showing the 'incomplete payment' error dialog."""
-    try:
-        import pygetwindow as gw
-        titles = [w.title for w in gw.getAllWindows()]
-        keywords = ('incomplete', 'unsuccessful', 'override', 'error', 'warning')
-        return any(any(k in t.lower() for k in keywords) for t in titles if t.strip())
-    except Exception:
-        return False
+    """
+    Return True if BP is showing the incomplete payment / override required error.
+    Uses OCR to read the actual screen text — the error appears inside the BP
+    window, not as a separate titled dialog, so window-title checks don't work.
+    """
+    for phrase in ('Incomplete', 'unsuccessful', 'requires an override'):
+        if find_word_on_screen(phrase):
+            return True
+    return False
 
 
 def handle_incomplete_payment_recovery():
@@ -454,13 +455,14 @@ def main():
         print('IMPORT_FAILED: PIN dialog Submit button not found', flush=True)
         sys.exit(1)
 
-    log('Waiting for confirmation (3s)...')
-    time.sleep(3)
+    log('Waiting for confirmation (5s)...')
+    time.sleep(5)
 
-    # Check whether BP is showing the 'incomplete payment / requires override' error
-    # before looking for the normal success dialog.
+    # Check for the incomplete payment error via OCR before looking for the
+    # success dialog. The error appears inside the BP window (not a separate
+    # titled dialog) so only OCR can reliably detect it.
     if is_incomplete_error():
-        log('Step 9: Incomplete payment error detected — entering recovery flow')
+        log('Step 9: Incomplete/override error detected via OCR — entering recovery flow')
         if handle_incomplete_payment_recovery():
             log('Recovery succeeded — payment overridden and submitted')
             print('IMPORT_COMPLETE', flush=True)
@@ -472,16 +474,28 @@ def main():
     # Step 9 - Click submission confirmation OK (image recognition - modal dialog)
     log('Step 9: Clicking submission confirmation OK')
     if not find_and_click('submit_ok.png', 'submission confirmation OK', timeout=15):
-        # submit_ok not found — BP may have shown the incomplete error dialog instead
-        log('Step 9: submit_ok.png not found — checking for incomplete payment error')
-        if is_incomplete_error() or True:  # attempt recovery either way
-            log('Step 9: Entering incomplete payment recovery flow')
-            if handle_incomplete_payment_recovery():
-                log('Recovery succeeded — payment overridden and submitted')
-                print('IMPORT_COMPLETE', flush=True)
-                sys.exit(0)
-        print('IMPORT_FAILED: Submission confirmation OK button not found', flush=True)
+        # submit_ok not found — run one more OCR check then attempt recovery anyway
+        log('Step 9: submit_ok.png not found — running OCR check')
+        log('Step 9: Entering incomplete payment recovery flow')
+        if handle_incomplete_payment_recovery():
+            log('Recovery succeeded — payment overridden and submitted')
+            print('IMPORT_COMPLETE', flush=True)
+            sys.exit(0)
+        print('IMPORT_FAILED: Submission confirmation OK button not found and recovery failed', flush=True)
         sys.exit(1)
+
+    # submit_ok was found and clicked — but the error dialog also has an OK button,
+    # so wait briefly and check with OCR whether the error is still on screen.
+    time.sleep(2)
+    if is_incomplete_error():
+        log('Post-Step-9: Incomplete error still visible after OK click — entering recovery flow')
+        if handle_incomplete_payment_recovery():
+            log('Recovery succeeded — payment overridden and submitted')
+            print('IMPORT_COMPLETE', flush=True)
+            sys.exit(0)
+        else:
+            print('IMPORT_FAILED: Incomplete payment recovery failed after OK click', flush=True)
+            sys.exit(1)
 
     log('Import completed successfully')
     print('IMPORT_COMPLETE', flush=True)
