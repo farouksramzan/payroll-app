@@ -52,7 +52,8 @@ getDb();
 
 // ── Pre-enrolled client PINs ──────────────────────────────────────────────────
 // These clients were enrolled in EFTPS before the app existed.
-// Mark them enrolled and seed their PINs if not already set.
+// Always overwrite their PINs with the correct values — a previous resolvePin()
+// call may have stored a random wrong PIN before this list was added.
 (function seedPreEnrolledClients() {
   try {
     const { encrypt } = require('./src/services/cryptoService');
@@ -84,23 +85,17 @@ getDb();
       { ein: '412536879', pin: '2691' },
       { ein: '412510760', pin: '2691' },
     ];
-    const allClients = db.prepare('SELECT id, ein, eftps_enrolled, batch_provider_pin_encrypted FROM clients').all();
+    const allClients = db.prepare('SELECT id, ein FROM clients').all();
     let updated = 0;
     for (const { ein, pin } of PRE_ENROLLED) {
-      // Match by digits only so XX-XXXXXXX and XXXXXXXXX both work
       const digits = ein.replace(/\D/g, '');
       const client = allClients.find(c => c.ein.replace(/\D/g, '') === digits);
       if (!client) continue;
-      // Always set enrolled=1; only set PIN if not already stored
-      const pinVal = client.batch_provider_pin_encrypted ? undefined : encrypt(pin);
-      if (pinVal !== undefined) {
-        db.prepare('UPDATE clients SET eftps_enrolled = 1, batch_provider_pin_encrypted = ? WHERE id = ?').run(pinVal, client.id);
-      } else {
-        db.prepare('UPDATE clients SET eftps_enrolled = 1 WHERE id = ?').run(client.id);
-      }
+      db.prepare('UPDATE clients SET eftps_enrolled = 1, batch_provider_pin_encrypted = ? WHERE id = ?')
+        .run(encrypt(pin), client.id);
       updated++;
     }
-    if (updated > 0) console.log(`[Startup] Marked ${updated} pre-enrolled client(s) as eftps_enrolled=1 with PIN`);
+    if (updated > 0) console.log(`[Startup] Updated ${updated} pre-enrolled client(s) with correct EFTPS PIN`);
   } catch (err) {
     console.error('[Startup] Pre-enrolled client seed failed:', err.message);
   }
