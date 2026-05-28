@@ -201,10 +201,35 @@ def handle_incomplete_payment_recovery():
     pyautogui.click(BP_ENROLLMENT_INQUIRY_X, BP_ENROLLMENT_INQUIRY_Y)
     time.sleep(1)
 
-    # R3 — Sync
+    # R3 — Sync (then enter Master PIN + Password + Submit + OK, same as bp_enrollment_check)
     log('Recovery R3: Clicking Sync at (' + str(BP_SYNC_X) + ', ' + str(BP_SYNC_Y) + ')')
     pyautogui.click(BP_SYNC_X, BP_SYNC_Y)
-    log('Recovery R3: Waiting for Sync to complete (5s)...')
+    time.sleep(2)
+
+    master_pin      = os.environ.get('BATCH_PROVIDER_MASTER_PIN', '')
+    master_password = os.environ.get('BATCH_PROVIDER_MASTER_PASSWORD', '')
+
+    log('Recovery R3a: Clicking PIN field at (934, 472)')
+    pyautogui.click(934, 472)
+    pyautogui.hotkey('ctrl', 'a')
+    time.sleep(0.2)
+    pyautogui.typewrite(master_pin, interval=0.15)
+    time.sleep(0.3)
+
+    log('Recovery R3b: Clicking Password field at (972, 494)')
+    pyautogui.click(972, 494)
+    pyautogui.hotkey('ctrl', 'a')
+    time.sleep(0.2)
+    pyautogui.typewrite(master_password, interval=0.15)
+    time.sleep(0.3)
+
+    log('Recovery R3c: Clicking Submit at (1120, 700)')
+    pyautogui.click(1120, 700)
+    time.sleep(3)
+
+    log('Recovery R3d: Clicking OK at (821, 683)')
+    pyautogui.click(821, 683)
+    log('Recovery R3: Sync complete')
     time.sleep(5)
 
     # R4 — Back to Payments tab (image recognition — same image used in Step 0 which works)
