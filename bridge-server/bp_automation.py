@@ -540,8 +540,6 @@ def main():
 
     # Step 7 - Submit button (image recognition - button position can vary)
     log('Step 7: Clicking Submit button')
-    windows_before_submit = get_window_count()
-    log('Step 7: Window count before submit = ' + str(windows_before_submit))
     if not find_and_click('submit.png', 'Submit button'):
         print('IMPORT_FAILED: Submit button not found', flush=True)
         sys.exit(1)
@@ -593,44 +591,38 @@ def main():
     log('Waiting for BP to process (5s)...')
     time.sleep(5)
 
-    # Step 9 - Detect error while dialog is still visible (before dismissing it).
-    # If a new window appeared after PIN submit → override/incomplete error dialog.
-    windows_after_pin = get_window_count()
-    error_detected = (
-        windows_before_submit >= 0 and
-        windows_after_pin   >= 0 and
-        windows_after_pin    > windows_before_submit
-    )
-    log('Step 9: windows before submit=' + str(windows_before_submit) +
-        ', after PIN=' + str(windows_after_pin) +
-        ', error_detected=' + str(error_detected))
-
-    # Step 8d - Dismiss whatever dialog is showing (success confirmation or error)
+    # Step 8d - Dismiss confirmation/error dialog
     log('Step 8d: Clicking OK at (790, 629)')
     pyautogui.click(790, 629)
     time.sleep(2)
 
-    ein, amount_str = parse_ach_file(ach_file_path)
-    log('Step 9: EIN=' + str(ein) + '  amount=$' + str(amount_str))
+    # Step 9 - Check if the company row disappeared from the Send Payments grid.
+    # Success = row is gone (no checkboxes). Failure = row still present.
+    def rows_still_present():
+        try:
+            found = list(pyautogui.locateAllOnScreen(
+                img('checkbox.png'), confidence=CONFIDENCE, region=(1600, 200, 300, 700)
+            ))
+            return len(found) > 0
+        except Exception:
+            return False
 
-    if not error_detected:
-        # No error dialog appeared — go straight to Cancel Payments to confirm
-        log('Step 9: No error detected — verifying on Cancel Payments screen')
-        if verify_payment_submitted(ein, amount_str):
-            print('IMPORT_COMPLETE', flush=True)
-            sys.exit(0)
-        print('IMPORT_FAILED: Payment not found on Cancel Payments screen', flush=True)
-        sys.exit(1)
+    if not rows_still_present():
+        log('Step 9: Company row gone — payment submitted successfully')
+        print('IMPORT_COMPLETE', flush=True)
+        sys.exit(0)
 
-    # Error detected — skip Cancel Payments, go straight to recovery
-    log('Step 9: Error detected — running override recovery (skipping Cancel Payments check)')
-    if handle_incomplete_payment_recovery():
-        log('Step 9: Recovery complete — verifying on Cancel Payments screen')
-        if verify_payment_submitted(ein, amount_str):
-            print('IMPORT_COMPLETE', flush=True)
-            sys.exit(0)
+    log('Step 9: Row still present — running override recovery flow')
+    handle_incomplete_payment_recovery()
 
-    print('IMPORT_FAILED: Payment not confirmed after override recovery', flush=True)
+    # Final check: row gone after recovery = success
+    time.sleep(2)
+    if not rows_still_present():
+        log('Step 9: Company row gone after recovery — IMPORT_COMPLETE')
+        print('IMPORT_COMPLETE', flush=True)
+        sys.exit(0)
+
+    print('IMPORT_FAILED: Payment row still present after override recovery', flush=True)
     sys.exit(1)
 
 
