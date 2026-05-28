@@ -277,17 +277,14 @@ def handle_incomplete_payment_recovery():
     pyautogui.click(BP_SAVE_X, BP_SAVE_Y)
     time.sleep(1.5)
 
-    # R9 — Override (OCR word search → image recognition → failure)
-    log('Recovery R9: Looking for Override button via OCR')
-    override_pos = find_word_on_screen('Override')
-    if override_pos:
-        pyautogui.click(override_pos[0], override_pos[1])
-        log('Recovery R9: Clicked Override via OCR at ' + str(override_pos))
-    elif find_and_click('override_btn.png', 'Override button', timeout=8):
-        log('Recovery R9: Clicked Override via image recognition')
-    else:
-        log('Recovery R9: ERROR — Override button not found by OCR or image recognition')
-        return False
+    # R9 — Override
+    log('Recovery R9: Clicking Override at (720, 521)')
+    pyautogui.click(720, 521)
+    time.sleep(1)
+
+    # R10 — OK after Override
+    log('Recovery R10: Clicking OK at (1169, 581)')
+    pyautogui.click(1169, 581)
     time.sleep(1)
 
     log('Recovery: Incomplete payment override flow complete')
