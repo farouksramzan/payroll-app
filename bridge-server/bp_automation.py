@@ -529,21 +529,13 @@ def main():
         print('IMPORT_FAILED: PIN dialog Submit button not found', flush=True)
         sys.exit(1)
 
-    # Step 8d - Click OK to confirm submission (always required after PIN submit)
-    log('Step 8d: Waiting 3s then clicking OK at (790, 629)')
-    time.sleep(3)
-    pyautogui.click(790, 629)
-    log('Step 8d complete: OK clicked')
-
+    # Step 9 - Wait for BP to process, then check window count BEFORE clicking anything.
+    # If a new dialog appeared it's the incomplete-payment error; if not, it's success.
     log('Waiting for BP to process (5s)...')
     time.sleep(5)
 
-    # Step 9 - Detect success vs error using window count (no image search = no hang).
-    # If BP opened a new dialog after PIN submit, it's the incomplete-payment error.
-    # If no new dialog appeared, the payment succeeded — press Enter to dismiss
-    # any success confirmation and exit.
     windows_after_submit = get_window_count()
-    log('Step 9: Window count after submit = ' + str(windows_after_submit))
+    log('Step 9: Window count before submit = ' + str(windows_before_submit) + ', after = ' + str(windows_after_submit))
 
     error_detected = (
         windows_before_submit >= 0 and
@@ -551,8 +543,13 @@ def main():
         windows_after_submit > windows_before_submit
     )
 
+    # Step 8d - Click OK/Cancel at (790, 629) to dismiss whatever dialog is showing
+    log('Step 8d: Clicking OK at (790, 629)')
+    pyautogui.click(790, 629)
+    time.sleep(1)
+
     if not error_detected:
-        log('Step 9: No new dialog — payment submitted successfully')
+        log('Step 9: No new dialog detected — payment submitted successfully')
         print('IMPORT_COMPLETE', flush=True)
         sys.exit(0)
 
