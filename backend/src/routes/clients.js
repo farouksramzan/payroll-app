@@ -58,12 +58,17 @@ router.get('/', (req, res) => {
       .get(c.id);
     const nextDue = calcNextDueDate(c.deposit_schedule, lastSub?.pay_period_end);
 
-    // Next pay date: earliest upcoming pay_period_end across all paystubs for this client
+    // Next pay date: earliest pay_date (falling back to pay_period_end) across
+    // unpaid paystubs only — excludes checks already printed/deposited.
     let nextPayDate = null;
     try {
-      const row = db
-        .prepare(`SELECT MIN(pay_period_end) as next_pay_date FROM paystubs WHERE client_id = ? AND pay_period_end >= ?`)
-        .get(c.id, today);
+      const row = db.prepare(`
+        SELECT MIN(COALESCE(pay_date, pay_period_end)) as next_pay_date
+        FROM paystubs
+        WHERE client_id = ?
+          AND COALESCE(pay_date, pay_period_end) >= ?
+          AND check_status NOT IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
+      `).get(c.id, today);
       nextPayDate = row?.next_pay_date ? row.next_pay_date.slice(0, 10) : null;
     } catch (e) { /* non-critical */ }
 
