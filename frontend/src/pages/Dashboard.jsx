@@ -69,14 +69,14 @@ function fmt(n) {
   return '$' + Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-function payrollStatus(nextPayrollDate) {
-  if (!nextPayrollDate) return null;
+function payrollStatus(nextPayDate) {
+  if (!nextPayDate) return null;
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const due = new Date(nextPayrollDate + 'T00:00:00');
+  const due = new Date(nextPayDate + 'T00:00:00');
   const days = Math.ceil((due - today) / 86400000);
-  if (days < 0)  return { label: 'Payroll overdue',    cls: 'badge-error' };
-  if (days === 0) return { label: 'Payroll due today',  cls: 'badge-warning' };
-  if (days <= 5)  return { label: `Payroll in ${days}d`, cls: 'badge-warning' };
+  if (days < 0)  return { label: 'Pay date overdue',    cls: 'badge-error' };
+  if (days === 0) return { label: 'Pay date today',      cls: 'badge-warning' };
+  if (days <= 5)  return { label: `Pay date in ${days}d`, cls: 'badge-warning' };
   return null;
 }
 
@@ -626,7 +626,7 @@ export default function Dashboard() {
         /* ── Tile view ── */
         <div className="company-grid" style={{ alignItems: 'start' }}>
           {clients.map(client => {
-            const ps = payrollStatus(client.nextPayrollDate);
+            const ps = payrollStatus(client.nextPayDate);
             return (
               <div key={client.id} className="company-tile"
                 onClick={() => navigate(`/clients/${client.id}`)}
@@ -658,8 +658,8 @@ export default function Dashboard() {
                 </div>
                 <div className="tile-meta">
                   <div className="tile-meta-row">
-                    <span className="tile-meta-label">Next payroll</span>
-                    <span className="tile-meta-value">{client.nextPayrollDate ? fmtDate(client.nextPayrollDate) : '—'}</span>
+                    <span className="tile-meta-label">Next Pay Date</span>
+                    <span className="tile-meta-value">{client.nextPayDate ? fmtDate(client.nextPayDate) : '—'}</span>
                   </div>
                   <div className="tile-meta-row">
                     <span className="tile-meta-label">Deposit schedule</span>
@@ -682,14 +682,14 @@ export default function Dashboard() {
                   onClick={e => e.stopPropagation()}
                   style={{ accentColor: 'var(--accent)', width: 14, height: 14, cursor: 'pointer' }} />
               </div>
-              {['Company', 'Next Payroll', 'Schedule', 'State', 'Status', ''].map((h, i) => (
+              {['Company', 'Next Pay Date', 'Schedule', 'State', 'Status', ''].map((h, i) => (
                 <div key={i} style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</div>
               ))}
             </div>
 
             {/* Rows */}
             {clients.map((client, i) => {
-              const ps = payrollStatus(client.nextPayrollDate);
+              const ps = payrollStatus(client.nextPayDate);
               const isSel = selected.has(client.id);
               return (
                 <div key={client.id}
@@ -719,7 +719,7 @@ export default function Dashboard() {
                   </div>
 
                   <div style={{ fontSize: 13, color: ps ? '#d97706' : 'var(--text-secondary)', fontWeight: ps ? 600 : 400 }}>
-                    {client.nextPayrollDate ? fmtDate(client.nextPayrollDate) : '—'}
+                    {client.nextPayDate ? fmtDate(client.nextPayDate) : '—'}
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{client.depositSchedule || '—'}</div>
                   <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{client.state || 'TX'}</div>
