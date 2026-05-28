@@ -191,41 +191,23 @@ def handle_incomplete_payment_recovery():
     pyautogui.click(BP_CANCEL_X, BP_CANCEL_Y)
     time.sleep(1.5)
 
-    # R1 — Enrollments tab (image recognition, fall back to env coords)
-    log('Recovery R1: Navigating to Enrollments tab')
-    if not find_and_click('enrollments_tab.png', 'Enrollments tab', timeout=8):
-        if BP_ENROLLMENTS_X and BP_ENROLLMENTS_Y:
-            pyautogui.click(BP_ENROLLMENTS_X, BP_ENROLLMENTS_Y)
-            log('Recovery R1: Clicked Enrollments at (' + str(BP_ENROLLMENTS_X) + ', ' + str(BP_ENROLLMENTS_Y) + ')')
-        else:
-            log('Recovery R1: ERROR — enrollments_tab.png not found and BP_ENROLLMENTS_X/Y not set in .env')
-            return False
+    # R1 — Enrollments tab (coordinate click — no image search to avoid hangs)
+    log('Recovery R1: Clicking Enrollments tab at (' + str(BP_ENROLLMENTS_X) + ', ' + str(BP_ENROLLMENTS_Y) + ')')
+    pyautogui.click(BP_ENROLLMENTS_X, BP_ENROLLMENTS_Y)
     time.sleep(1)
 
     # R2 — Enrollment Inquiry
-    log('Recovery R2: Clicking Enrollment Inquiry')
-    if not find_and_click('enrollment_inquiry.png', 'Enrollment Inquiry', timeout=8):
-        if BP_ENROLLMENT_INQUIRY_X and BP_ENROLLMENT_INQUIRY_Y:
-            pyautogui.click(BP_ENROLLMENT_INQUIRY_X, BP_ENROLLMENT_INQUIRY_Y)
-            log('Recovery R2: Clicked Enrollment Inquiry at (' + str(BP_ENROLLMENT_INQUIRY_X) + ', ' + str(BP_ENROLLMENT_INQUIRY_Y) + ')')
-        else:
-            log('Recovery R2: ERROR — enrollment_inquiry.png not found and BP_ENROLLMENT_INQUIRY_X/Y not set in .env')
-            return False
+    log('Recovery R2: Clicking Enrollment Inquiry at (' + str(BP_ENROLLMENT_INQUIRY_X) + ', ' + str(BP_ENROLLMENT_INQUIRY_Y) + ')')
+    pyautogui.click(BP_ENROLLMENT_INQUIRY_X, BP_ENROLLMENT_INQUIRY_Y)
     time.sleep(1)
 
-    # R3 — Sync (may take several seconds to complete)
-    log('Recovery R3: Clicking Sync')
-    if not find_and_click('sync_btn.png', 'Sync button', timeout=8):
-        if BP_SYNC_X and BP_SYNC_Y:
-            pyautogui.click(BP_SYNC_X, BP_SYNC_Y)
-            log('Recovery R3: Clicked Sync at (' + str(BP_SYNC_X) + ', ' + str(BP_SYNC_Y) + ')')
-        else:
-            log('Recovery R3: ERROR — sync_btn.png not found and BP_SYNC_X/Y not set in .env')
-            return False
+    # R3 — Sync
+    log('Recovery R3: Clicking Sync at (' + str(BP_SYNC_X) + ', ' + str(BP_SYNC_Y) + ')')
+    pyautogui.click(BP_SYNC_X, BP_SYNC_Y)
     log('Recovery R3: Waiting for Sync to complete (5s)...')
     time.sleep(5)
 
-    # R4 — Back to Payments tab
+    # R4 — Back to Payments tab (image recognition — same image used in Step 0 which works)
     log('Recovery R4: Clicking Payments tab')
     if not find_and_click('payments_tab.png', 'Payments tab', timeout=15):
         log('Recovery R4: ERROR — Payments tab not found after Sync')
@@ -454,17 +436,12 @@ def main():
     log('Waiting for confirmation (3s)...')
     time.sleep(3)
 
-    # Step 9 - Click submission confirmation OK if it appears.
-    # We click it if found but do NOT treat it as proof of success — the
-    # incomplete-payment error dialog has the same OK button layout.
-    log('Step 9: Clicking submission confirmation OK (if present)')
-    find_and_click('submit_ok.png', 'submission confirmation OK', timeout=5)
-    time.sleep(1)
-
-    # Always run the recovery/override check after submission. If the payment
-    # succeeded cleanly, R6 will find no incomplete checkboxes and exit with
-    # True immediately. If it failed, the full override flow runs.
-    log('Step 9: Running override check (runs after every submission)')
+    # Step 9 - Run override/recovery check unconditionally.
+    # Whether the payment succeeded or BP showed the incomplete-payment error,
+    # recovery handles both: Cancel dismisses any dialog, then if no incomplete
+    # checkboxes are found in R6 it exits cleanly as success.
+    # submit_ok image search removed — locateOnScreen can hang on Windows.
+    log('Step 9: Running override/recovery check')
     if handle_incomplete_payment_recovery():
         log('Import completed (payment succeeded or override applied)')
         print('IMPORT_COMPLETE', flush=True)
