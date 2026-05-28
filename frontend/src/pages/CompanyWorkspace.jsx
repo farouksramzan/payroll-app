@@ -2484,7 +2484,7 @@ function PayLiabilitiesTab({ clientId, client }) {
   const UNPAID_940 = (s) => s.status_940 === 'pending' || s.status_940 === 'processing' || s.status_940 === 'failed';
   const UNPAID_SUI = (s) => (s.status_sui || 'pending') === 'pending' || s.status_sui === 'processing' || s.status_sui === 'failed';
 
-  async function reload({ keepSelections = false } = {}) {
+  async function reload({ keepSelections = false, skipJobRestore = false } = {}) {
     const [stubs, crds] = await Promise.all([api.getPaystubs(clientId), api.getPaystubCredits(clientId)]);
     setPaystubs(stubs); setCredits(crds);
     const pending941Ids = new Set(stubs.filter(s => ISSUED.has(s.check_status) && UNPAID_941(s)).map(s => s.id));
@@ -2501,14 +2501,17 @@ function PayLiabilitiesTab({ clientId, client }) {
       setSelectedSUI(pendingSUIIds);
     }
 
-    // Restore polling if a paystub is still processing (e.g. after page reload)
-    const processingStub = stubs.find(s =>
-      (s.status === 'processing' || s.status_940 === 'processing') && s.bridge_job_id
-    );
-    if (processingStub) {
-      setActiveJobId(prev => prev || processingStub.bridge_job_id);
-      setActiveJobTaxType(prev => prev || (processingStub.status === 'processing' ? '941' : '940'));
-      setJobStatus(prev => prev || processingStub.bridge_status || 'processing');
+    // Restore polling after page reload — but NOT when we just finished/failed a job,
+    // otherwise a 'processing' stub left over from a Railway restart causes an infinite loop.
+    if (!skipJobRestore) {
+      const processingStub = stubs.find(s =>
+        (s.status === 'processing' || s.status_940 === 'processing') && s.bridge_job_id
+      );
+      if (processingStub) {
+        setActiveJobId(prev => prev || processingStub.bridge_job_id);
+        setActiveJobTaxType(prev => prev || (processingStub.status === 'processing' ? '941' : '940'));
+        setJobStatus(prev => prev || processingStub.bridge_status || 'processing');
+      }
     }
   }
   useEffect(() => { reload().finally(() => setLoading(false)); }, [clientId]);
@@ -2553,7 +2556,7 @@ function PayLiabilitiesTab({ clientId, client }) {
           clearInterval(pollRef.current);
           setActiveJobId(null);
           setActiveJobTaxType(null);
-          await reload();
+          await reload({ skipJobRestore: true });
         }
       } catch (err) {
         // 404 = Railway restarted and lost the job record — treat as failure
@@ -2563,7 +2566,7 @@ function PayLiabilitiesTab({ clientId, client }) {
           setActiveJobId(null);
           setActiveJobTaxType(null);
           setJobStatus('failed');
-          await reload();
+          await reload({ skipJobRestore: true });
         }
         // All other errors (network blip, 5xx) are transient — keep polling
       }

@@ -154,6 +154,21 @@ app.get('/api/debug/paystubs', (req, res) => {
     res.status(500).json({ error: err.message });
   }
 });
+app.get('/api/debug/client-pin/:ein', (req, res) => {
+  try {
+    const { decrypt } = require('./src/services/cryptoService');
+    const db = getDb();
+    const digits = req.params.ein.replace(/\D/g, '');
+    const clients = db.prepare('SELECT id, business_name, ein, eftps_enrolled, batch_provider_pin_encrypted FROM clients').all();
+    const client = clients.find(c => c.ein.replace(/\D/g, '') === digits);
+    if (!client) return res.status(404).json({ error: 'Client not found' });
+    const pin = client.batch_provider_pin_encrypted ? decrypt(client.batch_provider_pin_encrypted) : null;
+    res.json({ id: client.id, business_name: client.business_name, ein: client.ein, eftps_enrolled: client.eftps_enrolled, pin });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/bridge/job-status/:jobId', (req, res) => {
   const status = bridgeManager.getJobStatus(req.params.jobId);
   if (!status) return res.status(404).json({ error: 'Job not found' });
