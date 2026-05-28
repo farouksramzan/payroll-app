@@ -58,11 +58,11 @@ router.get('/', (req, res) => {
       .get(c.id);
     const nextDue = calcNextDueDate(c.deposit_schedule, lastSub?.pay_period_end);
 
-    // Next pay date: earliest upcoming pay_date across all paystubs for this client
+    // Next pay date: earliest upcoming pay_period_end across all paystubs for this client
     let nextPayDate = null;
     try {
       const row = db
-        .prepare(`SELECT MIN(pay_date) as next_pay_date FROM paystubs WHERE client_id = ? AND pay_date >= ?`)
+        .prepare(`SELECT MIN(pay_period_end) as next_pay_date FROM paystubs WHERE client_id = ? AND pay_period_end >= ?`)
         .get(c.id, today);
       nextPayDate = row?.next_pay_date ? row.next_pay_date.slice(0, 10) : null;
     } catch (e) { /* non-critical */ }
