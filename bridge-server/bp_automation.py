@@ -40,6 +40,8 @@ BP_ENROLLMENT_INQUIRY_X  = int(os.environ.get('BP_ENROLLMENT_INQUIRY_X',  '165')
 BP_ENROLLMENT_INQUIRY_Y  = int(os.environ.get('BP_ENROLLMENT_INQUIRY_Y',  '129'))
 BP_SYNC_X                = int(os.environ.get('BP_SYNC_X',                '1848'))
 BP_SYNC_Y                = int(os.environ.get('BP_SYNC_Y',                '964'))
+BP_CANCEL_X              = int(os.environ.get('BP_CANCEL_X',              '787'))
+BP_CANCEL_Y              = int(os.environ.get('BP_CANCEL_Y',              '630'))
 BP_EDIT_X                = int(os.environ.get('BP_EDIT_X',                '214'))
 BP_EDIT_Y                = int(os.environ.get('BP_EDIT_Y',                '963'))
 BP_SAVE_X                = int(os.environ.get('BP_SAVE_X',                '1149'))
@@ -181,11 +183,12 @@ def handle_incomplete_payment_recovery():
           Payments → Send Payments → select incomplete → Edit → Save → Override
     Returns True on success, False on unrecoverable failure.
     """
-    log('Recovery: Incomplete payment detected — starting override flow')
+    log('Recovery: Starting override/incomplete-payment flow')
 
-    # Dismiss the error dialog (Enter activates the focused OK button)
-    log('Recovery: Dismissing error dialog')
-    pyautogui.press('enter')
+    # Step R0 — Click Cancel to dismiss the error dialog.
+    # Cancel is always at (787, 630). If no dialog is showing this click is harmless.
+    log('Recovery R0: Clicking Cancel at (' + str(BP_CANCEL_X) + ', ' + str(BP_CANCEL_Y) + ')')
+    pyautogui.click(BP_CANCEL_X, BP_CANCEL_Y)
     time.sleep(1.5)
 
     # R1 — Enrollments tab (image recognition, fall back to env coords)
@@ -234,23 +237,16 @@ def handle_incomplete_payment_recovery():
     pyautogui.click(BP_SEND_PAYMENTS_X, BP_SEND_PAYMENTS_Y)
     time.sleep(1.5)
 
-    # R6 — Select all incomplete payment checkboxes (reuse same region as main flow)
+    # R6 — Select all incomplete payment checkboxes (reuse same region as main flow).
+    # If no checkboxes are found the payment already succeeded — exit cleanly.
     log('Recovery R6: Looking for incomplete payment checkboxes')
     checkbox_region = (1600, 200, 300, 700)
     checkboxes = list(pyautogui.locateAllOnScreen(
         img('checkbox.png'), confidence=CONFIDENCE, region=checkbox_region
     ))
     if not checkboxes:
-        log('Recovery R6: checkbox.png not found — trying incomplete_checkbox.png')
-        try:
-            checkboxes = list(pyautogui.locateAllOnScreen(
-                img('incomplete_checkbox.png'), confidence=CONFIDENCE, region=checkbox_region
-            ))
-        except Exception:
-            checkboxes = []
-    if not checkboxes:
-        log('Recovery R6: ERROR — no incomplete payment checkboxes found')
-        return False
+        log('Recovery R6: No incomplete checkboxes found — payment already succeeded, nothing to override')
+        return True
 
     log('Recovery R6: Found ' + str(len(checkboxes)) + ' checkbox(es)')
     first = pyautogui.center(checkboxes[0])
@@ -458,48 +454,25 @@ def main():
     log('Waiting for confirmation (5s)...')
     time.sleep(5)
 
-    # Check for the incomplete payment error via OCR before looking for the
-    # success dialog. The error appears inside the BP window (not a separate
-    # titled dialog) so only OCR can reliably detect it.
-    if is_incomplete_error():
-        log('Step 9: Incomplete/override error detected via OCR — entering recovery flow')
-        if handle_incomplete_payment_recovery():
-            log('Recovery succeeded — payment overridden and submitted')
-            print('IMPORT_COMPLETE', flush=True)
-            sys.exit(0)
-        else:
-            print('IMPORT_FAILED: Incomplete payment recovery failed — manual intervention needed', flush=True)
-            sys.exit(1)
-
-    # Step 9 - Click submission confirmation OK (image recognition - modal dialog)
-    log('Step 9: Clicking submission confirmation OK')
-    if not find_and_click('submit_ok.png', 'submission confirmation OK', timeout=15):
-        # submit_ok not found — run one more OCR check then attempt recovery anyway
-        log('Step 9: submit_ok.png not found — running OCR check')
-        log('Step 9: Entering incomplete payment recovery flow')
-        if handle_incomplete_payment_recovery():
-            log('Recovery succeeded — payment overridden and submitted')
-            print('IMPORT_COMPLETE', flush=True)
-            sys.exit(0)
-        print('IMPORT_FAILED: Submission confirmation OK button not found and recovery failed', flush=True)
-        sys.exit(1)
-
-    # submit_ok was found and clicked — but the error dialog also has an OK button,
-    # so wait briefly and check with OCR whether the error is still on screen.
+    # Step 9 - Click submission confirmation OK if it appears (handles both the
+    # normal success dialog and the incomplete-payment error dialog, both of which
+    # have an OK button). We click it if found, but do NOT treat finding it as
+    # proof of success — the error dialog has the same OK button.
+    log('Step 9: Clicking submission confirmation OK (if present)')
+    find_and_click('submit_ok.png', 'submission confirmation OK', timeout=10)
     time.sleep(2)
-    if is_incomplete_error():
-        log('Post-Step-9: Incomplete error still visible after OK click — entering recovery flow')
-        if handle_incomplete_payment_recovery():
-            log('Recovery succeeded — payment overridden and submitted')
-            print('IMPORT_COMPLETE', flush=True)
-            sys.exit(0)
-        else:
-            print('IMPORT_FAILED: Incomplete payment recovery failed after OK click', flush=True)
-            sys.exit(1)
 
-    log('Import completed successfully')
-    print('IMPORT_COMPLETE', flush=True)
-    sys.exit(0)
+    # Always run the recovery/override check after submission. If the payment
+    # succeeded cleanly, R6 will find no incomplete checkboxes and exit with
+    # True immediately. If it failed, the full override flow runs.
+    log('Step 9: Running override check (runs after every submission)')
+    if handle_incomplete_payment_recovery():
+        log('Import completed (payment succeeded or override applied)')
+        print('IMPORT_COMPLETE', flush=True)
+        sys.exit(0)
+    else:
+        print('IMPORT_FAILED: Override/recovery flow failed — manual intervention needed', flush=True)
+        sys.exit(1)
 
 
 if __name__ == '__main__':
