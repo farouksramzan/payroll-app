@@ -715,7 +715,6 @@ export default function Dashboard() {
                       <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{client.businessName}</div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace' }}>{client.ein}</div>
                     </div>
-                    {client.overdueAmount > 0 && <span className="badge badge-error" style={{ fontSize: 10, flexShrink: 0 }}>Overdue</span>}
                   </div>
 
                   <div style={{ fontSize: 13, color: ps ? '#d97706' : 'var(--text-secondary)', fontWeight: ps ? 600 : 400 }}>
@@ -723,7 +722,10 @@ export default function Dashboard() {
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{client.depositSchedule || '—'}</div>
                   <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{client.state || 'TX'}</div>
-                  <div><LiabStatusBadge status={client.liabilityStatus} /></div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
+                    {client.liabilityStatus === 'overdue' && <span className="badge badge-error" style={{ fontSize: 10 }}>Tax Overdue</span>}
+                    {ps && ps.cls === 'badge-error' && <span className="badge badge-error" style={{ fontSize: 10 }}>Payroll Overdue</span>}
+                  </div>
 
                   {/* Delete */}
                   <div onClick={e => e.stopPropagation()}>
