@@ -751,12 +751,13 @@ tbody tr:hover td { background: var(--bg-hover); }
 
 @media print {
   .no-print { display: none !important; }
-  /* Unlock all overflow/height constraints so form prints in full */
   html, body { overflow: visible !important; height: auto !important; }
   .app-shell { overflow: visible !important; height: auto !important; }
   .main-content { overflow: visible !important; height: auto !important; max-height: none !important; }
   .top-nav, .sidebar, nav, .page-header { display: none !important; }
   .page-body { padding: 0 !important; overflow: visible !important; }
-  @page { size: letter; margin: 0.4in; }
+  @page { size: letter; margin: 0.45in; }
   * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  .irs-page { margin-bottom: 0 !important; }
+  .irs-page-2 { page-break-before: always !important; break-before: page !important; }
 }
