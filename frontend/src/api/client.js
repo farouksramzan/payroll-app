@@ -42,7 +42,7 @@ const api = {
 
   // Employees
   getEmployees: (clientId) => request(`/employees?clientId=${clientId}`),
-  getEmployee: (id) => request(`/employees/${id}`),
+  getEmployee: (id, withSSN = false) => request(`/employees/${id}${withSSN ? '?withSSN=true' : ''}`),
   getEmployeeYTD: (id, year) => request(`/employees/${id}/ytd?year=${year}`),
   getEmployeeYTDBatch: (clientId, year) => request(`/employees/ytd-batch?clientId=${clientId}&year=${year}`),
   createEmployee: (data) => request('/employees', { method: 'POST', body: JSON.stringify(data) }),

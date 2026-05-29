@@ -105,9 +105,9 @@ router.post('/employees', upload.single('file'), (req, res) => {
 
     const insert = db.prepare(`
       INSERT INTO employees
-        (client_id, first_name, last_name, ssn_encrypted, address, city, state, zip,
+        (client_id, first_name, last_name, ssn_encrypted, address, city, state, zip, work_state,
          filing_status, pay_type, hourly_rate, annual_salary, pay_frequency, is_active)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,1)
     `);
 
     const insertMany = db.transaction((records) => {
@@ -115,6 +115,7 @@ router.post('/employees', upload.single('file'), (req, res) => {
       for (const r of records) {
         const key = `${r.firstName}|${r.lastName}`.toUpperCase();
         if (skipExisting === 'true' && existingNames.has(key)) { skipped++; continue; }
+        const homeState = r.state || client.state || 'TX';
         insert.run(
           clientId,
           r.firstName,
@@ -122,8 +123,9 @@ router.post('/employees', upload.single('file'), (req, res) => {
           r.ssn ? encrypt(r.ssn) : null,
           r.address || null,
           r.city    || null,
-          r.state   || (client.state || 'TX'),
+          homeState,
           r.zip     || null,
+          homeState,  // work_state defaults to same as home state
           'single',
           'hourly',
           0,

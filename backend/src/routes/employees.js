@@ -83,7 +83,7 @@ router.get('/:id', (req, res) => {
     WHERE e.id = ? AND c.user_id = ?
   `).get(req.params.id, req.user.id);
   if (!e) return res.status(404).json({ error: 'Employee not found' });
-  res.json(sanitize(e));
+  res.json(sanitize(e, req.query.withSSN === 'true'));
 });
 
 // GET /api/employees/:id/ytd?year=2026

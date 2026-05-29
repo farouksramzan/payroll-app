@@ -71,7 +71,7 @@ export default function EmployeeForm() {
 
   useEffect(() => {
     const tasks = [api.getClient(id)];
-    if (isEdit) tasks.push(api.getEmployee(empId));
+    if (isEdit) tasks.push(api.getEmployee(empId, true));
     Promise.all(tasks)
       .then(([c, emp]) => {
         setClient(c);
@@ -79,7 +79,7 @@ export default function EmployeeForm() {
           setForm({
             firstName: emp.firstName || '',
             lastName:  emp.lastName  || '',
-            ssn: '',
+            ssn: emp.ssn || '',
             address: emp.address || '', city: emp.city || '',
             state: emp.state || 'TX', zip: emp.zip || '',
             workState: emp.workState || '',
