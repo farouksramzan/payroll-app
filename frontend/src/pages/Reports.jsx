@@ -1234,9 +1234,11 @@ export default function Reports() {
     const paramForm    = searchParams.get('form');
     const paramYear    = searchParams.get('year');
     const paramQuarter = searchParams.get('quarter');
+    const paramTab     = searchParams.get('tab');
     if (paramForm)    setReportType(paramForm);
     if (paramYear)    setYear(Number(paramYear));
     if (paramQuarter) setQuarter(Number(paramQuarter));
+    if (paramTab)     setActiveTab(paramTab);
   }, []);
 
   useEffect(() => {
