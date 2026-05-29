@@ -171,8 +171,8 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
 
   useEffect(() => {
     if (!empId) return;
-    api.getEmployee(empId).then(emp => setForm({
-      firstName: emp.firstName || '', lastName: emp.lastName || '', ssn: '',
+    api.getEmployee(empId, true).then(emp => setForm({
+      firstName: emp.firstName || '', lastName: emp.lastName || '', ssn: emp.ssn || '',
       address: emp.address || '', city: emp.city || '', state: emp.state || 'TX', zip: emp.zip || '',
       workState: emp.workState || '',
       filingStatus: emp.filingStatus || 'single',
