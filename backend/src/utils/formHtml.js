@@ -130,12 +130,14 @@ function ssLine(num, label, wages, rate, tax) {
 }
 
 function designeeSection(pr) {
-  const hasInfo = pr && (pr.desgName || pr.desgPhone);
+  const hasInfo  = pr && (pr.desgName || pr.desgPhone);
+  const checkYes = !!hasInfo;
+  const checkNo  = !hasInfo && !!(pr && pr.noDesignee);
   return `<div class="desig-section">
     <div>Do you want to allow an employee, a paid tax preparer, or another person to discuss this return with the IRS? See the instructions for details.</div>
     <div class="desig-row">
       <div style="display:flex;align-items:flex-start;gap:4px;">
-        ${chk(!!hasInfo)} <strong>Yes.</strong>
+        ${chk(checkYes)} <strong>Yes.</strong>
         <span style="margin-left:4px;">Designee's name and phone number
           ${hasInfo
             ? `<strong style="margin-left:4px;">${pr.desgName || ''}&nbsp;&nbsp;${pr.desgPhone || ''}</strong>`
@@ -147,7 +149,7 @@ function designeeSection(pr) {
         ${pin(pr ? pr.desgPin : '')}
       </div>
       <div style="display:flex;align-items:center;gap:4px;">
-        ${chk(!hasInfo)} <strong>No.</strong>
+        ${chk(checkNo)} <strong>No.</strong>
       </div>
     </div>
   </div>`;

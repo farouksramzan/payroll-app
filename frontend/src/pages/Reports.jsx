@@ -241,7 +241,9 @@ function MiniHeader941({ client, pageCode }) {
 }
 
 function DesigneeSection({ pr }) {
-  const hasInfo = pr?.desgName || pr?.desgPhone;
+  const hasInfo  = pr?.desgName || pr?.desgPhone;
+  const checkYes = !!hasInfo;
+  const checkNo  = !hasInfo && !!pr?.noDesignee;
   const pin = (pr?.desgPin || '').toString().split('').slice(0, 5);
   return (
     <div style={{ padding: '5px 8px', fontSize: 8, borderBottom: '1px solid #ccc' }}>
@@ -250,7 +252,7 @@ function DesigneeSection({ pr }) {
       </div>
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 4, minWidth: 320 }}>
-          <Chk checked={!!hasInfo} />
+          <Chk checked={checkYes} />
           <div>
             <strong>Yes.</strong>
             {hasInfo ? (
@@ -278,7 +280,7 @@ function DesigneeSection({ pr }) {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <Chk checked={!hasInfo} />
+          <Chk checked={checkNo} />
           <strong>No.</strong>
         </div>
       </div>
@@ -1323,6 +1325,17 @@ export default function Reports() {
               Saved info autofills Parts 4 and 5 (designee, signature, paid preparer) across all tax forms. Leave blank if not applicable.
             </p>
             <form onSubmit={handleSavePreparer}>
+              <div style={{ marginBottom: 20, padding: '12px 16px', background: 'var(--bg-subtle, #f8f8f8)', borderRadius: 6, border: '1px solid var(--border)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 14 }}>
+                  <input
+                    type="checkbox"
+                    checked={!!prForm.noDesignee}
+                    onChange={(e) => setPrForm((f) => ({ ...f, noDesignee: e.target.checked }))}
+                    style={{ width: 16, height: 16 }}
+                  />
+                  <span>I do not have a third-party designee — mark <strong>No</strong> in Part 4 of all forms</span>
+                </label>
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 24px' }}>
                 {PREPARER_FIELDS.map(({ key, label, placeholder }) => (
                   <div key={key} className="form-group" style={{ marginBottom: 0 }}>
