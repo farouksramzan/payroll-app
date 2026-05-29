@@ -1225,6 +1225,8 @@ export default function Reports() {
   const [prSaving, setPrSaving] = useState(false);
   const [prSaved, setPrSaved]   = useState(false);
   const [prError, setPrError]   = useState('');
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [pdfError, setPdfError]     = useState('');
 
   const needsQuarter = reportType === '941' || reportType === 'twc';
 
@@ -1391,10 +1393,26 @@ export default function Reports() {
             {data && (
               <>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 16, marginBottom: 16 }} className="no-print">
-                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                    Tip: In the print dialog, uncheck <strong>Headers and footers</strong> and check <strong>Background graphics</strong>
-                  </span>
-                  <button className="btn btn-secondary" onClick={() => window.print()}>Print / Save PDF</button>
+                  {pdfError && <span style={{ fontSize: 12, color: 'var(--error)' }}>{pdfError}</span>}
+                  <button
+                    className="btn btn-secondary"
+                    disabled={pdfLoading}
+                    onClick={async () => {
+                      setPdfError('');
+                      setPdfLoading(true);
+                      try {
+                        const formMap = { '941': '941', '940': '940', twc: 'TWC', w2: 'W-2', w3: 'W-3' };
+                        const needsQ = reportType === '941' || reportType === 'twc';
+                        await api.downloadReportPdf(formMap[reportType], clientId, year, needsQ ? quarter : undefined);
+                      } catch (e) {
+                        setPdfError(e.message);
+                      } finally {
+                        setPdfLoading(false);
+                      }
+                    }}
+                  >
+                    {pdfLoading ? 'Generating…' : 'Download PDF'}
+                  </button>
                 </div>
                 {data.reportType === '941' && <Report941 data={data} pr={preparer} />}
                 {data.reportType === '940' && <Report940 data={data} pr={preparer} />}

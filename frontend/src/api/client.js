@@ -120,6 +120,18 @@ const api = {
   getTWC: (clientId, year, quarter) => request(`/reports/twc?clientId=${clientId}&year=${year}&quarter=${quarter}`),
   getW2: (clientId, year) => request(`/reports/w2?clientId=${clientId}&year=${year}`),
   getW3: (clientId, year) => request(`/reports/w3?clientId=${clientId}&year=${year}`),
+  downloadReportPdf: async (form, clientId, year, quarter) => {
+    const token = localStorage.getItem('token');
+    const qs = new URLSearchParams({ form, clientId, year, ...(quarter ? { quarter } : {}) });
+    const res = await fetch(`/api/reports/pdf?${qs}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'PDF failed'); }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const filename = `${form.replace(/[^a-z0-9]/gi, '-')}-${year}${quarter ? `-Q${quarter}` : ''}.pdf`;
+    a.href = url; a.download = filename; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  },
 
   // Preparer info
   getPreparerInfo: () => request('/auth/preparer'),
