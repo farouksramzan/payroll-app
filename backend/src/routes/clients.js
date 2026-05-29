@@ -110,7 +110,7 @@ router.get('/', (req, res) => {
     return {
       ...sanitizeClient(c),
       nextDueDate:          nextDue,
-      nextPayDate:          nextPayDate,
+      nextPayDate:          nextPayDate || (c.next_payroll_date ? c.next_payroll_date.slice(0, 10) : null),
       payrollFrequency:     c.payroll_frequency  || 'biweekly',
       lastSubmissionStatus: lastSub?.eftps_status || null,
       lastSubmissionDate:   lastSub?.created_at   || null,
