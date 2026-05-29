@@ -33,27 +33,31 @@ router.get('/941', (req, res) => {
     const client = assertClient(db, clientId, req.user.id);
     const { start, end } = quarterRange(parseInt(year), parseInt(quarter));
 
-    const subs = db.prepare(`
-      SELECT s.*, e.first_name, e.last_name
-      FROM submissions s
-      LEFT JOIN employees e ON s.employee_id = e.id
-      WHERE s.client_id = ? AND s.pay_period_end >= ? AND s.pay_period_end <= ?
-      ORDER BY s.pay_period_end
+    // Query paystubs (actual issued checks) for the quarter — exclude failed deposits
+    const paystubs = db.prepare(`
+      SELECT p.*, e.first_name, e.last_name
+      FROM paystubs p
+      LEFT JOIN employees e ON p.employee_id = e.id
+      WHERE p.client_id = ?
+        AND p.pay_period_end >= ?
+        AND p.pay_period_end <= ?
+        AND p.check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
+      ORDER BY p.pay_period_end
     `).all(clientId, start, end);
 
     const employees = db.prepare('SELECT * FROM employees WHERE client_id = ? AND is_active = 1').all(clientId);
-    const empCount  = employees.length || (subs.length > 0 ? 1 : 0);
+    const empCount  = employees.length || (paystubs.length > 0 ? 1 : 0);
 
-    const wages          = round2(subs.reduce((s, r) => s + r.gross_wages, 0));
-    const fitWithheld    = round2(subs.reduce((s, r) => s + r.fit_withholding, 0));
-    const employeeSS     = round2(subs.reduce((s, r) => s + r.employee_ss, 0));
-    const employerSS     = round2(subs.reduce((s, r) => s + r.employer_ss, 0));
-    const employeeMed    = round2(subs.reduce((s, r) => s + r.employee_medicare, 0));
-    const employerMed    = round2(subs.reduce((s, r) => s + r.employer_medicare, 0));
-    const totalSSTax     = round2((employeeSS + employerSS));     // × 12.4% combined
-    const totalMedTax    = round2((employeeMed + employerMed));   // × 2.9% combined
+    const wages          = round2(paystubs.reduce((s, r) => s + r.gross_wages, 0));
+    const fitWithheld    = round2(paystubs.reduce((s, r) => s + r.fit_withholding, 0));
+    const employeeSS     = round2(paystubs.reduce((s, r) => s + r.employee_ss, 0));
+    const employerSS     = round2(paystubs.reduce((s, r) => s + r.employer_ss, 0));
+    const employeeMed    = round2(paystubs.reduce((s, r) => s + r.employee_medicare, 0));
+    const employerMed    = round2(paystubs.reduce((s, r) => s + r.employer_medicare, 0));
+    const totalSSTax     = round2((employeeSS + employerSS));
+    const totalMedTax    = round2((employeeMed + employerMed));
     const totalTaxes     = round2(fitWithheld + totalSSTax + totalMedTax);
-    const totalDeposited = round2(subs.filter((s) => s.eftps_status === 'submitted' || s.eftps_status === 'dry_run').reduce((sum, r) => sum + r.total_deposit, 0));
+    const totalDeposited = round2(paystubs.filter((s) => s.status === 'submitted' || s.status === 'dry_run').reduce((sum, r) => sum + r.total_deposit, 0));
     const balanceDue     = round2(totalTaxes - totalDeposited);
 
     res.json({
@@ -72,14 +76,17 @@ router.get('/941', (req, res) => {
         line13_deposited:    totalDeposited,
         line14_balanceDue:   balanceDue,
       },
-      submissions: subs.map((s) => ({
-        id: s.id, payPeriodEnd: s.pay_period_end,
-        grossWages: s.gross_wages, fitWithholding: s.fit_withholding,
-        ssTotal: round2(s.employee_ss + s.employer_ss),
-        medTotal: round2(s.employee_medicare + s.employer_medicare),
-        totalDeposit: s.total_deposit, eftpsStatus: s.eftps_status,
-        employeeName: s.first_name ? `${s.first_name} ${s.last_name}` : null,
-      })),
+      // Exclude failed deposits from the supporting table
+      submissions: paystubs
+        .filter((s) => s.status !== 'failed')
+        .map((s) => ({
+          id: s.id, payPeriodEnd: s.pay_period_end,
+          grossWages: s.gross_wages, fitWithholding: s.fit_withholding,
+          ssTotal: round2(s.employee_ss + s.employer_ss),
+          medTotal: round2(s.employee_medicare + s.employer_medicare),
+          totalDeposit: s.total_deposit, eftpsStatus: s.status,
+          employeeName: s.first_name ? `${s.first_name} ${s.last_name}` : (s.employee_name || null),
+        })),
     });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
@@ -95,18 +102,21 @@ router.get('/940', (req, res) => {
     const client = assertClient(db, clientId, req.user.id);
 
     const subs = db.prepare(`
-      SELECT s.*, e.id as emp_id, e.first_name, e.last_name
-      FROM submissions s
-      LEFT JOIN employees e ON s.employee_id = e.id
-      WHERE s.client_id = ? AND s.pay_period_end >= ? AND s.pay_period_end <= ?
-      ORDER BY s.employee_id, s.pay_period_end
+      SELECT p.*, p.employee_id as emp_id, e.first_name, e.last_name
+      FROM paystubs p
+      LEFT JOIN employees e ON p.employee_id = e.id
+      WHERE p.client_id = ?
+        AND p.pay_period_end >= ?
+        AND p.pay_period_end <= ?
+        AND p.check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
+      ORDER BY p.employee_id, p.pay_period_end
     `).all(clientId, `${year}-01-01`, `${year}-12-31`);
 
     // Calculate FUTA per employee (or aggregate if no employee records)
     const byEmployee = {};
     for (const s of subs) {
       const key = s.emp_id || 'aggregate';
-      if (!byEmployee[key]) byEmployee[key] = { name: s.first_name ? `${s.first_name} ${s.last_name}` : 'All Employees', wages: 0, futaTaxable: 0, futaTax: 0 };
+      if (!byEmployee[key]) byEmployee[key] = { name: s.first_name ? `${s.first_name} ${s.last_name}` : (s.employee_name || 'All Employees'), wages: 0, futaTaxable: 0, futaTax: 0 };
       const ytd = byEmployee[key].wages;
       const futa = calculateFUTA(s.gross_wages, ytd);
       byEmployee[key].wages      += s.gross_wages;
@@ -154,19 +164,25 @@ router.get('/twc', (req, res) => {
     const sutaRate = client.suta_rate || 0.027;
 
     const subs = db.prepare(`
-      SELECT s.*, e.id as emp_id, e.first_name, e.last_name
-      FROM submissions s
-      LEFT JOIN employees e ON s.employee_id = e.id
-      WHERE s.client_id = ? AND s.pay_period_end >= ? AND s.pay_period_end <= ?
-      ORDER BY s.employee_id, s.pay_period_end
+      SELECT p.*, p.employee_id as emp_id, e.first_name, e.last_name
+      FROM paystubs p
+      LEFT JOIN employees e ON p.employee_id = e.id
+      WHERE p.client_id = ?
+        AND p.pay_period_end >= ?
+        AND p.pay_period_end <= ?
+        AND p.check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
+      ORDER BY p.employee_id, p.pay_period_end
     `).all(clientId, start, end);
 
     // Need YTD wages from prior quarters for wage base tracking
     const ytdSubs = db.prepare(`
-      SELECT s.gross_wages, s.employee_id
-      FROM submissions s
-      WHERE s.client_id = ? AND s.pay_period_end >= ? AND s.pay_period_end < ?
-      ORDER BY s.employee_id, s.pay_period_end
+      SELECT p.gross_wages, p.employee_id
+      FROM paystubs p
+      WHERE p.client_id = ?
+        AND p.pay_period_end >= ?
+        AND p.pay_period_end < ?
+        AND p.check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
+      ORDER BY p.employee_id, p.pay_period_end
     `).all(clientId, `${year}-01-01`, start);
 
     const ytdByEmp = {};
@@ -178,7 +194,7 @@ router.get('/twc', (req, res) => {
     const byEmployee = {};
     for (const s of subs) {
       const key = s.emp_id || 'aggregate';
-      if (!byEmployee[key]) byEmployee[key] = { name: s.first_name ? `${s.first_name} ${s.last_name}` : 'All Employees', wages: 0, sutaTaxable: 0, sutaTax: 0 };
+      if (!byEmployee[key]) byEmployee[key] = { name: s.first_name ? `${s.first_name} ${s.last_name}` : (s.employee_name || 'All Employees'), wages: 0, sutaTaxable: 0, sutaTax: 0 };
       const ytd  = (ytdByEmp[key] || 0) + byEmployee[key].wages;
       const suta = calculateSUTA(s.gross_wages, ytd, sutaRate);
       byEmployee[key].wages       += s.gross_wages;
@@ -226,8 +242,9 @@ router.get('/w2', (req, res) => {
 
     const w2s = employees.map((emp) => {
       const subs = db.prepare(`
-        SELECT * FROM submissions
+        SELECT * FROM paystubs
         WHERE client_id = ? AND employee_id = ? AND pay_period_end >= ? AND pay_period_end <= ?
+          AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
       `).all(clientId, emp.id, `${year}-01-01`, `${year}-12-31`);
 
       const box1  = round2(subs.reduce((s, r) => s + r.gross_wages, 0));        // wages
@@ -273,8 +290,9 @@ router.get('/w3', (req, res) => {
     const client = assertClient(db, clientId, req.user.id);
 
     const subs = db.prepare(`
-      SELECT * FROM submissions
+      SELECT * FROM paystubs
       WHERE client_id = ? AND pay_period_end >= ? AND pay_period_end <= ?
+        AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
     `).all(clientId, `${year}-01-01`, `${year}-12-31`);
 
     const empCount = db.prepare('SELECT COUNT(*) as cnt FROM employees WHERE client_id = ?').get(clientId).cnt;

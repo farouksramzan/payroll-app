@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -300,6 +300,7 @@ function ReportRow({ line, label, value, sub, highlight, mono = true }) {
 
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function Reports() {
+  const [searchParams] = useSearchParams();
   const [clients, setClients] = useState([]);
   const [clientId, setClientId] = useState('');
   const [reportType, setReportType] = useState('941');
@@ -313,9 +314,24 @@ export default function Reports() {
   const needsQuarter = reportType === '941' || reportType === 'twc';
 
   useEffect(() => {
+    // Pre-populate controls from URL params (set by CompanyWorkspace "File Forms")
+    const paramForm    = searchParams.get('form');
+    const paramYear    = searchParams.get('year');
+    const paramQuarter = searchParams.get('quarter');
+    if (paramForm)    setReportType(paramForm);
+    if (paramYear)    setYear(Number(paramYear));
+    if (paramQuarter) setQuarter(Number(paramQuarter));
+  }, []);
+
+  useEffect(() => {
+    const paramClientId = searchParams.get('clientId');
     api.getClients().then((cs) => {
       setClients(cs);
-      if (cs.length > 0) setClientId(String(cs[0].id));
+      if (paramClientId) {
+        setClientId(paramClientId);
+      } else if (cs.length > 0) {
+        setClientId(String(cs[0].id));
+      }
     }).catch(() => {});
   }, []);
 
