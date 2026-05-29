@@ -751,7 +751,13 @@ tbody tr:hover td { background: var(--bg-hover); }
 
 @media print {
   .no-print { display: none !important; }
-  body { background: white; color: black; }
-  .top-nav { display: none !important; }
-  .report-header { background: var(--accent) !important; }
+  body { background: white !important; color: black !important; font-size: 10px; }
+  .top-nav, .sidebar, nav { display: none !important; }
+  .page-header { display: none !important; }
+  .card:not(:has(table)) { display: none !important; }
+  .page-body { padding: 0 !important; }
+  @page { size: letter; margin: 0.4in; }
+  /* IRS form overrides */
+  [style*="pageBreakAfter"] { page-break-after: always; }
+  * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
 }

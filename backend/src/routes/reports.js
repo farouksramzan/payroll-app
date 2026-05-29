@@ -62,7 +62,7 @@ router.get('/941', (req, res) => {
 
     res.json({
       reportType: '941',
-      client: { businessName: client.business_name, ein: client.ein },
+      client: { businessName: client.business_name, ein: client.ein, businessAddress: client.business_address, businessCity: client.business_city, businessZip: client.business_zip, state: client.state || 'TX' },
       period: { year: parseInt(year), quarter: parseInt(quarter), start, end },
       lines: {
         line1_employees:     empCount,
@@ -131,7 +131,7 @@ router.get('/940', (req, res) => {
 
     res.json({
       reportType: '940',
-      client: { businessName: client.business_name, ein: client.ein },
+      client: { businessName: client.business_name, ein: client.ein, businessAddress: client.business_address, businessCity: client.business_city, businessZip: client.business_zip, state: client.state || 'TX' },
       period: { year: parseInt(year) },
       lines: {
         line3_totalPayments:   totalWages,
@@ -192,9 +192,18 @@ router.get('/twc', (req, res) => {
     }
 
     const byEmployee = {};
+    const empSsnCache = {};
     for (const s of subs) {
       const key = s.emp_id || 'aggregate';
-      if (!byEmployee[key]) byEmployee[key] = { name: s.first_name ? `${s.first_name} ${s.last_name}` : (s.employee_name || 'All Employees'), wages: 0, sutaTaxable: 0, sutaTax: 0 };
+      if (!byEmployee[key]) {
+        let ssn = '***-**-****';
+        if (s.emp_id && !empSsnCache[s.emp_id]) {
+          const emp = db.prepare('SELECT ssn_encrypted FROM employees WHERE id = ?').get(s.emp_id);
+          if (emp?.ssn_encrypted) { try { empSsnCache[s.emp_id] = maskSSN(decrypt(emp.ssn_encrypted)); } catch (e) {} }
+        }
+        if (s.emp_id && empSsnCache[s.emp_id]) ssn = empSsnCache[s.emp_id];
+        byEmployee[key] = { name: s.first_name ? `${s.first_name} ${s.last_name}` : (s.employee_name || 'All Employees'), ssn, wages: 0, sutaTaxable: 0, sutaTax: 0 };
+      }
       const ytd  = (ytdByEmp[key] || 0) + byEmployee[key].wages;
       const suta = calculateSUTA(s.gross_wages, ytd, sutaRate);
       byEmployee[key].wages       += s.gross_wages;
@@ -208,7 +217,7 @@ router.get('/twc', (req, res) => {
 
     res.json({
       reportType: 'TWC',
-      client: { businessName: client.business_name, ein: client.ein },
+      client: { businessName: client.business_name, ein: client.ein, businessAddress: client.business_address, businessCity: client.business_city, businessZip: client.business_zip, state: client.state || 'TX' },
       period: { year: parseInt(year), quarter: parseInt(quarter), start, end },
       sutaRate,
       lines: {
@@ -272,7 +281,7 @@ router.get('/w2', (req, res) => {
 
     res.json({
       reportType: 'W-2',
-      client: { businessName: client.business_name, ein: client.ein },
+      client: { businessName: client.business_name, ein: client.ein, businessAddress: client.business_address, businessCity: client.business_city, businessZip: client.business_zip, state: client.state || 'TX' },
       period: { year: parseInt(year) },
       w2s,
     });
@@ -299,7 +308,7 @@ router.get('/w3', (req, res) => {
 
     res.json({
       reportType: 'W-3',
-      client: { businessName: client.business_name, ein: client.ein },
+      client: { businessName: client.business_name, ein: client.ein, businessAddress: client.business_address, businessCity: client.business_city, businessZip: client.business_zip, state: client.state || 'TX' },
       period: { year: parseInt(year) },
       totals: {
         employeeCount:   empCount,
