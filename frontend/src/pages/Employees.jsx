@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../api/client';
+import ImportEmployeesModal from '../components/ImportEmployeesModal';
 
 function fmtDate(d) {
   if (!d) return '—';
@@ -15,6 +16,7 @@ export default function Employees() {
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState('');
   const [deleting, setDeleting]   = useState(null);
+  const [showImport, setShowImport] = useState(false);
 
   useEffect(() => {
     Promise.all([api.getClient(id), api.getEmployees(id)])
@@ -44,6 +46,15 @@ export default function Employees() {
 
   return (
     <>
+      {showImport && (
+        <ImportEmployeesModal
+          clientId={id}
+          onClose={() => setShowImport(false)}
+          onImported={() => {
+            api.getEmployees(id).then(setEmployees);
+          }}
+        />
+      )}
       <div className="page-header">
         <div className="breadcrumb">
           <Link to="/">Dashboard</Link><span>/</span>
@@ -55,7 +66,10 @@ export default function Employees() {
             <h2>Employees</h2>
             <p>{client?.businessName} — {employees.length} employee{employees.length !== 1 ? 's' : ''}</p>
           </div>
-          <Link to={`/clients/${id}/employees/new`} className="btn btn-primary">+ Add Employee</Link>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-secondary" onClick={() => setShowImport(true)}>Import from Excel</button>
+            <Link to={`/clients/${id}/employees/new`} className="btn btn-primary">+ Add Employee</Link>
+          </div>
         </div>
       </div>
 

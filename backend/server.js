@@ -19,6 +19,7 @@ const employeeRoutes   = require('./src/routes/employees');
 const reportRoutes     = require('./src/routes/reports');
 const paystubRoutes    = require('./src/routes/paystubs');
 const payGroupRoutes   = require('./src/routes/payGroups');
+const importRoutes     = require('./src/routes/import');
 const { requireAuth }  = require('./src/middleware/auth');
 
 const app  = express();
@@ -158,6 +159,7 @@ app.use('/api/employees',   employeeRoutes);
 app.use('/api/reports',     reportRoutes);
 app.use('/api/paystubs',    paystubRoutes);
 app.use('/api/pay-groups',  payGroupRoutes);
+app.use('/api/import',     importRoutes);
 app.get('/api/health',      (req, res) => res.json({ status: 'ok', env: process.env.NODE_ENV }));
 
 // ── Debug: inspect paystub statuses in Railway's live DB ─────────────────────
