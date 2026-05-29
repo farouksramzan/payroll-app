@@ -94,36 +94,27 @@ router.get('/', (req, res) => {
       .get(c.id);
     const nextDue = calcNextDueDate(c.deposit_schedule, lastSub?.pay_period_end);
 
-    // Next pay date: use actual pay_date from draft/upcoming paystubs first,
-    // fall back to computing from pay groups if none exist yet.
+    // Next pay date: derived from pay groups.
+    // Find the first period end that has NOT been printed, then add 2 biz days.
+    // If nothing printed yet → first_pay_period_end is the next period.
+    // If some printed → advance one period past the last printed one.
     let nextPayDate = null;
     try {
-      // 1. Real pay_date from existing non-printed paystubs
-      const stubRow = db.prepare(`
-        SELECT MIN(NULLIF(pay_date, '')) as next_pay_date
-        FROM paystubs
-        WHERE client_id = ?
-          AND (check_status IS NULL OR check_status NOT IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared','voided'))
-      `).get(c.id);
-      if (stubRow?.next_pay_date) nextPayDate = stubRow.next_pay_date.slice(0, 10);
-    } catch (e) { console.error('[nextPayDate stub]', c.id, e.message); }
-
-    if (!nextPayDate) {
-      try {
-        // 2. Compute from pay groups: last printed period end + 1 period + 2 biz days
-        const groups = db.prepare('SELECT * FROM pay_groups WHERE client_id = ?').all(c.id).filter(g => !g.deleted_at);
-        for (const g of groups) {
-          if (!g.first_pay_period_end || !g.frequency) continue;
-          const lastRow = db.prepare(
-            `SELECT MAX(pay_period_end) as last_end FROM paystubs WHERE client_id = ? AND pay_group_id = ? AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')`
-          ).get(c.id, g.id);
-          const baseEnd = lastRow?.last_end ? lastRow.last_end.slice(0, 10) : g.first_pay_period_end.slice(0, 10);
-          const nextEnd = nextPeriodEnd(baseEnd, g.frequency);
-          const nextPay = addBizDays(nextEnd, 2);
-          if (!nextPayDate || nextPay < nextPayDate) nextPayDate = nextPay;
-        }
-      } catch (e) { console.error('[nextPayDate group]', c.id, e.message); }
-    }
+      const groups = db.prepare('SELECT * FROM pay_groups WHERE client_id = ?').all(c.id).filter(g => !g.deleted_at);
+      for (const g of groups) {
+        if (!g.first_pay_period_end || !g.frequency) continue;
+        const lastRow = db.prepare(
+          `SELECT MAX(pay_period_end) as last_end FROM paystubs WHERE client_id = ? AND pay_group_id = ? AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')`
+        ).get(c.id, g.id);
+        // If nothing printed yet, first_pay_period_end IS the next period end.
+        // If something printed, advance one period past the last printed one.
+        const nextEnd = lastRow?.last_end
+          ? nextPeriodEnd(lastRow.last_end.slice(0, 10), g.frequency)
+          : g.first_pay_period_end.slice(0, 10);
+        const nextPay = addBizDays(nextEnd, 2);
+        if (!nextPayDate || nextPay < nextPayDate) nextPayDate = nextPay;
+      }
+    } catch (e) { console.error('[nextPayDate]', c.id, e.message); }
 
     if (!nextPayDate) nextPayDate = c.next_payroll_date ? c.next_payroll_date.slice(0, 10) : null;
 
