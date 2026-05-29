@@ -103,6 +103,8 @@ router.get('/', (req, res) => {
       const groups = db.prepare('SELECT * FROM pay_groups WHERE client_id = ?').all(c.id).filter(g => !g.deleted_at);
       for (const g of groups) {
         if (!g.first_pay_period_end || !g.frequency) continue;
+        const empCount = db.prepare('SELECT COUNT(*) as cnt FROM employees WHERE pay_group_id = ? AND is_active = 1').get(g.id);
+        if (!empCount?.cnt) continue;
         const lastRow = db.prepare(
           `SELECT MAX(pay_period_end) as last_end FROM paystubs WHERE client_id = ? AND pay_group_id = ? AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')`
         ).get(c.id, g.id);
