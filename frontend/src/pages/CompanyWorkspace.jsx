@@ -159,7 +159,8 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
   const [form, setForm]       = useState(null);
   const [saving, setSaving]   = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [err, setErr]         = useState('');
+  const [showSsn, setShowSsn]   = useState(false);
+  const [err, setErr]           = useState('');
   const [payGroups, setPayGroups] = useState([]);
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [newGroup, setNewGroup] = useState({ name: '', frequency: 'biweekly', firstPayPeriodEnd: '', payDate: '' });
@@ -275,7 +276,12 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
               </div>
               <div className="form-group">
                 <label className="form-label">SSN <span style={{ fontWeight: 400, fontSize: 10, color: 'var(--text-muted)', textTransform: 'none' }}>(leave blank to keep current)</span></label>
-                <input className="form-input mono" type="password" value={form.ssn} onChange={set('ssn')} placeholder="leave blank to keep" maxLength={11} />
+                <div style={{ position: 'relative' }}>
+                  <input className="form-input mono" type={showSsn ? 'text' : 'password'} value={form.ssn} onChange={set('ssn')} placeholder="leave blank to keep" maxLength={11} style={{ paddingRight: 36 }} />
+                  <button type="button" onClick={() => setShowSsn(v => !v)} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 15, lineHeight: 1, padding: 0 }} title={showSsn ? 'Hide SSN' : 'Show SSN'}>
+                    {showSsn ? '🙈' : '👁'}
+                  </button>
+                </div>
                 <p className="form-hint">Stored encrypted with AES-256.</p>
               </div>
               <div className="form-group"><label className="form-label">Street Address</label><input className="form-input" value={form.address} onChange={set('address')} placeholder="123 Main St" /></div>

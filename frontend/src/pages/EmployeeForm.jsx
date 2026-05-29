@@ -60,6 +60,7 @@ export default function EmployeeForm() {
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState('');
 
+  const [showSsn, setShowSsn]           = useState(false);
   const [payGroups, setPayGroups]       = useState([]);
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [newGroup, setNewGroup]         = useState({ name: '', frequency: 'biweekly', firstPayPeriodEnd: '', payDate: '' });
@@ -227,7 +228,12 @@ export default function EmployeeForm() {
 
             <div className="form-group" style={{ maxWidth: 280 }}>
               <label className="form-label">Social Security Number {isEdit && <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(leave blank to keep current)</span>}</label>
-              <input className="form-input mono" type="password" value={form.ssn} onChange={set('ssn')} placeholder="###-##-####" maxLength={11} />
+              <div style={{ position: 'relative' }}>
+                <input className="form-input mono" type={showSsn ? 'text' : 'password'} value={form.ssn} onChange={set('ssn')} placeholder="###-##-####" maxLength={11} style={{ paddingRight: 36 }} />
+                <button type="button" onClick={() => setShowSsn(v => !v)} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 15, lineHeight: 1, padding: 0 }} title={showSsn ? 'Hide SSN' : 'Show SSN'}>
+                  {showSsn ? '🙈' : '👁'}
+                </button>
+              </div>
               {errors.ssn && <p className="form-error-msg">{errors.ssn}</p>}
               <p className="form-hint">Stored encrypted with AES-256.</p>
             </div>
