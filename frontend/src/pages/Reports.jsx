@@ -1417,6 +1417,12 @@ export default function Reports() {
                 {data.reportType === '941' && <Report941 data={data} pr={preparer} />}
                 {data.reportType === '940' && <Report940 data={data} pr={preparer} />}
                 {data.reportType === 'TWC' && <ReportTWC data={data} pr={preparer} />}
+                {(data.reportType === 'W-2' || data.reportType === 'W-3') && (
+                  <div className="no-print" style={{ background: '#fffbe6', border: '1px solid #f0c040', borderRadius: 6, padding: '12px 16px', marginBottom: 16, fontSize: 13, color: '#7a5800' }}>
+                    <strong>Note:</strong> This PDF is for <strong>employee copies (B, C, 2) and employer records only</strong>. W-2 Copy A and W-3 filed with the SSA must be submitted electronically via{' '}
+                    <strong>SSA Business Services Online (BSO)</strong>, or printed on official preprinted red-ink forms. Printing this document and mailing it to the SSA is not permitted and may result in penalties.
+                  </div>
+                )}
                 {data.reportType === 'W-2' && <ReportW2  data={data} pr={preparer} />}
                 {data.reportType === 'W-3' && <ReportW3  data={data} pr={preparer} />}
               </>
