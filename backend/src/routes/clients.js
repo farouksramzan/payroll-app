@@ -103,11 +103,13 @@ router.get('/', (req, res) => {
       const groups = db.prepare('SELECT * FROM pay_groups WHERE client_id = ?').all(c.id).filter(g => !g.deleted_at);
       for (const g of groups) {
         if (!g.first_pay_period_end || !g.frequency) continue;
-        const empCount = db.prepare('SELECT COUNT(*) as cnt FROM employees WHERE pay_group_id = ? AND is_active = 1').get(g.id);
-        if (!empCount?.cnt) continue;
-        const lastRow = db.prepare(
-          `SELECT MAX(pay_period_end) as last_end FROM paystubs WHERE client_id = ? AND pay_group_id = ? AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')`
-        ).get(c.id, g.id);
+        const emps = db.prepare('SELECT id FROM employees WHERE pay_group_id = ? AND is_active = 1').all(g.id);
+        if (!emps.length) continue;
+        const empIds = emps.map(e => e.id);
+        const ph = empIds.map(() => '?').join(',');
+        const lastRow = empIds.length > 0
+          ? db.prepare(`SELECT MAX(pay_period_end) as last_end FROM paystubs WHERE client_id = ? AND (pay_group_id = ? OR employee_id IN (${ph})) AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')`).get(c.id, g.id, ...empIds)
+          : db.prepare(`SELECT MAX(pay_period_end) as last_end FROM paystubs WHERE client_id = ? AND pay_group_id = ? AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')`).get(c.id, g.id);
         // If nothing printed yet, first_pay_period_end IS the next period end.
         // If something printed, advance one period past the last printed one.
         const nextEnd = lastRow?.last_end
