@@ -3001,7 +3001,6 @@ function FileFormsTab({ clientId }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Tax Year</span>
         <select className="form-select" value={year} onChange={e => setYear(parseInt(e.target.value))} style={{ width: 120 }}>{[currentYear - 1, currentYear, currentYear + 1].map(y => <option key={y} value={y}>{y}</option>)}</select>
-        <button className="btn btn-secondary btn-sm" onClick={() => navigate('/reports')}>Open Reports Page</button>
         <button className="btn btn-secondary btn-sm" onClick={() => navigate('/reports?tab=preparer')}>Preparer Info</button>
       </div>
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
