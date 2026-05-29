@@ -18,6 +18,7 @@ const US_STATES = [
 
 const EMPTY = {
   businessName: '', ein: '', state: 'TX',
+  businessAddress: '', businessCity: '', businessZip: '',
   depositSchedule: 'monthly', sutaRate: '2.7',
   bankAccountNumber: '', bankRoutingNumber: '', bankAccountType: 'checking',
   contactName: '', contactEmail: '', contactPhone: '',
@@ -41,6 +42,9 @@ export default function ClientForm() {
         businessName: c.businessName || '',
         ein: c.ein || '',
         state: c.state || 'TX',
+        businessAddress: c.businessAddress || '',
+        businessCity: c.businessCity || '',
+        businessZip: c.businessZip || '',
         depositSchedule: c.depositSchedule || 'monthly',
         sutaRate: c.sutaRate != null ? String(parseFloat(c.sutaRate) * 100) : '2.7',
         bankAccountNumber: '',
@@ -65,6 +69,9 @@ export default function ClientForm() {
     if (!form.businessName.trim()) e.businessName = 'Required';
     if (!form.ein.trim()) e.ein = 'Required';
     else if (!/^\d{2}-?\d{7}$/.test(form.ein.trim())) e.ein = 'Format: XX-XXXXXXX';
+    if (!form.businessAddress.trim()) e.businessAddress = 'Required';
+    if (!form.businessCity.trim()) e.businessCity = 'Required';
+    if (!form.businessZip.trim()) e.businessZip = 'Required';
     if (form.bankRoutingNumber && !/^\d{9}$/.test(form.bankRoutingNumber)) e.bankRoutingNumber = 'Must be 9 digits';
     return e;
   }
@@ -143,14 +150,32 @@ export default function ClientForm() {
               </div>
             </div>
 
-            <div className="form-group" style={{ maxWidth: 280 }}>
-              <label className="form-label">State of Business</label>
-              <select className="form-select" value={form.state} onChange={set('state')}>
-                {US_STATES.map(([code, name]) => (
-                  <option key={code} value={code}>{code} — {name}</option>
-                ))}
-              </select>
-              <p className="form-hint">Used for SUI wage base and state income tax calculations. Employees can override individually.</p>
+            <div className="form-group">
+              <label className="form-label">Business Address <span>*</span></label>
+              <input className="form-input" value={form.businessAddress} onChange={set('businessAddress')} placeholder="123 Main St" />
+              {errors.businessAddress && <p className="form-error-msg">{errors.businessAddress}</p>}
+            </div>
+
+            <div className="form-grid" style={{ gridTemplateColumns: '1fr 180px 100px' }}>
+              <div className="form-group">
+                <label className="form-label">City <span>*</span></label>
+                <input className="form-input" value={form.businessCity} onChange={set('businessCity')} placeholder="San Antonio" />
+                {errors.businessCity && <p className="form-error-msg">{errors.businessCity}</p>}
+              </div>
+              <div className="form-group">
+                <label className="form-label">State <span>*</span></label>
+                <select className="form-select" value={form.state} onChange={set('state')}>
+                  {US_STATES.map(([code, name]) => (
+                    <option key={code} value={code}>{code} — {name}</option>
+                  ))}
+                </select>
+                <p className="form-hint">Also used for SUI/state tax calculations.</p>
+              </div>
+              <div className="form-group">
+                <label className="form-label">ZIP <span>*</span></label>
+                <input className="form-input mono" value={form.businessZip} onChange={set('businessZip')} placeholder="78201" maxLength={10} />
+                {errors.businessZip && <p className="form-error-msg">{errors.businessZip}</p>}
+              </div>
             </div>
 
 

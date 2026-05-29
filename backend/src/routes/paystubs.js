@@ -152,14 +152,16 @@ router.post('/print-selected', (req, res) => {
     doc.addPage();
     const empName = stub.employee_name || (stub.first_name ? `${stub.first_name} ${stub.last_name}` : '—');
 
-    doc.rect(ML, 30, TW, 44).fill(ACCENT);
+    doc.rect(ML, 30, TW, 56).fill(ACCENT);
     doc.fillColor('#fff').font('Helvetica-Bold').fontSize(13)
       .text(client.business_name, ML + 10, 40, { width: TW / 2 });
-    doc.font('Helvetica').fontSize(8).text(`EIN: ${client.ein}`, ML + 10, 56);
+    const companyAddrLine = [client.business_address, [client.business_city, client.state, client.business_zip].filter(Boolean).join(', ')].filter(Boolean).join(', ');
+    doc.font('Helvetica').fontSize(7.5).text(companyAddrLine || `EIN: ${client.ein}`, ML + 10, 56);
+    if (companyAddrLine) doc.font('Helvetica').fontSize(7.5).text(`EIN: ${client.ein}`, ML + 10, 66);
     doc.font('Helvetica-Bold').fontSize(9)
-      .text('PAY STUB — DETACH AND RETAIN', ML + 10, 63, { align: 'right', width: TW - 10 });
+      .text('PAY STUB — DETACH AND RETAIN', ML + 10, companyAddrLine ? 57 : 63, { align: 'right', width: TW - 10 });
 
-    let y = 84;
+    let y = 96;
     function kv2(label, val, x, yy, w = 130) {
       doc.font('Helvetica').fontSize(7).fillColor(GRAY).text(label.toUpperCase(), x, yy, { width: w });
       doc.font('Helvetica-Bold').fontSize(8.5).fillColor(DARK).text(val || '—', x, yy + 9, { width: w });
@@ -965,13 +967,14 @@ router.get('/run-pdf/:runId', (req, res) => {
 
     // ── Stub section (top 480pt) ──────────────────────────────────────────────
     // Header bar
-    doc.rect(ML, 30, TW, 44).fill(ACCENT);
+    doc.rect(ML, 30, TW, 56).fill(ACCENT);
     doc.fillColor('#fff').font('Helvetica-Bold').fontSize(13)
       .text(client.business_name, ML + 10, 40, { width: TW / 2 });
-    doc.font('Helvetica').fontSize(8)
-      .text(`EIN: ${client.ein}`, ML + 10, 56);
+    const companyAddrLine2 = [client.business_address, [client.business_city, client.state, client.business_zip].filter(Boolean).join(', ')].filter(Boolean).join(', ');
+    doc.font('Helvetica').fontSize(7.5).text(companyAddrLine2 || `EIN: ${client.ein}`, ML + 10, 56);
+    if (companyAddrLine2) doc.font('Helvetica').fontSize(7.5).text(`EIN: ${client.ein}`, ML + 10, 66);
     doc.font('Helvetica-Bold').fontSize(9)
-      .text('PAY STUB — DETACH AND RETAIN', ML + 10, 63, { align: 'right', width: TW - 10 });
+      .text('PAY STUB — DETACH AND RETAIN', ML + 10, companyAddrLine2 ? 57 : 63, { align: 'right', width: TW - 10 });
 
     let y = 84;
     function kv2(label, val, x, yy, w = 130) {
