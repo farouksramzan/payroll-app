@@ -58,18 +58,17 @@ router.get('/', (req, res) => {
       .get(c.id);
     const nextDue = calcNextDueDate(c.deposit_schedule, lastSub?.pay_period_end);
 
-    // Next pay date: earliest pay_date (falling back to pay_period_end) across
-    // unpaid paystubs only — excludes checks already printed/deposited.
+    // Next pay date: earliest non-printed period end from paystubs
     let nextPayDate = null;
     try {
-      const row = db.prepare(`
-        SELECT MIN(pay_period_end) as next_pay_date
-        FROM paystubs
-        WHERE client_id = ?
-          AND (check_status IS NULL OR check_status NOT IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared','voided'))
-      `).get(c.id);
-      nextPayDate = row?.next_pay_date ? row.next_pay_date.slice(0, 10) : null;
-    } catch (e) { console.error('[nextPayDate]', c.id, e.message); }
+      const allStubs = db.prepare('SELECT pay_period_end, check_status FROM paystubs WHERE client_id = ?').all(c.id);
+      console.log('[nextPayDate debug]', c.id, c.business_name, JSON.stringify(allStubs.slice(0, 3)));
+      const unpaid = allStubs.filter(s => !['printed','deposited','direct_deposit_sent','direct_deposit_cleared','voided'].includes(s.check_status));
+      if (unpaid.length > 0) {
+        const sorted = unpaid.map(s => s.pay_period_end).filter(Boolean).sort();
+        nextPayDate = sorted[0] ? sorted[0].slice(0, 10) : null;
+      }
+    } catch (e) { console.error('[nextPayDate error]', c.id, e.message); }
 
     // Overdue = settlement_due_date < today and still pending
     const overdueRow = db.prepare(`
