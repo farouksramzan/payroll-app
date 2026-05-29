@@ -7,6 +7,24 @@ const { calcNextDueDate } = require('../services/taxCalculator');
 const router = express.Router();
 router.use(requireAuth);
 
+function nextPeriodEnd(endStr, frequency) {
+  const d = new Date(endStr + 'T00:00:00Z');
+  switch (frequency) {
+    case 'weekly':      d.setUTCDate(d.getUTCDate() + 7);  break;
+    case 'biweekly':    d.setUTCDate(d.getUTCDate() + 14); break;
+    case 'semimonthly': {
+      const day = d.getUTCDate();
+      if (day >= 28) { d.setUTCMonth(d.getUTCMonth() + 1); d.setUTCDate(15); }
+      else           { const last = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)); return last.toISOString().slice(0, 10); }
+      break;
+    }
+    case 'monthly':   d.setUTCMonth(d.getUTCMonth() + 1); break;
+    case 'quarterly': d.setUTCMonth(d.getUTCMonth() + 3); break;
+    default:          d.setUTCDate(d.getUTCDate() + 14); break;
+  }
+  return d.toISOString().slice(0, 10);
+}
+
 function sanitizeClient(client, includeSecrets = false) {
   const out = {
     id: client.id,
@@ -58,17 +76,21 @@ router.get('/', (req, res) => {
       .get(c.id);
     const nextDue = calcNextDueDate(c.deposit_schedule, lastSub?.pay_period_end);
 
-    // Next pay date: earliest non-printed period end from paystubs
+    // Next pay date: advance from last completed period end per pay group
     let nextPayDate = null;
     try {
-      const allStubs = db.prepare('SELECT pay_period_end, check_status FROM paystubs WHERE client_id = ?').all(c.id);
-      console.log('[nextPayDate debug]', c.id, c.business_name, JSON.stringify(allStubs.slice(0, 3)));
-      const unpaid = allStubs.filter(s => !['printed','deposited','direct_deposit_sent','direct_deposit_cleared','voided'].includes(s.check_status));
-      if (unpaid.length > 0) {
-        const sorted = unpaid.map(s => s.pay_period_end).filter(Boolean).sort();
-        nextPayDate = sorted[0] ? sorted[0].slice(0, 10) : null;
+      const groups = db.prepare('SELECT * FROM pay_groups WHERE client_id = ? AND deleted_at IS NULL').all(c.id);
+      for (const g of groups) {
+        if (!g.first_pay_period_end || !g.frequency) continue;
+        const lastRow = db.prepare(
+          'SELECT MAX(pay_period_end) as last_end FROM paystubs WHERE client_id = ? AND pay_group_id = ? AND check_status IN (\'printed\',\'deposited\',\'direct_deposit_sent\',\'direct_deposit_cleared\')'
+        ).get(c.id, g.id);
+        const baseEnd = lastRow?.last_end ? lastRow.last_end.slice(0, 10) : g.first_pay_period_end.slice(0, 10);
+        const next = nextPeriodEnd(baseEnd, g.frequency);
+        if (!nextPayDate || next < nextPayDate) nextPayDate = next;
       }
-    } catch (e) { console.error('[nextPayDate error]', c.id, e.message); }
+    } catch (e) { console.error('[nextPayDate]', c.id, e.message); }
+    if (!nextPayDate) nextPayDate = c.next_payroll_date ? c.next_payroll_date.slice(0, 10) : null;
 
     // Overdue = settlement_due_date < today and still pending
     const overdueRow = db.prepare(`
