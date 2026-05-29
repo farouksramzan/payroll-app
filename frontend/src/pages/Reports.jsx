@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 
@@ -14,24 +14,8 @@ const REPORT_TYPES = [
   { value: 'w3',  label: 'W-3',        subtitle: 'Transmittal of Wage and Tax Statements' },
 ];
 
-// ── Preparer constants ────────────────────────────────────────────────────────
-const PR = {
-  name:        'MUHAMMAD RAMZAN',
-  ptin:        'P00338139',
-  title:       'R. Agent',
-  phone:       '(210)692-8801',
-  firmName:    'RAZZ FINANCIALS L L C',
-  firmEin:     '73-1662921',
-  firmAddress: '8746 WURZBACH RD STE 203',
-  firmCity:    'SAN ANTONIO',
-  firmState:   'TX',
-  firmZip:     '78240',
-  firmPhone:   '(210)692-8801',
-  email:       'ATAXCENTER@YAHOO.COM',
-  desgName:    'MUHAMMAD RAMZAN',
-  desgPhone:   '(210)692-8801',
-  desgPin:     ['2','6','9','1','1'],
-};
+// Preparer info is loaded from the server and passed as a prop to form components.
+// An empty object means no preparer info has been saved — those sections are left blank.
 
 function fmt(n) {
   const v = Number(n || 0);
@@ -140,74 +124,82 @@ function EntityBlock({ client, rightContent }) {
   );
 }
 
-function DesigneeSection() {
+function DesigneeSection({ pr }) {
+  const pin = (pr?.desgPin || '').split('');
+  const hasInfo = pr?.desgName || pr?.desgPhone;
   return (
     <div style={{ padding: '4px 8px', fontSize: 8, borderBottom: '1px solid #ddd' }}>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ border: '1px solid #000', padding: '0 3px', background: '#000', color: '#fff', fontSize: 7 }}>✓</span>
-          <strong>Yes.</strong>
+      {hasInfo ? (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ border: '1px solid #000', padding: '0 3px', background: '#000', color: '#fff', fontSize: 7 }}>✓</span>
+            <strong>Yes.</strong>
+          </div>
+          <div>Designee's name: <strong>{pr.desgName}</strong> &nbsp; Phone: {pr.desgPhone}</div>
+          {pin.length > 0 && (
+            <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+              PIN:&nbsp;
+              {pin.map((d, i) => (
+                <span key={i} style={{ border: '1px solid #000', width: 14, height: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700 }}>{d}</span>
+              ))}
+            </div>
+          )}
         </div>
-        <div>Designee's name: <strong>{PR.desgName}</strong> &nbsp; Phone: {PR.desgPhone}</div>
-        <div style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-          PIN:&nbsp;
-          {PR.desgPin.map((d, i) => (
-            <span key={i} style={{ border: '1px solid #000', width: 14, height: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700 }}>{d}</span>
-          ))}
-        </div>
-      </div>
+      ) : (
+        <div style={{ color: '#aaa', fontStyle: 'italic' }}>No designee information saved — add via Preparer Info tab.</div>
+      )}
     </div>
   );
 }
 
-function SignatureBlock() {
+function SignatureBlock({ pr }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, padding: '4px 8px', borderBottom: '1px solid #ddd', fontSize: 8 }}>
       <div>
         <div style={F.fieldLbl}>Sign your name here</div>
         <div style={{ borderBottom: '1px solid #000', height: 18, marginBottom: 4, fontSize: 7.5, color: '#888' }}>EF ONLY — You do not need to sign this form</div>
         <div style={F.fieldLbl}>Print your name here</div>
-        <div style={{ fontWeight: 700, marginBottom: 3 }}>{PR.name}</div>
+        <div style={{ fontWeight: 700, marginBottom: 3 }}>{pr?.name || ''}</div>
         <div style={F.fieldLbl}>Print your title here</div>
-        <div>{PR.title}</div>
+        <div>{pr?.title || ''}</div>
       </div>
       <div>
         <div style={F.fieldLbl}>Date</div>
         <div style={{ fontWeight: 600, marginBottom: 8 }}>{new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })}</div>
         <div style={F.fieldLbl}>Best daytime phone</div>
-        <div>{PR.phone}</div>
+        <div>{pr?.phone || ''}</div>
       </div>
     </div>
   );
 }
 
-function PreparerBlock() {
+function PreparerBlock({ pr }) {
   return (
     <div style={F.prepBlk}>
       <div style={{ fontWeight: 700, fontSize: 8.5, marginBottom: 4 }}>Paid Preparer Use Only</div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 8.5 }}>
         <div>
           <div style={F.fieldLbl}>Preparer's name</div>
-          <div style={{ marginBottom: 3 }}>{PR.name}</div>
+          <div style={{ marginBottom: 3 }}>{pr?.name || ''}</div>
           <div style={F.fieldLbl}>Preparer's signature</div>
           <div style={{ borderBottom: '1px solid #999', height: 14, marginBottom: 3 }}></div>
           <div style={F.fieldLbl}>Firm's name (or yours if self-employed)</div>
-          <div style={{ marginBottom: 3 }}>{PR.firmName}</div>
+          <div style={{ marginBottom: 3 }}>{pr?.firmName || ''}</div>
           <div style={F.fieldLbl}>Address</div>
-          <div>{PR.firmAddress}, {PR.firmCity}, {PR.firmState} {PR.firmZip}</div>
+          <div>{[pr?.firmAddress, pr?.firmCity, pr?.firmState, pr?.firmZip].filter(Boolean).join(', ')}</div>
         </div>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
             <span style={F.qBox}></span> <span style={{ fontSize: 8 }}>Check if self-employed</span>
           </div>
           <div style={F.fieldLbl}>PTIN</div>
-          <div style={{ marginBottom: 3 }}>{PR.ptin}</div>
+          <div style={{ marginBottom: 3 }}>{pr?.ptin || ''}</div>
           <div style={F.fieldLbl}>Date</div>
           <div style={{ marginBottom: 3 }}>{new Date().toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' })}</div>
           <div style={F.fieldLbl}>EIN</div>
-          <div style={{ marginBottom: 3 }}>{PR.firmEin}</div>
+          <div style={{ marginBottom: 3 }}>{pr?.firmEin || ''}</div>
           <div style={F.fieldLbl}>Phone</div>
-          <div>{PR.firmPhone}</div>
+          <div>{pr?.firmPhone || ''}</div>
         </div>
       </div>
     </div>
@@ -222,7 +214,7 @@ const Q_NAME_LABELS = {
 };
 
 // ── Form 941 ──────────────────────────────────────────────────────────────────
-function Report941({ data }) {
+function Report941({ data, pr }) {
   const { client, period, lines, submissions } = data;
   const q = period.quarter;
   const line5e = (lines.line5a_ssTax || 0) + (lines.line5c_medTax || 0);
@@ -349,13 +341,13 @@ function Report941({ data }) {
       <div style={{ padding: '3px 8px', fontSize: 8, borderBottom: '1px solid #ddd' }}>
         Do you want to allow an employee, a paid tax preparer, or another person to discuss this return with the IRS?
       </div>
-      <DesigneeSection />
+      <DesigneeSection pr={pr} />
 
       {/* Part 5 */}
       <div style={F.partHdr}>Part 5: Sign here. You MUST complete both pages of Form 941 and SIGN it.</div>
       <div style={F.note}>Under penalties of perjury, I declare that I have examined this return, including accompanying schedules and statements, and to the best of my knowledge and belief, it is true, correct, and complete. Declaration of preparer (other than taxpayer) is based on all information of which preparer has any knowledge.</div>
-      <SignatureBlock />
-      <PreparerBlock />
+      <SignatureBlock pr={pr} />
+      <PreparerBlock pr={pr} />
 
       {/* Supporting detail */}
       {submissions.length > 0 && (
@@ -409,7 +401,7 @@ function Report941({ data }) {
 }
 
 // ── Form 940 ──────────────────────────────────────────────────────────────────
-function Report940({ data }) {
+function Report940({ data, pr }) {
   const { client, period, lines, byEmployee } = data;
   const excessWages = Math.max(0, (lines.line3_totalPayments || 0) - (lines.line5_futaTaxableWages || 0));
 
@@ -516,13 +508,13 @@ function Report940({ data }) {
       <div style={{ padding: '3px 8px', fontSize: 8, borderBottom: '1px solid #ddd' }}>
         Do you want to allow an employee, a paid tax preparer, or another person to discuss this return with the IRS? See the instructions for details.
       </div>
-      <DesigneeSection />
+      <DesigneeSection pr={pr} />
 
       {/* Part 7 */}
       <div style={F.partHdr}>Part 7: Sign here. You MUST complete both pages of this form and SIGN it.</div>
       <div style={F.note}>Under penalties of perjury, I declare that I have examined this return and accompanying documents and, to the best of my knowledge and belief, they are true, correct, and complete.</div>
-      <SignatureBlock />
-      <PreparerBlock />
+      <SignatureBlock pr={pr} />
+      <PreparerBlock pr={pr} />
 
       {/* FUTA by employee */}
       {byEmployee.length > 0 && (
@@ -558,7 +550,7 @@ const TWC_PERIOD_END  = { 1: '03/31', 2: '06/30', 3: '09/30', 4: '12/31' };
 const TWC_PENALTY_MO  = { 1: '04', 2: '07', 3: '10', 4: '01' };
 const TWC_PENALTY_DAY = { 1: '30', 2: '31', 3: '31', 4: '31' };
 
-function ReportTWC({ data }) {
+function ReportTWC({ data, pr }) {
   const { client, period, sutaRate, lines, byEmployee } = data;
   const q = period.quarter;
   const periodEnd = `${TWC_PERIOD_END[q]}/${period.year}`;
@@ -767,7 +759,7 @@ function W2Box({ num, label, value, mono }) {
   );
 }
 
-function ReportW2({ data }) {
+function ReportW2({ data, pr }) {
   const { client, period, w2s } = data;
   return (
     <div style={{ ...F.doc, pageBreakAfter: 'auto' }}>
@@ -860,7 +852,7 @@ function ReportW2({ data }) {
 }
 
 // ── W-3 ───────────────────────────────────────────────────────────────────────
-function ReportW3({ data }) {
+function ReportW3({ data, pr }) {
   const { client, period, totals } = data;
   return (
     <div style={F.doc}>
@@ -917,15 +909,15 @@ function ReportW3({ data }) {
           <div style={F.fieldVal}>{[client.businessAddress, client.businessCity, client.state || 'TX', client.businessZip].filter(Boolean).join(', ')}</div>
           <div style={{ marginTop: 6, fontSize: 8 }}>
             <div style={F.fieldLbl}>Employer's contact person</div>
-            <div style={{ fontWeight: 700 }}>{PR.name}</div>
+            <div style={{ fontWeight: 700 }}>{pr?.name || ''}</div>
           </div>
           <div style={{ marginTop: 4, fontSize: 8 }}>
             <div style={F.fieldLbl}>Employer's telephone number</div>
-            <div>{PR.phone}</div>
+            <div>{pr?.phone || ''}</div>
           </div>
           <div style={{ marginTop: 4, fontSize: 8 }}>
             <div style={F.fieldLbl}>Employer's email address</div>
-            <div>{PR.email}</div>
+            <div>{pr?.email || ''}</div>
           </div>
         </div>
 
@@ -960,22 +952,48 @@ function ReportW3({ data }) {
       <div style={{ padding: '5px 8px', borderTop: '1px solid #000', fontSize: 8 }}>
         Under penalties of perjury, I declare that I have examined this return and accompanying documents and, to the best of my knowledge and belief, they are true, correct, and complete.
       </div>
-      <SignatureBlock />
+      <SignatureBlock pr={pr} />
     </div>
   );
 }
 
+const PREPARER_FIELDS = [
+  { key: 'name',        label: 'Preparer Name',       placeholder: 'Full name' },
+  { key: 'ptin',        label: 'PTIN',                 placeholder: 'P00000000' },
+  { key: 'title',       label: 'Title',                placeholder: 'CPA, EA, etc.' },
+  { key: 'phone',       label: 'Preparer Phone',       placeholder: '(555) 000-0000' },
+  { key: 'email',       label: 'Email',                placeholder: 'preparer@firm.com' },
+  { key: 'firmName',    label: 'Firm Name',            placeholder: 'Firm or your name if self-employed' },
+  { key: 'firmEin',     label: 'Firm EIN',             placeholder: '00-0000000' },
+  { key: 'firmAddress', label: 'Firm Address',         placeholder: '123 Main St' },
+  { key: 'firmCity',    label: 'Firm City',            placeholder: 'City' },
+  { key: 'firmState',   label: 'Firm State',           placeholder: 'TX' },
+  { key: 'firmZip',     label: 'Firm ZIP',             placeholder: '00000' },
+  { key: 'firmPhone',   label: 'Firm Phone',           placeholder: '(555) 000-0000' },
+  { key: 'desgName',    label: 'Designee Name',        placeholder: 'Third-party designee name' },
+  { key: 'desgPhone',   label: 'Designee Phone',       placeholder: '(555) 000-0000' },
+  { key: 'desgPin',     label: 'Designee PIN (5 digits)', placeholder: '00000' },
+];
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 export default function Reports() {
   const [searchParams] = useSearchParams();
-  const [clients, setClients]     = useState([]);
-  const [clientId, setClientId]   = useState('');
+  const [clients, setClients]       = useState([]);
+  const [clientId, setClientId]     = useState('');
   const [reportType, setReportType] = useState('941');
-  const [year, setYear]           = useState(CURRENT_YEAR);
-  const [quarter, setQuarter]     = useState(Math.ceil((new Date().getMonth() + 1) / 3));
-  const [data, setData]           = useState(null);
-  const [loading, setLoading]     = useState(false);
-  const [error, setError]         = useState('');
+  const [year, setYear]             = useState(CURRENT_YEAR);
+  const [quarter, setQuarter]       = useState(Math.ceil((new Date().getMonth() + 1) / 3));
+  const [data, setData]             = useState(null);
+  const [loading, setLoading]       = useState(false);
+  const [error, setError]           = useState('');
+  const [activeTab, setActiveTab]   = useState('reports');
+
+  // Preparer info
+  const [preparer, setPreparer]     = useState({});
+  const [prForm, setPrForm]         = useState({});
+  const [prSaving, setPrSaving]     = useState(false);
+  const [prSaved, setPrSaved]       = useState(false);
+  const [prError, setPrError]       = useState('');
 
   const needsQuarter = reportType === '941' || reportType === 'twc';
 
@@ -993,11 +1011,12 @@ export default function Reports() {
     const paramClientId = searchParams.get('clientId');
     api.getClients().then((cs) => {
       setClients(cs);
-      if (paramClientId) {
-        setClientId(paramClientId);
-      } else if (cs.length > 0) {
-        setClientId(String(cs[0].id));
-      }
+      if (paramClientId) setClientId(paramClientId);
+      else if (cs.length > 0) setClientId(String(cs[0].id));
+    }).catch(() => {});
+    api.getPreparerInfo().then((info) => {
+      setPreparer(info || {});
+      setPrForm(info || {});
     }).catch(() => {});
   }, []);
 
@@ -1008,7 +1027,7 @@ export default function Reports() {
     setData(null);
     try {
       let result;
-      if (reportType === '941')     result = await api.get941(clientId, year, quarter);
+      if (reportType === '941')      result = await api.get941(clientId, year, quarter);
       else if (reportType === '940') result = await api.get940(clientId, year);
       else if (reportType === 'twc') result = await api.getTWC(clientId, year, quarter);
       else if (reportType === 'w2')  result = await api.getW2(clientId, year);
@@ -1021,80 +1040,161 @@ export default function Reports() {
     }
   }
 
+  async function handleSavePreparer(e) {
+    e.preventDefault();
+    setPrSaving(true);
+    setPrError('');
+    setPrSaved(false);
+    try {
+      const saved = await api.savePreparerInfo(prForm);
+      setPreparer(saved);
+      setPrSaved(true);
+      setTimeout(() => setPrSaved(false), 3000);
+    } catch (err) {
+      setPrError(err.message);
+    } finally {
+      setPrSaving(false);
+    }
+  }
+
   return (
     <>
       <div className="page-header">
-        <h2>Tax Reports</h2>
-        <p>Generate Form 941, 940, TWC, W-2, and W-3 reports for any client and period</p>
+        <h2>File Forms</h2>
+        <p>Generate Form 941, 940, TWC, W-2, and W-3 reports, and manage your preparer information</p>
       </div>
 
       <div className="page-body">
-        {/* Controls */}
-        <div className="card" style={{ marginBottom: 24, padding: '20px 24px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16, alignItems: 'end' }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">Client</label>
-              <select className="form-select" value={clientId} onChange={(e) => { setClientId(e.target.value); setData(null); }}>
-                <option value="">— Select a client —</option>
-                {clients.map((c) => <option key={c.id} value={c.id}>{c.businessName}</option>)}
-              </select>
+        {/* Tab bar */}
+        <div className="no-print" style={{ display: 'flex', gap: 0, borderBottom: '2px solid var(--border)', marginBottom: 24 }}>
+          {[
+            { key: 'reports', label: 'Tax Reports' },
+            { key: 'preparer', label: 'Preparer Information' },
+          ].map((tab) => (
+            <button
+              key={tab.key}
+              onClick={() => setActiveTab(tab.key)}
+              style={{
+                padding: '10px 24px',
+                border: 'none',
+                borderBottom: activeTab === tab.key ? '2px solid var(--primary)' : '2px solid transparent',
+                background: 'transparent',
+                fontWeight: activeTab === tab.key ? 700 : 400,
+                color: activeTab === tab.key ? 'var(--primary)' : 'var(--text-muted)',
+                cursor: 'pointer',
+                fontSize: 14,
+                marginBottom: -2,
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── Preparer Info Tab ── */}
+        {activeTab === 'preparer' && (
+          <div className="card" style={{ maxWidth: 760, padding: '24px 28px' }}>
+            <h3 style={{ marginBottom: 6, fontSize: 15 }}>Preparer Information</h3>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
+              This information autofills Parts 4 and 5 (designee, signature, paid preparer) across all tax forms. Leave blank if not applicable.
+            </p>
+            <form onSubmit={handleSavePreparer}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 24px' }}>
+                {PREPARER_FIELDS.map(({ key, label, placeholder }) => (
+                  <div key={key} className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">{label}</label>
+                    <input
+                      className="form-input"
+                      type="text"
+                      placeholder={placeholder}
+                      value={prForm[key] || ''}
+                      onChange={(e) => setPrForm((f) => ({ ...f, [key]: e.target.value }))}
+                    />
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+                <button className="btn btn-primary" type="submit" disabled={prSaving}>
+                  {prSaving ? 'Saving…' : 'Save Preparer Info'}
+                </button>
+                {prSaved && <span style={{ color: 'var(--success)', fontSize: 13, fontWeight: 600 }}>Saved successfully.</span>}
+                {prError && <span style={{ color: 'var(--error)', fontSize: 13 }}>{prError}</span>}
+              </div>
+            </form>
+          </div>
+        )}
+
+        {/* ── Reports Tab ── */}
+        {activeTab === 'reports' && (
+          <>
+            {/* Controls */}
+            <div className="card" style={{ marginBottom: 24, padding: '20px 24px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16, alignItems: 'end' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Client</label>
+                  <select className="form-select" value={clientId} onChange={(e) => { setClientId(e.target.value); setData(null); }}>
+                    <option value="">— Select a client —</option>
+                    {clients.map((c) => <option key={c.id} value={c.id}>{c.businessName}</option>)}
+                  </select>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Report Type</label>
+                  <select className="form-select" value={reportType} onChange={(e) => { setReportType(e.target.value); setData(null); }}>
+                    {REPORT_TYPES.map((r) => <option key={r.value} value={r.value}>{r.label} — {r.subtitle}</option>)}
+                  </select>
+                </div>
+
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Tax Year</label>
+                  <select className="form-select" value={year} onChange={(e) => { setYear(Number(e.target.value)); setData(null); }}>
+                    {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+                  </select>
+                </div>
+
+                {needsQuarter && (
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">Quarter</label>
+                    <select className="form-select" value={quarter} onChange={(e) => { setQuarter(Number(e.target.value)); setData(null); }}>
+                      {QUARTERS.map((q) => <option key={q} value={q}>{QUARTER_LABELS[q]}</option>)}
+                    </select>
+                  </div>
+                )}
+
+                <div>
+                  <button className="btn btn-primary" onClick={handleGenerate} disabled={loading || !clientId}>
+                    {loading ? <><span className="spinner" /> Generating…</> : 'Generate Report'}
+                  </button>
+                </div>
+              </div>
             </div>
 
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">Report Type</label>
-              <select className="form-select" value={reportType} onChange={(e) => { setReportType(e.target.value); setData(null); }}>
-                {REPORT_TYPES.map((r) => <option key={r.value} value={r.value}>{r.label} — {r.subtitle}</option>)}
-              </select>
-            </div>
-
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">Tax Year</label>
-              <select className="form-select" value={year} onChange={(e) => { setYear(Number(e.target.value)); setData(null); }}>
-                {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
-              </select>
-            </div>
-
-            {needsQuarter && (
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">Quarter</label>
-                <select className="form-select" value={quarter} onChange={(e) => { setQuarter(Number(e.target.value)); setData(null); }}>
-                  {QUARTERS.map((q) => <option key={q} value={q}>{QUARTER_LABELS[q]}</option>)}
-                </select>
+            {error && (
+              <div className="alert alert-error" style={{ marginBottom: 20 }}>
+                <span>⚠</span> {error}
               </div>
             )}
 
-            <div>
-              <button className="btn btn-primary" onClick={handleGenerate} disabled={loading || !clientId}>
-                {loading ? <><span className="spinner" /> Generating…</> : 'Generate Report'}
-              </button>
-            </div>
-          </div>
-        </div>
+            {data && (
+              <>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginBottom: 16 }} className="no-print">
+                  <button className="btn btn-secondary" onClick={() => window.print()}>Print / Save PDF</button>
+                </div>
+                {data.reportType === '941' && <Report941 data={data} pr={preparer} />}
+                {data.reportType === '940' && <Report940 data={data} pr={preparer} />}
+                {data.reportType === 'TWC' && <ReportTWC data={data} pr={preparer} />}
+                {data.reportType === 'W-2' && <ReportW2  data={data} pr={preparer} />}
+                {data.reportType === 'W-3' && <ReportW3  data={data} pr={preparer} />}
+              </>
+            )}
 
-        {error && (
-          <div className="alert alert-error" style={{ marginBottom: 20 }}>
-            <span>⚠</span> {error}
-          </div>
-        )}
-
-        {data && (
-          <>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginBottom: 16 }} className="no-print">
-              <button className="btn btn-secondary" onClick={() => window.print()}>Print / Save PDF</button>
-            </div>
-            {data.reportType === '941' && <Report941 data={data} />}
-            {data.reportType === '940' && <Report940 data={data} />}
-            {data.reportType === 'TWC' && <ReportTWC data={data} />}
-            {data.reportType === 'W-2' && <ReportW2  data={data} />}
-            {data.reportType === 'W-3' && <ReportW3  data={data} />}
+            {!data && !loading && !error && (
+              <div className="card" style={{ textAlign: 'center', padding: '48px 24px', color: 'var(--text-muted)' }}>
+                <div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>
+                <p>Select a client and report type above, then click Generate Report.</p>
+              </div>
+            )}
           </>
-        )}
-
-        {!data && !loading && !error && (
-          <div className="card" style={{ textAlign: 'center', padding: '48px 24px', color: 'var(--text-muted)' }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>
-            <p>Select a client and report type above, then click Generate Report.</p>
-          </div>
         )}
       </div>
     </>

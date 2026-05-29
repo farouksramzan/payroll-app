@@ -423,6 +423,11 @@ function migrate() {
   if (orphanByPayGroup.changes > 0)
     console.log(`[DB] Cleaned up ${orphanByPayGroup.changes} orphaned draft paystub(s) with no matching pay group`);
 
+  // preparer_info — per-user tax preparer details for autofilling forms
+  addCols('users', [
+    { name: 'preparer_info', def: 'TEXT' },
+  ]);
+
   // notification_log — tracks sent notifications to avoid duplicates
   db.exec(`
     CREATE TABLE IF NOT EXISTS notification_log (

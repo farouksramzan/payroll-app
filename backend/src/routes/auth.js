@@ -40,4 +40,19 @@ router.get('/me', requireAuth, (req, res) => {
   res.json({ id: req.user.id, username: req.user.username });
 });
 
+// GET /api/auth/preparer — return saved preparer info for this user
+router.get('/preparer', requireAuth, (req, res) => {
+  const db = getDb();
+  const user = db.prepare('SELECT preparer_info FROM users WHERE id = ?').get(req.user.id);
+  const info = user?.preparer_info ? JSON.parse(user.preparer_info) : null;
+  res.json(info || {});
+});
+
+// PUT /api/auth/preparer — save preparer info for this user
+router.put('/preparer', requireAuth, (req, res) => {
+  const db = getDb();
+  db.prepare('UPDATE users SET preparer_info = ? WHERE id = ?').run(JSON.stringify(req.body), req.user.id);
+  res.json(req.body);
+});
+
 module.exports = router;

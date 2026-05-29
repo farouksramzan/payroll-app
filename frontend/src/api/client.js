@@ -120,6 +120,10 @@ const api = {
   getTWC: (clientId, year, quarter) => request(`/reports/twc?clientId=${clientId}&year=${year}&quarter=${quarter}`),
   getW2: (clientId, year) => request(`/reports/w2?clientId=${clientId}&year=${year}`),
   getW3: (clientId, year) => request(`/reports/w3?clientId=${clientId}&year=${year}`),
+
+  // Preparer info
+  getPreparerInfo: () => request('/auth/preparer'),
+  savePreparerInfo: (data) => request('/auth/preparer', { method: 'PUT', body: JSON.stringify(data) }),
 };
 
 export default api;
