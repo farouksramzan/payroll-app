@@ -155,10 +155,11 @@ function StatusBadge({ status }) {
 }
 
 // ── Employee Drawer ───────────────────────────────────────────────────────────
-function EmployeeDrawer({ clientId, empId, onClose, onSaved }) {
-  const [form, setForm]     = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [err, setErr]       = useState('');
+function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
+  const [form, setForm]       = useState(null);
+  const [saving, setSaving]   = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [err, setErr]         = useState('');
   const [payGroups, setPayGroups] = useState([]);
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [newGroup, setNewGroup] = useState({ name: '', frequency: 'biweekly', firstPayPeriodEnd: '', payDate: '' });
@@ -242,6 +243,15 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved }) {
       onSaved();
     } catch (e) { setErr(e.message); }
     finally { setSaving(false); }
+  }
+
+  async function handleDelete() {
+    if (!window.confirm(`Delete ${form?.firstName} ${form?.lastName}? This cannot be undone.`)) return;
+    setDeleting(true);
+    try {
+      await api.deleteEmployee(empId);
+      onDeleted?.();
+    } catch (e) { setErr(e.message); setDeleting(false); }
   }
 
   return (
@@ -391,10 +401,20 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved }) {
                 <div className="form-group"><label className="form-label">Other dependents (×$500)</label><input className="form-input" type="number" min="0" max="20" value={form.step3Other} onChange={e => setForm(f => ({ ...f, step3Other: parseInt(e.target.value || 0) }))} style={{ maxWidth: 80 }} /></div>
               </div>
               <div className="form-group" style={{ maxWidth: 180 }}><label className="form-label">Hire Date</label><input className="form-input" type="date" value={form.hireDate} onChange={set('hireDate')} /></div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                <input type="checkbox" checked={form.isActive} onChange={set('isActive')} style={{ accentColor: 'var(--accent)', width: 14, height: 14 }} />
-                <span style={{ fontSize: 13 }}>Employee is active</span>
-              </label>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={form.isActive} onChange={set('isActive')} style={{ accentColor: 'var(--accent)', width: 14, height: 14 }} />
+                  <span style={{ fontSize: 13 }}>Employee is active</span>
+                </label>
+                <button
+                  className="btn btn-danger btn-sm"
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  style={{ fontSize: 12 }}
+                >
+                  {deleting ? <span className="spinner" /> : 'Delete Employee'}
+                </button>
+              </div>
             </>
           )}
         </div>
@@ -720,7 +740,6 @@ function EmployeesTab({ clientId, employees, onRefresh }) {
   const [editGroup, setEditGroup]         = useState(null);
   const [payGroups, setPayGroups]         = useState([]);
   const [showImport, setShowImport]       = useState(false);
-  const [deletingId, setDeletingId]       = useState(null);
 
   useEffect(() => {
     api.getPayGroups(clientId).then(setPayGroups).catch(() => {});
@@ -728,19 +747,6 @@ function EmployeesTab({ clientId, employees, onRefresh }) {
 
   function handleGroupSaved() { setEditGroup(null); onRefresh(); api.getPayGroups(clientId).then(setPayGroups); }
 
-  async function handleDeleteEmployee(e, emp) {
-    e.stopPropagation();
-    if (!window.confirm(`Delete ${emp.firstName} ${emp.lastName}? This cannot be undone.`)) return;
-    setDeletingId(emp.id);
-    try {
-      await api.deleteEmployee(emp.id);
-      onRefresh();
-    } catch (err) {
-      alert(err.message);
-    } finally {
-      setDeletingId(null);
-    }
-  }
 
   return (
     <div>
@@ -794,14 +800,6 @@ function EmployeesTab({ clientId, employees, onRefresh }) {
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{emp.filingStatus === 'married' ? 'Married' : emp.filingStatus === 'hoh' ? 'HoH' : 'Single'}</div>
                 </div>
                 <span className={`badge ${emp.isActive !== false ? 'badge-success' : 'badge-neutral'}`}>{emp.isActive !== false ? 'Active' : 'Inactive'}</span>
-                <button
-                  className="btn btn-danger btn-sm"
-                  onClick={(e) => handleDeleteEmployee(e, emp)}
-                  disabled={deletingId === emp.id}
-                  style={{ marginLeft: 4 }}
-                >
-                  {deletingId === emp.id ? <span className="spinner" /> : 'Delete'}
-                </button>
                 <span style={{ color: 'var(--text-muted)', fontSize: 16 }}>›</span>
               </div>
             );
@@ -809,7 +807,7 @@ function EmployeesTab({ clientId, employees, onRefresh }) {
         </div>
       )}
       {drawerEmpId && (
-        <EmployeeDrawer clientId={clientId} empId={drawerEmpId} onClose={() => setDrawerEmpId(null)} onSaved={() => { setDrawerEmpId(null); onRefresh(); }} />
+        <EmployeeDrawer clientId={clientId} empId={drawerEmpId} onClose={() => setDrawerEmpId(null)} onSaved={() => { setDrawerEmpId(null); onRefresh(); }} onDeleted={() => { setDrawerEmpId(null); onRefresh(); }} />
       )}
       {editGroup && (
         <PayGroupEditorModal group={editGroup} clientId={clientId} allGroups={payGroups} onSaved={handleGroupSaved} onClose={() => setEditGroup(null)} onDeleted={handleGroupSaved} onMoved={onRefresh} />
