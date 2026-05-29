@@ -1345,7 +1345,7 @@ export default function Reports() {
         {/* ── Reports Tab ── */}
         {activeTab === 'reports' && (
           <>
-            <div className="card" style={{ marginBottom: 24, padding: '20px 24px' }}>
+            <div className="card no-print" style={{ marginBottom: 24, padding: '20px 24px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16, alignItems: 'end' }}>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">Client</label>
@@ -1383,14 +1383,17 @@ export default function Reports() {
             </div>
 
             {error && (
-              <div className="alert alert-error" style={{ marginBottom: 20 }}>
+              <div className="alert alert-error no-print" style={{ marginBottom: 20 }}>
                 <span>⚠</span> {error}
               </div>
             )}
 
             {data && (
               <>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginBottom: 16 }} className="no-print">
+                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 16, marginBottom: 16 }} className="no-print">
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    Tip: In the print dialog, uncheck <strong>Headers and footers</strong> and check <strong>Background graphics</strong>
+                  </span>
                   <button className="btn btn-secondary" onClick={() => window.print()}>Print / Save PDF</button>
                 </div>
                 {data.reportType === '941' && <Report941 data={data} pr={preparer} />}
