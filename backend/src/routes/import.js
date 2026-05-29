@@ -17,7 +17,17 @@ function parseQbEmployeeRow(row) {
   const firstName = spaceIdx > -1 ? fullName.slice(0, spaceIdx) : fullName;
   const lastName  = spaceIdx > -1 ? fullName.slice(spaceIdx + 1) : '';
 
-  const ssn = (row['SS No.'] || '').trim();
+  // QB Desktop exports SSN as "SS No." — value may be a string "XXX-XX-XXXX"
+  // or a raw number 123456789 if Excel stripped the dashes.
+  const ssnRaw = row['SS No.'] ?? row['SS#'] ?? row['SSN'] ?? row['Social Security Number'] ?? '';
+  let ssn = '';
+  if (typeof ssnRaw === 'number') {
+    // Zero-pad to 9 digits, then format as XXX-XX-XXXX
+    const digits = String(ssnRaw).padStart(9, '0');
+    ssn = `${digits.slice(0,3)}-${digits.slice(3,5)}-${digits.slice(5)}`;
+  } else {
+    ssn = String(ssnRaw).trim();
+  }
 
   // Address field in QB exports includes "STREET CITY, ST ZIP" — strip city/state/zip suffix
   let address = (row['Address'] || '').trim();
@@ -61,6 +71,7 @@ router.post('/employees/preview', upload.single('file'), (req, res) => {
     }
     const ws = wb.Sheets[sheetName];
     const rows = xlsx.utils.sheet_to_json(ws, { defval: '' });
+    if (rows[0]) console.log('[import preview] columns:', Object.keys(rows[0]), '| SS No. sample:', rows[0]['SS No.'], typeof rows[0]['SS No.']);
 
     const existing = db.prepare('SELECT first_name, last_name FROM employees WHERE client_id = ?').all(clientId);
     const existingNames = new Set(existing.map(e => `${e.first_name}|${e.last_name}`.toUpperCase()));
