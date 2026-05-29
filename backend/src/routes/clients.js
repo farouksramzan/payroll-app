@@ -66,11 +66,10 @@ router.get('/', (req, res) => {
         SELECT MIN(pay_period_end) as next_pay_date
         FROM paystubs
         WHERE client_id = ?
-          AND pay_period_end >= ?
-          AND (check_status IS NULL OR check_status NOT IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared'))
-      `).get(c.id, today);
+          AND (check_status IS NULL OR check_status NOT IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared','voided'))
+      `).get(c.id);
       nextPayDate = row?.next_pay_date ? row.next_pay_date.slice(0, 10) : null;
-    } catch (e) { /* non-critical */ }
+    } catch (e) { console.error('[nextPayDate]', c.id, e.message); }
 
     // Overdue = settlement_due_date < today and still pending
     const overdueRow = db.prepare(`
