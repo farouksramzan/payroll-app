@@ -133,12 +133,12 @@ getDb();
     const db = getDb();
     const cutoff = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
     const r1 = db.prepare(`
-      UPDATE paystubs SET status = 'failed', updated_at = CURRENT_TIMESTAMP
-      WHERE  status = 'processing' AND updated_at < ?
+      UPDATE paystubs SET status = 'failed'
+      WHERE  status = 'processing' AND created_at < ?
     `).run(cutoff);
     const r2 = db.prepare(`
-      UPDATE paystubs SET status_940 = 'failed', updated_at = CURRENT_TIMESTAMP
-      WHERE  status_940 = 'processing' AND updated_at < ?
+      UPDATE paystubs SET status_940 = 'failed'
+      WHERE  status_940 = 'processing' AND created_at < ?
     `).run(cutoff);
     const changed = r1.changes + r2.changes;
     if (changed > 0) {

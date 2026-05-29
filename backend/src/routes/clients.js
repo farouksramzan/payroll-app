@@ -79,7 +79,7 @@ router.get('/', (req, res) => {
     // Next pay date: advance from last completed period end per pay group
     let nextPayDate = null;
     try {
-      const groups = db.prepare('SELECT * FROM pay_groups WHERE client_id = ? AND deleted_at IS NULL').all(c.id);
+      const groups = db.prepare('SELECT * FROM pay_groups WHERE client_id = ?').all(c.id).filter(g => !g.deleted_at);
       for (const g of groups) {
         if (!g.first_pay_period_end || !g.frequency) continue;
         const lastRow = db.prepare(
