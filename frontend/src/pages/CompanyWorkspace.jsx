@@ -720,12 +720,27 @@ function EmployeesTab({ clientId, employees, onRefresh }) {
   const [editGroup, setEditGroup]         = useState(null);
   const [payGroups, setPayGroups]         = useState([]);
   const [showImport, setShowImport]       = useState(false);
+  const [deletingId, setDeletingId]       = useState(null);
 
   useEffect(() => {
     api.getPayGroups(clientId).then(setPayGroups).catch(() => {});
   }, [clientId]);
 
   function handleGroupSaved() { setEditGroup(null); onRefresh(); api.getPayGroups(clientId).then(setPayGroups); }
+
+  async function handleDeleteEmployee(e, emp) {
+    e.stopPropagation();
+    if (!window.confirm(`Delete ${emp.firstName} ${emp.lastName}? This cannot be undone.`)) return;
+    setDeletingId(emp.id);
+    try {
+      await api.deleteEmployee(emp.id);
+      onRefresh();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   return (
     <div>
@@ -779,6 +794,14 @@ function EmployeesTab({ clientId, employees, onRefresh }) {
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{emp.filingStatus === 'married' ? 'Married' : emp.filingStatus === 'hoh' ? 'HoH' : 'Single'}</div>
                 </div>
                 <span className={`badge ${emp.isActive !== false ? 'badge-success' : 'badge-neutral'}`}>{emp.isActive !== false ? 'Active' : 'Inactive'}</span>
+                <button
+                  className="btn btn-danger btn-sm"
+                  onClick={(e) => handleDeleteEmployee(e, emp)}
+                  disabled={deletingId === emp.id}
+                  style={{ marginLeft: 4 }}
+                >
+                  {deletingId === emp.id ? <span className="spinner" /> : 'Delete'}
+                </button>
                 <span style={{ color: 'var(--text-muted)', fontSize: 16 }}>›</span>
               </div>
             );
