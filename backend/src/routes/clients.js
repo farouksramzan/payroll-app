@@ -7,6 +7,24 @@ const { calcNextDueDate } = require('../services/taxCalculator');
 const router = express.Router();
 router.use(requireAuth);
 
+const FEDERAL_HOLIDAYS = new Set([
+  '2024-01-01','2024-01-15','2024-02-19','2024-05-27','2024-06-19','2024-07-04',
+  '2024-09-02','2024-10-14','2024-11-11','2024-11-28','2024-12-25',
+  '2025-01-01','2025-01-20','2025-02-17','2025-05-26','2025-06-19','2025-07-04',
+  '2025-09-01','2025-10-13','2025-11-11','2025-11-27','2025-12-25',
+  '2026-01-01','2026-01-19','2026-02-16','2026-05-25','2026-06-19','2026-07-03',
+  '2026-09-07','2026-10-12','2026-11-11','2026-11-26','2026-12-25',
+  '2027-01-01','2027-01-18','2027-02-15','2027-05-31','2027-06-19','2027-07-05',
+  '2027-09-06','2027-10-11','2027-11-11','2027-11-25','2027-12-24',
+]);
+function isBizDay(d) { const w = d.getDay(); return w !== 0 && w !== 6 && !FEDERAL_HOLIDAYS.has(d.toISOString().slice(0, 10)); }
+function addBizDays(dateStr, n) {
+  const r = new Date(dateStr + 'T00:00:00Z');
+  let added = 0;
+  while (added < n) { r.setUTCDate(r.getUTCDate() + 1); if (isBizDay(r)) added++; }
+  return r.toISOString().slice(0, 10);
+}
+
 function nextPeriodEnd(endStr, frequency) {
   const d = new Date(endStr + 'T00:00:00Z');
   switch (frequency) {
@@ -86,8 +104,9 @@ router.get('/', (req, res) => {
           'SELECT MAX(pay_period_end) as last_end FROM paystubs WHERE client_id = ? AND pay_group_id = ? AND check_status IN (\'printed\',\'deposited\',\'direct_deposit_sent\',\'direct_deposit_cleared\')'
         ).get(c.id, g.id);
         const baseEnd = lastRow?.last_end ? lastRow.last_end.slice(0, 10) : g.first_pay_period_end.slice(0, 10);
-        const next = nextPeriodEnd(baseEnd, g.frequency);
-        if (!nextPayDate || next < nextPayDate) nextPayDate = next;
+        const nextEnd = nextPeriodEnd(baseEnd, g.frequency);
+        const nextPay = addBizDays(nextEnd, 2);
+        if (!nextPayDate || nextPay < nextPayDate) nextPayDate = nextPay;
       }
     } catch (e) { console.error('[nextPayDate]', c.id, e.message); }
     if (!nextPayDate) nextPayDate = c.next_payroll_date ? c.next_payroll_date.slice(0, 10) : null;
