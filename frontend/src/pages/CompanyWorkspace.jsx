@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import api from '../api/client';
+import ImportEmployeesModal from '../components/ImportEmployeesModal';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const EE_SS_RATE       = 0.062;
@@ -716,8 +717,9 @@ function PayGroupEditorModal({ group, clientId, allGroups, onSaved, onClose, onD
 // ── Employees Tab ─────────────────────────────────────────────────────────────
 function EmployeesTab({ clientId, employees, onRefresh }) {
   const [drawerEmpId, setDrawerEmpId]     = useState(null);
-  const [editGroup, setEditGroup]         = useState(null); // group object
+  const [editGroup, setEditGroup]         = useState(null);
   const [payGroups, setPayGroups]         = useState([]);
+  const [showImport, setShowImport]       = useState(false);
 
   useEffect(() => {
     api.getPayGroups(clientId).then(setPayGroups).catch(() => {});
@@ -727,7 +729,15 @@ function EmployeesTab({ clientId, employees, onRefresh }) {
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+      {showImport && (
+        <ImportEmployeesModal
+          clientId={clientId}
+          onClose={() => setShowImport(false)}
+          onImported={() => { onRefresh(); }}
+        />
+      )}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 16 }}>
+        <button className="btn btn-secondary" onClick={() => setShowImport(true)}>Import from Excel</button>
         <Link to={`/clients/${clientId}/employees/new`} className="btn btn-primary">+ Add Employee</Link>
       </div>
       {employees.length === 0 ? (

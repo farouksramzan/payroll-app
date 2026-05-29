@@ -134,21 +134,22 @@ export default function ClientForm() {
               {errors.businessName && <p className="form-error-msg">{errors.businessName}</p>}
             </div>
 
-            <div className="form-grid">
-              <div className="form-group">
-                <label className="form-label">EIN <span>*</span></label>
-                <input className="form-input mono" value={form.ein} onChange={set('ein')} placeholder="12-3456789" />
-                {errors.ein && <p className="form-error-msg">{errors.ein}</p>}
-                <p className="form-hint">Format: XX-XXXXXXX</p>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Deposit Schedule</label>
+            <div className="form-group" style={{ maxWidth: 320 }}>
+              <label className="form-label">EIN <span>*</span></label>
+              <input className="form-input mono" value={form.ein} onChange={set('ein')} placeholder="12-3456789" />
+              {errors.ein && <p className="form-error-msg">{errors.ein}</p>}
+              <p className="form-hint">Format: XX-XXXXXXX</p>
+            </div>
+
+            {isEdit && (
+              <div className="form-group" style={{ maxWidth: 280 }}>
+                <label className="form-label">941 Deposit Schedule</label>
                 <select className="form-select" value={form.depositSchedule} onChange={set('depositSchedule')}>
                   <option value="monthly">Monthly</option>
                   <option value="semiweekly">Semi-weekly</option>
                 </select>
               </div>
-            </div>
+            )}
 
             <div className="form-group">
               <label className="form-label">Business Address <span>*</span></label>
@@ -225,32 +226,25 @@ export default function ClientForm() {
               </select>
             </div>
 
-            <p className="form-section-title">Payroll Schedule</p>
-
-            <div className="form-grid">
-              <div className="form-group">
-                <label className="form-label">Payroll Frequency</label>
-                <select className="form-select" value={form.payrollFrequency} onChange={set('payrollFrequency')}>
-                  <option value="weekly">Weekly</option>
-                  <option value="biweekly">Bi-weekly</option>
-                  <option value="semimonthly">Semi-monthly</option>
-                  <option value="monthly">Monthly</option>
-                </select>
-                <p className="form-hint">How often employees are paid. Used for the payroll calendar and tax calculations.</p>
-              </div>
-              <div className="form-group">
-                <label className="form-label">Next Payroll Date</label>
-                <input className="form-input" type="date" value={form.nextPayrollDate} onChange={set('nextPayrollDate')} />
-                <p className="form-hint">Shown on the dashboard as a reminder. Auto-advances after each payroll run.</p>
-              </div>
-            </div>
-
-            {!isEdit && (
-              <div className="form-group" style={{ maxWidth: 200 }}>
-                <label className="form-label">Starting Check Number</label>
-                <input className="form-input mono" type="number" min="1" step="1" value={form.nextCheckNumber} onChange={set('nextCheckNumber')} />
-                <p className="form-hint">Sequential check numbers are assigned automatically from this starting value.</p>
-              </div>
+            {isEdit && (
+              <>
+                <p className="form-section-title">Payroll Schedule</p>
+                <div className="form-grid">
+                  <div className="form-group">
+                    <label className="form-label">Payroll Frequency</label>
+                    <select className="form-select" value={form.payrollFrequency} onChange={set('payrollFrequency')}>
+                      <option value="weekly">Weekly</option>
+                      <option value="biweekly">Bi-weekly</option>
+                      <option value="semimonthly">Semi-monthly</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Next Payroll Date</label>
+                    <input className="form-input" type="date" value={form.nextPayrollDate} onChange={set('nextPayrollDate')} />
+                  </div>
+                </div>
+              </>
             )}
 
             <p className="form-section-title">Contact Information</p>
