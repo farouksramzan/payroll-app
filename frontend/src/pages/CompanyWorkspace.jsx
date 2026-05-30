@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 import ImportEmployeesModal from '../components/ImportEmployeesModal';
+import ImportPaychecksModal from '../components/ImportPaychecksModal';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const EE_SS_RATE       = 0.062;
@@ -978,6 +979,7 @@ function CompanyTab({ client, onSaved }) {
 
 // ── Pay Employees Tab ─────────────────────────────────────────────────────────
 function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
+  const [showPaycheckImport, setShowPaycheckImport] = useState(false);
   const [payGroups, setPayGroups]     = useState([]);
   const [currentGroupId, setCurrentGroupId] = useState(null);
   const [groupsLoading, setGroupsLoading]   = useState(true);
@@ -1913,6 +1915,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
           <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={handleSelectAllDue}>Select All Due</button>
         )}
         <div style={{ flex: 1 }} />
+        <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} onClick={() => setShowPaycheckImport(true)}>
+          ↑ Import from QB
+        </button>
         {!isGroupDeleted && (
           <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} onClick={() => setUngroupedModal(true)}>
             + Ungrouped Check
@@ -2040,6 +2045,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
             </div>
           </div>
         </div>
+      )}
+
+      {showPaycheckImport && (
+        <ImportPaychecksModal clientId={clientId} onClose={() => setShowPaycheckImport(false)} onImported={() => { setShowPaycheckImport(false); onRefresh(); }} />
       )}
 
       {/* Ungrouped Payroll Modal */}

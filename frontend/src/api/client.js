@@ -153,6 +153,37 @@ const api = {
     return data;
   },
 
+  previewPaycheckImport: async (clientId, file) => {
+    const token = localStorage.getItem('token');
+    const form = new FormData();
+    form.append('clientId', clientId);
+    form.append('file', file);
+    const res = await fetch(`${BASE}/import/paychecks/preview`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Preview failed');
+    return data;
+  },
+
+  importPaychecks: async (clientId, file, skipExisting) => {
+    const token = localStorage.getItem('token');
+    const form = new FormData();
+    form.append('clientId', clientId);
+    form.append('file', file);
+    form.append('skipExisting', skipExisting ? 'true' : 'false');
+    const res = await fetch(`${BASE}/import/paychecks`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Import failed');
+    return data;
+  },
+
   importEmployees: async (clientId, file, skipExisting) => {
     const token = localStorage.getItem('token');
     const form = new FormData();
