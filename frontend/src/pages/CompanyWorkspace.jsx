@@ -166,6 +166,11 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [newGroup, setNewGroup] = useState({ name: '', frequency: 'biweekly', firstPayPeriodEnd: '', payDate: '' });
   const [savingGroup, setSavingGroup] = useState(false);
+  const [dd, setDd]             = useState(null); // { status, last4, bankAccountType, routingNumber }
+  const [ddForm, setDdForm]     = useState({ routingNumber: '', accountNumber: '', confirmAccount: '', bankAccountType: 'checking' });
+  const [ddEdit, setDdEdit]     = useState(false);
+  const [ddSaving, setDdSaving] = useState(false);
+  const [ddErr, setDdErr]       = useState('');
 
   useEffect(() => {
     api.getPayGroups(clientId).then(setPayGroups).catch(() => {});
@@ -173,6 +178,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
 
   useEffect(() => {
     if (!empId) return;
+    api.getDirectDeposit(empId).then(setDd).catch(() => {});
     api.getEmployee(empId, true).then(emp => setForm({
       firstName: emp.firstName || '', lastName: emp.lastName || '', ssn: emp.ssn || '',
       address: emp.address || '', city: emp.city || '', state: emp.state || 'TX', zip: emp.zip || '',
@@ -245,6 +251,31 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
       onSaved();
     } catch (e) { setErr(e.message); }
     finally { setSaving(false); }
+  }
+
+  async function handleSaveDd() {
+    if (ddForm.accountNumber !== ddForm.confirmAccount) { setDdErr('Account numbers do not match'); return; }
+    if (!/^\d{9}$/.test(ddForm.routingNumber)) { setDdErr('Routing number must be 9 digits'); return; }
+    if (!/^\d{4,17}$/.test(ddForm.accountNumber)) { setDdErr('Account number must be 4–17 digits'); return; }
+    setDdSaving(true); setDdErr('');
+    try {
+      const result = await api.saveDirectDeposit(empId, { routingNumber: ddForm.routingNumber, accountNumber: ddForm.accountNumber, bankAccountType: ddForm.bankAccountType });
+      setDd(result);
+      setDdEdit(false);
+      setDdForm({ routingNumber: '', accountNumber: '', confirmAccount: '', bankAccountType: 'checking' });
+    } catch (e) { setDdErr(e.message); }
+    finally { setDdSaving(false); }
+  }
+
+  async function handleRemoveDd() {
+    if (!window.confirm('Remove direct deposit bank account for this employee?')) return;
+    setDdSaving(true);
+    try {
+      const result = await api.deleteDirectDeposit(empId);
+      setDd(result);
+      setDdEdit(false);
+    } catch (e) { setDdErr(e.message); }
+    finally { setDdSaving(false); }
   }
 
   async function handleDelete() {
@@ -408,6 +439,98 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                 <div className="form-group"><label className="form-label">Other dependents (×$500)</label><input className="form-input" type="number" min="0" max="20" value={form.step3Other} onChange={e => setForm(f => ({ ...f, step3Other: parseInt(e.target.value || 0) }))} style={{ maxWidth: 80 }} /></div>
               </div>
               <div className="form-group" style={{ maxWidth: 180 }}><label className="form-label">Hire Date</label><input className="form-input" type="date" value={form.hireDate} onChange={set('hireDate')} /></div>
+
+              {/* ── Direct Deposit ── */}
+              <p className="form-section-title">Direct Deposit</p>
+              {dd && (
+                <div style={{ marginBottom: 16 }}>
+                  {/* Status badge + info */}
+                  {dd.status === 'active' && !ddEdit && (
+                    <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: 13, color: '#16a34a' }}>✓ Active — Direct Deposit Enabled</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                          {dd.bankAccountType === 'savings' ? 'Savings' : 'Checking'} ···· {dd.last4}
+                          {dd.routingNumber && <span style={{ marginLeft: 10 }}>Routing: {dd.routingNumber}</span>}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => { setDdEdit(true); setDdErr(''); }}>Change</button>
+                        <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, color: '#dc2626' }} onClick={handleRemoveDd} disabled={ddSaving}>Remove</button>
+                      </div>
+                    </div>
+                  )}
+                  {dd.status === 'pending' && !ddEdit && (
+                    <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, padding: '12px 14px' }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: '#d97706' }}>⏳ Pending — Bank account saved, not yet verified with Moov</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{dd.bankAccountType} ···· {dd.last4}</div>
+                      <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                        <button className="btn btn-primary btn-sm" style={{ fontSize: 11 }} onClick={async () => { setDdSaving(true); setDdErr(''); try { const r = await api.activateDirectDeposit(empId); setDd(r); } catch(e) { setDdErr(e.message); } finally { setDdSaving(false); } }} disabled={ddSaving}>{ddSaving ? <span className="spinner" style={{ width: 10, height: 10 }} /> : 'Retry Moov Connection'}</button>
+                        <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => { setDdEdit(true); setDdErr(''); }}>Change Account</button>
+                        <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, color: '#dc2626' }} onClick={handleRemoveDd} disabled={ddSaving}>Remove</button>
+                      </div>
+                    </div>
+                  )}
+                  {dd.status === 'failed' && !ddEdit && (
+                    <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '12px 14px' }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: '#dc2626' }}>✗ Failed — Moov rejected the bank account</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{dd.bankAccountType} ···· {dd.last4}</div>
+                      <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
+                        <button className="btn btn-primary btn-sm" style={{ fontSize: 11 }} onClick={() => { setDdEdit(true); setDdErr(''); }}>Enter New Account</button>
+                        <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, color: '#dc2626' }} onClick={handleRemoveDd} disabled={ddSaving}>Remove</button>
+                      </div>
+                    </div>
+                  )}
+                  {dd.status === 'none' && !ddEdit && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Not set up</div>
+                      <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} onClick={() => { setDdEdit(true); setDdErr(''); }}>+ Set Up Direct Deposit</button>
+                    </div>
+                  )}
+
+                  {/* Bank account form */}
+                  {ddEdit && (
+                    <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: '14px 14px 10px', marginTop: dd.status !== 'none' ? 12 : 0 }}>
+                      {ddErr && <div className="alert alert-error" style={{ marginBottom: 10, fontSize: 12 }}><span>⚠</span>{ddErr}</div>}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                          <label className="form-label" style={{ fontSize: 11 }}>Routing Number</label>
+                          <input className="form-input mono" type="text" inputMode="numeric" maxLength={9} value={ddForm.routingNumber}
+                            onChange={e => setDdForm(f => ({ ...f, routingNumber: e.target.value.replace(/\D/g, '') }))}
+                            placeholder="9 digits" style={{ height: 32, fontSize: 13 }} />
+                        </div>
+                        <div className="form-group" style={{ marginBottom: 0 }}>
+                          <label className="form-label" style={{ fontSize: 11 }}>Account Type</label>
+                          <select className="form-select" value={ddForm.bankAccountType} onChange={e => setDdForm(f => ({ ...f, bankAccountType: e.target.value }))} style={{ height: 32, fontSize: 13 }}>
+                            <option value="checking">Checking</option>
+                            <option value="savings">Savings</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 10 }}>
+                        <label className="form-label" style={{ fontSize: 11 }}>Account Number</label>
+                        <input className="form-input mono" type="password" value={ddForm.accountNumber}
+                          onChange={e => setDdForm(f => ({ ...f, accountNumber: e.target.value.replace(/\D/g, '') }))}
+                          placeholder="Account number" style={{ height: 32, fontSize: 13 }} />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 12 }}>
+                        <label className="form-label" style={{ fontSize: 11 }}>Confirm Account Number</label>
+                        <input className="form-input mono" type="text" value={ddForm.confirmAccount}
+                          onChange={e => setDdForm(f => ({ ...f, confirmAccount: e.target.value.replace(/\D/g, '') }))}
+                          placeholder="Re-enter account number" style={{ height: 32, fontSize: 13 }} />
+                      </div>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="btn btn-primary btn-sm" onClick={handleSaveDd} disabled={ddSaving} style={{ fontSize: 12 }}>
+                          {ddSaving ? <span className="spinner" style={{ width: 10, height: 10 }} /> : 'Save & Connect'}
+                        </button>
+                        <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} onClick={() => { setDdEdit(false); setDdErr(''); }}>Cancel</button>
+                      </div>
+                      <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>Account info is encrypted with AES-256. Linked via Moov ACH.</p>
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
                   <input type="checkbox" checked={form.isActive} onChange={set('isActive')} style={{ accentColor: 'var(--accent)', width: 14, height: 14 }} />
@@ -807,6 +930,7 @@ function EmployeesTab({ clientId, employees, onRefresh }) {
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{emp.filingStatus === 'married' ? 'Married' : emp.filingStatus === 'hoh' ? 'HoH' : 'Single'}</div>
                 </div>
                 <span className={`badge ${emp.isActive !== false ? 'badge-success' : 'badge-neutral'}`}>{emp.isActive !== false ? 'Active' : 'Inactive'}</span>
+                {emp.directDeposit?.status === 'active' && <span className="badge" style={{ background: '#dbeafe', color: '#1d4ed8', fontSize: 10, fontWeight: 700 }}>DD</span>}
                 <span style={{ color: 'var(--text-muted)', fontSize: 16 }}>›</span>
               </div>
             );
@@ -1214,21 +1338,33 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
         });
         const ov = periodOverrides[period.end] || {};
         const res = await api.runPayroll({ clientId, payPeriodStart: ov.start || period.start, payPeriodEnd: ov.end || period.end, settlementDate: ov.payDate || period.payDate, payGroupId: currentGroupId, employees: payrollEmps });
-        if (res?.paystubs) res.paystubs.forEach(s => allNewIds.push(s.id));
+        if (res?.paystubs) res.paystubs.forEach(s => allNewIds.push({ id: s.id, directDeposit: s.directDeposit }));
       }
       // Include selected late stubs in print batch (NOT EFTPS — late checks are payroll, not tax deposits)
-      selectedLateStubs.forEach(id => allNewIds.push(id));
-      selectedHistoryLateIds.forEach(id => allNewIds.push(id));
-      // Mark all checks as printed immediately
-      await Promise.all(allNewIds.map(id => api.updatePaystubStatus(id, 'printed').catch(() => {})));
+      selectedLateStubs.forEach(id => allNewIds.push({ id, directDeposit: false }));
+      selectedHistoryLateIds.forEach(id => allNewIds.push({ id, directDeposit: false }));
+      // DD employees: mark as direct_deposit_sent; print checks: mark as printed
+      const ddIds    = allNewIds.filter(s => s.directDeposit).map(s => s.id);
+      const printIds = allNewIds.filter(s => !s.directDeposit).map(s => s.id);
+      await Promise.all([
+        ...printIds.map(id => api.updatePaystubStatus(id, 'printed').catch(() => {})),
+        ...ddIds.map(id => api.updatePaystubStatus(id, 'direct_deposit_sent').catch(() => {})),
+      ]);
       await reloadStubs();
       setPendingRows({});
       setPeriodOverrides({});
       setSelectedLateStubs(new Set());
-      if (allNewIds.length > 0) {
-        setPrintModal(allNewIds);
+      const ddCount = ddIds.length;
+      if (printIds.length > 0) {
+        setPrintModal(printIds);
+      } else if (ddCount > 0) {
+        setRunSuccess(`Payroll complete — ${ddCount} direct deposit${ddCount !== 1 ? 's' : ''} initiated via Moov.`);
       } else {
         setRunSuccess('Payroll complete — no checks were generated.');
+      }
+      if (printIds.length > 0 && ddCount > 0) {
+        // Both: show print dialog, success message will show after close
+        setRunSuccess(`+ ${ddCount} direct deposit${ddCount !== 1 ? 's' : ''} sent via Moov.`);
       }
     } catch (err) {
       setRunErr(err.message || 'Payroll run failed');

@@ -392,6 +392,17 @@ function migrate() {
     { name: 'pay_group_id', def: 'INTEGER' },
   ]);
 
+  // Direct deposit / Moov ACH fields on employees
+  addCols('employees', [
+    { name: 'bank_routing_number',           def: 'TEXT' },
+    { name: 'bank_account_number_encrypted', def: 'TEXT' },
+    { name: 'bank_account_type',             def: "TEXT DEFAULT 'checking'" },
+    { name: 'bank_account_last4',            def: 'TEXT' },
+    { name: 'bank_account_status',           def: "TEXT DEFAULT 'none'" },
+    { name: 'moov_account_id',               def: 'TEXT' },
+    { name: 'moov_bank_account_id',          def: 'TEXT' },
+  ]);
+
   addCols('paystubs', [
     { name: 'pay_group_id', def: 'INTEGER' },
   ]);

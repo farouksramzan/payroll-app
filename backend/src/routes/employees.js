@@ -28,6 +28,13 @@ function sanitize(e, withSSN = false) {
     payGroupFirstEnd:    e.pay_group_first_end    || null,
     hasSSN: !!e.ssn_encrypted,
     ...(withSSN && e.ssn_encrypted ? { ssn: decrypt(e.ssn_encrypted) } : {}),
+    directDeposit: {
+      status:          e.bank_account_status  || 'none',
+      last4:           e.bank_account_last4   || null,
+      bankAccountType: e.bank_account_type    || 'checking',
+      routingNumber:   e.bank_routing_number  || null,
+      moovAccountId:   e.moov_account_id      || null,
+    },
   };
 }
 

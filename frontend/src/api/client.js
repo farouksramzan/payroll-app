@@ -184,6 +184,12 @@ const api = {
     return data;
   },
 
+  // Direct Deposit
+  getDirectDeposit: (employeeId) => request(`/direct-deposit/${employeeId}`),
+  saveDirectDeposit: (employeeId, data) => request(`/direct-deposit/${employeeId}`, { method: 'POST', body: JSON.stringify(data) }),
+  deleteDirectDeposit: (employeeId) => request(`/direct-deposit/${employeeId}`, { method: 'DELETE' }),
+  activateDirectDeposit: (employeeId) => request(`/direct-deposit/${employeeId}/activate`, { method: 'POST' }),
+
   importEmployees: async (clientId, file, skipExisting) => {
     const token = localStorage.getItem('token');
     const form = new FormData();
