@@ -319,8 +319,8 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
         gross_wages, fit_withholding, employee_ss, employee_medicare, additional_medicare,
         employer_ss, employer_medicare, futa_tax, suta_tax,
         total_deposit, net_pay, tax_year, tax_quarter,
-        check_number, check_status, status, status_940, eftps_status
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        check_number, check_status, status, status_940
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `);
 
     const importAll = db.transaction((rows) => {
@@ -333,7 +333,7 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
           c.grossWages, c.fit, c.eeSS, c.eeMedicare, c.addlMedicare,
           c.erSS, c.erMedicare, c.futa, c.suta,
           c.totalDeposit, c.netPay, c.taxYear, c.taxQuarter,
-          c.checkNumber, 'printed', 'completed', 'pending', 'completed'
+          c.checkNumber, 'printed', 'completed', 'pending'
         );
         imported++;
       }
