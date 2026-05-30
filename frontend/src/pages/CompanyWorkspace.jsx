@@ -3062,7 +3062,7 @@ function PayLiabilitiesTab({ clientId, client }) {
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
                     <th style={{ width: 36 }} />
-                    <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' }}>Vendor / Employee</th>
+                    <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' }}>Employee</th>
                     <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' }}>Pay Period</th>
                     <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' }}>Send By</th>
                     <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' }}>IRS Due</th>
@@ -3087,11 +3087,8 @@ function PayLiabilitiesTab({ clientId, client }) {
                             style={{ accentColor: 'var(--accent)', width: 13, height: 13, cursor: 'pointer' }} disabled={voided} />
                         </td>
                         <td style={{ padding: '8px 8px' }}>
-                          <div style={{ fontWeight: 600, textDecoration: voided ? 'line-through' : 'none' }}>{liabilityVendor(taxType, stub.work_state)}</div>
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                            {stub.employee_name || '—'}
-                            {stub.check_number && <span style={{ marginLeft: 5, fontFamily: 'JetBrains Mono, monospace', color: 'var(--accent)' }}>#{stub.check_number}</span>}
-                          </div>
+                          <span style={{ fontWeight: 600, textDecoration: voided ? 'line-through' : 'none' }}>{stub.employee_name || '—'}</span>
+                          {stub.check_number && <span style={{ marginLeft: 5, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--accent)' }}>#{stub.check_number}</span>}
                         </td>
                         <td style={{ padding: '8px 8px', fontSize: 12, color: '#555' }}>
                           {fmtPeriod(stub.pay_period_start, stub.pay_period_end)}
