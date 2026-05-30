@@ -321,8 +321,8 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
         gross_wages, fit_withholding, employee_ss, employee_medicare, additional_medicare,
         employer_ss, employer_medicare, futa_tax, suta_tax,
         total_deposit, net_pay, tax_year, tax_quarter,
-        check_number, check_status, status, status_940
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        check_number, check_status, status, status_940, reported_tips
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `);
     const insertLineItem = db.prepare(`
       INSERT INTO paystub_line_items (paystub_id, pay_type, description, hours, rate, amount)
@@ -339,7 +339,7 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
           c.grossWages, c.fit, c.eeSS, c.eeMedicare, c.addlMedicare,
           c.erSS, c.erMedicare, c.futa, c.suta,
           c.totalDeposit, c.netPay, c.taxYear, c.taxQuarter,
-          c.checkNumber, 'printed', 'pending', 'pending'
+          c.checkNumber, 'printed', 'pending', 'pending', c.reportedTips || 0
         );
         const stubId = r.lastInsertRowid;
         if (c.compensation > 0) insertLineItem.run(stubId, 'regular', 'Compensation', c.compensation);

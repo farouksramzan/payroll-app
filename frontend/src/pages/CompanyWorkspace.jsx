@@ -1203,7 +1203,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
             ...(commAmt   > 0 ? [{ payType: 'commission', description: 'Commission',         amount: commAmt }] : []),
           ];
           const ytd = calcEmpYTD(emp.id, null);
-          return { employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay, bonus: bonusAmt, commission: commAmt, reimbursement: mileAmt, deduction: cashAdv };
+          return { employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay, bonus: bonusAmt, commission: commAmt, reimbursement: mileAmt, deduction: cashAdv, reportedTips: tips };
         });
         const ov = periodOverrides[period.end] || {};
         const res = await api.runPayroll({ clientId, payPeriodStart: ov.start || period.start, payPeriodEnd: ov.end || period.end, settlementDate: ov.payDate || period.payDate, payGroupId: currentGroupId, employees: payrollEmps });
@@ -1288,7 +1288,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
           overtimeHours: isSalary ? null : otH,
           regularPay: regPay,
           overtimePay: otPay,
-          bonus: bonus2, commission: comm2, reimbursement: mile2, deduction: cashAdv2,
+          bonus: bonus2, commission: comm2, reimbursement: mile2, deduction: cashAdv2, reportedTips: tips2,
         };
         const res = await api.runPayroll({
           clientId,
@@ -1362,7 +1362,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
       const ytd = calcEmpYTD(emp.id, null);
       const res = await api.runPayroll({
         clientId, payPeriodStart: start, payPeriodEnd: end, settlementDate: payDate,
-        employees: [{ employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay, bonus: ugBonus, commission: ugComm, reimbursement: ugMile, deduction: ugCashAdv }],
+        employees: [{ employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay, bonus: ugBonus, commission: ugComm, reimbursement: ugMile, deduction: ugCashAdv, reportedTips: ugTips }],
       });
       const newIds = (res?.paystubs || []).map(s => s.id);
       await Promise.all(newIds.map(id => api.updatePaystubStatus(id, 'printed').catch(() => {})));
@@ -1555,6 +1555,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     const [grossOverride, setGrossOverride] = useState('');
     const [otherOpen, setOtherOpen]   = useState(false);
     const [otherForm, setOtherForm]   = useState({
+      reportedTips:  String(stub.reported_tips || ''),
       bonus:         String(stub.bonus         || ''),
       commission:    String(stub.commission    || ''),
       reimbursement: String(stub.reimbursement || ''),
@@ -1563,11 +1564,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     });
     const [editSaving, setEditSaving] = useState(false);
     const otherDirty = !isVoided && (
-      parseFloat(otherForm.bonus         || 0) !== (stub.bonus         || 0) ||
-      parseFloat(otherForm.commission    || 0) !== (stub.commission    || 0) ||
-      parseFloat(otherForm.reimbursement || 0) !== (stub.reimbursement || 0) ||
-      parseFloat(otherForm.deduction     || 0) !== (stub.deduction     || 0) ||
-      parseFloat(otherForm.garnishment   || 0) !== (stub.garnishment   || 0)
+      parseFloat(otherForm.reportedTips  || 0) !== (stub.reported_tips  || 0) ||
+      parseFloat(otherForm.bonus         || 0) !== (stub.bonus          || 0) ||
+      parseFloat(otherForm.commission    || 0) !== (stub.commission     || 0) ||
+      parseFloat(otherForm.reimbursement || 0) !== (stub.reimbursement  || 0) ||
+      parseFloat(otherForm.deduction     || 0) !== (stub.deduction      || 0) ||
+      parseFloat(otherForm.garnishment   || 0) !== (stub.garnishment    || 0)
     );
     const isDirty = !isVoided && (
       dateForm.start !== (stub.pay_period_start || '') ||
@@ -1584,6 +1586,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
           payload.lineItems = [{ payType: 'salary', amount: parseFloat(grossOverride) }];
         }
         if (otherDirty) {
+          payload.reportedTips  = parseFloat(otherForm.reportedTips  || 0);
           payload.bonus         = parseFloat(otherForm.bonus         || 0);
           payload.commission    = parseFloat(otherForm.commission    || 0);
           payload.reimbursement = parseFloat(otherForm.reimbursement || 0);
@@ -1598,13 +1601,13 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     }
 
     const lineItemsList = stub.lineItems || [];
-    const tipsFromItems = lineItemsList.filter(li => li.pay_type === 'tips').reduce((s, li) => s + (li.amount || 0), 0);
     const compFromItems = lineItemsList.filter(li => li.pay_type === 'regular' && stub.regular_hours == null).reduce((s, li) => s + (li.amount || 0), 0);
+    const displayedTips = stub.reported_tips || lineItemsList.filter(li => li.pay_type === 'tips').reduce((s, li) => s + (li.amount || 0), 0);
     const earningRows = [
       stub.regular_hours != null && stub.regular_pay != null && { label: `Hourly  (${stub.regular_hours} hrs)`, amount: stub.regular_pay, ytd: null },
       compFromItems > 0                                       && { label: 'Compensation',   amount: compFromItems },
       stub.overtime_hours > 0 && stub.overtime_pay > 0       && { label: `Overtime  (${stub.overtime_hours} hrs)`, amount: stub.overtime_pay, ytd: null },
-      tipsFromItems > 0                                       && { label: 'Reported Tips',  amount: tipsFromItems },
+      displayedTips > 0                                       && { label: 'Reported Tips',  amount: displayedTips },
       stub.bonus         > 0 && { label: 'Bonus',         amount: stub.bonus },
       stub.commission    > 0 && { label: 'Commission',    amount: stub.commission },
       stub.reimbursement > 0 && { label: 'Reimbursement', amount: stub.reimbursement },
@@ -1735,6 +1738,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
               {otherOpen && (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 10 }}>
                   {[
+                    { label: 'Reported Tips', field: 'reportedTips', hint: 'display only — taxes already calculated' },
                     { label: 'Bonus', field: 'bonus', hint: 'taxable' },
                     { label: 'Commission', field: 'commission', hint: 'taxable' },
                     { label: 'Mileage / Reimbursement', field: 'reimbursement', hint: 'non-taxable' },

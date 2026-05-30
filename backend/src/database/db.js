@@ -433,6 +433,12 @@ function migrate() {
   if (fixedImportStatus.changes > 0)
     console.log(`[DB] Fixed ${fixedImportStatus.changes} paystub(s) with invalid status='completed' → 'pending'`);
 
+  // reported_tips — display-only tip amount stored separately; taxes are already
+  // computed from gross (which includes tips). Does not trigger recalculation.
+  addCols('paystubs', [
+    { name: 'reported_tips', def: 'REAL DEFAULT 0' },
+  ]);
+
   // preparer_info — per-user tax preparer details for autofilling forms
   addCols('users', [
     { name: 'preparer_info', def: 'TEXT' },

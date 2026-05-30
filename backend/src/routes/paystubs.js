@@ -457,7 +457,7 @@ router.put('/:id', (req, res) => {
     step4a, step4b, step4c,
     lineItems, workState, ytdGross, notes, checkStatus,
     bonus: bonusIn, commission: commissionIn, reimbursement: reimbursementIn,
-    deduction: deductionIn, garnishment: garnishmentIn,
+    deduction: deductionIn, garnishment: garnishmentIn, reportedTips: reportedTipsIn,
   } = req.body;
 
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(stub.client_id);
@@ -514,7 +514,7 @@ router.put('/:id', (req, res) => {
         state_income_tax = ?, futa_tax = ?, suta_tax = ?,
         total_deposit = ?, net_pay = ?, ytd_wages_before = ?,
         tax_year = ?, tax_quarter = ?, notes = ?, check_status = ?,
-        bonus = ?, commission = ?, reimbursement = ?, deduction = ?, garnishment = ?
+        bonus = ?, commission = ?, reimbursement = ?, deduction = ?, garnishment = ?, reported_tips = ?
       WHERE id = ?
     `).run(
       payPeriodStart  || stub.pay_period_start,
@@ -538,6 +538,7 @@ router.put('/:id', (req, res) => {
       reimbursementIn !== undefined ? parseFloat(reimbursementIn || 0) : (stub.reimbursement || 0),
       deductionIn !== undefined ? parseFloat(deductionIn || 0) : (stub.deduction || 0),
       garnishmentIn !== undefined ? parseFloat(garnishmentIn || 0) : (stub.garnishment || 0),
+      reportedTipsIn !== undefined ? parseFloat(reportedTipsIn || 0) : (stub.reported_tips || 0),
       stub.id,
     );
 
@@ -565,7 +566,7 @@ router.put('/:id', (req, res) => {
         pay_period_start = ?, pay_period_end = ?, settlement_date = ?, settlement_due_date = ?,
         eftps_settlement_date = ?,
         tax_year = ?, tax_quarter = ?, notes = ?, check_status = ?,
-        bonus = ?, commission = ?, reimbursement = ?, deduction = ?, garnishment = ?
+        bonus = ?, commission = ?, reimbursement = ?, deduction = ?, garnishment = ?, reported_tips = ?
       WHERE id = ?
     `).run(
       payPeriodStart  || stub.pay_period_start,
@@ -581,6 +582,7 @@ router.put('/:id', (req, res) => {
       reimbursementIn !== undefined ? parseFloat(reimbursementIn || 0) : (stub.reimbursement || 0),
       deductionIn !== undefined ? parseFloat(deductionIn || 0) : (stub.deduction || 0),
       garnishmentIn !== undefined ? parseFloat(garnishmentIn || 0) : (stub.garnishment || 0),
+      reportedTipsIn !== undefined ? parseFloat(reportedTipsIn || 0) : (stub.reported_tips || 0),
       stub.id,
     );
   }
@@ -805,9 +807,9 @@ router.post('/payroll-run', (req, res) => {
         total_deposit, net_pay, ytd_wages_before,
         tax_year, tax_quarter, check_number, payroll_run_id,
         payment_method, regular_hours, overtime_hours, regular_pay, overtime_pay,
-        bonus, commission, reimbursement, deduction, garnishment,
+        bonus, commission, reimbursement, deduction, garnishment, reported_tips,
         check_status, settlement_due_date, pay_group_id
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `);
     const insertItem = db.prepare(`
       INSERT INTO paystub_line_items (paystub_id, pay_type, description, hours, rate, amount)
@@ -877,6 +879,7 @@ router.post('/payroll-run', (req, res) => {
         parseFloat(empData.reimbursement || 0),
         parseFloat(empData.deduction     || 0),
         parseFloat(empData.garnishment   || 0),
+        parseFloat(empData.reportedTips  || 0),
         'draft',
         calcSettlementDueDate(settlementDate || payPeriodEnd, client.deposit_schedule || 'monthly'),
         payGroupId || null,
