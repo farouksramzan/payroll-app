@@ -2559,6 +2559,65 @@ function LiabStatusBadge({ status }) {
   return <span className={`badge ${cfg.cls}`} style={{ fontWeight: 700, fontSize: 10 }}>{cfg.label}</span>;
 }
 
+const SUI_AGENCIES = {
+  AL: 'Alabama Dept. of Labor',
+  AK: 'Alaska Dept. of Labor & Workforce Dev.',
+  AZ: 'Arizona Dept. of Economic Security',
+  AR: 'Arkansas Division of Workforce Services',
+  CA: 'California Employment Dev. Dept. (EDD)',
+  CO: 'Colorado Dept. of Labor & Employment',
+  CT: 'Connecticut Dept. of Labor',
+  DE: 'Delaware Dept. of Labor',
+  FL: 'Florida Dept. of Commerce — DEO',
+  GA: 'Georgia Dept. of Labor',
+  HI: 'Hawaii Dept. of Labor & Industrial Relations',
+  ID: 'Idaho Dept. of Labor',
+  IL: 'Illinois Dept. of Employment Security',
+  IN: 'Indiana Dept. of Workforce Development',
+  IA: 'Iowa Workforce Development',
+  KS: 'Kansas Dept. of Labor',
+  KY: 'Kentucky Education & Workforce Cabinet',
+  LA: 'Louisiana Workforce Commission',
+  ME: 'Maine Dept. of Labor',
+  MD: 'Maryland Dept. of Labor',
+  MA: 'Massachusetts Dept. of Unemployment Assistance',
+  MI: 'Michigan Unemployment Insurance Agency',
+  MN: 'Minnesota Dept. of Employment & Economic Dev.',
+  MS: 'Mississippi Dept. of Employment Security',
+  MO: 'Missouri Division of Employment Security',
+  MT: 'Montana Dept. of Labor & Industry',
+  NE: 'Nebraska Dept. of Labor',
+  NV: 'Nevada Employment Security Division',
+  NH: 'New Hampshire Employment Security',
+  NJ: 'New Jersey Dept. of Labor',
+  NM: 'New Mexico Dept. of Workforce Solutions',
+  NY: 'New York Dept. of Labor',
+  NC: 'North Carolina Division of Employment Security',
+  ND: 'North Dakota Job Service',
+  OH: 'Ohio Dept. of Job & Family Services',
+  OK: 'Oklahoma Employment Security Commission',
+  OR: 'Oregon Employment Dept.',
+  PA: 'Pennsylvania Office of Unemployment Compensation',
+  RI: 'Rhode Island Dept. of Labor & Training',
+  SC: 'South Carolina Dept. of Employment & Workforce',
+  SD: 'South Dakota Dept. of Labor & Regulation',
+  TN: 'Tennessee Dept. of Labor & Workforce Dev.',
+  TX: 'Texas Workforce Commission',
+  UT: 'Utah Dept. of Workforce Services',
+  VT: 'Vermont Dept. of Labor',
+  VA: 'Virginia Employment Commission',
+  WA: 'Washington Employment Security Dept.',
+  WV: 'West Virginia Workforce West Virginia',
+  WI: 'Wisconsin Dept. of Workforce Development',
+  WY: 'Wyoming Dept. of Workforce Services',
+  DC: 'DC Dept. of Employment Services',
+};
+
+function liabilityVendor(taxType, workState) {
+  if (taxType === '941' || taxType === '940') return 'United States Treasury';
+  return SUI_AGENCIES[workState] || `${workState || 'State'} Dept. of Labor`;
+}
+
 // Shared detail modal for both pending and sent liabilities
 function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, onStubChange }) {
   if (!stub) return null;
@@ -2566,6 +2625,10 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
   const [savingSettlement, setSavingSettlement] = React.useState(false);
   const settlementInputRef = React.useRef(null);
   const liabStatus = calcLiabilityStatus(stub, taxType, sendBy, due, todayStr);
+  const vendor = liabilityVendor(taxType, stub.work_state);
+  const liabilityAmount = taxType === '941' ? (stub.total_deposit || 0)
+                        : taxType === '940' ? (stub.futa_tax || 0)
+                        : (stub.suta_tax || 0);
 
   // Employee paycheck rows
   const earningRows = [
@@ -2617,7 +2680,8 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
         <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
             <div>
-              <div style={{ fontWeight: 800, fontSize: 20, color: 'var(--text-primary)', marginBottom: 6 }}>{stub.employee_name}</div>
+              <div style={{ fontWeight: 800, fontSize: 20, color: 'var(--text-primary)', marginBottom: 2 }}>{vendor}</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>Re: {stub.employee_name}</div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <StatusBadge status={stub.check_status || 'draft'} />
                 <LiabStatusBadge status={liabStatus} />
@@ -2711,10 +2775,15 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
         {/* ── Footer — Check Amount + Tax Deposits ── */}
         <div style={{ margin: '16px 24px 0', borderTop: '2px solid var(--border)' }} />
 
-        {/* Check Amount */}
+        {/* Check Amount — liability amount payable to vendor */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px 4px' }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>Check Amount</div>
-          <div style={{ ...MONO, fontSize: 22, fontWeight: 800, color: '#16a34a' }}>{fmt(stub.net_pay || 0)}</div>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
+              {taxType === '941' ? '941 Tax Deposit' : taxType === '940' ? '940 FUTA Payment' : 'SUI Payment'}
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Payable to {vendor}</div>
+          </div>
+          <div style={{ ...MONO, fontSize: 22, fontWeight: 800, color: '#16a34a' }}>{fmt(liabilityAmount)}</div>
         </div>
 
         {/* Tax deposit summary bar */}
@@ -2993,7 +3062,7 @@ function PayLiabilitiesTab({ clientId, client }) {
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
                     <th style={{ width: 36 }} />
-                    <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' }}>Employee</th>
+                    <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' }}>Vendor / Employee</th>
                     <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' }}>Pay Period</th>
                     <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' }}>Send By</th>
                     <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' }}>IRS Due</th>
@@ -3018,8 +3087,11 @@ function PayLiabilitiesTab({ clientId, client }) {
                             style={{ accentColor: 'var(--accent)', width: 13, height: 13, cursor: 'pointer' }} disabled={voided} />
                         </td>
                         <td style={{ padding: '8px 8px' }}>
-                          <span style={{ fontWeight: 600, textDecoration: voided ? 'line-through' : 'none' }}>{stub.employee_name || '—'}</span>
-                          {stub.check_number && <span style={{ marginLeft: 5, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--accent)' }}>#{stub.check_number}</span>}
+                          <div style={{ fontWeight: 600, textDecoration: voided ? 'line-through' : 'none' }}>{liabilityVendor(taxType, stub.work_state)}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                            {stub.employee_name || '—'}
+                            {stub.check_number && <span style={{ marginLeft: 5, fontFamily: 'JetBrains Mono, monospace', color: 'var(--accent)' }}>#{stub.check_number}</span>}
+                          </div>
                         </td>
                         <td style={{ padding: '8px 8px', fontSize: 12, color: '#555' }}>
                           {fmtPeriod(stub.pay_period_start, stub.pay_period_end)}
