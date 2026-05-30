@@ -248,6 +248,8 @@ function buildChecks(wb, employees, client) {
       employeeId:    emp ? emp.id : null,
       empMatched:    !!emp,
       grossWages:    round2(grossWages),
+      compensation:  round2(compensation),
+      reportedTips:  round2(tips),
       fit:           round2(fit),
       eeSS:          round2(eeSS),
       eeMedicare:    round2(eeMedicare),
@@ -322,19 +324,26 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
         check_number, check_status, status, status_940
       ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `);
+    const insertLineItem = db.prepare(`
+      INSERT INTO paystub_line_items (paystub_id, pay_type, description, hours, rate, amount)
+      VALUES (?, ?, ?, NULL, NULL, ?)
+    `);
 
     const importAll = db.transaction((rows) => {
       let imported = 0, skipped = 0;
       for (const c of rows) {
         if (skipExisting === 'true' && existing.has(String(c.checkNumber))) { skipped++; continue; }
-        insert.run(
+        const r = insert.run(
           clientId, c.employeeId || null, c.empName,
           c.periodStart, c.periodEnd, c.checkDate, c.payFrequency, c.filingStatus, c.workState,
           c.grossWages, c.fit, c.eeSS, c.eeMedicare, c.addlMedicare,
           c.erSS, c.erMedicare, c.futa, c.suta,
           c.totalDeposit, c.netPay, c.taxYear, c.taxQuarter,
-          c.checkNumber, 'printed', 'completed', 'pending'
+          c.checkNumber, 'printed', 'pending', 'pending'
         );
+        const stubId = r.lastInsertRowid;
+        if (c.compensation > 0) insertLineItem.run(stubId, 'regular', 'Compensation', c.compensation);
+        if (c.reportedTips > 0) insertLineItem.run(stubId, 'tips', 'Reported Tips', c.reportedTips);
         imported++;
       }
       return { imported, skipped };

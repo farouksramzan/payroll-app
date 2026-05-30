@@ -1000,7 +1000,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
   const [empStatusDrop, setEmpStatusDrop]         = useState(null); // { stub, top, right }
   const [periodOverrides, setPeriodOverrides]     = useState({}); // { [periodEnd]: { start, end, payDate } }
   const [ungroupedModal, setUngroupedModal]       = useState(false);
-  const [ugForm, setUgForm]                       = useState({ employeeId: '', start: '', end: '', payDate: '', regHours: '', otHours: '', payType: 'regular' });
+  const [ugForm, setUgForm]                       = useState({ employeeId: '', start: '', end: '', payDate: '', regHours: '', otHours: '', payType: 'regular', tips: '', bonus: '', commission: '', cashAdvance: '', mileage: '' });
+  const [ugOtherOpen, setUgOtherOpen]             = useState(false);
   const [ugRunning, setUgRunning]                 = useState(false);
   const [ugErr, setUgErr]                         = useState('');
 
@@ -1135,8 +1136,14 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     });
   });
 
+  const [expandedOther, setExpandedOther] = useState(new Set());
+  function toggleOther(periodEnd, empId) {
+    const key = `${periodEnd}-${empId}`;
+    setExpandedOther(prev => { const s = new Set(prev); s.has(key) ? s.delete(key) : s.add(key); return s; });
+  }
+
   function getRow(periodEnd, empId) {
-    return (pendingRows[periodEnd] || {})[empId] || { regHours: '', otHours: '', selected: false };
+    return (pendingRows[periodEnd] || {})[empId] || { regHours: '', otHours: '', tips: '', bonus: '', commission: '', cashAdvance: '', mileage: '', selected: false };
   }
   function setRow(periodEnd, empId, field, value) {
     setPendingRows(prev => ({
@@ -1176,17 +1183,27 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
           const isSalary = emp.payType === 'salary';
           const regH = parseFloat(row.regHours || 0);
           const otH  = parseFloat(row.otHours  || 0);
+          const tips = parseFloat(row.tips || 0);
+          const bonusAmt = parseFloat(row.bonus || 0);
+          const commAmt  = parseFloat(row.commission || 0);
+          const cashAdv  = parseFloat(row.cashAdvance || 0);
+          const mileAmt  = parseFloat(row.mileage || 0);
           const rate = emp.hourlyRate || 0;
           const regPay = isSalary ? r2((emp.annualSalary || 0) / ppy) : r2(Math.min(regH, 40) * rate);
           const otPay  = isSalary ? 0 : r2(otH * rate * 1.5);
-          const lineItems = isSalary
-            ? [{ payType: 'salary', description: 'Salary', amount: regPay }]
-            : [
-                ...(regH > 0 ? [{ payType: 'regular',  description: 'Regular',  hours: regH, rate, amount: regPay }] : []),
-                ...(otH  > 0 ? [{ payType: 'overtime', description: 'Overtime', hours: otH,  rate: rate * 1.5, amount: otPay }] : []),
-              ];
+          const lineItems = [
+            ...(isSalary
+              ? [{ payType: 'salary', description: 'Salary', amount: regPay }]
+              : [
+                  ...(regH > 0 ? [{ payType: 'regular',  description: 'Regular',  hours: regH, rate, amount: regPay }] : []),
+                  ...(otH  > 0 ? [{ payType: 'overtime', description: 'Overtime', hours: otH,  rate: rate * 1.5, amount: otPay }] : []),
+                ]),
+            ...(tips      > 0 ? [{ payType: 'tips',       description: 'Reported Tips',      amount: tips }] : []),
+            ...(bonusAmt  > 0 ? [{ payType: 'bonus',      description: 'Bonus',              amount: bonusAmt }] : []),
+            ...(commAmt   > 0 ? [{ payType: 'commission', description: 'Commission',         amount: commAmt }] : []),
+          ];
           const ytd = calcEmpYTD(emp.id, null);
-          return { employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay };
+          return { employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay, bonus: bonusAmt, commission: commAmt, reimbursement: mileAmt, deduction: cashAdv };
         });
         const ov = periodOverrides[period.end] || {};
         const res = await api.runPayroll({ clientId, payPeriodStart: ov.start || period.start, payPeriodEnd: ov.end || period.end, settlementDate: ov.payDate || period.payDate, payGroupId: currentGroupId, employees: payrollEmps });
@@ -1241,16 +1258,27 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
         const { period, emp } = drop;
         const isSalary = emp.payType === 'salary';
         const rate     = emp.hourlyRate || 0;
-        const regH     = isSalary ? 0 : parseFloat(getRow(period.end, emp.id).regHours || 0);
-        const otH      = isSalary ? 0 : parseFloat(getRow(period.end, emp.id).otHours  || 0);
+        const rowData2 = getRow(period.end, emp.id);
+        const regH     = isSalary ? 0 : parseFloat(rowData2.regHours || 0);
+        const otH      = isSalary ? 0 : parseFloat(rowData2.otHours  || 0);
+        const tips2    = parseFloat(rowData2.tips || 0);
+        const bonus2   = parseFloat(rowData2.bonus || 0);
+        const comm2    = parseFloat(rowData2.commission || 0);
+        const cashAdv2 = parseFloat(rowData2.cashAdvance || 0);
+        const mile2    = parseFloat(rowData2.mileage || 0);
         const regPay   = isSalary ? r2((emp.annualSalary || 0) / ppy) : r2(Math.min(regH, 40) * rate);
         const otPay    = isSalary ? 0 : r2(otH * rate * 1.5);
-        const lineItems = isSalary
-          ? [{ payType: 'salary', description: 'Salary', amount: regPay }]
-          : [
-              ...(regPay > 0 ? [{ payType: 'regular',  description: 'Regular Pay',  hours: Math.min(regH, 40), rate, amount: regPay }] : []),
-              ...(otPay  > 0 ? [{ payType: 'overtime', description: 'Overtime Pay', hours: otH, rate: rate * 1.5, amount: otPay }] : []),
-            ];
+        const lineItems = [
+          ...(isSalary
+            ? [{ payType: 'salary', description: 'Salary', amount: regPay }]
+            : [
+                ...(regPay > 0 ? [{ payType: 'regular',  description: 'Regular Pay',  hours: Math.min(regH, 40), rate, amount: regPay }] : []),
+                ...(otPay  > 0 ? [{ payType: 'overtime', description: 'Overtime Pay', hours: otH, rate: rate * 1.5, amount: otPay }] : []),
+              ]),
+          ...(tips2  > 0 ? [{ payType: 'tips',       description: 'Reported Tips', amount: tips2  }] : []),
+          ...(bonus2 > 0 ? [{ payType: 'bonus',      description: 'Bonus',         amount: bonus2 }] : []),
+          ...(comm2  > 0 ? [{ payType: 'commission', description: 'Commission',    amount: comm2  }] : []),
+        ];
         const ytd = calcEmpYTD(emp.id, null);
         const payrollEmp = {
           employeeId: emp.id,
@@ -1260,6 +1288,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
           overtimeHours: isSalary ? null : otH,
           regularPay: regPay,
           overtimePay: otPay,
+          bonus: bonus2, commission: comm2, reimbursement: mile2, deduction: cashAdv2,
         };
         const res = await api.runPayroll({
           clientId,
@@ -1302,10 +1331,15 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     const emp = activeEmps.find(e => e.id === Number(employeeId));
     if (!emp) { setUgErr('Employee not found.'); return; }
     const isSalary = payType === 'salary' || emp.payType === 'salary';
+    const ugTips = parseFloat(ugForm.tips || 0);
+    const ugBonus = parseFloat(ugForm.bonus || 0);
+    const ugComm = parseFloat(ugForm.commission || 0);
+    const ugCashAdv = parseFloat(ugForm.cashAdvance || 0);
+    const ugMile = parseFloat(ugForm.mileage || 0);
     if (!isSalary) {
       const regH = parseFloat(regHours || 0);
       const otH  = parseFloat(otHours  || 0);
-      if (regH === 0 && otH === 0) { setUgErr('Enter at least reg or OT hours.'); return; }
+      if (regH === 0 && otH === 0 && ugTips === 0 && ugBonus === 0 && ugComm === 0) { setUgErr('Enter hours or other payroll items.'); return; }
     }
     setUgRunning(true);
     try {
@@ -1314,22 +1348,28 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
       const rate = emp.hourlyRate || 0;
       const regPay = isSalary ? r2((emp.annualSalary || 0) / ppy) : r2(Math.min(regH, 40) * rate);
       const otPay  = isSalary ? 0 : r2(otH * rate * 1.5);
-      const lineItems = isSalary
-        ? [{ payType: 'salary', description: 'Salary', amount: regPay }]
-        : [
-            ...(regH > 0 ? [{ payType: 'regular',  description: 'Regular',  hours: regH, rate, amount: regPay }] : []),
-            ...(otH  > 0 ? [{ payType: 'overtime', description: 'Overtime', hours: otH,  rate: rate * 1.5, amount: otPay }] : []),
-          ];
+      const lineItems = [
+        ...(isSalary
+          ? [{ payType: 'salary', description: 'Salary', amount: regPay }]
+          : [
+              ...(regH > 0 ? [{ payType: 'regular',  description: 'Regular',  hours: regH, rate, amount: regPay }] : []),
+              ...(otH  > 0 ? [{ payType: 'overtime', description: 'Overtime', hours: otH,  rate: rate * 1.5, amount: otPay }] : []),
+            ]),
+        ...(ugTips  > 0 ? [{ payType: 'tips',       description: 'Reported Tips', amount: ugTips  }] : []),
+        ...(ugBonus > 0 ? [{ payType: 'bonus',      description: 'Bonus',         amount: ugBonus }] : []),
+        ...(ugComm  > 0 ? [{ payType: 'commission', description: 'Commission',    amount: ugComm  }] : []),
+      ];
       const ytd = calcEmpYTD(emp.id, null);
       const res = await api.runPayroll({
         clientId, payPeriodStart: start, payPeriodEnd: end, settlementDate: payDate,
-        employees: [{ employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay }],
+        employees: [{ employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay, bonus: ugBonus, commission: ugComm, reimbursement: ugMile, deduction: ugCashAdv }],
       });
       const newIds = (res?.paystubs || []).map(s => s.id);
       await Promise.all(newIds.map(id => api.updatePaystubStatus(id, 'printed').catch(() => {})));
       await reloadStubs();
       setUngroupedModal(false);
-      setUgForm({ employeeId: '', start: '', end: '', payDate: '', regHours: '', otHours: '', payType: 'regular' });
+      setUgForm({ employeeId: '', start: '', end: '', payDate: '', regHours: '', otHours: '', payType: 'regular', tips: '', bonus: '', commission: '', cashAdvance: '', mileage: '' });
+      setUgOtherOpen(false);
       if (newIds.length > 0) setPrintModal(newIds);
     } catch (e) {
       setUgErr(e.message || 'Failed to run payroll.');
@@ -1723,7 +1763,11 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
               const rate     = emp.hourlyRate || 0;
               const regH     = parseFloat(row.regHours || 0);
               const otH      = parseFloat(row.otHours  || 0);
-              const grossPreview = isSalary ? salAmt : r2(Math.min(regH, 40) * rate + otH * rate * 1.5);
+              const tipsAmt  = parseFloat(row.tips || 0);
+              const bonusAmt = parseFloat(row.bonus || 0);
+              const commAmt  = parseFloat(row.commission || 0);
+              const basePay  = isSalary ? salAmt : r2(Math.min(regH, 40) * rate + otH * rate * 1.5);
+              const grossPreview = r2(basePay + tipsAmt + bonusAmt + commAmt);
               const estEeSS    = r2(grossPreview * EE_SS_RATE);
               const estEeMed   = r2(grossPreview * EE_MEDICARE_RATE);
               const estNetPay  = r2(grossPreview - estEeSS - estEeMed);
@@ -1732,10 +1776,14 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
               const status   = isLate ? 'late' : (daysToPayDate !== null && daysToPayDate <= 5 ? 'due-soon' : 'upcoming');
               const selBg    = isLate ? '#fff5f5' : status === 'due-soon' ? '#fffbeb' : 'var(--accent-light)';
               const rowBg    = row.selected ? selBg : stripeBg;
+              const otherKey = `${rawPeriod.end}-${emp.id}`;
+              const otherOpen = expandedOther.has(otherKey);
+              const hasOther = tipsAmt > 0 || bonusAmt > 0 || commAmt > 0 || parseFloat(row.cashAdvance || 0) > 0 || parseFloat(row.mileage || 0) > 0;
               return (
-                <tr key={rowData.key}
-                  style={{ background: rowBg, borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
-                  onClick={e => { if (e.target.type !== 'checkbox' && e.target.tagName !== 'INPUT') setDetailModal(rowData); }}
+                <React.Fragment key={rowData.key}>
+                <tr
+                  style={{ background: rowBg, borderBottom: otherOpen ? 'none' : '1px solid var(--border)', cursor: 'pointer' }}
+                  onClick={e => { if (e.target.type !== 'checkbox' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') setDetailModal(rowData); }}
                 >
                   <td style={{ padding: '0 0 0 12px' }}>
                     <input type="checkbox" checked={row.selected}
@@ -1772,13 +1820,46 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                   <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: grossPreview > 0 ? 'var(--success, #16a34a)' : '#aaa', fontSize: 13 }}>
                     {grossPreview > 0 ? fmt(estNetPay) : '—'}
                   </td>
-                  <td style={{ padding: '7px 8px', textAlign: 'right' }}>
-                    <span style={{ cursor: 'pointer' }} title="Click to change status"
-                      onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setEmpStatusDrop(empStatusDrop?.period?.end === period.end && empStatusDrop?.emp?.id === emp.id ? null : { period, emp, top: r.bottom + 4, right: window.innerWidth - r.right }); }}>
-                      <StatusBadge status={status} />
-                    </span>
+                  <td style={{ padding: '4px 6px', textAlign: 'right' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
+                      <button onClick={e => { e.stopPropagation(); toggleOther(rawPeriod.end, emp.id); }}
+                        title="Other payroll items (tips, bonus, etc.)"
+                        style={{ background: hasOther ? 'var(--accent)' : 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px', fontSize: 10, cursor: 'pointer', color: hasOther ? '#fff' : 'var(--text-muted)', lineHeight: 1.4 }}>
+                        {otherOpen ? '▴' : '+'} Other
+                      </button>
+                      <span style={{ cursor: 'pointer' }} title="Click to change status"
+                        onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setEmpStatusDrop(empStatusDrop?.period?.end === period.end && empStatusDrop?.emp?.id === emp.id ? null : { period, emp, top: r.bottom + 4, right: window.innerWidth - r.right }); }}>
+                        <StatusBadge status={status} />
+                      </span>
+                    </div>
                   </td>
                 </tr>
+                {otherOpen && (
+                  <tr style={{ background: rowBg, borderBottom: '1px solid var(--border)' }}>
+                    <td colSpan={9} style={{ padding: '6px 12px 10px 36px' }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Other Payroll Items</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
+                        {[
+                          { label: 'Reported Tips', field: 'tips', hint: 'taxable' },
+                          { label: 'Bonus', field: 'bonus', hint: 'taxable' },
+                          { label: 'Commission', field: 'commission', hint: 'taxable' },
+                          { label: 'Mileage Reimbursement', field: 'mileage', hint: 'non-taxable' },
+                          { label: 'Cash Advance', field: 'cashAdvance', hint: 'deduction' },
+                        ].map(({ label, field, hint }) => (
+                          <label key={field} style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                            {label}
+                            <div style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 400 }}>{hint}</div>
+                            <input className="form-input mono" type="number" min="0" step="0.01" value={row[field] || ''}
+                              placeholder="0.00" onClick={e => e.stopPropagation()}
+                              onChange={ev => setRow(period.end, emp.id, field, ev.target.value)}
+                              style={{ marginTop: 3, width: '100%', height: 26, fontSize: 12, textAlign: 'right', padding: '0 6px' }} />
+                          </label>
+                        ))}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
               );
             }
 
@@ -2058,7 +2139,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
           <div className="card" style={{ width: 460, maxWidth: '95vw', padding: 24 }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <div style={{ fontWeight: 700, fontSize: 15 }}>Run Ungrouped Payroll</div>
-              <button onClick={() => setUngroupedModal(false)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+              <button onClick={() => { setUngroupedModal(false); setUgOtherOpen(false); }} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
             </div>
             {ugErr && <div className="alert alert-error" style={{ marginBottom: 10, fontSize: 12 }}>{ugErr}</div>}
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -2109,9 +2190,33 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                   </label>
                 </div>
               )}
+              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                <button type="button" onClick={() => setUgOtherOpen(o => !o)}
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {ugOtherOpen ? '▴' : '▾'} Other Payroll Items (tips, bonus, etc.)
+                </button>
+                {ugOtherOpen && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+                    {[
+                      { label: 'Reported Tips', field: 'tips', hint: 'taxable' },
+                      { label: 'Bonus', field: 'bonus', hint: 'taxable' },
+                      { label: 'Commission', field: 'commission', hint: 'taxable' },
+                      { label: 'Mileage Reimbursement', field: 'mileage', hint: 'non-taxable' },
+                      { label: 'Cash Advance', field: 'cashAdvance', hint: 'deduction' },
+                    ].map(({ label, field, hint }) => (
+                      <label key={field} style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>
+                        {label} <span style={{ fontWeight: 400, fontSize: 10, color: 'var(--text-muted)' }}>({hint})</span>
+                        <input className="form-input mono" type="number" min="0" step="0.01" value={ugForm[field] || ''} placeholder="0.00"
+                          onChange={e => setUgForm(f => ({ ...f, [field]: e.target.value }))}
+                          style={{ marginTop: 4, width: '100%' }} />
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 18 }}>
-              <button className="btn btn-ghost" onClick={() => setUngroupedModal(false)}>Cancel</button>
+              <button className="btn btn-ghost" onClick={() => { setUngroupedModal(false); setUgOtherOpen(false); }}>Cancel</button>
               <button className="btn btn-primary" onClick={handleUngroupedRun} disabled={ugRunning}>
                 {ugRunning ? <span className="spinner" /> : 'Run Payroll'}
               </button>
