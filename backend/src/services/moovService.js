@@ -16,15 +16,20 @@ function isConfigured() {
 async function getToken() {
   const pub  = process.env.MOOV_PUBLIC_KEY;
   const priv = process.env.MOOV_PRIVATE_KEY;
-  const credentials = Buffer.from(`${pub}:${priv}`).toString('base64');
 
   const res = await fetch(`${MOOV_BASE}/oauth2/token`, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'Authorization': `Basic ${credentials}`,
+      'Content-Type': 'application/json',
+      'Origin': process.env.RAILWAY_PUBLIC_DOMAIN
+        ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
+        : 'https://payroll-app-production-5dde.up.railway.app',
     },
-    body: new URLSearchParams({ grant_type: 'client_credentials' }),
+    body: JSON.stringify({
+      grant_type:    'client_credentials',
+      client_id:     pub,
+      client_secret: priv,
+    }),
   });
 
   if (!res.ok) {
