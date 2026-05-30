@@ -987,8 +987,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
   const [paystubs, setPaystubs]                   = useState([]);
   // pendingRows[periodEnd][empId] = { regHours, otHours, selected }
   const [pendingRows, setPendingRows]             = useState({});
-  const [selectedLateStubs, setSelectedLateStubs] = useState(new Set());
-  const [running, setRunning]                     = useState(false);
+  const [selectedLateStubs, setSelectedLateStubs]     = useState(new Set());
+  const [selectedHistoryStubs, setSelectedHistoryStubs] = useState(new Set());
+  const [bulkBusy, setBulkBusy]                       = useState(false);
+  const [running, setRunning]                         = useState(false);
   const [runErr, setRunErr]                       = useState('');
   const [runSuccess, setRunSuccess]               = useState('');
   const [detailModal, setDetailModal]             = useState(null); // rowData object
@@ -1322,6 +1324,30 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     });
     setPendingRows(newPR);
     setSelectedLateStubs(allSel ? new Set() : new Set(lateHistIds));
+  }
+
+  async function handleBulkStatusChange(newStatus) {
+    setBulkBusy(true);
+    try {
+      await Promise.all([...selectedHistoryStubs].map(id => api.updatePaystub(id, { checkStatus: newStatus })));
+      await reloadStubs();
+      setSelectedHistoryStubs(new Set());
+    } catch (e) { alert(e.message || 'Failed to update status'); }
+    finally { setBulkBusy(false); }
+  }
+
+  async function handleBulkDelete() {
+    const count = selectedHistoryStubs.size;
+    if (!window.confirm(`Delete ${count} check${count !== 1 ? 's' : ''}?\n\nThis will reverse all associated tax liabilities and cannot be undone.`)) return;
+    setBulkBusy(true);
+    try {
+      for (const id of selectedHistoryStubs) {
+        await api.deletePaystub(id).catch(() => {});
+      }
+      await reloadStubs();
+      setSelectedHistoryStubs(new Set());
+    } catch (e) { alert(e.message || 'Delete failed'); }
+    finally { setBulkBusy(false); }
   }
 
   async function handleUngroupedRun() {
@@ -1784,6 +1810,19 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
 
   // Flat table renderer — clicking a row opens CheckDetailModal
   function renderTable(rows, startIdx = 0) {
+    const selectableIds = rows
+      .filter(r => r.type === 'history' && r.stub.check_status !== 'voided')
+      .map(r => r.stub.id);
+    const allSel = selectableIds.length > 0 && selectableIds.every(id => selectedHistoryStubs.has(id));
+    const someSel = selectableIds.some(id => selectedHistoryStubs.has(id));
+    function toggleAll() {
+      setSelectedHistoryStubs(prev => {
+        const next = new Set(prev);
+        if (allSel) selectableIds.forEach(id => next.delete(id));
+        else selectableIds.forEach(id => next.add(id));
+        return next;
+      });
+    }
     return (
       <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 12 }}>
         <colgroup>
@@ -1799,7 +1838,13 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
         </colgroup>
         <thead>
           <tr style={{ borderBottom: '2px solid var(--border)', background: 'var(--bg-secondary)' }}>
-            <th style={{ padding: '7px 0 7px 12px' }} />
+            <th style={{ padding: '7px 0 7px 12px' }}>
+              {selectableIds.length > 0 && (
+                <input type="checkbox" checked={allSel} ref={el => { if (el) el.indeterminate = someSel && !allSel; }}
+                  onChange={toggleAll}
+                  style={{ accentColor: 'var(--accent)', width: 13, height: 13, cursor: 'pointer' }} />
+              )}
+            </th>
             <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'left' }}>Employee</th>
             <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'left' }}>Period Start</th>
             <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'left' }}>Period End</th>
@@ -1942,12 +1987,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                 onClick={e => { if (e.target.type !== 'checkbox' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') setDetailModal(rowData); }}
               >
                 <td style={{ padding: '0 0 0 12px' }}>
-                  {(isLateCheck || isDraftCheck) && !isVoided && (
+                  {!isVoided && (
                     <input type="checkbox"
-                      checked={selectedLateStubs.has(stub.id)}
-                      onChange={() => setSelectedLateStubs(prev => {
-                        const next = new Set(prev); next.has(stub.id) ? next.delete(stub.id) : next.add(stub.id); return next;
-                      })}
+                      checked={selectedHistoryStubs.has(stub.id)}
+                      onChange={e => { e.stopPropagation(); setSelectedHistoryStubs(prev => { const next = new Set(prev); next.has(stub.id) ? next.delete(stub.id) : next.add(stub.id); return next; }); }}
                       style={{ accentColor: 'var(--accent)', width: 13, height: 13, cursor: 'pointer' }} />
                   )}
                 </td>
@@ -2029,7 +2072,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
             const deleted = !!g.deletedAt;
             return (
               <button key={g.id} className={`pay-subtab${currentGroupId === g.id ? ' active' : ''}`}
-                onClick={() => { setCurrentGroupId(g.id); setRunErr(''); setRunSuccess(''); setSelectedLateStubs(new Set()); }}
+                onClick={() => { setCurrentGroupId(g.id); setRunErr(''); setRunSuccess(''); setSelectedLateStubs(new Set()); setSelectedHistoryStubs(new Set()); }}
                 style={deleted ? { opacity: 0.5, fontStyle: 'italic' } : {}}>
                 {g.name}{deleted ? ' (Deleted)' : ''}
                 {g.id !== UNASSIGNED_ID && !deleted && (
@@ -2080,6 +2123,35 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
       )}
       {runErr     && <div className="alert alert-error"   style={{ marginBottom: 10 }}><span>⚠</span>{runErr}<button onClick={() => setRunErr('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button></div>}
       {runSuccess && <div className="alert alert-success" style={{ marginBottom: 10 }}><span>✓</span>{runSuccess}<button onClick={() => setRunSuccess('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button></div>}
+
+      {/* Bulk action bar */}
+      {selectedHistoryStubs.size > 0 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--accent)', color: '#fff', padding: '8px 14px', borderRadius: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontWeight: 700, fontSize: 13 }}>{selectedHistoryStubs.size} check{selectedHistoryStubs.size !== 1 ? 's' : ''} selected</span>
+          <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
+          <span style={{ fontSize: 12, opacity: 0.85 }}>Change status:</span>
+          {[
+            { value: 'printed',                label: 'Printed' },
+            { value: 'direct_deposit_cleared', label: 'Deposited' },
+            { value: 'draft',                  label: 'Draft' },
+          ].map(({ value, label }) => (
+            <button key={value} disabled={bulkBusy}
+              onClick={() => handleBulkStatusChange(value)}
+              style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
+              {label}
+            </button>
+          ))}
+          <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
+          <button disabled={bulkBusy} onClick={handleBulkDelete}
+            style={{ background: '#dc2626', border: 'none', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>
+            {bulkBusy ? <span className="spinner" style={{ width: 12, height: 12 }} /> : 'Delete'}
+          </button>
+          <button onClick={() => setSelectedHistoryStubs(new Set())}
+            style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 5, color: '#fff', padding: '3px 8px', fontSize: 12, cursor: 'pointer' }}>
+            Cancel
+          </button>
+        </div>
+      )}
 
       {/* Main table: pending + late checks */}
       {mainRows.length > 0 && (
