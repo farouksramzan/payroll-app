@@ -1,29 +1,32 @@
 /**
  * Moov ACH direct deposit service.
- * Uses Moov REST API v2026 with OAuth2 client credentials.
+ * Uses Moov REST API with OAuth2 client credentials.
  * Env vars required:
- *   MOOV_CLIENT_ID
- *   MOOV_CLIENT_SECRET
- *   MOOV_FACILITATOR_ACCOUNT_ID  — your platform's Moov account ID
+ *   MOOV_PUBLIC_KEY           — shown in Moov dashboard (API keys page)
+ *   MOOV_PRIVATE_KEY          — shown only once at key creation time
+ *   MOOV_FACILITATOR_ACCOUNT_ID  — your platform's Moov account ID (Account settings)
  */
 
 const MOOV_BASE = process.env.MOOV_BASE_URL || 'https://api.moov.io';
 
 function isConfigured() {
-  return !!(process.env.MOOV_CLIENT_ID && process.env.MOOV_CLIENT_SECRET);
+  return !!(process.env.MOOV_PUBLIC_KEY && process.env.MOOV_PRIVATE_KEY);
 }
 
-async function getToken(scope) {
+async function getToken() {
+  const pub  = process.env.MOOV_PUBLIC_KEY;
+  const priv = process.env.MOOV_PRIVATE_KEY;
+  const credentials = Buffer.from(`${pub}:${priv}`).toString('base64');
+
   const res = await fetch(`${MOOV_BASE}/oauth2/token`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id:     process.env.MOOV_CLIENT_ID,
-      client_secret: process.env.MOOV_CLIENT_SECRET,
-      ...(scope ? { scope } : {}),
-    }),
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Authorization': `Basic ${credentials}`,
+    },
+    body: new URLSearchParams({ grant_type: 'client_credentials' }),
   });
+
   if (!res.ok) {
     const e = await res.json().catch(() => ({}));
     throw new Error(`Moov auth failed: ${e.error_description || e.error || res.status}`);
@@ -32,9 +35,9 @@ async function getToken(scope) {
   return data.access_token;
 }
 
-async function call(method, path, body, scope) {
-  if (!isConfigured()) throw new Error('Moov not configured. Add MOOV_CLIENT_ID and MOOV_CLIENT_SECRET environment variables.');
-  const token = await getToken(scope);
+async function call(method, path, body) {
+  if (!isConfigured()) throw new Error('Moov not configured. Add MOOV_PUBLIC_KEY and MOOV_PRIVATE_KEY environment variables.');
+  const token = await getToken();
   const opts = {
     method,
     headers: {
@@ -84,14 +87,6 @@ async function getPaymentMethods(moovAccountId) {
   return call('GET', `/accounts/${moovAccountId}/payment-methods`);
 }
 
-// Find the ACH payment method ID for an account
-async function getAchPaymentMethodId(moovAccountId) {
-  const methods = await getPaymentMethods(moovAccountId);
-  const list = Array.isArray(methods) ? methods : (methods.paymentMethods || []);
-  const ach = list.find(m => m.paymentMethodType === 'ach-credit-standard' || m.paymentMethodType === 'ach-credit-same-day');
-  return ach?.paymentMethodID || null;
-}
-
 // Send a direct deposit (ACH credit) from employer to employee
 async function sendDirectDeposit({ sourceAccountId, sourcePaymentMethodId, destAccountId, destPaymentMethodId, netPayCents, description }) {
   return call('POST', '/transfers', {
@@ -105,7 +100,7 @@ async function sendDirectDeposit({ sourceAccountId, sourcePaymentMethodId, destA
     },
     amount: {
       currency: 'USD',
-      value: netPayCents, // in cents
+      value: netPayCents,
     },
     description: description || 'Payroll Direct Deposit',
   });
@@ -116,6 +111,5 @@ module.exports = {
   createEmployeeAccount,
   linkBankAccount,
   getPaymentMethods,
-  getAchPaymentMethodId,
   sendDirectDeposit,
 };
