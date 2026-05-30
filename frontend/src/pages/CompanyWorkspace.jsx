@@ -1156,7 +1156,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
 
   const selectedPendingCount = pendingPeriods.reduce((n, period) =>
     n + empsInGroup.filter(emp => getRow(period.end, emp.id).selected).length, 0);
-  const totalActionCount = selectedPendingCount + selectedLateStubs.size;
+  // Count late/draft stubs selected via the multi-select checkboxes
+  const selectedHistoryLateIds = [...selectedHistoryStubs].filter(id => {
+    const stub = history.flatMap(p => p.stubs).find(s => s.id === id);
+    return stub && (stub.check_status === 'late' || stub.check_status === 'draft');
+  });
+  const totalActionCount = selectedPendingCount + selectedLateStubs.size + selectedHistoryLateIds.length;
 
   async function handleRunPayroll() {
     setRunErr(''); setRunSuccess('');
@@ -1213,6 +1218,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
       }
       // Include selected late stubs in print batch (NOT EFTPS — late checks are payroll, not tax deposits)
       selectedLateStubs.forEach(id => allNewIds.push(id));
+      selectedHistoryLateIds.forEach(id => allNewIds.push(id));
       // Mark all checks as printed immediately
       await Promise.all(allNewIds.map(id => api.updatePaystubStatus(id, 'printed').catch(() => {})));
       await reloadStubs();
@@ -1797,6 +1803,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
           {/* Footer: save/close */}
           <div style={{ padding: '12px 24px 18px', display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
             <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: 12 }}>Close</button>
+            <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={async () => {
+              try { await api.printSelectedChecks(clientId, [stub.id]); } catch (e) { alert(e.message); }
+            }}>↓ Download PDF</button>
             {isDirty && (
               <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={editSaving} onClick={saveModalEdits}>
                 {editSaving ? <span className="spinner" style={{ width: 12, height: 12 }} /> : 'Save Changes'}
@@ -2109,7 +2118,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
             + Ungrouped Check
           </button>
         )}
-        {!isGroupDeleted && (pendingPeriods.length > 0 || selectedLateStubs.size > 0) && (
+        {!isGroupDeleted && (pendingPeriods.length > 0 || selectedLateStubs.size > 0 || selectedHistoryLateIds.length > 0) && (
           <button className="btn btn-primary" onClick={handleRunPayroll} disabled={running || totalActionCount === 0}>
             {running ? <span className="spinner" /> : `Run Payroll (${totalActionCount})`}
           </button>
@@ -2141,6 +2150,14 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
               {label}
             </button>
           ))}
+          <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
+          <button disabled={bulkBusy} onClick={async () => {
+            setBulkBusy(true);
+            try { await api.printSelectedChecks(clientId, [...selectedHistoryStubs]); } catch (e) { alert(e.message); }
+            finally { setBulkBusy(false); }
+          }} style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
+            ↓ PDF
+          </button>
           <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
           <button disabled={bulkBusy} onClick={handleBulkDelete}
             style={{ background: '#dc2626', border: 'none', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>
