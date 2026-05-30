@@ -329,10 +329,28 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
       VALUES (?, ?, ?, NULL, NULL, ?)
     `);
 
+    const getExistingStub  = db.prepare('SELECT id, reported_tips FROM paystubs WHERE client_id = ? AND check_number = ?');
+    const hasTipItem       = db.prepare("SELECT id FROM paystub_line_items WHERE paystub_id = ? AND pay_type = 'tips'");
+    const patchTips        = db.prepare('UPDATE paystubs SET reported_tips = ? WHERE id = ?');
+
     const importAll = db.transaction((rows) => {
-      let imported = 0, skipped = 0;
+      let imported = 0, skipped = 0, patched = 0;
       for (const c of rows) {
-        if (skipExisting === 'true' && existing.has(String(c.checkNumber))) { skipped++; continue; }
+        if (skipExisting === 'true' && existing.has(String(c.checkNumber))) {
+          // Patch reported_tips and tip line item on existing checks when missing
+          if (c.reportedTips > 0) {
+            const existingStub = getExistingStub.get(clientId, c.checkNumber);
+            if (existingStub && !(existingStub.reported_tips > 0)) {
+              patchTips.run(c.reportedTips, existingStub.id);
+              if (!hasTipItem.get(existingStub.id)) {
+                insertLineItem.run(existingStub.id, 'tips', 'Reported Tips', c.reportedTips);
+              }
+              patched++;
+            }
+          }
+          skipped++;
+          continue;
+        }
         const r = insert.run(
           clientId, c.employeeId || null, c.empName,
           c.periodStart, c.periodEnd, c.checkDate, c.payFrequency, c.filingStatus, c.workState,
@@ -346,7 +364,7 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
         if (c.reportedTips > 0) insertLineItem.run(stubId, 'tips', 'Reported Tips', c.reportedTips);
         imported++;
       }
-      return { imported, skipped };
+      return { imported, skipped, patched };
     });
 
     const result = importAll(checks);

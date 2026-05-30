@@ -62,7 +62,7 @@ export default function ImportPaychecksModal({ clientId, onClose, onImported }) 
           <div style={{ textAlign: 'center', padding: '32px 0' }}>
             <div style={{ fontSize: 48, marginBottom: 16 }}>✓</div>
             <h3 style={{ marginBottom: 8 }}>{done.imported} paycheck{done.imported !== 1 ? 's' : ''} imported</h3>
-            {done.skipped > 0 && <p style={{ color: 'var(--text-muted)' }}>{done.skipped} skipped (check numbers already exist)</p>}
+            {done.skipped > 0 && <p style={{ color: 'var(--text-muted)' }}>{done.skipped} skipped (check numbers already exist{done.patched > 0 ? `, ${done.patched} patched with tips` : ''})</p>}
             <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 8 }}>Paychecks are marked as printed / 941 completed. Pay period dates are estimated — adjust per check if needed.</p>
             <button className="btn btn-primary" style={{ marginTop: 20 }} onClick={onClose}>Done</button>
           </div>
@@ -97,7 +97,7 @@ export default function ImportPaychecksModal({ clientId, onClose, onImported }) 
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                     <thead>
                       <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>
-                        {['Check#', 'Date', 'Employee', 'Gross', 'FIT', 'SS+Med', 'Net Pay', '941 Deposit', 'Status'].map(h => (
+                        {['Check#', 'Date', 'Employee', 'Gross', 'Tips', 'FIT', 'SS+Med', 'Net Pay', '941 Deposit', 'Status'].map(h => (
                           <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>{h}</th>
                         ))}
                       </tr>
@@ -112,6 +112,7 @@ export default function ImportPaychecksModal({ clientId, onClose, onImported }) 
                             {!c.empMatched && <div style={{ fontSize: 10, color: '#f59e0b' }}>Not found in employees</div>}
                           </td>
                           <td style={{ padding: '7px 10px', fontFamily: 'monospace' }}>{fmt(c.grossWages)}</td>
+                          <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: c.reportedTips > 0 ? '#7c3aed' : 'var(--text-muted)' }}>{c.reportedTips > 0 ? fmt(c.reportedTips) : '—'}</td>
                           <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: '#dc2626' }}>{fmt(c.fit)}</td>
                           <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: '#dc2626' }}>{fmt(c.eeSS + c.eeMedicare)}</td>
                           <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontWeight: 700 }}>{fmt(c.netPay)}</td>

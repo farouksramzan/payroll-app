@@ -439,6 +439,22 @@ function migrate() {
     { name: 'reported_tips', def: 'REAL DEFAULT 0' },
   ]);
 
+  // Backfill reported_tips from existing paystub_line_items for checks that were
+  // imported before the column existed (they have line items but reported_tips = 0).
+  db.exec(`
+    UPDATE paystubs
+    SET reported_tips = (
+      SELECT COALESCE(SUM(amount), 0)
+      FROM paystub_line_items
+      WHERE paystub_id = paystubs.id AND pay_type = 'tips'
+    )
+    WHERE (reported_tips IS NULL OR reported_tips = 0)
+      AND EXISTS (
+        SELECT 1 FROM paystub_line_items
+        WHERE paystub_id = paystubs.id AND pay_type = 'tips'
+      )
+  `);
+
   // preparer_info — per-user tax preparer details for autofilling forms
   addCols('users', [
     { name: 'preparer_info', def: 'TEXT' },
