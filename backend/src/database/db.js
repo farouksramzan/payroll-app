@@ -423,6 +423,16 @@ function migrate() {
   if (orphanByPayGroup.changes > 0)
     console.log(`[DB] Cleaned up ${orphanByPayGroup.changes} orphaned draft paystub(s) with no matching pay group`);
 
+  // Fix paystubs erroneously imported with status='completed' — 'completed' is not
+  // a valid 941 status (valid: pending, processing, submitted, failed). These were
+  // set by an early version of the QB paycheck import. Reset to 'pending' so they
+  // appear in Pay Liabilities.
+  const fixedImportStatus = db.prepare(
+    "UPDATE paystubs SET status = 'pending' WHERE status = 'completed'"
+  ).run();
+  if (fixedImportStatus.changes > 0)
+    console.log(`[DB] Fixed ${fixedImportStatus.changes} paystub(s) with invalid status='completed' → 'pending'`);
+
   // preparer_info — per-user tax preparer details for autofilling forms
   addCols('users', [
     { name: 'preparer_info', def: 'TEXT' },

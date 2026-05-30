@@ -456,6 +456,8 @@ router.put('/:id', (req, res) => {
     filingStatus, step2Checkbox, step3Children, step3Other,
     step4a, step4b, step4c,
     lineItems, workState, ytdGross, notes, checkStatus,
+    bonus: bonusIn, commission: commissionIn, reimbursement: reimbursementIn,
+    deduction: deductionIn, garnishment: garnishmentIn,
   } = req.body;
 
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(stub.client_id);
@@ -511,7 +513,8 @@ router.put('/:id', (req, res) => {
         additional_medicare = ?, employer_ss = ?, employer_medicare = ?,
         state_income_tax = ?, futa_tax = ?, suta_tax = ?,
         total_deposit = ?, net_pay = ?, ytd_wages_before = ?,
-        tax_year = ?, tax_quarter = ?, notes = ?, check_status = ?
+        tax_year = ?, tax_quarter = ?, notes = ?, check_status = ?,
+        bonus = ?, commission = ?, reimbursement = ?, deduction = ?, garnishment = ?
       WHERE id = ?
     `).run(
       payPeriodStart  || stub.pay_period_start,
@@ -530,6 +533,11 @@ router.put('/:id', (req, res) => {
       taxes.totalDeposit, taxes.netPay, ytdBefore,
       year, quarter, notes !== undefined ? (notes || null) : stub.notes,
       checkStatus || stub.check_status,
+      bonusIn !== undefined ? parseFloat(bonusIn || 0) : (stub.bonus || 0),
+      commissionIn !== undefined ? parseFloat(commissionIn || 0) : (stub.commission || 0),
+      reimbursementIn !== undefined ? parseFloat(reimbursementIn || 0) : (stub.reimbursement || 0),
+      deductionIn !== undefined ? parseFloat(deductionIn || 0) : (stub.deduction || 0),
+      garnishmentIn !== undefined ? parseFloat(garnishmentIn || 0) : (stub.garnishment || 0),
       stub.id,
     );
 
@@ -551,12 +559,13 @@ router.put('/:id', (req, res) => {
       }
     }
   } else {
-    // Only metadata changed — update dates, notes, status without touching tax values
+    // Only metadata changed — update dates, notes, status, and extra pay columns without touching tax values
     db.prepare(`
       UPDATE paystubs SET
         pay_period_start = ?, pay_period_end = ?, settlement_date = ?, settlement_due_date = ?,
         eftps_settlement_date = ?,
-        tax_year = ?, tax_quarter = ?, notes = ?, check_status = ?
+        tax_year = ?, tax_quarter = ?, notes = ?, check_status = ?,
+        bonus = ?, commission = ?, reimbursement = ?, deduction = ?, garnishment = ?
       WHERE id = ?
     `).run(
       payPeriodStart  || stub.pay_period_start,
@@ -567,6 +576,11 @@ router.put('/:id', (req, res) => {
       year, quarter,
       notes !== undefined ? (notes || null) : stub.notes,
       checkStatus || stub.check_status,
+      bonusIn !== undefined ? parseFloat(bonusIn || 0) : (stub.bonus || 0),
+      commissionIn !== undefined ? parseFloat(commissionIn || 0) : (stub.commission || 0),
+      reimbursementIn !== undefined ? parseFloat(reimbursementIn || 0) : (stub.reimbursement || 0),
+      deductionIn !== undefined ? parseFloat(deductionIn || 0) : (stub.deduction || 0),
+      garnishmentIn !== undefined ? parseFloat(garnishmentIn || 0) : (stub.garnishment || 0),
       stub.id,
     );
   }

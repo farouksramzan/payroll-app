@@ -1550,15 +1550,31 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     const isVoided = stub.check_status === 'voided';
     const ytd = calcEmpYTD(stub.employee_id, stub.pay_period_end);
 
-    // Editable date / gross state (hooks must be at top of history branch)
+    // Editable date / gross / other payroll items state (hooks must be at top of history branch)
     const [dateForm, setDateForm]     = useState({ start: stub.pay_period_start || '', end: stub.pay_period_end || '', payDate: stub.settlement_date || '' });
     const [grossOverride, setGrossOverride] = useState('');
+    const [otherOpen, setOtherOpen]   = useState(false);
+    const [otherForm, setOtherForm]   = useState({
+      bonus:         String(stub.bonus         || ''),
+      commission:    String(stub.commission    || ''),
+      reimbursement: String(stub.reimbursement || ''),
+      deduction:     String(stub.deduction     || ''),
+      garnishment:   String(stub.garnishment   || ''),
+    });
     const [editSaving, setEditSaving] = useState(false);
+    const otherDirty = !isVoided && (
+      parseFloat(otherForm.bonus         || 0) !== (stub.bonus         || 0) ||
+      parseFloat(otherForm.commission    || 0) !== (stub.commission    || 0) ||
+      parseFloat(otherForm.reimbursement || 0) !== (stub.reimbursement || 0) ||
+      parseFloat(otherForm.deduction     || 0) !== (stub.deduction     || 0) ||
+      parseFloat(otherForm.garnishment   || 0) !== (stub.garnishment   || 0)
+    );
     const isDirty = !isVoided && (
       dateForm.start !== (stub.pay_period_start || '') ||
       dateForm.end   !== (stub.pay_period_end   || '') ||
       dateForm.payDate !== (stub.settlement_date || '') ||
-      (grossOverride !== '' && parseFloat(grossOverride) > 0)
+      (grossOverride !== '' && parseFloat(grossOverride) > 0) ||
+      otherDirty
     );
     async function saveModalEdits() {
       setEditSaving(true);
@@ -1567,6 +1583,13 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
         if (grossOverride && parseFloat(grossOverride) > 0) {
           payload.lineItems = [{ payType: 'salary', amount: parseFloat(grossOverride) }];
         }
+        if (otherDirty) {
+          payload.bonus         = parseFloat(otherForm.bonus         || 0);
+          payload.commission    = parseFloat(otherForm.commission    || 0);
+          payload.reimbursement = parseFloat(otherForm.reimbursement || 0);
+          payload.deduction     = parseFloat(otherForm.deduction     || 0);
+          payload.garnishment   = parseFloat(otherForm.garnishment   || 0);
+        }
         await api.updatePaystub(stub.id, payload);
         await reloadStubs();
         onClose();
@@ -1574,9 +1597,14 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
       finally { setEditSaving(false); }
     }
 
+    const lineItemsList = stub.lineItems || [];
+    const tipsFromItems = lineItemsList.filter(li => li.pay_type === 'tips').reduce((s, li) => s + (li.amount || 0), 0);
+    const compFromItems = lineItemsList.filter(li => li.pay_type === 'regular' && stub.regular_hours == null).reduce((s, li) => s + (li.amount || 0), 0);
     const earningRows = [
       stub.regular_hours != null && stub.regular_pay != null && { label: `Hourly  (${stub.regular_hours} hrs)`, amount: stub.regular_pay, ytd: null },
+      compFromItems > 0                                       && { label: 'Compensation',   amount: compFromItems },
       stub.overtime_hours > 0 && stub.overtime_pay > 0       && { label: `Overtime  (${stub.overtime_hours} hrs)`, amount: stub.overtime_pay, ytd: null },
+      tipsFromItems > 0                                       && { label: 'Reported Tips',  amount: tipsFromItems },
       stub.bonus         > 0 && { label: 'Bonus',         amount: stub.bonus },
       stub.commission    > 0 && { label: 'Commission',    amount: stub.commission },
       stub.reimbursement > 0 && { label: 'Reimbursement', amount: stub.reimbursement },
@@ -1696,24 +1724,54 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
             ))}
           </div>
 
-          {/* Footer: gross override + save/close */}
-          <div style={{ padding: '12px 24px 18px', display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'space-between', marginTop: 12 }}>
-            {!isVoided && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <input type="number" className="form-input" value={grossOverride} placeholder="Override gross pay…"
-                  min="0" step="0.01" onChange={e => setGrossOverride(e.target.value)}
-                  style={{ height: 30, fontSize: 12, width: 170 }} />
-                {grossOverride && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Taxes recalculate on save</span>}
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-              <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: 12 }}>Close</button>
-              {isDirty && (
-                <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={editSaving} onClick={saveModalEdits}>
-                  {editSaving ? <span className="spinner" style={{ width: 12, height: 12 }} /> : 'Save Changes'}
-                </button>
+          {/* Other Payroll Items + gross override */}
+          {!isVoided && (
+            <div style={{ margin: '0 24px', borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+              <button type="button" onClick={() => setOtherOpen(o => !o)}
+                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                {otherOpen ? '▴' : '▾'} Other Payroll Items
+                {otherDirty && <span style={{ marginLeft: 4, fontSize: 10, background: 'var(--accent)', color: '#fff', borderRadius: 3, padding: '1px 5px' }}>edited</span>}
+              </button>
+              {otherOpen && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 10 }}>
+                  {[
+                    { label: 'Bonus', field: 'bonus', hint: 'taxable' },
+                    { label: 'Commission', field: 'commission', hint: 'taxable' },
+                    { label: 'Mileage / Reimbursement', field: 'reimbursement', hint: 'non-taxable' },
+                    { label: 'Cash Advance (deduction)', field: 'deduction', hint: 'deduction' },
+                    { label: 'Garnishment', field: 'garnishment', hint: 'deduction' },
+                  ].map(({ label, field, hint }) => (
+                    <label key={field} style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      {label}
+                      <div style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 400 }}>{hint}</div>
+                      <input className="form-input mono" type="number" min="0" step="0.01"
+                        value={otherForm[field] === '0' ? '' : otherForm[field]}
+                        placeholder="0.00"
+                        onChange={e => setOtherForm(f => ({ ...f, [field]: e.target.value }))}
+                        style={{ marginTop: 3, width: '100%', height: 28, fontSize: 12, textAlign: 'right', padding: '0 6px' }} />
+                    </label>
+                  ))}
+                  <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    Override Gross Pay
+                    <div style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 400 }}>taxes recalculate</div>
+                    <input className="form-input mono" type="number" min="0" step="0.01"
+                      value={grossOverride} placeholder={`${stub.gross_wages || 0}`}
+                      onChange={e => setGrossOverride(e.target.value)}
+                      style={{ marginTop: 3, width: '100%', height: 28, fontSize: 12, textAlign: 'right', padding: '0 6px' }} />
+                  </label>
+                </div>
               )}
             </div>
+          )}
+
+          {/* Footer: save/close */}
+          <div style={{ padding: '12px 24px 18px', display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
+            <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: 12 }}>Close</button>
+            {isDirty && (
+              <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={editSaving} onClick={saveModalEdits}>
+                {editSaving ? <span className="spinner" style={{ width: 12, height: 12 }} /> : 'Save Changes'}
+              </button>
+            )}
           </div>
         </div>
       </Overlay>
