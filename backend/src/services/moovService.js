@@ -16,25 +16,29 @@ function isConfigured() {
 async function getToken() {
   const pub  = process.env.MOOV_PUBLIC_KEY;
   const priv = process.env.MOOV_PRIVATE_KEY;
+  const origin = process.env.MOOV_ORIGIN || 'https://payroll-app-production-5dde.up.railway.app';
+  const basic  = Buffer.from(`${pub}:${priv}`).toString('base64');
 
   const res = await fetch(`${MOOV_BASE}/oauth2/token`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Origin': process.env.RAILWAY_PUBLIC_DOMAIN
-        ? `https://${process.env.RAILWAY_PUBLIC_DOMAIN}`
-        : 'https://payroll-app-production-5dde.up.railway.app',
+      'Authorization': `Basic ${basic}`,
+      'Origin': origin,
     },
     body: JSON.stringify({
       grant_type:    'client_credentials',
       client_id:     pub,
       client_secret: priv,
+      scope:         '/accounts.read /accounts.write /bank-accounts.read /bank-accounts.write /transfers.read /transfers.write',
     }),
   });
 
   if (!res.ok) {
-    const e = await res.json().catch(() => ({}));
-    throw new Error(`Moov auth failed: ${e.error_description || e.error || res.status}`);
+    const text = await res.text();
+    let msg = `${res.status}`;
+    try { const e = JSON.parse(text); msg = e.error_description || e.error || JSON.stringify(e) || msg; } catch {}
+    throw new Error(`Moov auth failed: ${msg}`);
   }
   const data = await res.json();
   return data.access_token;
