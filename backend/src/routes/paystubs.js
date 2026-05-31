@@ -929,7 +929,6 @@ router.post('/payroll-run', (req, res) => {
           const amountCents = Math.round(stub.netPay * 100);
           const destMethods = await moov.getPaymentMethods(stub.moovAccountId);
           const destList = Array.isArray(destMethods) ? destMethods : (destMethods.paymentMethods || []);
-          console.log('[DD] employee payment methods:', JSON.stringify(destList.map(m => ({ type: m.paymentMethodType, id: m.paymentMethodID }))));
           const destMethod = destList.find(m => m.paymentMethodType === 'ach-credit-standard' || m.paymentMethodType === 'ach-credit-same-day');
           if (!destMethod) throw new Error('No ACH payment method on employee Moov account');
 
@@ -937,7 +936,6 @@ router.post('/payroll-run', (req, res) => {
           if (facilitatorAccountId) {
             const srcMethods = await moov.getPaymentMethods(facilitatorAccountId);
             const srcList = Array.isArray(srcMethods) ? srcMethods : (srcMethods.paymentMethods || []);
-            console.log('[DD] facilitator payment methods:', JSON.stringify(srcList.map(m => ({ type: m.paymentMethodType, id: m.paymentMethodID }))));
             const srcMethod = srcList.find(m => m.paymentMethodType?.includes('ach-debit'));
             srcMethodId = srcMethod?.paymentMethodID || null;
           }
@@ -1715,7 +1713,6 @@ router.put('/:id/status', async (req, res) => {
           const amountCents = Math.round(stub.net_pay * 100);
           const destMethods = await moov.getPaymentMethods(emp.moov_account_id);
           const destList = Array.isArray(destMethods) ? destMethods : (destMethods.paymentMethods || []);
-          console.log('[DD] employee payment methods:', JSON.stringify(destList.map(m => ({ type: m.paymentMethodType, id: m.paymentMethodID }))));
           const destMethod = destList.find(m => m.paymentMethodType === 'ach-credit-standard' || m.paymentMethodType === 'ach-credit-same-day');
           if (!destMethod) throw new Error('No ACH payment method on employee Moov account');
 
