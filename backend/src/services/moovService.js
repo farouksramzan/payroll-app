@@ -13,7 +13,7 @@ function isConfigured() {
   return !!(process.env.MOOV_PUBLIC_KEY && process.env.MOOV_PRIVATE_KEY);
 }
 
-async function getToken() {
+async function getToken(additionalScopes = []) {
   const pub  = process.env.MOOV_PUBLIC_KEY;
   const priv = process.env.MOOV_PRIVATE_KEY;
   const origin = process.env.MOOV_ORIGIN || 'https://payroll-app-production-5dde.up.railway.app';
@@ -29,6 +29,7 @@ async function getToken() {
     `/accounts/${facilitatorId}/bank-accounts.read`,
     `/accounts/${facilitatorId}/capabilities.write`,
     `/accounts/${facilitatorId}/capabilities.read`,
+    ...additionalScopes,
   ].join(' ');
 
   const res = await fetch(`${MOOV_BASE}/oauth2/token`, {
@@ -54,9 +55,9 @@ async function getToken() {
   return data.access_token;
 }
 
-async function call(method, path, body) {
+async function call(method, path, body, additionalScopes = []) {
   if (!isConfigured()) throw new Error('Moov not configured. Add MOOV_PUBLIC_KEY and MOOV_PRIVATE_KEY environment variables.');
-  const token = await getToken();
+  const token = await getToken(additionalScopes);
   const facilitatorId = process.env.MOOV_FACILITATOR_ACCOUNT_ID || '';
   const origin = process.env.MOOV_ORIGIN || 'https://payroll-app-production-5dde.up.railway.app';
   const opts = {
@@ -101,7 +102,10 @@ async function linkBankAccount(moovAccountId, { routingNumber, accountNumber, ba
     bankAccountType: bankAccountType || 'checking',
     holderName,
     holderType: 'individual',
-  });
+  }, [
+    `/accounts/${moovAccountId}/bank-accounts.write`,
+    `/accounts/${moovAccountId}/bank-accounts.read`,
+  ]);
 }
 
 // List payment methods for an account
