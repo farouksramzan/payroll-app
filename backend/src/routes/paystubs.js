@@ -833,6 +833,7 @@ router.post('/payroll-run', (req, res) => {
       const emp = db.prepare('SELECT * FROM employees WHERE id = ? AND client_id = ?')
         .get(empData.employeeId, clientId);
       if (!emp) continue;
+      console.log(`[payroll-run] emp ${emp.id} ${emp.first_name} ${emp.last_name} bank_account_status=${emp.bank_account_status} moov_account_id=${emp.moov_account_id}`);
 
       const lineItems = empData.lineItems || [];
       const computedGross = lineItems.reduce((s, li) => s + parseFloat(li.amount || 0), 0);
