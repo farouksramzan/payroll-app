@@ -58,12 +58,14 @@ async function call(method, path, body) {
   if (!isConfigured()) throw new Error('Moov not configured. Add MOOV_PUBLIC_KEY and MOOV_PRIVATE_KEY environment variables.');
   const token = await getToken();
   const facilitatorId = process.env.MOOV_FACILITATOR_ACCOUNT_ID || '';
+  const origin = process.env.MOOV_ORIGIN || 'https://payroll-app-production-5dde.up.railway.app';
   const opts = {
     method,
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
       'X-Account-ID': facilitatorId,
+      'Origin': origin,
     },
   };
   if (body) opts.body = JSON.stringify(body);
