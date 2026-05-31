@@ -112,11 +112,15 @@ async function linkBankAccount(moovAccountId, { routingNumber, accountNumber, ba
 
 // List payment methods for an account
 async function getPaymentMethods(moovAccountId) {
-  return call('GET', `/accounts/${moovAccountId}/payment-methods`);
+  return call('GET', `/accounts/${moovAccountId}/payment-methods`, null, [
+    `/accounts/${moovAccountId}/payment-methods.read`,
+    `/accounts/${moovAccountId}/bank-accounts.read`,
+  ]);
 }
 
 // Send a direct deposit (ACH credit) from employer to employee
 async function sendDirectDeposit({ sourceAccountId, sourcePaymentMethodId, destAccountId, destPaymentMethodId, netPayCents, description }) {
+  const facilitatorId = process.env.MOOV_FACILITATOR_ACCOUNT_ID || '';
   return call('POST', '/transfers', {
     source: {
       accountID: sourceAccountId,
@@ -131,7 +135,10 @@ async function sendDirectDeposit({ sourceAccountId, sourcePaymentMethodId, destA
       value: netPayCents,
     },
     description: description || 'Payroll Direct Deposit',
-  });
+  }, [
+    `/accounts/${facilitatorId}/transfers.write`,
+    `/accounts/${destAccountId}/transfers.write`,
+  ]);
 }
 
 module.exports = {
