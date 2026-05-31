@@ -21,11 +21,14 @@ async function getToken() {
 
   const facilitatorId = process.env.MOOV_FACILITATOR_ACCOUNT_ID || '';
   const scope = [
-    `/accounts/${facilitatorId}/transfers.write`,
-    `/accounts/${facilitatorId}/bank-accounts.write`,
-    `/accounts/${facilitatorId}/bank-accounts.read`,
     '/accounts.write',
     '/accounts.read',
+    `/accounts/${facilitatorId}/transfers.write`,
+    `/accounts/${facilitatorId}/transfers.read`,
+    `/accounts/${facilitatorId}/bank-accounts.write`,
+    `/accounts/${facilitatorId}/bank-accounts.read`,
+    `/accounts/${facilitatorId}/capabilities.write`,
+    `/accounts/${facilitatorId}/capabilities.read`,
   ].join(' ');
 
   const res = await fetch(`${MOOV_BASE}/oauth2/token`, {
@@ -85,7 +88,6 @@ async function createEmployeeAccount({ firstName, lastName }) {
         name: { firstName, lastName },
       },
     },
-    capabilities: ['transfers'],
   });
 }
 
