@@ -7,6 +7,31 @@ const moov = require('../services/moovService');
 const router = express.Router();
 router.use(requireAuth);
 
+// GET /api/direct-deposit/moov-test — debug Moov auth
+router.get('/moov-test', async (req, res) => {
+  const pub  = process.env.MOOV_PUBLIC_KEY;
+  const priv = process.env.MOOV_PRIVATE_KEY;
+  const facilitatorId = process.env.MOOV_FACILITATOR_ACCOUNT_ID;
+  const origin = process.env.MOOV_ORIGIN || 'https://payroll-app-production-5dde.up.railway.app';
+  const basic = pub && priv ? Buffer.from(`${pub}:${priv}`).toString('base64') : null;
+
+  try {
+    const tokenRes = await fetch('https://api.moov.io/oauth2/token', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Authorization': `Basic ${basic}`,
+        'Origin': origin,
+      },
+      body: new URLSearchParams({ grant_type: 'client_credentials' }),
+    });
+    const text = await tokenRes.text();
+    res.json({ status: tokenRes.status, body: text, pub: pub?.slice(0,8)+'...', facilitatorId, origin });
+  } catch (e) {
+    res.json({ error: e.message });
+  }
+});
+
 function getEmployee(db, empId, userId) {
   return db.prepare(`
     SELECT e.* FROM employees e
