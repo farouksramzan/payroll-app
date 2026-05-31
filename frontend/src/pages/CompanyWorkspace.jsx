@@ -1340,9 +1340,17 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
         const res = await api.runPayroll({ clientId, payPeriodStart: ov.start || period.start, payPeriodEnd: ov.end || period.end, settlementDate: ov.payDate || period.payDate, payGroupId: currentGroupId, employees: payrollEmps });
         if (res?.paystubs) res.paystubs.forEach(s => allNewIds.push({ id: s.id, directDeposit: s.directDeposit }));
       }
-      // Include selected late stubs in print batch (NOT EFTPS — late checks are payroll, not tax deposits)
-      selectedLateStubs.forEach(id => allNewIds.push({ id, directDeposit: false }));
-      selectedHistoryLateIds.forEach(id => allNewIds.push({ id, directDeposit: false }));
+      // Include selected late stubs — route through DD if the employee has active direct deposit
+      selectedLateStubs.forEach(id => {
+        const stub = paystubs.find(s => s.id === id);
+        const emp = stub ? activeEmps.find(e => e.id === stub.employee_id) : null;
+        allNewIds.push({ id, directDeposit: emp?.directDeposit?.status === 'active' });
+      });
+      selectedHistoryLateIds.forEach(id => {
+        const stub = paystubs.find(s => s.id === id);
+        const emp = stub ? activeEmps.find(e => e.id === stub.employee_id) : null;
+        allNewIds.push({ id, directDeposit: emp?.directDeposit?.status === 'active' });
+      });
       // DD employees: mark as direct_deposit_sent; print checks: mark as printed
       const ddIds    = allNewIds.filter(s => s.directDeposit).map(s => s.id);
       const printIds = allNewIds.filter(s => !s.directDeposit).map(s => s.id);

@@ -833,7 +833,6 @@ router.post('/payroll-run', (req, res) => {
       const emp = db.prepare('SELECT * FROM employees WHERE id = ? AND client_id = ?')
         .get(empData.employeeId, clientId);
       if (!emp) continue;
-      console.log(`[payroll-run] emp ${emp.id} ${emp.first_name} ${emp.last_name} bank_account_status=${emp.bank_account_status} moov_account_id=${emp.moov_account_id}`);
 
       const lineItems = empData.lineItems || [];
       const computedGross = lineItems.reduce((s, li) => s + parseFloat(li.amount || 0), 0);
@@ -1675,7 +1674,7 @@ function generatePaystubPDF(stub, lineItems, ytd, stream) {
 }
 
 // ── PUT /api/paystubs/:id/status ─────────────────────────────────────────────
-router.put('/:id/status', (req, res) => {
+router.put('/:id/status', async (req, res) => {
   const db = getDb();
   const stub = db.prepare(`
     SELECT p.* FROM paystubs p
@@ -1703,6 +1702,40 @@ router.put('/:id/status', (req, res) => {
   if (!checkAllowed.includes(status)) return res.status(400).json({ error: 'Invalid status' });
 
   db.prepare('UPDATE paystubs SET check_status = ? WHERE id = ?').run(status, stub.id);
+
+  // Fire Moov transfer for existing stubs being sent via direct deposit
+  if (status === 'direct_deposit_sent' && moov.isConfigured()) {
+    const emp = db.prepare('SELECT * FROM employees WHERE id = ?').get(stub.employee_id);
+    if (emp?.moov_account_id && emp?.moov_bank_account_id && emp?.bank_account_status === 'active') {
+      const facilitatorAccountId = process.env.MOOV_FACILITATOR_ACCOUNT_ID;
+      setImmediate(async () => {
+        try {
+          const amountCents = Math.round(stub.net_pay * 100);
+          const destMethods = await moov.getPaymentMethods(emp.moov_account_id);
+          const destList = Array.isArray(destMethods) ? destMethods : (destMethods.paymentMethods || []);
+          const destMethod = destList.find(m => m.paymentMethodType === 'ach-credit-standard' || m.paymentMethodType === 'ach-credit-same-day');
+          if (!destMethod) throw new Error('No ACH payment method on employee Moov account');
+
+          const srcMethods = await moov.getPaymentMethods(facilitatorAccountId);
+          const srcList = Array.isArray(srcMethods) ? srcMethods : (srcMethods.paymentMethods || []);
+          const srcMethod = srcList.find(m => m.paymentMethodType === 'ach-debit-fund');
+
+          await moov.sendDirectDeposit({
+            sourceAccountId:       facilitatorAccountId,
+            sourcePaymentMethodId: srcMethod?.paymentMethodID || null,
+            destAccountId:         emp.moov_account_id,
+            destPaymentMethodId:   destMethod.paymentMethodID,
+            netPayCents:           amountCents,
+            description:           `Payroll Direct Deposit`,
+          });
+          console.log(`[DD] Sent $${stub.net_pay} to ${stub.employee_name} (stub ${stub.id})`);
+        } catch (err) {
+          console.error(`[DD] Failed for stub ${stub.id} (${stub.employee_name}):`, err.message);
+        }
+      });
+    }
+  }
+
   res.json({ id: parseInt(req.params.id), checkStatus: status });
 });
 
