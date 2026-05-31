@@ -23,7 +23,10 @@ router.get('/moov-test', async (req, res) => {
         'Authorization': `Basic ${basic}`,
         'Origin': origin,
       },
-      body: new URLSearchParams({ grant_type: 'client_credentials' }),
+      body: new URLSearchParams({
+        grant_type: 'client_credentials',
+        scope: `/accounts/${facilitatorId}/transfers.write /accounts/${facilitatorId}/bank-accounts.write /accounts/${facilitatorId}/bank-accounts.read /accounts.write /accounts.read`,
+      }),
     });
     const text = await tokenRes.text();
     res.json({ status: tokenRes.status, body: text, pub: pub?.slice(0,8)+'...', facilitatorId, origin });
