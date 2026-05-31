@@ -97,11 +97,13 @@ async function createEmployeeAccount({ firstName, lastName }) {
 // Link a bank account to a Moov account
 async function linkBankAccount(moovAccountId, { routingNumber, accountNumber, bankAccountType, holderName }) {
   return call('POST', `/accounts/${moovAccountId}/bank-accounts`, {
-    routingNumber,
-    accountNumber,
-    bankAccountType: bankAccountType || 'checking',
-    holderName,
-    holderType: 'individual',
+    account: {
+      routingNumber,
+      accountNumber,
+      bankAccountType: bankAccountType || 'checking',
+      holderName,
+      holderType: 'individual',
+    },
   }, [
     `/accounts/${moovAccountId}/bank-accounts.write`,
     `/accounts/${moovAccountId}/bank-accounts.read`,
