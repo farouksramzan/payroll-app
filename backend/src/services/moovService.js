@@ -68,8 +68,8 @@ async function call(method, path, body) {
   const res = await fetch(`${MOOV_BASE}${path}`, opts);
   const text = await res.text();
   if (!res.ok) {
-    let msg = `Moov ${res.status}`;
-    try { const e = JSON.parse(text); msg = e.error || e.message || JSON.stringify(e) || msg; } catch {}
+    console.error(`[Moov] ${method} ${path} → ${res.status}: ${text}`);
+    let msg = `Moov ${method} ${path} → ${res.status}: ${text}`;
     throw new Error(msg);
   }
   if (!text) return {};
