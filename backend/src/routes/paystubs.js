@@ -936,7 +936,8 @@ router.post('/payroll-run', (req, res) => {
           if (facilitatorAccountId) {
             const srcMethods = await moov.getPaymentMethods(facilitatorAccountId);
             const srcList = Array.isArray(srcMethods) ? srcMethods : (srcMethods.paymentMethods || []);
-            const srcMethod = srcList.find(m => m.paymentMethodType === 'ach-debit-fund');
+            console.log('[DD] facilitator payment methods:', JSON.stringify(srcList.map(m => ({ type: m.paymentMethodType, id: m.paymentMethodID }))));
+            const srcMethod = srcList.find(m => m.paymentMethodType?.includes('ach-debit'));
             srcMethodId = srcMethod?.paymentMethodID || null;
           }
 
