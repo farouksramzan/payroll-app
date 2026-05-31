@@ -19,18 +19,25 @@ async function getToken() {
   const origin = process.env.MOOV_ORIGIN || 'https://payroll-app-production-5dde.up.railway.app';
   const basic  = Buffer.from(`${pub}:${priv}`).toString('base64');
 
+  const facilitatorId = process.env.MOOV_FACILITATOR_ACCOUNT_ID || '';
+  const scope = [
+    `/accounts/${facilitatorId}/transfers.write`,
+    `/accounts/${facilitatorId}/bank-accounts.write`,
+    `/accounts/${facilitatorId}/bank-accounts.read`,
+    '/accounts.write',
+    '/accounts.read',
+  ].join(' ');
+
   const res = await fetch(`${MOOV_BASE}/oauth2/token`, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
+      'Content-Type': 'application/x-www-form-urlencoded',
       'Authorization': `Basic ${basic}`,
       'Origin': origin,
     },
-    body: JSON.stringify({
-      grant_type:    'client_credentials',
-      client_id:     pub,
-      client_secret: priv,
-      scope:         '/accounts.read /accounts.write /bank-accounts.read /bank-accounts.write /transfers.read /transfers.write',
+    body: new URLSearchParams({
+      grant_type: 'client_credentials',
+      scope,
     }),
   });
 
