@@ -55,7 +55,7 @@ async function getToken(additionalScopes = []) {
   return data.access_token;
 }
 
-async function call(method, path, body, additionalScopes = []) {
+async function call(method, path, body, additionalScopes = [], extraHeaders = {}) {
   if (!isConfigured()) throw new Error('Moov not configured. Add MOOV_PUBLIC_KEY and MOOV_PRIVATE_KEY environment variables.');
   const token = await getToken(additionalScopes);
   const facilitatorId = process.env.MOOV_FACILITATOR_ACCOUNT_ID || '';
@@ -67,6 +67,7 @@ async function call(method, path, body, additionalScopes = []) {
       'Content-Type': 'application/json',
       'X-Account-ID': facilitatorId,
       'Origin': origin,
+      ...extraHeaders,
     },
   };
   if (body) opts.body = JSON.stringify(body);
@@ -121,6 +122,7 @@ async function getPaymentMethods(moovAccountId) {
 // Send a direct deposit (ACH credit) from employer to employee
 async function sendDirectDeposit({ sourceAccountId, sourcePaymentMethodId, destAccountId, destPaymentMethodId, netPayCents, description }) {
   const facilitatorId = process.env.MOOV_FACILITATOR_ACCOUNT_ID || '';
+  const { randomUUID } = require('crypto');
   return call('POST', '/transfers', {
     source: {
       accountID: sourceAccountId,
@@ -138,7 +140,9 @@ async function sendDirectDeposit({ sourceAccountId, sourcePaymentMethodId, destA
   }, [
     `/accounts/${facilitatorId}/transfers.write`,
     `/accounts/${destAccountId}/transfers.write`,
-  ]);
+  ], {
+    'X-Idempotency-Key': randomUUID(),
+  });
 }
 
 module.exports = {
