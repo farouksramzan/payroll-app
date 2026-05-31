@@ -89,22 +89,26 @@ router.post('/:employeeId', async (req, res) => {
       // Create or reuse Moov account for this employee
       let moovAccountId = emp.moov_account_id;
       if (!moovAccountId) {
+        console.log('[DD] Creating Moov account for', emp.first_name, emp.last_name);
         const acct = await moov.createEmployeeAccount({
           firstName: emp.first_name,
           lastName:  emp.last_name,
         });
+        console.log('[DD] Moov account created:', JSON.stringify(acct));
         moovAccountId = acct.accountID;
         db.prepare('UPDATE employees SET moov_account_id = ? WHERE id = ?').run(moovAccountId, emp.id);
       }
 
       // Link bank account
       const holderName = `${emp.first_name} ${emp.last_name}`;
+      console.log('[DD] Linking bank account to Moov account', moovAccountId);
       const bankAcct = await moov.linkBankAccount(moovAccountId, {
         routingNumber,
         accountNumber,
         bankAccountType: type,
         holderName,
       });
+      console.log('[DD] Bank account linked:', JSON.stringify(bankAcct));
 
       const moovBankId = bankAcct.bankAccountID;
       db.prepare(`
