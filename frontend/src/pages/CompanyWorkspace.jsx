@@ -1287,7 +1287,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
   });
   const totalActionCount = selectedPendingCount + selectedLateStubs.size + selectedHistoryLateIds.length;
 
-  async function handleRunPayroll() {
+  async function handleRunPayroll(forceMethod = null) {
     setRunErr(''); setRunSuccess('');
     for (const period of pendingPeriods) {
       for (const emp of empsInGroup) {
@@ -1340,17 +1340,22 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
         const res = await api.runPayroll({ clientId, payPeriodStart: ov.start || period.start, payPeriodEnd: ov.end || period.end, settlementDate: ov.payDate || period.payDate, payGroupId: currentGroupId, employees: payrollEmps });
         if (res?.paystubs) res.paystubs.forEach(s => allNewIds.push({ id: s.id, directDeposit: s.directDeposit }));
       }
-      // Include selected late stubs — route through DD if the employee has active direct deposit
+      // Include selected late stubs — route based on forceMethod or employee DD status
       selectedLateStubs.forEach(id => {
         const stub = paystubs.find(s => s.id === id);
         const emp = stub ? activeEmps.find(e => e.id === stub.employee_id) : null;
-        allNewIds.push({ id, directDeposit: emp?.directDeposit?.status === 'active' });
+        const isDD = forceMethod === 'dd' || (forceMethod !== 'print' && emp?.directDeposit?.status === 'active');
+        allNewIds.push({ id, directDeposit: isDD });
       });
       selectedHistoryLateIds.forEach(id => {
         const stub = paystubs.find(s => s.id === id);
         const emp = stub ? activeEmps.find(e => e.id === stub.employee_id) : null;
-        allNewIds.push({ id, directDeposit: emp?.directDeposit?.status === 'active' });
+        const isDD = forceMethod === 'dd' || (forceMethod !== 'print' && emp?.directDeposit?.status === 'active');
+        allNewIds.push({ id, directDeposit: isDD });
       });
+      // Override directDeposit on new stubs based on forceMethod
+      if (forceMethod === 'print') allNewIds.forEach(s => s.directDeposit = false);
+      if (forceMethod === 'dd')    allNewIds.forEach(s => s.directDeposit = true);
       // DD employees: mark as direct_deposit_sent; print checks: mark as printed
       const ddIds    = allNewIds.filter(s => s.directDeposit).map(s => s.id);
       const printIds = allNewIds.filter(s => !s.directDeposit).map(s => s.id);
@@ -2262,10 +2267,25 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
             + Ungrouped Check
           </button>
         )}
-        {!isGroupDeleted && (pendingPeriods.length > 0 || selectedLateStubs.size > 0 || selectedHistoryLateIds.length > 0) && (
-          <button className="btn btn-primary" onClick={handleRunPayroll} disabled={running || totalActionCount === 0}>
-            {running ? <span className="spinner" /> : `Run Payroll (${totalActionCount})`}
-          </button>
+        {!isGroupDeleted && (
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button
+              className="btn btn-secondary"
+              onClick={() => handleRunPayroll('print')}
+              disabled={running || totalActionCount === 0}
+              title="Process payroll and print checks"
+            >
+              {running ? <span className="spinner" /> : `🖨 Print${totalActionCount > 0 ? ` (${totalActionCount})` : ''}`}
+            </button>
+            <button
+              className="btn btn-primary"
+              onClick={() => handleRunPayroll('dd')}
+              disabled={running || totalActionCount === 0}
+              title="Process payroll and send via direct deposit"
+            >
+              {running ? <span className="spinner" /> : `⚡ Direct Deposit${totalActionCount > 0 ? ` (${totalActionCount})` : ''}`}
+            </button>
+          </div>
         )}
       </div>
 
