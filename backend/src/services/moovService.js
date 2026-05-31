@@ -54,11 +54,13 @@ async function getToken() {
 async function call(method, path, body) {
   if (!isConfigured()) throw new Error('Moov not configured. Add MOOV_PUBLIC_KEY and MOOV_PRIVATE_KEY environment variables.');
   const token = await getToken();
+  const facilitatorId = process.env.MOOV_FACILITATOR_ACCOUNT_ID || '';
   const opts = {
     method,
     headers: {
       Authorization: `Bearer ${token}`,
       'Content-Type': 'application/json',
+      'X-Account-ID': facilitatorId,
     },
   };
   if (body) opts.body = JSON.stringify(body);
