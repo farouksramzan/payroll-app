@@ -3394,6 +3394,32 @@ function PayLiabilitiesTab({ clientId, client }) {
         );
       })()}
 
+      {(() => {
+        const totalSelected = selected941.size + selected940.size + selectedSUI.size;
+        if (totalSelected < 2) return null;
+        const allSelectedIds = [...selected941, ...selected940, ...selectedSUI];
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--accent)', color: '#fff', padding: '8px 14px', borderRadius: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 700, fontSize: 13 }}>{totalSelected} check{totalSelected !== 1 ? 's' : ''} selected</span>
+            <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
+            <button
+              style={{ background: '#dc2626', border: 'none', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}
+              onClick={async () => {
+                if (!window.confirm(`Delete ${totalSelected} checks? This cannot be undone.`)) return;
+                try {
+                  await Promise.all(allSelectedIds.map(id => api.deletePaystub(id).catch(() => {})));
+                  setSelected941(new Set()); setSelected940(new Set()); setSelectedSUI(new Set());
+                  await reload();
+                } catch (e) { alert(e.message); }
+              }}>Delete</button>
+            <button onClick={() => { setSelected941(new Set()); setSelected940(new Set()); setSelectedSUI(new Set()); }}
+              style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 5, color: '#fff', padding: '3px 8px', fontSize: 12, cursor: 'pointer' }}>
+              Cancel
+            </button>
+          </div>
+        );
+      })()}
+
       <LiabilityGroup title="Federal 941" enriched={e941} taxType="941" total={total941} credit={credit941} selected={selected941} setSelected={setSelected941} />
       <LiabilityGroup title="Federal 940 (FUTA)" enriched={e940} taxType="940" total={total940} credit={credit940} selected={selected940} setSelected={setSelected940} />
       <LiabilityGroup title="State SUI" enriched={eSUI} taxType="sui" total={totalSUI} credit={0} selected={selectedSUI} setSelected={setSelectedSUI} />
