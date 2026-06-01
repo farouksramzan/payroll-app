@@ -2386,14 +2386,13 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
       {rateUpdatePrompt && (
         <Overlay>
           <div className="card" style={{ width: 380, padding: 28, borderRadius: 12, textAlign: 'center' }}>
-            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>Update Hourly Rate?</div>
+            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>Rate Changed to ${rateUpdatePrompt.newRate.toFixed(2)}/hr</div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 24, lineHeight: 1.5 }}>
-              You changed the rate to <strong>${rateUpdatePrompt.newRate.toFixed(2)}/hr</strong> for this check.<br />
-              Would you like to apply this rate to all future checks for this employee?
+              Would you like this rate to be changed for all future checks for this employee?
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
               <button className="btn btn-secondary" onClick={() => setRateUpdatePrompt(null)}>
-                No, just this check
+                No, just one time change
               </button>
               <button className="btn btn-primary" onClick={async () => {
                 const { empId, newRate } = rateUpdatePrompt;
@@ -2403,7 +2402,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                 await api.updateEmployee(empId, { ...emp, hourlyRate: newRate });
                 if (onRefresh) await onRefresh();
               }}>
-                Yes, update employee rate
+                Yes
               </button>
             </div>
           </div>
