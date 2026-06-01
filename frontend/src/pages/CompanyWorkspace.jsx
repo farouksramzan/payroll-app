@@ -1109,8 +1109,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
   const [groupsLoading, setGroupsLoading]   = useState(true);
   const [editGroup, setEditGroup]     = useState(null);
   const [paystubs, setPaystubs]                   = useState([]);
-  // pendingRows[periodEnd][empId] = { regHours, otHours, selected }
+  // pendingRows[periodEnd][empId] = { regHours, otHours, rate, selected }
   const [pendingRows, setPendingRows]             = useState({});
+  const [rateUpdatePrompt, setRateUpdatePrompt]   = useState(null); // { empId, newRate, periodEnd }
   const [selectedLateStubs, setSelectedLateStubs]     = useState(new Set());
   const [selectedHistoryStubs, setSelectedHistoryStubs] = useState(new Set());
   const [bulkBusy, setBulkBusy]                       = useState(false);
@@ -1265,7 +1266,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
   const [expandedOther, setExpandedOther] = useState(new Set());
 
   function getRow(periodEnd, empId) {
-    return (pendingRows[periodEnd] || {})[empId] || { regHours: '', otHours: '', tips: '', bonus: '', commission: '', cashAdvance: '', mileage: '', selected: false };
+    return (pendingRows[periodEnd] || {})[empId] || { regHours: '', otHours: '', rate: '', tips: '', bonus: '', commission: '', cashAdvance: '', mileage: '', selected: false };
   }
   function setRow(periodEnd, empId, field, value) {
     setPendingRows(prev => ({
@@ -1315,7 +1316,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
           const commAmt  = parseFloat(row.commission || 0);
           const cashAdv  = parseFloat(row.cashAdvance || 0);
           const mileAmt  = parseFloat(row.mileage || 0);
-          const rate = emp.hourlyRate || 0;
+          const rate = parseFloat(row.rate) || emp.hourlyRate || 0;
           const regPay = isSalary ? r2((emp.annualSalary || 0) / ppy) : r2(Math.min(regH, 40) * rate);
           const otPay  = isSalary ? 0 : r2(otH * rate * 1.5);
           const lineItems = [
@@ -1410,8 +1411,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
         // Pending row — run payroll for this one employee, then set status
         const { period, emp } = drop;
         const isSalary = emp.payType === 'salary';
-        const rate     = emp.hourlyRate || 0;
         const rowData2 = getRow(period.end, emp.id);
+        const rate     = parseFloat(rowData2.rate) || emp.hourlyRate || 0;
         const regH     = isSalary ? 0 : parseFloat(rowData2.regHours || 0);
         const otH      = isSalary ? 0 : parseFloat(rowData2.otHours  || 0);
         const tips2    = parseFloat(rowData2.tips || 0);
@@ -1615,7 +1616,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
       const row      = getRow(period.end, emp.id);
       const isSalary = emp.payType === 'salary';
       const salAmt   = r2((emp.annualSalary || 0) / ppy);
-      const rate     = emp.hourlyRate || 0;
+      const rate     = parseFloat(row.rate) || emp.hourlyRate || 0;
       const regH     = parseFloat(row.regHours || 0);
       const otH      = parseFloat(row.otHours  || 0);
       const regPay   = isSalary ? salAmt : r2(Math.min(regH, 40) * rate);
@@ -2037,6 +2038,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
             <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'left' }}>Pay Date</th>
             <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>Reg Hrs</th>
             <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>OT Hrs</th>
+            <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>Rate</th>
             <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>Net Pay</th>
             <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>Status</th>
           </tr>
@@ -2053,7 +2055,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
               const row      = getRow(rawPeriod.end, emp.id);
               const isSalary = emp.payType === 'salary';
               const salAmt   = r2((emp.annualSalary || 0) / ppy);
-              const rate     = emp.hourlyRate || 0;
+              const rate     = parseFloat(row.rate) || emp.hourlyRate || 0;
               const regH     = parseFloat(row.regHours || 0);
               const otH      = parseFloat(row.otHours  || 0);
               const tipsAmt  = parseFloat(row.tips || 0);
@@ -2091,7 +2093,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                   <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: isLate ? '#dc2626' : ov.payDate ? 'var(--accent)' : '#222' }}>{fmtDate(period.payDate)}</td>
                   {isSalary ? (
                     <>
-                      <td colSpan={2} style={{ padding: '7px 8px', textAlign: 'right', color: 'var(--text-secondary)', fontSize: 11 }}>salary</td>
+                      <td colSpan={3} style={{ padding: '7px 8px', textAlign: 'right', color: 'var(--text-secondary)', fontSize: 11 }}>salary</td>
                     </>
                   ) : (
                     <>
@@ -2103,6 +2105,19 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                       <td style={{ padding: '4px 6px' }}>
                         <input className="form-input mono" type="number" min="0" step="0.5" value={row.otHours} placeholder="0"
                           onChange={ev => setRow(period.end, emp.id, 'otHours', ev.target.value)}
+                          style={{ width: '100%', height: 26, fontSize: 12, textAlign: 'right', padding: '0 6px' }} />
+                      </td>
+                      <td style={{ padding: '4px 6px' }}>
+                        <input className="form-input mono" type="number" min="0" step="0.01"
+                          value={row.rate !== '' ? row.rate : (emp.hourlyRate || '')}
+                          placeholder={String(emp.hourlyRate || '')}
+                          onChange={ev => setRow(period.end, emp.id, 'rate', ev.target.value)}
+                          onBlur={ev => {
+                            const entered = parseFloat(ev.target.value);
+                            if (!isNaN(entered) && entered !== emp.hourlyRate) {
+                              setRateUpdatePrompt({ empId: emp.id, newRate: entered, periodEnd: period.end });
+                            }
+                          }}
                           style={{ width: '100%', height: 26, fontSize: 12, textAlign: 'right', padding: '0 6px' }} />
                       </td>
                     </>
@@ -2365,6 +2380,34 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
 
       {/* Check detail modal */}
       {detailModal && <CheckDetailModal rowData={detailModal} onClose={() => setDetailModal(null)} />}
+
+      {/* Rate change confirmation */}
+      {rateUpdatePrompt && (
+        <Overlay>
+          <div className="card" style={{ width: 380, padding: 28, borderRadius: 12, textAlign: 'center' }}>
+            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>Update Hourly Rate?</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 24, lineHeight: 1.5 }}>
+              You changed the rate to <strong>${rateUpdatePrompt.newRate.toFixed(2)}/hr</strong> for this check.<br />
+              Would you like to apply this rate to all future checks for this employee?
+            </div>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+              <button className="btn btn-secondary" onClick={() => setRateUpdatePrompt(null)}>
+                No, just this check
+              </button>
+              <button className="btn btn-primary" onClick={async () => {
+                const { empId, newRate } = rateUpdatePrompt;
+                setRateUpdatePrompt(null);
+                const emp = activeEmps.find(e => e.id === empId);
+                if (!emp) return;
+                await api.updateEmployee(empId, { ...emp, hourlyRate: newRate });
+                if (onRefresh) await onRefresh();
+              }}>
+                Yes, update employee rate
+              </button>
+            </div>
+          </div>
+        </Overlay>
+      )}
 
       {/* Employee status dropdown — fixed so it's never clipped by overflow:hidden */}
       {empStatusDrop && (
