@@ -2207,6 +2207,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                 )}
                 <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: 12 }}>{stub.regular_hours != null ? stub.regular_hours : '—'}</td>
                 <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: 12 }}>{stub.overtime_hours > 0 ? stub.overtime_hours : '—'}</td>
+                <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: 12 }}>—</td>
                 <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--success, #16a34a)', fontSize: 13 }}>
                   {stub.net_pay != null ? fmt(stub.net_pay) : '—'}
                 </td>
