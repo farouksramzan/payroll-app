@@ -1952,6 +1952,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
           {/* Footer: save/close */}
           <div style={{ padding: '12px 24px 18px', display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
             <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: 12 }}>Close</button>
+            <button className="btn btn-ghost" style={{ fontSize: 12, color: '#dc2626' }} onClick={async () => {
+              if (!window.confirm('Delete this check? This cannot be undone.')) return;
+              try { await api.deletePaystub(stub.id); onClose(); reloadStubs(); } catch (e) { alert(e.message); }
+            }}>Delete</button>
             <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={async () => {
               try { await api.printSelectedChecks(clientId, [stub.id]); } catch (e) { alert(e.message); }
             }}>↓ Download PDF</button>
@@ -2298,7 +2302,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
       {runSuccess && <div className="alert alert-success" style={{ marginBottom: 10 }}><span>✓</span>{runSuccess}<button onClick={() => setRunSuccess('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button></div>}
 
       {/* Bulk action bar */}
-      {selectedHistoryStubs.size > 0 && (
+      {selectedHistoryStubs.size > 1 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--accent)', color: '#fff', padding: '8px 14px', borderRadius: 8, marginBottom: 10, flexWrap: 'wrap' }}>
           <span style={{ fontWeight: 700, fontSize: 13 }}>{selectedHistoryStubs.size} check{selectedHistoryStubs.size !== 1 ? 's' : ''} selected</span>
           <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
@@ -2783,7 +2787,7 @@ function liabilityVendor(taxType, workState) {
 }
 
 // Shared detail modal for both pending and sent liabilities
-function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, onStubChange }) {
+function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, onStubChange, onDelete }) {
   if (!stub) return null;
   const [settlementDate, setSettlementDate] = React.useState(stub.eftps_settlement_date || due || '');
   const [savingSettlement, setSavingSettlement] = React.useState(false);
@@ -2950,8 +2954,16 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
           <div style={{ ...MONO, fontSize: 22, fontWeight: 800, color: '#16a34a' }}>{fmt(liabilityAmount)}</div>
         </div>
 
+        <div style={{ padding: '0 24px 8px', display: 'flex', justifyContent: 'flex-end' }}>
+          <button style={{ background: 'none', border: 'none', fontSize: 12, color: '#dc2626', cursor: 'pointer', fontWeight: 600 }}
+            onClick={async () => {
+              if (!window.confirm('Delete this check? This cannot be undone.')) return;
+              if (onDelete) onDelete();
+            }}>Delete</button>
+        </div>
+
         {/* Tax deposit summary bar */}
-        <div style={{ display: 'flex', gap: 0, margin: '12px 24px 20px', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
+        <div style={{ display: 'flex', gap: 0, margin: '0 24px 20px', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
           {[
             { label: '941 Tax Deposit',   value: fmt(stub.total_deposit || 0) },
             { label: '940 FUTA',          value: fmt(stub.futa_tax      || 0) },
@@ -3493,6 +3505,9 @@ function PayLiabilitiesTab({ clientId, client }) {
           onClose={() => setLiabilityModal(null)}
           onStubChange={(id, patch) => {
             setPaystubs(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
+          }}
+          onDelete={async () => {
+            try { await api.deletePaystub(liabilityModal.stub.id); setLiabilityModal(null); await reload(); } catch (e) { alert(e.message); }
           }} />
       )}
 
