@@ -1263,10 +1263,6 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
   });
 
   const [expandedOther, setExpandedOther] = useState(new Set());
-  function toggleOther(periodEnd, empId) {
-    const key = `${periodEnd}-${empId}`;
-    setExpandedOther(prev => { const s = new Set(prev); s.has(key) ? s.delete(key) : s.add(key); return s; });
-  }
 
   function getRow(periodEnd, empId) {
     return (pendingRows[periodEnd] || {})[empId] || { regHours: '', otHours: '', tips: '', bonus: '', commission: '', cashAdvance: '', mileage: '', selected: false };
@@ -1711,8 +1707,36 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                 </div>
               ))}
             </div>
+            {/* Other Payroll Items */}
+            <div style={{ margin: '0 24px', borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+              <button type="button" onClick={() => setExpandedOther(prev => { const s = new Set(prev); const key = `${period.end}|${emp.id}`; s.has(key) ? s.delete(key) : s.add(key); return s; })}
+                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                {expandedOther.has(`${period.end}|${emp.id}`) ? '▴' : '▾'} Other Payroll Items
+              </button>
+              {expandedOther.has(`${period.end}|${emp.id}`) && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 10 }}>
+                  {[
+                    { label: 'Reported Tips',           field: 'tips',        hint: 'taxable' },
+                    { label: 'Bonus',                   field: 'bonus',       hint: 'taxable' },
+                    { label: 'Commission',              field: 'commission',  hint: 'taxable' },
+                    { label: 'Mileage / Reimbursement', field: 'mileage',     hint: 'non-taxable' },
+                    { label: 'Cash Advance (deduction)',field: 'cashAdvance', hint: 'deduction' },
+                  ].map(({ label, field, hint }) => (
+                    <label key={field} style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      {label}
+                      <div style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 400 }}>{hint}</div>
+                      <input className="form-input mono" type="number" min="0" step="0.01"
+                        value={row[field] || ''} placeholder="0.00"
+                        onChange={e => setRow(period.end, emp.id, field, e.target.value)}
+                        style={{ marginTop: 3, width: '100%', height: 28, fontSize: 12, textAlign: 'right', padding: '0 6px' }} />
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Save date overrides footer */}
-            <div style={{ padding: '10px 24px 18px', display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: pendingDirty ? '1px solid var(--border)' : 'none', marginTop: 10 }}>
+            <div style={{ padding: '10px 24px 18px', display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: '1px solid var(--border)', marginTop: 10 }}>
               <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: 12 }}>Close</button>
               {pendingDirty && (
                 <button className="btn btn-primary" style={{ fontSize: 12 }}
@@ -2045,13 +2069,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
               const status   = isLate ? 'late' : (daysToPayDate !== null && daysToPayDate <= 5 ? 'due-soon' : 'upcoming');
               const selBg    = isLate ? '#fff5f5' : status === 'due-soon' ? '#fffbeb' : 'var(--accent-light)';
               const rowBg    = row.selected ? selBg : stripeBg;
-              const otherKey = `${rawPeriod.end}-${emp.id}`;
-              const otherOpen = expandedOther.has(otherKey);
-              const hasOther = tipsAmt > 0 || bonusAmt > 0 || commAmt > 0 || parseFloat(row.cashAdvance || 0) > 0 || parseFloat(row.mileage || 0) > 0;
               return (
                 <React.Fragment key={rowData.key}>
                 <tr
-                  style={{ background: rowBg, borderBottom: otherOpen ? 'none' : '1px solid var(--border)', cursor: 'pointer' }}
+                  style={{ background: rowBg, borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
                   onClick={e => { if (e.target.type !== 'checkbox' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') setDetailModal(rowData); }}
                 >
                   <td style={{ padding: '0 0 0 12px' }}>
@@ -2090,44 +2111,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                     {grossPreview > 0 ? fmt(estNetPay) : '—'}
                   </td>
                   <td style={{ padding: '4px 6px', textAlign: 'right' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
-                      <button onClick={e => { e.stopPropagation(); toggleOther(rawPeriod.end, emp.id); }}
-                        title="Other payroll items (tips, bonus, etc.)"
-                        style={{ background: hasOther ? 'var(--accent)' : 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 4, padding: '1px 5px', fontSize: 10, cursor: 'pointer', color: hasOther ? '#fff' : 'var(--text-muted)', lineHeight: 1.4 }}>
-                        {otherOpen ? '▴' : '+'} Other
-                      </button>
-                      <span style={{ cursor: 'pointer' }} title="Click to change status"
-                        onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setEmpStatusDrop(empStatusDrop?.period?.end === period.end && empStatusDrop?.emp?.id === emp.id ? null : { period, emp, top: r.bottom + 4, right: window.innerWidth - r.right }); }}>
-                        <StatusBadge status={status} />
-                      </span>
-                    </div>
+                    <span style={{ cursor: 'pointer' }} title="Click to change status"
+                      onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setEmpStatusDrop(empStatusDrop?.period?.end === period.end && empStatusDrop?.emp?.id === emp.id ? null : { period, emp, top: r.bottom + 4, right: window.innerWidth - r.right }); }}>
+                      <StatusBadge status={status} />
+                    </span>
                   </td>
                 </tr>
-                {otherOpen && (
-                  <tr style={{ background: rowBg, borderBottom: '1px solid var(--border)' }}>
-                    <td colSpan={9} style={{ padding: '6px 12px 10px 36px' }}>
-                      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.5px' }}>Other Payroll Items</div>
-                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 8 }}>
-                        {[
-                          { label: 'Reported Tips', field: 'tips', hint: 'taxable' },
-                          { label: 'Bonus', field: 'bonus', hint: 'taxable' },
-                          { label: 'Commission', field: 'commission', hint: 'taxable' },
-                          { label: 'Mileage Reimbursement', field: 'mileage', hint: 'non-taxable' },
-                          { label: 'Cash Advance', field: 'cashAdvance', hint: 'deduction' },
-                        ].map(({ label, field, hint }) => (
-                          <label key={field} style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                            {label}
-                            <div style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 400 }}>{hint}</div>
-                            <input className="form-input mono" type="number" min="0" step="0.01" value={row[field] || ''}
-                              placeholder="0.00" onClick={e => e.stopPropagation()}
-                              onChange={ev => setRow(period.end, emp.id, field, ev.target.value)}
-                              style={{ marginTop: 3, width: '100%', height: 26, fontSize: 12, textAlign: 'right', padding: '0 6px' }} />
-                          </label>
-                        ))}
-                      </div>
-                    </td>
-                  </tr>
-                )}
                 </React.Fragment>
               );
             }
