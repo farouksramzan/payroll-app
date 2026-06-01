@@ -2018,7 +2018,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
           <col style={{ width: 84 }} />
           <col style={{ width: 84 }} />
           <col style={{ width: 84 }} />
-          <col style={{ width: 72 }} />
+          <col style={{ width: 60 }} />
+          <col style={{ width: 60 }} />
           <col style={{ width: 72 }} />
           <col style={{ width: 88 }} />
           <col style={{ width: 82 }} />
@@ -2384,9 +2385,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
 
       {/* Rate change confirmation */}
       {rateUpdatePrompt && (
-        <Overlay>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}>
           <div className="card" style={{ width: 380, padding: 28, borderRadius: 12, textAlign: 'center' }}>
-            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>Rate Changed to ${rateUpdatePrompt.newRate.toFixed(2)}/hr</div>
+            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>Rate Changed to ${(rateUpdatePrompt.newRate || 0).toFixed(2)}/hr</div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 24, lineHeight: 1.5 }}>
               Would you like this rate to be changed for all future checks for this employee?
             </div>
@@ -2399,14 +2400,18 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                 setRateUpdatePrompt(null);
                 const emp = activeEmps.find(e => e.id === empId);
                 if (!emp) return;
-                await api.updateEmployee(empId, { ...emp, hourlyRate: newRate });
-                if (onRefresh) await onRefresh();
+                try {
+                  await api.updateEmployee(empId, { ...emp, hourlyRate: newRate });
+                  if (onRefresh) await onRefresh();
+                } catch (e) {
+                  console.error('Failed to update employee rate:', e);
+                }
               }}>
                 Yes
               </button>
             </div>
           </div>
-        </Overlay>
+        </div>
       )}
 
       {/* Employee status dropdown — fixed so it's never clipped by overflow:hidden */}
