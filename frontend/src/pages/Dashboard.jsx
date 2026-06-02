@@ -185,9 +185,10 @@ function MultiLiabPanel({ clientIds, clients }) {
   const clientKey = useMemo(() => [...clientIds].sort().join(','), [clientIds]);
 
   useEffect(() => {
-    const onFocus = () => setRefreshTick(t => t + 1);
-    window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
+    const bump = () => setRefreshTick(t => t + 1);
+    const timer = setInterval(bump, 60_000);
+    window.addEventListener('focus', bump);
+    return () => { clearInterval(timer); window.removeEventListener('focus', bump); };
   }, []);
 
   useEffect(() => {
@@ -551,10 +552,19 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    api.getClients().then(setClients).finally(() => setLoading(false));
-    const onFocus = () => api.getClients().then(setClients);
+    let alive = true;
+    const loadClients = (initial = false) => {
+      if (initial) setLoading(true);
+      api.getClients()
+        .then(data => { if (alive) setClients(data); })
+        .catch(() => {})
+        .finally(() => { if (alive && initial) setLoading(false); });
+    };
+    loadClients(true);
+    const timer = setInterval(() => loadClients(false), 60_000);
+    const onFocus = () => loadClients(false);
     window.addEventListener('focus', onFocus);
-    return () => window.removeEventListener('focus', onFocus);
+    return () => { alive = false; clearInterval(timer); window.removeEventListener('focus', onFocus); };
   }, []);
 
   function switchView(v) {

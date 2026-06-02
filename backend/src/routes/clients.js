@@ -25,6 +25,33 @@ function addBizDays(dateStr, n) {
   return r.toISOString().slice(0, 10);
 }
 
+function calcIRSDepositDue(payDateStr, schedule) {
+  if (!payDateStr) return null;
+  const d = new Date(payDateStr + 'T00:00:00Z');
+  const dow = d.getUTCDay();
+  let due;
+  if (schedule === 'semiweekly') {
+    const n = (dow >= 3 && dow <= 5) ? ((3 - dow + 7) % 7 || 7) : ((5 - dow + 7) % 7 || 7);
+    due = new Date(d); due.setUTCDate(d.getUTCDate() + n);
+  } else {
+    due = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 15));
+  }
+  while (!isBizDay(due)) due.setUTCDate(due.getUTCDate() + 1);
+  return due.toISOString().slice(0, 10);
+}
+
+function calcFutaQuarterlyDue(payPeriodEnd) {
+  if (!payPeriodEnd) return null;
+  const d = new Date(payPeriodEnd + 'T00:00:00Z');
+  const q = Math.ceil((d.getUTCMonth() + 1) / 3);
+  const qMons = [3, 6, 9, 0];
+  const qDays = [30, 31, 31, 31];
+  const qYear = q === 4 ? d.getUTCFullYear() + 1 : d.getUTCFullYear();
+  const due = new Date(Date.UTC(qYear, qMons[q - 1], qDays[q - 1]));
+  while (!isBizDay(due)) due.setUTCDate(due.getUTCDate() + 1);
+  return due.toISOString().slice(0, 10);
+}
+
 function nextPeriodEnd(endStr, frequency) {
   const d = new Date(endStr + 'T00:00:00Z');
   switch (frequency) {
@@ -94,24 +121,17 @@ router.get('/', (req, res) => {
       .get(c.id);
     const nextDue = calcNextDueDate(c.deposit_schedule, lastSub?.pay_period_end);
 
-    // Next pay date: derived from pay groups.
-    // Find the first period end that has NOT been printed, then add 2 biz days.
-    // If nothing printed yet → first_pay_period_end is the next period.
-    // If some printed → advance one period past the last printed one.
+    // Next pay date: derived from pay groups (no active-employee filter — group schedule always valid).
     let nextPayDate = null;
     try {
-      const groups = db.prepare('SELECT * FROM pay_groups WHERE client_id = ?').all(c.id).filter(g => !g.deleted_at);
+      const groups = db.prepare('SELECT * FROM pay_groups WHERE client_id = ? AND deleted_at IS NULL').all(c.id);
       for (const g of groups) {
         if (!g.first_pay_period_end || !g.frequency) continue;
-        const emps = db.prepare('SELECT id FROM employees WHERE pay_group_id = ? AND is_active = 1').all(g.id);
-        if (!emps.length) continue;
-        const empIds = emps.map(e => e.id);
-        const ph = empIds.map(() => '?').join(',');
-        const lastRow = empIds.length > 0
-          ? db.prepare(`SELECT MAX(pay_period_end) as last_end FROM paystubs WHERE client_id = ? AND (pay_group_id = ? OR employee_id IN (${ph})) AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')`).get(c.id, g.id, ...empIds)
-          : db.prepare(`SELECT MAX(pay_period_end) as last_end FROM paystubs WHERE client_id = ? AND pay_group_id = ? AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')`).get(c.id, g.id);
-        // If nothing printed yet, first_pay_period_end IS the next period end.
-        // If something printed, advance one period past the last printed one.
+        const lastRow = db.prepare(`
+          SELECT MAX(pay_period_end) as last_end FROM paystubs
+          WHERE client_id = ? AND pay_group_id = ?
+            AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
+        `).get(c.id, g.id);
         const nextEnd = lastRow?.last_end
           ? nextPeriodEnd(lastRow.last_end.slice(0, 10), g.frequency)
           : g.first_pay_period_end.slice(0, 10);
@@ -122,35 +142,36 @@ router.get('/', (req, res) => {
 
     if (!nextPayDate) nextPayDate = c.next_payroll_date ? c.next_payroll_date.slice(0, 10) : null;
 
-    // Overdue = settlement_due_date < today and still pending
-    const overdueRow = db.prepare(`
-      SELECT COALESCE(SUM(total_deposit),0) as amount941,
-             COALESCE(SUM(futa_tax),0) as amount940
-      FROM paystubs
-      WHERE client_id = ?
-        AND settlement_due_date IS NOT NULL
-        AND settlement_due_date < ?
-        AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
-        AND (status IN ('pending','processing','failed') OR status_940 IN ('pending','processing','failed'))
-    `).get(c.id, today);
-
-    // Due soon = settlement_due_date within next 5 days
+    // Compute overdue/due-soon using JS IRS due-date logic (matches frontend MultiLiabPanel).
+    // The SQL settlement_due_date column is often unset, so we compute dates from settlement_date.
     const in5Days = new Date(today); in5Days.setDate(in5Days.getDate() + 5);
     const in5DaysStr = in5Days.toISOString().slice(0, 10);
-    const dueSoonRow = db.prepare(`
-      SELECT COALESCE(SUM(total_deposit),0) as amount941,
-             COALESCE(SUM(futa_tax),0) as amount940
-      FROM paystubs
+    const schedule = c.deposit_schedule || 'monthly';
+
+    const pendingStubs = db.prepare(`
+      SELECT * FROM paystubs
       WHERE client_id = ?
-        AND settlement_due_date IS NOT NULL
-        AND settlement_due_date >= ?
-        AND settlement_due_date <= ?
         AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
         AND (status IN ('pending','processing','failed') OR status_940 IN ('pending','processing','failed'))
-    `).get(c.id, today, in5DaysStr);
+    `).all(c.id);
 
-    const overdueAmount  = (overdueRow?.amount941  || 0) + (overdueRow?.amount940  || 0);
-    const dueSoonAmount  = (dueSoonRow?.amount941  || 0) + (dueSoonRow?.amount940  || 0);
+    let overdueAmount = 0, dueSoonAmount = 0;
+    for (const s of pendingStubs) {
+      const refDate = (s.settlement_date || s.pay_period_end || '').slice(0, 10);
+      if (!refDate) continue;
+      const due941 = (s.settlement_due_date || '').slice(0, 10) || calcIRSDepositDue(refDate, schedule);
+      const due940 = calcFutaQuarterlyDue((s.pay_period_end || '').slice(0, 10));
+      const p941 = s.status === 'pending' || s.status === 'processing' || s.status === 'failed';
+      const p940 = (s.status_940 === 'pending' || s.status_940 === 'processing' || s.status_940 === 'failed') && (s.futa_tax || 0) > 0;
+      if (p941 && due941) {
+        if (due941 < today) overdueAmount += s.total_deposit || 0;
+        else if (due941 <= in5DaysStr) dueSoonAmount += s.total_deposit || 0;
+      }
+      if (p940 && due940) {
+        if (due940 < today) overdueAmount += s.futa_tax || 0;
+        else if (due940 <= in5DaysStr) dueSoonAmount += s.futa_tax || 0;
+      }
+    }
 
     // Derive a single liability status for the dashboard badge
     const liabilityStatus = overdueAmount > 0 ? 'overdue'
