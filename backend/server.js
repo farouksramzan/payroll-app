@@ -45,8 +45,8 @@ app.use(helmet({
 app.use(cors({ origin: corsOrigins, credentials: true }));
 app.use(express.json());
 
-const limiter     = rateLimit({ windowMs: 15 * 60 * 1000, max: 500 });
-const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
+const limiter     = rateLimit({ windowMs: 15 * 60 * 1000, max: 2000 });
+const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max:   50 });
 app.use(limiter);
 
 // ── Initialize DB ─────────────────────────────────────────────────────────────
