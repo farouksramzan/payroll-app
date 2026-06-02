@@ -3658,49 +3658,33 @@ function PayLiabilitiesTab({ clientId, client }) {
         if (totalSelected < 2) return null;
         const allSelectedIds = [...selected941, ...selected940, ...selectedSUI];
         const clearAll = () => { setSelected941(new Set()); setSelected940(new Set()); setSelectedSUI(new Set()); };
-        const [liabBulkBusy, setLiabBulkBusy] = [false, () => {}]; // local ref not needed — ops are fast
+
+        async function bulkSetLiabStatus(dbStatus) {
+          try {
+            const ops = [];
+            selected941.forEach(id => ops.push(api.updatePaystubStatus(id, dbStatus, '941').catch(() => {})));
+            selected940.forEach(id => ops.push(api.updatePaystubStatus(id, dbStatus, '940').catch(() => {})));
+            selectedSUI.forEach(id => ops.push(api.updatePaystubStatus(id, dbStatus, 'sui').catch(() => {})));
+            await Promise.all(ops);
+            clearAll(); await reload();
+          } catch (e) { alert(e.message); }
+        }
+
+        const btnStyle = { background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 };
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--accent)', color: '#fff', padding: '8px 14px', borderRadius: 8, marginBottom: 10, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 700, fontSize: 13 }}>{totalSelected} check{totalSelected !== 1 ? 's' : ''} selected</span>
             <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
             <span style={{ fontSize: 12, opacity: 0.85 }}>Change status:</span>
-            {[
-              { value: 'printed',                label: 'Printed' },
-              { value: 'direct_deposit_cleared', label: 'Deposited' },
-              { value: 'draft',                  label: 'Draft' },
-            ].map(({ value, label }) => (
-              <button key={value}
-                onClick={async () => {
-                  try {
-                    await Promise.all(allSelectedIds.map(id => api.updatePaystubStatus(id, value).catch(() => {})));
-                    clearAll(); await reload();
-                  } catch (e) { alert(e.message); }
-                }}
-                style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
-                {label}
-              </button>
-            ))}
+            <button style={btnStyle} onClick={() => bulkSetLiabStatus('pending')}>Due Soon / Late</button>
+            <button style={btnStyle} onClick={() => bulkSetLiabStatus('submitted')}>Sent</button>
             <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
             <button onClick={async () => {
               try { await api.printSelectedChecks(clientId, allSelectedIds); } catch (e) { alert(e.message); }
-            }} style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
-              ↓ Paycheck
-            </button>
+            }} style={btnStyle}>↓ Paycheck</button>
             <button onClick={async () => {
               try { await api.printSelectedPaystubs(clientId, allSelectedIds); } catch (e) { alert(e.message); }
-            }} style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
-              ↓ Paystub
-            </button>
-            <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
-            <button
-              style={{ background: '#dc2626', border: 'none', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}
-              onClick={async () => {
-                if (!window.confirm(`Delete ${totalSelected} checks? This cannot be undone.`)) return;
-                try {
-                  await Promise.all(allSelectedIds.map(id => api.deletePaystub(id).catch(() => {})));
-                  clearAll(); await reload();
-                } catch (e) { alert(e.message); }
-              }}>Delete</button>
+            }} style={btnStyle}>↓ Paystub</button>
             <button onClick={clearAll}
               style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 5, color: '#fff', padding: '3px 8px', fontSize: 12, cursor: 'pointer' }}>
               Cancel
