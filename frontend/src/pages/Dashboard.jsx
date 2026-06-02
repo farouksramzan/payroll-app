@@ -101,7 +101,7 @@ const ISSUED = new Set(['printed', 'deposited']);
 
 
 // ── Tax detail modal ───────────────────────────────────────────────────────────
-function TaxDetailModal({ row, onClose }) {
+function TaxDetailModal({ row, onClose, onEdit }) {
   if (!row) return null;
   const DL = ({ label, value, accent, bold }) => (
     <div style={{ minWidth: 110 }}>
@@ -169,6 +169,11 @@ function TaxDetailModal({ row, onClose }) {
             {row._dueSUI && <div style={{ fontSize: 12 }}><span style={{ color: 'var(--text-muted)' }}>SUI Due: </span><span style={{ fontWeight: 600 }}>{fmtDate(row._dueSUI)}</span></div>}
           </div>
         )}
+
+        <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+          <button className="btn btn-ghost" onClick={onClose}>Close</button>
+          {onEdit && <button className="btn btn-primary" onClick={() => onEdit(row)}>Edit Check</button>}
+        </div>
       </div>
     </div>
   );
@@ -198,6 +203,7 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
   const [rows, setRows]             = useState([]);
   const [loading, setLoading]       = useState(false);
   const [selectedLiab, setSelectedLiab] = useState(new Set());
+  const [detailRow, setDetailRow]   = useState(null);
   const [editStub, setEditStub]     = useState(null);
   const [submitting, setSubmitting] = useState(null);
   const [refreshTick, setRefreshTick] = useState(0);
@@ -271,12 +277,18 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
 
   function triggerReload() { setRefreshTick(t => t + 1); }
 
-  async function handlePay(clientId, taxType, paystubIds) {
-    if (!paystubIds.length) return;
-    const key = `${clientId}-${taxType}`;
-    setSubmitting(key);
+  async function handlePayTaxType(taxType, selectedIds) {
+    if (!selectedIds.length) return;
+    const byClient = {};
+    selectedIds.forEach(id => {
+      const r = visibleRows.find(x => x.id === id);
+      if (r) (byClient[r._clientId] = byClient[r._clientId] || []).push(id);
+    });
+    setSubmitting(taxType);
     try {
-      await api.batchSubmitPaystubs({ clientId: Number(clientId), paystubIds, taxType });
+      for (const [cid, ids] of Object.entries(byClient)) {
+        await api.batchSubmitPaystubs({ clientId: Number(cid), paystubIds: ids, taxType });
+      }
       setSelectedLiab(new Set());
       triggerReload();
     } catch (e) { alert(`Payment failed: ${e.message}`); }
@@ -336,20 +348,11 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
   const sel941Ids = [...selSet].filter(id => { const r = visibleRows.find(x => x.id === id); return r?._pending941; });
   const sel940Ids = [...selSet].filter(id => { const r = visibleRows.find(x => x.id === id); return r?._pending940; });
   const selSUIIds = [...selSet].filter(id => { const r = visibleRows.find(x => x.id === id); return r?._pendingSUI; });
-
-  // Group selected by clientId for pay actions
-  function selIdsByClient(ids, field) {
-    const byClient = {};
-    ids.forEach(id => {
-      const r = visibleRows.find(x => x.id === id);
-      if (!r) return;
-      (byClient[r._clientId] = byClient[r._clientId] || []).push(id);
-    });
-    return byClient;
-  }
+  const lateIds   = visibleRows.filter(r => r._isLate).map(r => r.id);
 
   return (
     <>
+      {detailRow && <TaxDetailModal row={detailRow} onClose={() => setDetailRow(null)} onEdit={r => { setDetailRow(null); setEditStub(r); }} />}
       {editStub && <PaystubEditModal paystub={editStub} onClose={() => setEditStub(null)} onSaved={() => { setEditStub(null); triggerReload(); }} />}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
 
@@ -368,36 +371,42 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
         {open && (<>
 
           {/* Bulk action bar */}
-          {selSet.size > 0 && (
-            <div style={BULK_BAR}>
-              <span style={{ fontWeight: 700, fontSize: 12 }}>{selSet.size} selected</span>
-              {sel941Ids.length > 0 && Object.entries(selIdsByClient(sel941Ids)).map(([cid, ids]) => (
-                <button key={`941-${cid}`} style={bulkBtn({ background: '#16a34a', border: '1px solid #15803d' })}
-                  disabled={!!submitting} onClick={() => handlePay(cid, '941', ids)}>
-                  {submitting === `${cid}-941` ? '…' : `Pay 941 (${ids.length})`}
+          <div style={{ ...BULK_BAR, background: 'var(--bg-secondary)', color: 'var(--text)', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
+            {lateIds.length > 0 && (
+              <button style={{ ...bulkBtn({ background: '#dc2626', border: '1px solid #b91c1c', color: '#fff' }) }}
+                onClick={() => setSelectedLiab(new Set(lateIds))}>
+                Select All Late ({lateIds.length})
+              </button>
+            )}
+            {selSet.size > 0 && <>
+              <span style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-secondary)', marginLeft: lateIds.length ? 8 : 0 }}>{selSet.size} selected</span>
+              {sel941Ids.length > 0 && (
+                <button style={bulkBtn({ background: '#16a34a', border: '1px solid #15803d', color: '#fff' })}
+                  disabled={!!submitting} onClick={() => handlePayTaxType('941', sel941Ids)}>
+                  {submitting === '941' ? '…' : `Pay 941 (${sel941Ids.length})`}
                 </button>
-              ))}
-              {sel940Ids.length > 0 && Object.entries(selIdsByClient(sel940Ids)).map(([cid, ids]) => (
-                <button key={`940-${cid}`} style={bulkBtn({ background: '#2563eb', border: '1px solid #1d4ed8' })}
-                  disabled={!!submitting} onClick={() => handlePay(cid, '940', ids)}>
-                  {submitting === `${cid}-940` ? '…' : `Pay 940 (${ids.length})`}
+              )}
+              {sel940Ids.length > 0 && (
+                <button style={bulkBtn({ background: '#2563eb', border: '1px solid #1d4ed8', color: '#fff' })}
+                  disabled={!!submitting} onClick={() => handlePayTaxType('940', sel940Ids)}>
+                  {submitting === '940' ? '…' : `Pay 940 (${sel940Ids.length})`}
                 </button>
-              ))}
-              {selSUIIds.length > 0 && Object.entries(selIdsByClient(selSUIIds)).map(([cid, ids]) => (
-                <button key={`sui-${cid}`} style={bulkBtn({ background: '#7c3aed', border: '1px solid #6d28d9' })}
-                  disabled={!!submitting} onClick={() => handlePay(cid, 'sui', ids)}>
-                  {submitting === `${cid}-sui` ? '…' : `Pay SUI (${ids.length})`}
+              )}
+              {selSUIIds.length > 0 && (
+                <button style={bulkBtn({ background: '#7c3aed', border: '1px solid #6d28d9', color: '#fff' })}
+                  disabled={!!submitting} onClick={() => handlePayTaxType('sui', selSUIIds)}>
+                  {submitting === 'sui' ? '…' : `Pay SUI (${selSUIIds.length})`}
                 </button>
-              ))}
+              )}
               {selSet.size > 1 && (
-                <button style={bulkBtn({ background: '#dc2626', border: '1px solid #b91c1c', marginLeft: 4 })}
+                <button style={bulkBtn({ background: '#dc2626', border: '1px solid #b91c1c', color: '#fff' })}
                   disabled={!!submitting} onClick={handlePayAll}>
                   {submitting === 'all' ? '…' : 'Pay All'}
                 </button>
               )}
-              <button style={bulkBtn({ marginLeft: 'auto' })} onClick={() => setSelectedLiab(new Set())}>Clear</button>
-            </div>
-          )}
+              <button style={{ ...bulkBtn(), marginLeft: 'auto', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-secondary)' }} onClick={() => setSelectedLiab(new Set())}>Clear</button>
+            </>}
+          </div>
 
           {!loading && visibleRows.length === 0 && (
             <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
@@ -436,7 +445,7 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
                     </tr>
                     {group.rows.map((r, i) => (
                       <tr key={r.id} style={{ background: r._isLate ? '#fff5f5' : '#fffdf0', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
-                        onClick={e => { if (e.target.type !== 'checkbox') setEditStub(r); }}>
+                        onClick={e => { if (e.target.type !== 'checkbox') setDetailRow(r); }}>
                         <td style={{ padding: '7px 10px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                           <input type="checkbox" checked={selSet.has(r.id)} onChange={() => toggleLiab(r.id)} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
                         </td>
@@ -495,7 +504,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
         const merged = [];
         results.forEach(({ id, stubs }) => {
           const client = clients.find(c => c.id == id);
-          stubs.filter(s => s.check_status === 'draft').forEach(s => {
+          stubs.filter(s => s.check_status === 'draft' || s.check_status === 'late').forEach(s => {
             const payDate = s.settlement_date || (s.pay_period_end ? addBizDays(s.pay_period_end, 2) : null);
             if (!payDate) return;
             const isLate    = payDate < today;
@@ -565,14 +574,20 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
 
       {open && (
         <>
-          {selCount > 0 && (
-            <div style={BULK_BAR}>
-              <span style={{ fontWeight: 700, fontSize: 12 }}>{selCount} selected</span>
-              <button style={bulkBtn()} onClick={handlePrint}>Print PDF</button>
-              <button style={bulkBtn()} onClick={handleDD} disabled={submitting}>{submitting ? 'Sending…' : 'Direct Deposit'}</button>
-              <button style={bulkBtn({ marginLeft: 'auto' })} onClick={() => setSelected(new Set())}>Clear</button>
-            </div>
-          )}
+          <div style={{ ...BULK_BAR, background: 'var(--bg-secondary)', color: 'var(--text)', borderBottom: '1px solid var(--border)' }}>
+            {rows.some(r => r._isLate) && (
+              <button style={bulkBtn({ background: '#dc2626', border: '1px solid #b91c1c', color: '#fff' })}
+                onClick={() => setSelected(new Set(rows.filter(r => r._isLate).map(r => r.id)))}>
+                Select All Late ({rows.filter(r => r._isLate).length})
+              </button>
+            )}
+            {selCount > 0 && <>
+              <span style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-secondary)', marginLeft: rows.some(r => r._isLate) ? 8 : 0 }}>{selCount} selected</span>
+              <button style={bulkBtn({ background: '#374151', border: '1px solid #1f2937', color: '#fff' })} onClick={handlePrint}>Print PDF</button>
+              <button style={bulkBtn({ background: '#2563eb', border: '1px solid #1d4ed8', color: '#fff' })} onClick={handleDD} disabled={submitting}>{submitting ? 'Sending…' : 'Direct Deposit'}</button>
+              <button style={{ ...bulkBtn(), marginLeft: 'auto', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-secondary)' }} onClick={() => setSelected(new Set())}>Clear</button>
+            </>}
+          </div>
           {!loading && rows.length === 0 && (
             <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No upcoming or late paychecks.</div>
           )}
@@ -592,7 +607,17 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                 {grouped.map(group => (
                   <>
                     <tr key={`hdr-${group.clientId}`} style={{ background: '#f0f4ff', borderBottom: '1px solid var(--border)' }}>
-                      <td />
+                      <td style={{ padding: '7px 10px', textAlign: 'center' }}>
+                        <input type="checkbox"
+                          checked={group.rows.length > 0 && group.rows.every(r => selected.has(r.id))}
+                          onChange={e => setSelected(prev => {
+                            const n = new Set(prev);
+                            if (e.target.checked) group.rows.forEach(r => n.add(r.id));
+                            else group.rows.forEach(r => n.delete(r.id));
+                            return n;
+                          })}
+                          style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
+                      </td>
                       <td colSpan={6} style={{ padding: '7px 10px', fontWeight: 700, fontSize: 13 }}>{group.clientName}</td>
                     </tr>
                     {group.rows.map((r, i) => (
