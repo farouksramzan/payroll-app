@@ -15,6 +15,7 @@ const FEDERAL_HOLIDAYS = new Set([
 ]);
 function isBizDay(d) { const w = d.getDay(); return w !== 0 && w !== 6 && !FEDERAL_HOLIDAYS.has(d.toISOString().slice(0, 10)); }
 function nextBizDay(d) { const r = new Date(d); while (!isBizDay(r)) r.setDate(r.getDate() + 1); return r; }
+function addBizDays(dateStr, n) { let d = new Date(dateStr + 'T00:00:00'), c = 0; while (c < n) { d.setDate(d.getDate() + 1); if (isBizDay(d)) c++; } return d.toISOString().slice(0, 10); }
 function calcSendByDate(dueDate) {
   if (!dueDate) return null;
   let d = new Date(dueDate + 'T00:00:00'), count = 0;
@@ -172,8 +173,27 @@ function TaxDetailModal({ row, onClose }) {
   );
 }
 
-// ── Merged liabilities panel ───────────────────────────────────────────────────
-function MultiLiabPanel({ clientIds, clients }) {
+// ── Shared style helpers ───────────────────────────────────────────────────────
+const SECTION_BTN = {
+  width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+  padding: '11px 16px', background: 'none', border: 'none', cursor: 'pointer',
+  textAlign: 'left', borderBottom: '1px solid var(--border)',
+};
+const BULK_BAR = {
+  display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+  padding: '8px 14px', background: 'var(--accent)', color: '#fff',
+  borderBottom: '1px solid rgba(255,255,255,0.15)',
+};
+const bulkBtn = (extra = {}) => ({
+  background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)',
+  borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12,
+  cursor: 'pointer', fontWeight: 600, ...extra,
+});
+
+const ISSUED_SET = new Set(['printed', 'deposited', 'direct_deposit_sent', 'direct_deposit_cleared']);
+
+// ── LiabSection ────────────────────────────────────────────────────────────────
+function LiabSection({ clientIds, clients, open, onToggle }) {
   const [rows, setRows]           = useState([]);
   const [loading, setLoading]     = useState(false);
   const [detailRow, setDetailRow] = useState(null);
@@ -206,7 +226,7 @@ function MultiLiabPanel({ clientIds, clients }) {
           // id is a string from split; c.id is a number from API — use loose equality
           const client = clients.find(c => c.id == id);
           const schedule = client?.depositSchedule || 'monthly';
-          stubs.filter(s => ISSUED.has(s.check_status)).forEach(s => {
+          stubs.filter(s => ISSUED_SET.has(s.check_status)).forEach(s => {
             const refDate = s.settlement_date || s.pay_period_end;
             const due941 = s.settlement_due_date || (refDate ? calcIRSDepositDue(refDate, schedule) : null);
             const due940 = refDate ? calcFutaQuarterlyDue(refDate) : null;
@@ -266,7 +286,7 @@ function MultiLiabPanel({ clientIds, clients }) {
         results.forEach(({ id, stubs }) => {
           const client = clients.find(c => c.id == id);
           const schedule = client?.depositSchedule || 'monthly';
-          stubs.filter(s => ISSUED.has(s.check_status)).forEach(s => {
+          stubs.filter(s => ISSUED_SET.has(s.check_status)).forEach(s => {
             const refDate = s.settlement_date || s.pay_period_end;
             const due941 = s.settlement_due_date || (refDate ? calcIRSDepositDue(refDate, schedule) : null);
             const due940 = refDate ? calcFutaQuarterlyDue(refDate) : null;
@@ -356,24 +376,21 @@ function MultiLiabPanel({ clientIds, clients }) {
   return (
     <>
       {detailRow && <TaxDetailModal row={detailRow} onClose={() => setDetailRow(null)} />}
-      <div className="card" style={{ marginTop: 20, padding: 0, overflow: 'hidden' }}>
+      <div style={{ padding: 0, overflow: 'hidden' }}>
 
-        {/* Header */}
-        <div style={{ padding: '13px 20px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ fontWeight: 700, fontSize: 14, flex: 1 }}>
-            Pending Liabilities — {clientIds.length} {clientIds.length === 1 ? 'company' : 'companies'}
-          </div>
-          {loading && <span className="spinner spinner-dark" style={{ width: 14, height: 14 }} />}
-          <div style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-            {total941 > 0 && <div style={{ fontSize: 12, textAlign: 'right' }}><div style={{ color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>941</div><div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, color: 'var(--accent)' }}>{fmt(total941)}</div></div>}
-            {total940 > 0 && <div style={{ fontSize: 12, textAlign: 'right' }}><div style={{ color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>940</div><div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, color: 'var(--accent)' }}>{fmt(total940)}</div></div>}
-            {totalSUI > 0 && <div style={{ fontSize: 12, textAlign: 'right' }}><div style={{ color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>SUI</div><div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, color: 'var(--accent)' }}>{fmt(totalSUI)}</div></div>}
-            <div style={{ fontSize: 12, textAlign: 'right', borderLeft: '1px solid var(--border)', paddingLeft: 16 }}>
-              <div style={{ color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total</div>
-              <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 15, color: 'var(--accent)' }}>{fmt(grandTotal)}</div>
-            </div>
-          </div>
-        </div>
+        {/* Accordion header */}
+        <button style={SECTION_BTN} onClick={onToggle}>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{open ? '▾' : '▸'}</span>
+          <span style={{ fontWeight: 700, fontSize: 13, flex: 1 }}>
+            Liabilities
+            {lateRows.length > 0 && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#dc2626', background: '#fee2e2', borderRadius: 99, padding: '2px 7px' }}>{lateRows.length} overdue</span>}
+            {dueSoonRows.length > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#d97706', background: '#fef3c7', borderRadius: 99, padding: '2px 7px' }}>{dueSoonRows.length} due soon</span>}
+          </span>
+          {loading && <span className="spinner spinner-dark" style={{ width: 12, height: 12 }} />}
+          {grandTotal > 0 && <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 13, color: 'var(--accent)' }}>{fmt(grandTotal)}</span>}
+        </button>
+
+        {open && (<>
 
         {/* Action bar */}
         {rows.length > 0 && (
@@ -537,8 +554,169 @@ function MultiLiabPanel({ clientIds, clients }) {
             </tfoot>
           </table>
         )}
+        </>)}
       </div>
     </>
+  );
+}
+
+// ── PaycheckSection ────────────────────────────────────────────────────────────
+function PaycheckSection({ clientIds, clients, open, onToggle }) {
+  const [rows, setRows]         = useState([]);
+  const [loading, setLoading]   = useState(false);
+  const [selected, setSelected] = useState(new Set());
+  const [submitting, setSubmitting] = useState(false);
+  const clientKey = useMemo(() => [...clientIds].sort().join(','), [clientIds]);
+
+  function fetchRows(key) {
+    if (!key) { setRows([]); return; }
+    setLoading(true);
+    const ids = key.split(',').filter(Boolean);
+    const today = new Date().toISOString().slice(0, 10);
+    const in5 = new Date(); in5.setDate(in5.getDate() + 5);
+    const in5Str = in5.toISOString().slice(0, 10);
+    Promise.allSettled(ids.map(id => api.getPaystubs(id).then(stubs => ({ id, stubs }))))
+      .then(settled => {
+        const results = settled.filter(r => r.status === 'fulfilled').map(r => r.value);
+        const merged = [];
+        results.forEach(({ id, stubs }) => {
+          const client = clients.find(c => c.id == id);
+          stubs.filter(s => s.check_status === 'draft').forEach(s => {
+            const payDate = s.settlement_date || (s.pay_period_end ? addBizDays(s.pay_period_end, 2) : null);
+            if (!payDate) return;
+            const isLate    = payDate < today;
+            const isDueSoon = !isLate && payDate <= in5Str;
+            if (!isLate && !isDueSoon) return;
+            merged.push({ ...s, _clientName: client?.businessName || '—', _clientId: id, _payDate: payDate, _isLate: isLate, _isDueSoon: isDueSoon });
+          });
+        });
+        merged.sort((a, b) => (a._payDate || '').localeCompare(b._payDate || ''));
+        setRows(merged);
+        setSelected(prev => { const valid = new Set(merged.map(r => r.id)); return new Set([...prev].filter(id => valid.has(id))); });
+      })
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(() => { fetchRows(clientKey); }, [clientKey]);
+
+  function toggleCheck(id) {
+    setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+
+  async function handlePrint() {
+    const byClient = {};
+    rows.filter(r => selected.has(r.id)).forEach(r => {
+      if (!byClient[r._clientId]) byClient[r._clientId] = [];
+      byClient[r._clientId].push(r.id);
+    });
+    for (const [cid, ids] of Object.entries(byClient)) {
+      try { await api.printSelectedChecks(Number(cid), ids); } catch (e) { alert(`Print failed: ${e.message}`); }
+    }
+  }
+
+  async function handleDD() {
+    setSubmitting(true);
+    try {
+      const sel = rows.filter(r => selected.has(r.id));
+      await Promise.all(sel.map(r => api.updatePaystubStatus(r.id, 'direct_deposit_sent')));
+      setSelected(new Set());
+      fetchRows(clientKey);
+    } catch (e) { alert(e.message); }
+    finally { setSubmitting(false); }
+  }
+
+  const grouped = [];
+  const seenClients = [];
+  rows.forEach(r => { if (!seenClients.includes(r._clientId)) seenClients.push(r._clientId); });
+  seenClients.forEach(cid => grouped.push({ clientId: cid, clientName: rows.find(r => r._clientId === cid)?._clientName || '—', rows: rows.filter(r => r._clientId === cid) }));
+
+  const lateCount    = rows.filter(r => r._isLate).length;
+  const dueSoonCount = rows.filter(r => r._isDueSoon).length;
+  const selCount     = selected.size;
+  const allChecked   = rows.length > 0 && rows.every(r => selected.has(r.id));
+
+  return (
+    <div style={{ padding: 0, overflow: 'hidden', borderTop: '1px solid var(--border)' }}>
+      <button style={SECTION_BTN} onClick={onToggle}>
+        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{open ? '▾' : '▸'}</span>
+        <span style={{ fontWeight: 700, fontSize: 13, flex: 1 }}>
+          Paychecks
+          {lateCount > 0 && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#dc2626', background: '#fee2e2', borderRadius: 99, padding: '2px 7px' }}>{lateCount} late</span>}
+          {dueSoonCount > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#d97706', background: '#fef3c7', borderRadius: 99, padding: '2px 7px' }}>{dueSoonCount} due soon</span>}
+        </span>
+        {loading && <span className="spinner spinner-dark" style={{ width: 12, height: 12 }} />}
+      </button>
+
+      {open && (
+        <>
+          {selCount > 0 && (
+            <div style={BULK_BAR}>
+              <span style={{ fontWeight: 700, fontSize: 12 }}>{selCount} selected</span>
+              <button style={bulkBtn()} onClick={handlePrint}>Print PDF</button>
+              <button style={bulkBtn()} onClick={handleDD} disabled={submitting}>{submitting ? 'Sending…' : 'Direct Deposit'}</button>
+              <button style={bulkBtn({ marginLeft: 'auto' })} onClick={() => setSelected(new Set())}>Clear</button>
+            </div>
+          )}
+          {!loading && rows.length === 0 && (
+            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No upcoming or late paychecks.</div>
+          )}
+          {rows.length > 0 && (
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+              <thead>
+                <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
+                  <th style={{ width: 36, padding: '7px 10px', textAlign: 'center' }}>
+                    <input type="checkbox" checked={allChecked} onChange={e => setSelected(e.target.checked ? new Set(rows.map(r => r.id)) : new Set())} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
+                  </th>
+                  {['Company', 'Employee', 'Period', 'Net Pay', 'Pay Date', 'Status'].map(h => (
+                    <th key={h} style={{ padding: '7px 10px', textAlign: h === 'Net Pay' ? 'right' : 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {grouped.map(group => (
+                  <>
+                    <tr key={`hdr-${group.clientId}`} style={{ background: '#f0f4ff', borderBottom: '1px solid var(--border)' }}>
+                      <td />
+                      <td colSpan={6} style={{ padding: '7px 10px', fontWeight: 700, fontSize: 13 }}>{group.clientName}</td>
+                    </tr>
+                    {group.rows.map((r, i) => (
+                      <tr key={r.id} style={{ background: i % 2 === 0 ? '#fff' : '#f8fafc', borderBottom: '1px solid var(--border)' }}>
+                        <td style={{ padding: '7px 10px', textAlign: 'center' }}>
+                          <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleCheck(r.id)} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
+                        </td>
+                        <td style={{ padding: '7px 10px', color: 'var(--text-muted)', fontSize: 11 }}></td>
+                        <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>{r.employee_name || '—'}</td>
+                        <td style={{ padding: '7px 10px', fontSize: 11, whiteSpace: 'nowrap', color: '#555' }}>{fmtPeriod(r.pay_period_start, r.pay_period_end)}</td>
+                        <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{fmt(r.net_pay)}</td>
+                        <td style={{ padding: '7px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, fontWeight: r._isLate || r._isDueSoon ? 700 : 400, color: r._isLate ? '#dc2626' : r._isDueSoon ? '#d97706' : 'inherit' }}>{fmtShort(r._payDate)}</td>
+                        <td style={{ padding: '7px 10px' }}>
+                          {r._isLate ? <span className="badge badge-error" style={{ fontSize: 10 }}>Late</span> : <span className="badge badge-warning" style={{ fontSize: 10 }}>Due Soon</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── MultiCompanyPanel ──────────────────────────────────────────────────────────
+function MultiCompanyPanel({ clientIds, clients }) {
+  const [liabOpen,  setLiabOpen]  = useState(true);
+  const [checkOpen, setCheckOpen] = useState(true);
+  return (
+    <div className="card" style={{ marginTop: 20, padding: 0, overflow: 'hidden' }}>
+      <div style={{ padding: '10px 16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--accent)' }}>{clientIds.length} {clientIds.length === 1 ? 'company' : 'companies'} selected</span>
+      </div>
+      <LiabSection    clientIds={clientIds} clients={clients} open={liabOpen}  onToggle={() => setLiabOpen(o  => !o)} />
+      <PaycheckSection clientIds={clientIds} clients={clients} open={checkOpen} onToggle={() => setCheckOpen(o => !o)} />
+    </div>
   );
 }
 
@@ -637,14 +815,19 @@ export default function Dashboard() {
         <div className="company-grid" style={{ alignItems: 'start' }}>
           {clients.map(client => {
             const ps = payrollStatus(client.nextPayDate);
+            const isSel = selected.has(client.id);
             return (
               <div key={client.id} className="company-tile"
                 onClick={() => navigate(`/clients/${client.id}`)}
                 role="button" tabIndex={0}
+                style={{ outline: isSel ? '2px solid var(--accent)' : undefined, outlineOffset: 2 }}
                 onKeyDown={e => e.key === 'Enter' && navigate(`/clients/${client.id}`)}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 14 }}>
-                  <div style={{ width: 44, height: 44, borderRadius: 10, background: 'var(--accent-light)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800, flexShrink: 0 }}>
-                    {initials(client.businessName)}
+                  <div style={{ position: 'relative', flexShrink: 0 }} onClick={e => { e.stopPropagation(); toggleSelect(client.id); }}>
+                    <div style={{ width: 44, height: 44, borderRadius: 10, background: 'var(--accent-light)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800 }}>
+                      {initials(client.businessName)}
+                    </div>
+                    {isSel && <div style={{ position: 'absolute', top: -4, right: -4, width: 16, height: 16, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span></div>}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div className="tile-name">{client.businessName}</div>
@@ -682,8 +865,7 @@ export default function Dashboard() {
         </div>
       ) : (
         /* ── List view ── */
-        <>
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
             {/* Header row */}
             <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr 160px 130px 70px 100px 36px', alignItems: 'center', padding: '9px 16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)', gap: 8 }}>
               <div>
@@ -748,20 +930,19 @@ export default function Dashboard() {
               );
             })}
           </div>
+      )}
 
-          {/* Selection info + merged liabilities panel */}
-          {selected.size > 0 && (
-            <>
-              <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span>{selected.size} {selected.size === 1 ? 'company' : 'companies'} selected</span>
-                <button onClick={() => setSelected(new Set())}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: 12, padding: 0, fontWeight: 600 }}>
-                  Clear
-                </button>
-              </div>
-              <MultiLiabPanel clientIds={[...selected]} clients={clients} />
-            </>
-          )}
+      {/* Multi-company panel — shown for both tile and list views */}
+      {!loading && clients.length > 0 && selected.size > 0 && (
+        <>
+          <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span>{selected.size} {selected.size === 1 ? 'company' : 'companies'} selected</span>
+            <button onClick={() => setSelected(new Set())}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: 12, padding: 0, fontWeight: 600 }}>
+              Clear
+            </button>
+          </div>
+          <MultiCompanyPanel clientIds={[...selected]} clients={clients} />
         </>
       )}
     </div>
