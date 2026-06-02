@@ -165,6 +165,27 @@ app.use('/api/import',          importRoutes);
 app.use('/api/direct-deposit', directDepositRoutes);
 app.get('/api/health',      (req, res) => res.json({ status: 'ok', env: process.env.NODE_ENV }));
 
+// ── Debug: inspect next-pay-date computation data ─────────────────────────────
+app.get('/api/debug/nextpay', (req, res) => {
+  try {
+    const db = getDb();
+    const clients = db.prepare('SELECT id, business_name, ein, next_payroll_date, payroll_frequency FROM clients ORDER BY business_name').all();
+    const result = clients.map(c => {
+      const groups = db.prepare('SELECT id, frequency, first_pay_period_end, deleted_at FROM pay_groups WHERE client_id = ?').all(c.id);
+      const paystubs = db.prepare(`
+        SELECT pay_group_id, check_status, MAX(pay_period_end) as last_end
+        FROM paystubs WHERE client_id = ? AND pay_period_end IS NOT NULL
+        GROUP BY pay_group_id, check_status
+        ORDER BY last_end DESC
+      `).all(c.id);
+      return { id: c.id, name: c.business_name, ein: c.ein, next_payroll_date: c.next_payroll_date, frequency: c.payroll_frequency, pay_groups: groups, paystub_summary: paystubs };
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Debug: inspect paystub statuses in Railway's live DB ─────────────────────
 app.get('/api/debug/paystubs', (req, res) => {
   try {
