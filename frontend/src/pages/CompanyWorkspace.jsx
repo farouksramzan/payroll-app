@@ -2066,7 +2066,6 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           <col style={{ width: 72 }} />
           <col style={{ width: 88 }} />
           <col style={{ width: 82 }} />
-          <col style={{ width: 140 }} />
         </colgroup>
         <thead>
           <tr style={{ borderBottom: '2px solid var(--border)', background: 'var(--bg-secondary)' }}>
@@ -2086,7 +2085,6 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
             <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>Rate</th>
             <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>Net Pay</th>
             <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>Status</th>
-            <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' }}>Download</th>
           </tr>
         </thead>
         <tbody>
@@ -2177,7 +2175,6 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                       <StatusBadge status={status} />
                     </span>
                   </td>
-                  <td style={{ padding: '4px 6px' }} />
                 </tr>
                 </React.Fragment>
               );
@@ -2271,22 +2268,6 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                     </span>
                   ) : (
                     <StatusBadge status={displayStatus} />
-                  )}
-                </td>
-                <td style={{ padding: '4px 6px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-                  {!isVoided && (
-                    <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
-                      <button
-                        onClick={async () => { try { await api.printSelectedChecks(clientId, [stub.id]); } catch (e) { alert(e.message); } }}
-                        style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 6px', fontSize: 10, cursor: 'pointer', color: 'var(--text-secondary)', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                        ↓ Check
-                      </button>
-                      <button
-                        onClick={async () => { try { await api.printSelectedPaystubs(clientId, [stub.id]); } catch (e) { alert(e.message); } }}
-                        style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 6px', fontSize: 10, cursor: 'pointer', color: 'var(--text-secondary)', fontWeight: 600, whiteSpace: 'nowrap' }}>
-                        ↓ Stub
-                      </button>
-                    </div>
                   )}
                 </td>
               </tr>
