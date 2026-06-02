@@ -1120,7 +1120,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
   const [runSuccess, setRunSuccess]               = useState('');
   const [detailModal, setDetailModal]             = useState(null); // rowData object
   const [showPrinted, setShowPrinted]             = useState(false);
-  const [printModal, setPrintModal]               = useState(null); // stub IDs for print dialog
+  const [printModal, setPrintModal]               = useState(null); // { ids: [], mode: 'paycheck'|'paystub' }
   const [drawerEmpId, setDrawerEmpId]             = useState(null);
   const [periodEdit, setPeriodEdit]               = useState(null); // { id, start, end, payDate }
   const [savingPeriod, setSavingPeriod]           = useState(false);
@@ -1354,7 +1354,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
         allNewIds.push({ id, directDeposit: isDD });
       });
       // Override directDeposit on new stubs based on forceMethod
-      if (forceMethod === 'print') allNewIds.forEach(s => s.directDeposit = false);
+      if (forceMethod === 'print' || forceMethod === 'paystub') allNewIds.forEach(s => s.directDeposit = false);
       if (forceMethod === 'dd')    allNewIds.forEach(s => s.directDeposit = true);
       // DD employees: mark as direct_deposit_sent; print checks: mark as printed
       const ddIds    = allNewIds.filter(s => s.directDeposit).map(s => s.id);
@@ -1368,8 +1368,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       setPeriodOverrides({});
       setSelectedLateStubs(new Set());
       const ddCount = ddIds.length;
+      const printMode = forceMethod === 'paystub' ? 'paystub' : 'paycheck';
       if (printIds.length > 0) {
-        setPrintModal(printIds);
+        setPrintModal({ ids: printIds, mode: printMode });
       } else if (ddCount > 0) {
         setRunSuccess(`Payroll complete — ${ddCount} direct deposit${ddCount !== 1 ? 's' : ''} initiated via Moov.`);
       } else {
@@ -1583,7 +1584,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       setUgPreview(null);
       setUgForm({ employeeId: '', start: '', end: '', payDate: '', regHours: '', otHours: '', rate: '', payType: 'regular', tips: '', bonus: '', commission: '', cashAdvance: '', mileage: '' });
       setUgOtherOpen(false);
-      if (!isDD && newIds.length > 0) setPrintModal(newIds);
+      if (!isDD && newIds.length > 0) setPrintModal({ ids: newIds, mode: method === 'paystub' ? 'paystub' : 'paycheck' });
       else if (isDD) setRunSuccess(`Direct deposit initiated for ${emp.firstName} ${emp.lastName}.`);
       if (!isSalary && !isNaN(enteredRate) && enteredRate !== emp.hourlyRate) {
         setRateUpdatePrompt({ empId: emp.id, newRate: enteredRate });
@@ -2022,7 +2023,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
             }}>Delete</button>
             <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={async () => {
               try { await api.printSelectedChecks(clientId, [stub.id]); } catch (e) { alert(e.message); }
-            }}>↓ Download PDF</button>
+            }}>↓ Paycheck</button>
+            <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={async () => {
+              try { await api.printSelectedPaystubs(clientId, [stub.id]); } catch (e) { alert(e.message); }
+            }}>↓ Paystub</button>
             {isDirty && (
               <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={editSaving} onClick={saveModalEdits}>
                 {editSaving ? <span className="spinner" style={{ width: 12, height: 12 }} /> : 'Save Changes'}
@@ -2062,6 +2066,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           <col style={{ width: 72 }} />
           <col style={{ width: 88 }} />
           <col style={{ width: 82 }} />
+          <col style={{ width: 140 }} />
         </colgroup>
         <thead>
           <tr style={{ borderBottom: '2px solid var(--border)', background: 'var(--bg-secondary)' }}>
@@ -2081,6 +2086,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
             <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>Rate</th>
             <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>Net Pay</th>
             <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>Status</th>
+            <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' }}>Download</th>
           </tr>
         </thead>
         <tbody>
@@ -2171,6 +2177,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                       <StatusBadge status={status} />
                     </span>
                   </td>
+                  <td style={{ padding: '4px 6px' }} />
                 </tr>
                 </React.Fragment>
               );
@@ -2265,7 +2272,22 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                   ) : (
                     <StatusBadge status={displayStatus} />
                   )}
-
+                </td>
+                <td style={{ padding: '4px 6px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                  {!isVoided && (
+                    <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+                      <button
+                        onClick={async () => { try { await api.printSelectedChecks(clientId, [stub.id]); } catch (e) { alert(e.message); } }}
+                        style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 6px', fontSize: 10, cursor: 'pointer', color: 'var(--text-secondary)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                        ↓ Check
+                      </button>
+                      <button
+                        onClick={async () => { try { await api.printSelectedPaystubs(clientId, [stub.id]); } catch (e) { alert(e.message); } }}
+                        style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 4, padding: '2px 6px', fontSize: 10, cursor: 'pointer', color: 'var(--text-secondary)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                        ↓ Stub
+                      </button>
+                    </div>
+                  )}
                 </td>
               </tr>
             );
@@ -2327,9 +2349,17 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
               className="btn btn-secondary"
               onClick={() => handleRunPayroll('print')}
               disabled={running || totalActionCount === 0}
-              title="Process payroll and print checks"
+              title="Process payroll and download paychecks"
             >
-              {running ? <span className="spinner" /> : `🖨 Print${totalActionCount > 0 ? ` (${totalActionCount})` : ''}`}
+              {running ? <span className="spinner" /> : `🖨 Print Paycheck${totalActionCount > 0 ? ` (${totalActionCount})` : ''}`}
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => handleRunPayroll('paystub')}
+              disabled={running || totalActionCount === 0}
+              title="Process payroll and download pay stubs"
+            >
+              {running ? <span className="spinner" /> : `📄 Print Paystub${totalActionCount > 0 ? ` (${totalActionCount})` : ''}`}
             </button>
             <button
               className="btn btn-primary"
@@ -2374,7 +2404,14 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
             try { await api.printSelectedChecks(clientId, [...selectedHistoryStubs]); } catch (e) { alert(e.message); }
             finally { setBulkBusy(false); }
           }} style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
-            ↓ PDF
+            ↓ Paycheck
+          </button>
+          <button disabled={bulkBusy} onClick={async () => {
+            setBulkBusy(true);
+            try { await api.printSelectedPaystubs(clientId, [...selectedHistoryStubs]); } catch (e) { alert(e.message); }
+            finally { setBulkBusy(false); }
+          }} style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
+            ↓ Paystub
           </button>
           <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
           <button disabled={bulkBusy} onClick={handleBulkDelete}
@@ -2509,18 +2546,24 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       {printModal && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.55)' }}
           onClick={e => { if (e.target === e.currentTarget) setPrintModal(null); }}>
-          <div className="card" style={{ width: 400, maxWidth: '92vw', padding: 28, textAlign: 'center' }}>
+          <div className="card" style={{ width: 420, maxWidth: '92vw', padding: 28, textAlign: 'center' }}>
             <div style={{ fontSize: 36, marginBottom: 10 }}>✅</div>
             <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 6 }}>Payroll Complete!</div>
             <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 22 }}>
-              {printModal.length} check{printModal.length !== 1 ? 's' : ''} processed and marked as printed.
+              {printModal.ids.length} check{printModal.ids.length !== 1 ? 's' : ''} processed and marked as printed.
             </div>
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+            <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
               <button className="btn btn-primary" onClick={async () => {
-                try { await api.printSelectedChecks(clientId, printModal); } catch (e) { alert(e.message); }
+                try { await api.printSelectedChecks(clientId, printModal.ids); } catch (e) { alert(e.message); }
                 setPrintModal(null);
               }}>
-                Print Checks
+                ↓ Download Paycheck
+              </button>
+              <button className="btn btn-secondary" onClick={async () => {
+                try { await api.printSelectedPaystubs(clientId, printModal.ids); } catch (e) { alert(e.message); }
+                setPrintModal(null);
+              }}>
+                ↓ Download Paystub
               </button>
               <button className="btn btn-ghost" onClick={() => setPrintModal(null)}>Not Now</button>
             </div>
@@ -2755,7 +2798,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                   {ugErr && <span style={{ fontSize: 12, color: '#dc2626', flex: 1 }}>{ugErr}</span>}
                   <button className="btn btn-ghost" onClick={() => setUgPreview(null)} disabled={ugRunning}>← Back</button>
                   <button className="btn btn-secondary" onClick={() => handleUngroupedRun('print')} disabled={ugRunning}>
-                    {ugRunning ? <span className="spinner" /> : '🖨 Print'}
+                    {ugRunning ? <span className="spinner" /> : '🖨 Print Paycheck'}
+                  </button>
+                  <button className="btn btn-secondary" onClick={() => handleUngroupedRun('paystub')} disabled={ugRunning}>
+                    {ugRunning ? <span className="spinner" /> : '📄 Print Paystub'}
                   </button>
                   <button className="btn btn-primary" onClick={() => handleUngroupedRun('dd')} disabled={ugRunning || !hasDD}
                     title={!hasDD ? 'No active direct deposit on file for this employee' : ''}>

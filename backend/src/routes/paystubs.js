@@ -271,6 +271,184 @@ router.post('/print-selected', (req, res) => {
   `).run(...paystubIds, clientId);
 });
 
+// ── POST /api/paystubs/paystub-selected — paystub-only PDF (no check section) ─
+router.post('/paystub-selected', (req, res) => {
+  const { clientId, paystubIds } = req.body;
+  if (!clientId || !Array.isArray(paystubIds) || paystubIds.length === 0)
+    return res.status(400).json({ error: 'clientId and paystubIds[] required' });
+
+  const db = getDb();
+  const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+
+  const ph = paystubIds.map(() => '?').join(',');
+  const stubs = db.prepare(`
+    SELECT p.*, e.first_name, e.last_name, e.address AS emp_address,
+           e.city AS emp_city, e.state AS emp_state, e.zip AS emp_zip
+    FROM paystubs p
+    LEFT JOIN employees e ON p.employee_id = e.id
+    WHERE p.id IN (${ph}) AND p.client_id = ?
+    ORDER BY p.check_number
+  `).all(...paystubIds, clientId);
+
+  if (!stubs.length) return res.status(404).json({ error: 'No paystubs found' });
+
+  const PDFDocument = require('pdfkit');
+  const doc = new PDFDocument({ size: 'LETTER', margin: 40, autoFirstPage: false });
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', 'attachment; filename="selected-paystubs.pdf"');
+  doc.pipe(res);
+
+  const W      = 612 - 80;
+  const ACCENT = '#1a2e5a';
+  const DARK   = '#0f172a';
+  const GRAY   = '#64748b';
+  const BORDER = '#e2e8f0';
+  const BLUE   = '#1a56db';
+
+  function fmtM(n) { return `$${Number(n || 0).toFixed(2)}`; }
+  function fmtD(d) {
+    if (!d) return '—';
+    return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
+  const PAY_LABELS = { regular: 'Regular Pay', salary: 'Salary', overtime: 'Overtime (×1.5)', tips: 'Reported Tips', bonus: 'Bonus', commission: 'Commission' };
+
+  for (const stub of stubs) {
+    doc.addPage();
+    const empName = stub.employee_name || (stub.first_name ? `${stub.first_name} ${stub.last_name}` : '—');
+    const lineItems = db.prepare('SELECT * FROM paystub_line_items WHERE paystub_id = ?').all(stub.id);
+
+    // Header bar
+    doc.rect(40, 40, W, 56).fill(ACCENT);
+    doc.fillColor('#fff').font('Helvetica-Bold').fontSize(14).text(client.business_name || '—', 52, 50, { width: W - 130 });
+    doc.font('Helvetica').fontSize(8).text(`EIN: ${client.ein || '—'}`, 52, 68);
+    doc.font('Helvetica-Bold').fontSize(10).text('EARNINGS STATEMENT', 52, 80, { align: 'right', width: W - 12 });
+
+    let y = 108;
+    doc.rect(40, y, W, 1).fill(BORDER); y += 8;
+
+    function kv(label, value, x, yy, width) {
+      const w = width || 120;
+      doc.font('Helvetica').fontSize(7).fillColor(GRAY).text(label.toUpperCase(), x, yy, { width: w });
+      doc.font('Helvetica-Bold').fontSize(9).fillColor(DARK).text(value || '—', x, yy + 9, { width: w });
+    }
+    const col = W / 4;
+    kv('Pay Period', `${fmtD(stub.pay_period_start)} – ${fmtD(stub.pay_period_end)}`, 40, y, col * 2 - 10);
+    kv('Pay Date', fmtD(stub.settlement_date || stub.pay_period_end), 40 + col * 2, y);
+    kv('Check #', stub.check_number ? `#${stub.check_number}` : '—', 40 + col * 3, y);
+    y += 30;
+
+    doc.rect(40, y, W, 1).fill(BORDER); y += 8;
+    doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text(empName, 40, y);
+    y += 14;
+    const addrParts = [stub.emp_address, [stub.emp_city, stub.emp_state, stub.emp_zip].filter(Boolean).join(', ')].filter(Boolean);
+    if (addrParts.length) { doc.font('Helvetica').fontSize(8).fillColor(GRAY).text(addrParts.join('\n'), 40, y); y += addrParts.length * 11 + 4; }
+    doc.rect(40, y, W, 1).fill(BORDER); y += 10;
+
+    // Earnings section header
+    doc.rect(40, y, W, 16).fill('#f3f4f6');
+    doc.font('Helvetica-Bold').fontSize(7).fillColor(GRAY).text('EARNINGS', 44, y + 5);
+    y += 16;
+
+    // Column definitions
+    const C = [
+      { x: 44,              w: W * 0.40, label: 'Description', align: 'left'  },
+      { x: 44 + W * 0.40,  w: W * 0.15, label: 'Hours',       align: 'right' },
+      { x: 44 + W * 0.55,  w: W * 0.20, label: 'Rate',        align: 'right' },
+      { x: 44 + W * 0.75,  w: W * 0.25, label: 'Amount',      align: 'right' },
+    ];
+    doc.rect(40, y, W, 14).fill('#f9fafb');
+    doc.font('Helvetica-Bold').fontSize(7.5).fillColor(GRAY);
+    C.forEach(c => doc.text(c.label, c.x, y + 3, { width: c.w - 4, align: c.align }));
+    y += 14;
+
+    let shade = false;
+    const rows = lineItems.length > 0 ? lineItems : [{ pay_type: 'gross', description: 'Gross Wages', hours: null, rate: null, amount: stub.gross_wages }];
+    for (const li of rows) {
+      if (shade) doc.rect(40, y, W, 14).fill('#fafafa');
+      doc.font('Helvetica').fontSize(8.5).fillColor(DARK);
+      const vals = [
+        PAY_LABELS[li.pay_type] || li.description || li.pay_type || 'Pay',
+        li.hours != null ? String(li.hours) : '',
+        li.rate  != null ? fmtM(li.rate)   : '',
+        fmtM(li.amount),
+      ];
+      C.forEach((c, i) => doc.text(vals[i], c.x, y + 2, { width: c.w - 4, align: c.align }));
+      y += 14; shade = !shade;
+    }
+    if (stub.bonus > 0)         { doc.font('Helvetica').fontSize(8.5).fillColor(DARK).text('Bonus',         C[0].x, y + 2, { width: C[0].w - 4 }).text(fmtM(stub.bonus),         C[3].x, y + 2, { width: C[3].w - 4, align: 'right' }); y += 14; }
+    if (stub.commission > 0)    { doc.font('Helvetica').fontSize(8.5).fillColor(DARK).text('Commission',    C[0].x, y + 2, { width: C[0].w - 4 }).text(fmtM(stub.commission),    C[3].x, y + 2, { width: C[3].w - 4, align: 'right' }); y += 14; }
+    if (stub.reimbursement > 0) { doc.font('Helvetica').fontSize(8.5).fillColor(DARK).text('Reimbursement', C[0].x, y + 2, { width: C[0].w - 4 }).text(fmtM(stub.reimbursement), C[3].x, y + 2, { width: C[3].w - 4, align: 'right' }); y += 14; }
+
+    doc.rect(40, y, W, 16).fill('#eff6ff');
+    doc.font('Helvetica-Bold').fontSize(9).fillColor(BLUE)
+      .text('Gross Pay', 44, y + 4, { width: W * 0.75 - 4 })
+      .text(fmtM(stub.gross_wages), 44 + W * 0.75, y + 4, { width: W * 0.25 - 4, align: 'right' });
+    y += 16; y += 10;
+
+    // Deductions — two-column mini sections
+    const halfW = (W - 12) / 2;
+    function miniSection(label, sRows, x, startY, width) {
+      doc.rect(x, startY, width, 14).fill('#f3f4f6');
+      doc.font('Helvetica-Bold').fontSize(7).fillColor(GRAY).text(label.toUpperCase(), x + 4, startY + 4, { width: width - 8 });
+      let ry = startY + 14;
+      sRows.forEach(([desc, amt], idx) => {
+        if (idx % 2 === 1) doc.rect(x, ry, width, 13).fill('#fafafa');
+        doc.font('Helvetica').fontSize(8.5).fillColor(DARK)
+          .text(desc, x + 4, ry + 2, { width: width * 0.65 - 4 })
+          .text(amt,  x + 4 + width * 0.65, ry + 2, { width: width * 0.35 - 8, align: 'right' });
+        ry += 13;
+      });
+      return ry;
+    }
+
+    const empDedRows = [
+      ['Federal Income Tax', fmtM(stub.fit_withholding)],
+      ['Social Security',    fmtM(stub.employee_ss)],
+      ['Medicare',           fmtM(stub.employee_medicare)],
+      ...(stub.additional_medicare > 0 ? [['Additional Medicare', fmtM(stub.additional_medicare)]] : []),
+      ...(stub.state_income_tax > 0 ? [[`${stub.work_state || ''} State Tax`, fmtM(stub.state_income_tax)]] : []),
+      ...(stub.deduction > 0    ? [['Deductions',   fmtM(stub.deduction)]]   : []),
+      ...(stub.garnishment > 0  ? [['Garnishments', fmtM(stub.garnishment)]] : []),
+    ];
+    const erTaxRows = [
+      ['SS Match (6.2%)',        fmtM(stub.employer_ss)],
+      ['Medicare Match (1.45%)', fmtM(stub.employer_medicare)],
+      ...(stub.futa_tax > 0 ? [['FUTA (0.6%)',               fmtM(stub.futa_tax)]] : []),
+      ...(stub.suta_tax > 0 ? [[`SUI — ${stub.work_state || ''}`, fmtM(stub.suta_tax)]] : []),
+    ];
+
+    const lBottom = miniSection('EMPLOYEE DEDUCTIONS', empDedRows, 40,              y, halfW);
+    const rBottom = miniSection('EMPLOYER TAXES',      erTaxRows,  40 + halfW + 12, y, halfW);
+    y = Math.max(lBottom, rBottom) + 10;
+
+    doc.rect(40, y, W, 1).fill(BORDER); y += 8;
+
+    // Net pay highlight
+    const totalDed = (stub.fit_withholding || 0) + (stub.employee_ss || 0) + (stub.employee_medicare || 0) + (stub.additional_medicare || 0) + (stub.state_income_tax || 0) + (stub.deduction || 0) + (stub.garnishment || 0);
+    doc.font('Helvetica').fontSize(9).fillColor(GRAY)
+      .text('Total Deductions (Employee):', 40, y, { width: W * 0.65 });
+    doc.font('Helvetica-Bold').fillColor(DARK).text(fmtM(totalDed), 40, y, { width: W, align: 'right' }); y += 16;
+    doc.rect(40 + W * 0.35, y - 2, W * 0.65, 24).fill(ACCENT);
+    doc.font('Helvetica-Bold').fontSize(12).fillColor('#fff')
+      .text('NET PAY', 44 + W * 0.35, y + 4, { width: W * 0.65 * 0.5 })
+      .text(fmtM(stub.net_pay), 44 + W * 0.35, y + 4, { width: W * 0.65 * 0.5 - 8, align: 'right' }); y += 26;
+    doc.font('Helvetica').fontSize(8.5).fillColor(GRAY).text('EFTPS 941 Tax Deposit:', 40, y + 2, { width: W * 0.65 });
+    doc.font('Helvetica-Bold').fillColor(DARK).text(fmtM(stub.total_deposit), 40, y + 2, { width: W, align: 'right' }); y += 18;
+
+    // Footer
+    doc.rect(40, y, W, 1).fill(BORDER); y += 6;
+    doc.font('Helvetica').fontSize(7).fillColor(GRAY)
+      .text(
+        `Generated ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} · Paystub #${stub.id} · ${client.business_name || ''}`,
+        40, y, { width: W, align: 'center' }
+      );
+  }
+
+  doc.end();
+});
+
 // ── GET /api/paystubs/by-employee?clientId=X&employeeId=Y ────────────────────
 // Returns all paystubs for one employee, ordered most-recent first
 router.get('/by-employee', (req, res) => {
