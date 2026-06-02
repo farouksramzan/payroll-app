@@ -121,26 +121,45 @@ router.get('/', (req, res) => {
       .get(c.id);
     const nextDue = calcNextDueDate(c.deposit_schedule, lastSub?.pay_period_end);
 
-    // Next pay date: derived from pay groups (no active-employee filter — group schedule always valid).
+    // Next pay date: derived from pay groups → any paystub fallback → static field.
     let nextPayDate = null;
     try {
       const groups = db.prepare('SELECT * FROM pay_groups WHERE client_id = ? AND deleted_at IS NULL').all(c.id);
       for (const g of groups) {
-        if (!g.first_pay_period_end || !g.frequency) continue;
+        if (!g.frequency) continue;
+        // Any paystub in this group (not filtered by check_status — pending runs count too)
         const lastRow = db.prepare(`
           SELECT MAX(pay_period_end) as last_end FROM paystubs
-          WHERE client_id = ? AND pay_group_id = ?
-            AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
+          WHERE client_id = ? AND pay_group_id = ? AND pay_period_end IS NOT NULL
         `).get(c.id, g.id);
+        const baseEnd = (lastRow?.last_end || g.first_pay_period_end || '').slice(0, 10);
+        if (!baseEnd) continue;
         const nextEnd = lastRow?.last_end
           ? nextPeriodEnd(lastRow.last_end.slice(0, 10), g.frequency)
-          : g.first_pay_period_end.slice(0, 10);
+          : baseEnd;
         const nextPay = addBizDays(nextEnd, 2);
         if (!nextPayDate || nextPay < nextPayDate) nextPayDate = nextPay;
       }
     } catch (e) { console.error('[nextPayDate]', c.id, e.message); }
 
+    // Fallback: any paystub for the client (ignores pay groups entirely)
+    if (!nextPayDate) {
+      try {
+        const lastStub = db.prepare(`
+          SELECT MAX(pay_period_end) as last_end FROM paystubs
+          WHERE client_id = ? AND pay_period_end IS NOT NULL
+        `).get(c.id);
+        if (lastStub?.last_end) {
+          const freq = c.payroll_frequency || 'biweekly';
+          const nextEnd = nextPeriodEnd(lastStub.last_end.slice(0, 10), freq);
+          nextPayDate = addBizDays(nextEnd, 2);
+        }
+      } catch (e) { console.error('[nextPayDate fallback]', c.id, e.message); }
+    }
+
+    // Final fallback: manually set static field
     if (!nextPayDate) nextPayDate = c.next_payroll_date ? c.next_payroll_date.slice(0, 10) : null;
+    console.log(`[nextPayDate] client=${c.id} (${c.business_name}) → ${nextPayDate}`);
 
     // Compute overdue/due-soon using JS IRS due-date logic (matches frontend MultiLiabPanel).
     // The SQL settlement_due_date column is often unset, so we compute dates from settlement_date.
