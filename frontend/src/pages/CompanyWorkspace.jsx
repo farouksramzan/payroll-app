@@ -1102,7 +1102,7 @@ function CompanyTab({ client, onSaved }) {
 }
 
 // ── Pay Employees Tab ─────────────────────────────────────────────────────────
-function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
+function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick = 0 }) {
   const [showPaycheckImport, setShowPaycheckImport] = useState(false);
   const [payGroups, setPayGroups]     = useState([]);
   const [currentGroupId, setCurrentGroupId] = useState(null);
@@ -1137,16 +1137,16 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     api.getPayGroups(clientId)
       .then(groups => {
         setPayGroups(groups);
-        if (groups.length > 0) setCurrentGroupId(groups[0].id);
+        if (groups.length > 0) setCurrentGroupId(prev => prev ?? groups[0].id);
       })
       .catch(() => {})
       .finally(() => setGroupsLoading(false));
-  }, [clientId]);
+  }, [clientId, refreshTick]);
 
   useEffect(() => {
     // Sweep draft checks with a past pay date → 'late' in the DB, then reload.
     api.markLateChecks().catch(() => {}).finally(reloadStubs);
-  }, [clientId]);
+  }, [clientId, refreshTick]);
 
   async function reloadStubs() {
     try { setPaystubs(await api.getPaystubs(clientId)); } catch {}
@@ -3837,7 +3837,7 @@ function FileFormsTab({ clientId }) {
 
 
 // ── Payroll Tab ───────────────────────────────────────────────────────────────
-function PayrollTab({ clientId, client, employees, onRefresh }) {
+function PayrollTab({ clientId, client, employees, onRefresh, refreshTick = 0 }) {
   const [searchParams] = useSearchParams();
   const [sub, setSub] = useState(() => searchParams.get('tab') === 'liabilities' ? 'liabilities' : 'pay');
   return (
@@ -3845,27 +3845,44 @@ function PayrollTab({ clientId, client, employees, onRefresh }) {
       <div className="pay-subtabs">
         {[['pay','Pay Employees'],['liabilities','Pay Liabilities'],['forms','File Forms']].map(([k, label]) => <button key={k} className={`pay-subtab${sub === k ? ' active' : ''}`} onClick={() => setSub(k)}>{label}</button>)}
       </div>
-      {sub === 'pay'         && <PayEmployeesTab clientId={clientId} client={client} employees={employees} onRefresh={onRefresh} />}
-      {sub === 'liabilities' && <PayLiabilitiesTab clientId={clientId} client={client} />}
+      {sub === 'pay'         && <PayEmployeesTab clientId={clientId} client={client} employees={employees} onRefresh={onRefresh} refreshTick={refreshTick} />}
+      {sub === 'liabilities' && <PayLiabilitiesTab clientId={clientId} client={client} refreshTick={refreshTick} />}
       {sub === 'forms'       && <FileFormsTab clientId={clientId} />}
     </div>
   );
 }
 
 // ── Main Workspace ────────────────────────────────────────────────────────────
+const WS_TAB_KEY = 'ws_activeTab';
+
 export default function CompanyWorkspace() {
   const { id } = useParams(), location = useLocation(), navigate = useNavigate();
   const [client, setClient]       = useState(null);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading]     = useState(true);
-  const [activeTab, setActiveTab] = useState(location.state?.tab || 'employees');
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
+  const [activeTab, setActiveTab] = useState(
+    location.state?.tab || sessionStorage.getItem(WS_TAB_KEY) || 'employees'
+  );
 
+  useEffect(() => { sessionStorage.setItem(WS_TAB_KEY, activeTab); }, [activeTab]);
   useEffect(() => { loadAll(); }, [id]);
 
   async function loadAll() {
     try { const [c, emps] = await Promise.all([api.getClient(id), api.getEmployees(id)]); setClient(c); setEmployees(emps); }
     catch (e) { alert(e.message); navigate('/'); }
     finally { setLoading(false); }
+  }
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    try {
+      await loadAll();
+      setRefreshTick(t => t + 1);
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 60 }}><div className="spinner spinner-dark" style={{ width: 36, height: 36 }} /></div>;
@@ -3878,6 +3895,14 @@ export default function CompanyWorkspace() {
           <div><div className="workspace-name">{client?.businessName}</div></div>
           <span className="workspace-ein">EIN {client?.ein}</span>
           <div style={{ flex: 1 }} />
+          <button
+            onClick={handleRefresh}
+            disabled={refreshing}
+            title="Refresh data"
+            style={{ background: 'none', border: 'none', cursor: refreshing ? 'default' : 'pointer', padding: '4px 6px', borderRadius: 6, color: 'var(--text-muted)', fontSize: 16, lineHeight: 1, display: 'flex', alignItems: 'center', opacity: refreshing ? 0.5 : 1 }}
+          >
+            <span style={{ display: 'inline-block', animation: refreshing ? 'spin 0.7s linear infinite' : 'none' }}>↻</span>
+          </button>
         </div>
         <div className="ws-tabs">
           {[['employees','Employees'],['company','Company'],['payroll','Payroll']].map(([k, label]) => (
@@ -3891,7 +3916,7 @@ export default function CompanyWorkspace() {
       <div className="workspace-body">
         {activeTab === 'employees' && <EmployeesTab clientId={id} employees={employees} onRefresh={loadAll} />}
         {activeTab === 'company'   && <CompanyTab client={client} onSaved={loadAll} />}
-        {activeTab === 'payroll'   && <PayrollTab clientId={id} client={client} employees={employees} onRefresh={loadAll} />}
+        {activeTab === 'payroll'   && <PayrollTab clientId={id} client={client} employees={employees} onRefresh={loadAll} refreshTick={refreshTick} />}
       </div>
     </div>
   );
