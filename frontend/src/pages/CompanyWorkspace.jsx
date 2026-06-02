@@ -1129,6 +1129,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
   const [ungroupedModal, setUngroupedModal]       = useState(false);
   const [ugForm, setUgForm]                       = useState({ employeeId: '', start: '', end: '', payDate: '', regHours: '', otHours: '', rate: '', payType: 'regular', tips: '', bonus: '', commission: '', cashAdvance: '', mileage: '' });
   const [ugOtherOpen, setUgOtherOpen]             = useState(false);
+  const [ugPreview, setUgPreview]                 = useState(null); // calculated check data before committing
   const [ugRunning, setUgRunning]                 = useState(false);
   const [ugErr, setUgErr]                         = useState('');
 
@@ -1502,30 +1503,58 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     finally { setBulkBusy(false); }
   }
 
-  async function handleUngroupedRun() {
+  async function handleUgCalculate() {
     setUgErr('');
     const { employeeId, start, end, payDate, regHours, otHours, payType } = ugForm;
     if (!employeeId || !start || !end || !payDate) { setUgErr('All fields required.'); return; }
     const emp = activeEmps.find(e => e.id === Number(employeeId));
     if (!emp) { setUgErr('Employee not found.'); return; }
     const isSalary = payType === 'salary' || emp.payType === 'salary';
-    const ugTips = parseFloat(ugForm.tips || 0);
-    const ugBonus = parseFloat(ugForm.bonus || 0);
-    const ugComm = parseFloat(ugForm.commission || 0);
+    const ugTips   = parseFloat(ugForm.tips        || 0);
+    const ugBonus  = parseFloat(ugForm.bonus        || 0);
+    const ugComm   = parseFloat(ugForm.commission   || 0);
     const ugCashAdv = parseFloat(ugForm.cashAdvance || 0);
-    const ugMile = parseFloat(ugForm.mileage || 0);
-    if (!isSalary) {
-      const regH = parseFloat(regHours || 0);
-      const otH  = parseFloat(otHours  || 0);
-      if (regH === 0 && otH === 0 && ugTips === 0 && ugBonus === 0 && ugComm === 0) { setUgErr('Enter hours or other payroll items.'); return; }
+    const ugMile   = parseFloat(ugForm.mileage      || 0);
+    const regH     = parseFloat(regHours || 0);
+    const otH      = parseFloat(otHours  || 0);
+    if (!isSalary && regH === 0 && otH === 0 && ugTips === 0 && ugBonus === 0 && ugComm === 0) {
+      setUgErr('Enter hours or other payroll items.'); return;
     }
     setUgRunning(true);
     try {
-      const regH = parseFloat(regHours || 0);
-      const otH  = parseFloat(otHours  || 0);
-      const rate = parseFloat(ugForm.rate) || emp.hourlyRate || 0;
+      const rate   = parseFloat(ugForm.rate) || emp.hourlyRate || 0;
       const regPay = isSalary ? r2((emp.annualSalary || 0) / ppy) : r2(Math.min(regH, 40) * rate);
       const otPay  = isSalary ? 0 : r2(otH * rate * 1.5);
+      const gross  = r2(regPay + otPay + ugTips + ugBonus + ugComm);
+      const ytd    = calcEmpYTD(emp.id, null);
+      const calc   = await api.calculate({
+        grossWages:    gross,
+        payFrequency:  emp.payFrequency || 'monthly',
+        filingStatus:  emp.filingStatus || 'single',
+        step2Checkbox: emp.step2Checkbox || false,
+        step3Children: emp.step3Children || 0,
+        step3Other:    emp.step3Other    || 0,
+        step4a:        emp.step4a        || 0,
+        step4b:        emp.step4b        || 0,
+        step4c:        emp.step4c        || 0,
+        workState:     emp.workState     || client?.state || 'TX',
+        ytdGross:      ytd.gross,
+        sutaRate:      client?.sutaRate  || null,
+      });
+      setUgPreview({ emp, isSalary, regH, otH, rate, regPay, otPay, gross, ugTips, ugBonus, ugComm, ugCashAdv, ugMile, calc, ytd });
+    } catch (e) {
+      setUgErr(e.message || 'Failed to calculate.');
+    } finally {
+      setUgRunning(false);
+    }
+  }
+
+  async function handleUngroupedRun(method = 'print') {
+    if (!ugPreview) return;
+    const { emp, isSalary, regH, otH, rate, regPay, otPay, ugTips, ugBonus, ugComm, ugCashAdv, ugMile } = ugPreview;
+    const { start, end, payDate } = ugForm;
+    setUgRunning(true);
+    try {
       const lineItems = [
         ...(isSalary
           ? [{ payType: 'salary', description: 'Salary', amount: regPay }]
@@ -1543,14 +1572,17 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
         employees: [{ employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay, bonus: ugBonus, commission: ugComm, reimbursement: ugMile, deduction: ugCashAdv, reportedTips: ugTips }],
       });
       const newIds = (res?.paystubs || []).map(s => s.id);
-      await Promise.all(newIds.map(id => api.updatePaystubStatus(id, 'printed').catch(() => {})));
+      const isDD = method === 'dd' && emp.bank_account_status === 'active';
+      const statusToSet = isDD ? 'direct_deposit_sent' : 'printed';
+      await Promise.all(newIds.map(id => api.updatePaystubStatus(id, statusToSet).catch(() => {})));
       await reloadStubs();
       const enteredRate = parseFloat(ugForm.rate);
       setUngroupedModal(false);
+      setUgPreview(null);
       setUgForm({ employeeId: '', start: '', end: '', payDate: '', regHours: '', otHours: '', rate: '', payType: 'regular', tips: '', bonus: '', commission: '', cashAdvance: '', mileage: '' });
       setUgOtherOpen(false);
-      if (newIds.length > 0) setPrintModal(newIds);
-      // Prompt to persist rate change if user overrode it
+      if (!isDD && newIds.length > 0) setPrintModal(newIds);
+      else if (isDD) setRunSuccess(`Direct deposit initiated for ${emp.firstName} ${emp.lastName}.`);
       if (!isSalary && !isNaN(enteredRate) && enteredRate !== emp.hourlyRate) {
         setRateUpdatePrompt({ empId: emp.id, newRate: enteredRate });
       }
@@ -2501,52 +2533,54 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
       {/* Ungrouped Payroll Modal */}
       {ungroupedModal && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.55)' }}
-          onClick={e => { if (e.target === e.currentTarget) setUngroupedModal(false); }}>
-          <div className="card" style={{ width: 460, maxWidth: '95vw', padding: 24 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <div style={{ fontWeight: 700, fontSize: 15 }}>Run Ungrouped Payroll</div>
-              <button onClick={() => { setUngroupedModal(false); setUgOtherOpen(false); }} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
-            </div>
-            {ugErr && <div className="alert alert-error" style={{ marginBottom: 10, fontSize: 12 }}>{ugErr}</div>}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Employee
-                <select className="form-input" value={ugForm.employeeId}
-                  onChange={e => setUgForm(f => ({ ...f, employeeId: e.target.value }))}
-                  style={{ marginTop: 4, width: '100%' }}>
-                  <option value="">Select employee…</option>
-                  {activeEmps.map(e => <option key={e.id} value={e.id}>{e.firstName} {e.lastName}</option>)}
-                </select>
-              </label>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Period Start
-                  <input className="form-input" type="date" value={ugForm.start}
-                    onChange={e => setUgForm(f => ({ ...f, start: e.target.value }))}
-                    style={{ marginTop: 4, width: '100%' }} />
-                </label>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Period End
-                  <input className="form-input" type="date" value={ugForm.end}
-                    onChange={e => { const end = e.target.value; setUgForm(f => ({ ...f, end, payDate: end ? calcDefaultPayDate(end) : f.payDate })); }}
-                    style={{ marginTop: 4, width: '100%' }} />
-                </label>
+          onClick={e => { if (e.target === e.currentTarget) { setUngroupedModal(false); setUgPreview(null); setUgOtherOpen(false); } }}>
+
+          {/* ── Step 1: Form ── */}
+          {!ugPreview && (
+            <div className="card" style={{ width: 480, maxWidth: '95vw', padding: 24 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                <div style={{ fontWeight: 700, fontSize: 15 }}>Ungrouped Check</div>
+                <button onClick={() => { setUngroupedModal(false); setUgOtherOpen(false); }} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
               </div>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Pay Date
-                <input className="form-input" type="date" value={ugForm.payDate}
-                  onChange={e => setUgForm(f => ({ ...f, payDate: e.target.value }))}
-                  style={{ marginTop: 4, width: '100%' }} />
-              </label>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Pay Type Override
-                <select className="form-input" value={ugForm.payType}
-                  onChange={e => setUgForm(f => ({ ...f, payType: e.target.value }))}
-                  style={{ marginTop: 4, width: '100%' }}>
-                  <option value="regular">Regular (Hourly)</option>
-                  <option value="salary">Salary</option>
-                </select>
-              </label>
-              {ugForm.payType !== 'salary' && (() => {
-                const ugEmp = activeEmps.find(e => e.id === Number(ugForm.employeeId));
-                const empRate = ugEmp?.hourlyRate || '';
-                return (
-                  <>
+              {ugErr && <div className="alert alert-error" style={{ marginBottom: 10, fontSize: 12 }}>{ugErr}</div>}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Employee
+                  <select className="form-input" value={ugForm.employeeId}
+                    onChange={e => setUgForm(f => ({ ...f, employeeId: e.target.value, rate: '' }))}
+                    style={{ marginTop: 4, width: '100%' }}>
+                    <option value="">Select employee…</option>
+                    {activeEmps.map(e => <option key={e.id} value={e.id}>{e.firstName} {e.lastName}</option>)}
+                  </select>
+                </label>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Period Start
+                    <input className="form-input" type="date" value={ugForm.start}
+                      onChange={e => setUgForm(f => ({ ...f, start: e.target.value }))}
+                      style={{ marginTop: 4, width: '100%' }} />
+                  </label>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Period End
+                    <input className="form-input" type="date" value={ugForm.end}
+                      onChange={e => { const end = e.target.value; setUgForm(f => ({ ...f, end, payDate: end ? calcDefaultPayDate(end) : f.payDate })); }}
+                      style={{ marginTop: 4, width: '100%' }} />
+                  </label>
+                </div>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Pay Date
+                  <input className="form-input" type="date" value={ugForm.payDate}
+                    onChange={e => setUgForm(f => ({ ...f, payDate: e.target.value }))}
+                    style={{ marginTop: 4, width: '100%' }} />
+                </label>
+                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Pay Type
+                  <select className="form-input" value={ugForm.payType}
+                    onChange={e => setUgForm(f => ({ ...f, payType: e.target.value }))}
+                    style={{ marginTop: 4, width: '100%' }}>
+                    <option value="regular">Regular (Hourly)</option>
+                    <option value="salary">Salary</option>
+                  </select>
+                </label>
+                {ugForm.payType !== 'salary' && (() => {
+                  const ugEmp = activeEmps.find(e => e.id === Number(ugForm.employeeId));
+                  const empRate = ugEmp?.hourlyRate || '';
+                  return (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
                       <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Reg Hours
                         <input className="form-input mono" type="number" min="0" step="0.5" value={ugForm.regHours} placeholder="0"
@@ -2566,41 +2600,169 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                           style={{ marginTop: 4, width: '100%' }} />
                       </label>
                     </div>
-                  </>
-                );
-              })()}
-              <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
-                <button type="button" onClick={() => setUgOtherOpen(o => !o)}
-                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  {ugOtherOpen ? '▴' : '▾'} Other Payroll Items (tips, bonus, etc.)
+                  );
+                })()}
+                <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                  <button type="button" onClick={() => setUgOtherOpen(o => !o)}
+                    style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {ugOtherOpen ? '▴' : '▾'} Other Payroll Items (tips, bonus, etc.)
+                  </button>
+                  {ugOtherOpen && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+                      {[
+                        { label: 'Reported Tips', field: 'tips', hint: 'taxable' },
+                        { label: 'Bonus', field: 'bonus', hint: 'taxable' },
+                        { label: 'Commission', field: 'commission', hint: 'taxable' },
+                        { label: 'Mileage Reimbursement', field: 'mileage', hint: 'non-taxable' },
+                        { label: 'Cash Advance', field: 'cashAdvance', hint: 'deduction' },
+                      ].map(({ label, field, hint }) => (
+                        <label key={field} style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>
+                          {label} <span style={{ fontWeight: 400, fontSize: 10, color: 'var(--text-muted)' }}>({hint})</span>
+                          <input className="form-input mono" type="number" min="0" step="0.01" value={ugForm[field] || ''} placeholder="0.00"
+                            onChange={e => setUgForm(f => ({ ...f, [field]: e.target.value }))}
+                            style={{ marginTop: 4, width: '100%' }} />
+                        </label>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 18 }}>
+                <button className="btn btn-ghost" onClick={() => { setUngroupedModal(false); setUgOtherOpen(false); }}>Cancel</button>
+                <button className="btn btn-primary" onClick={handleUgCalculate} disabled={ugRunning}>
+                  {ugRunning ? <span className="spinner" /> : 'Preview Check →'}
                 </button>
-                {ugOtherOpen && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
-                    {[
-                      { label: 'Reported Tips', field: 'tips', hint: 'taxable' },
-                      { label: 'Bonus', field: 'bonus', hint: 'taxable' },
-                      { label: 'Commission', field: 'commission', hint: 'taxable' },
-                      { label: 'Mileage Reimbursement', field: 'mileage', hint: 'non-taxable' },
-                      { label: 'Cash Advance', field: 'cashAdvance', hint: 'deduction' },
-                    ].map(({ label, field, hint }) => (
-                      <label key={field} style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>
-                        {label} <span style={{ fontWeight: 400, fontSize: 10, color: 'var(--text-muted)' }}>({hint})</span>
-                        <input className="form-input mono" type="number" min="0" step="0.01" value={ugForm[field] || ''} placeholder="0.00"
-                          onChange={e => setUgForm(f => ({ ...f, [field]: e.target.value }))}
-                          style={{ marginTop: 4, width: '100%' }} />
-                      </label>
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
-            <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 18 }}>
-              <button className="btn btn-ghost" onClick={() => { setUngroupedModal(false); setUgOtherOpen(false); }}>Cancel</button>
-              <button className="btn btn-primary" onClick={handleUngroupedRun} disabled={ugRunning}>
-                {ugRunning ? <span className="spinner" /> : 'Run Payroll'}
-              </button>
-            </div>
-          </div>
+          )}
+
+          {/* ── Step 2: Full check preview ── */}
+          {ugPreview && (() => {
+            const { emp, isSalary, regH, otH, rate, regPay, otPay, gross, ugTips, ugBonus, ugComm, ugCashAdv, ugMile, calc, ytd } = ugPreview;
+            const netPay    = r2(gross - (calc.fitWithholding || 0) - (calc.employeeSS || 0) - (calc.employeeMedicare || 0) - (calc.additionalMedicare || 0) - (calc.stateIncomeTax || 0) - ugCashAdv);
+            const erTotal   = r2((calc.employerSS || 0) + (calc.employerMedicare || 0) + (calc.futaTax || 0) + (calc.sutaTax || 0));
+            const dep941    = r2((calc.fitWithholding || 0) + (calc.employeeSS || 0) + (calc.employerSS || 0) + (calc.employeeMedicare || 0) + (calc.employerMedicare || 0) + (calc.additionalMedicare || 0));
+            const hasDD     = emp.bank_account_status === 'active';
+            const MONO      = { fontFamily: 'JetBrains Mono, monospace' };
+            const Row = ({ label, amount, ytdAmt, color, bold, borderTop, negative }) => {
+              const display = negative ? (amount > 0 ? -amount : amount) : amount;
+              return (
+                <tr style={{ borderTop: borderTop ? '2px solid var(--border)' : undefined }}>
+                  <td style={{ padding: '5px 0', fontSize: 12, color: bold ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: bold ? 700 : 400 }}>{label}</td>
+                  <td style={{ padding: '5px 0 5px 10px', textAlign: 'right', ...MONO, fontSize: 12, fontWeight: bold ? 700 : 500, color: color || (negative && amount > 0 ? '#dc2626' : 'inherit') }}>
+                    {typeof display === 'number' ? fmt(display) : display}
+                  </td>
+                  {ytdAmt !== undefined && (
+                    <td style={{ padding: '5px 0 5px 10px', textAlign: 'right', ...MONO, fontSize: 11, color: 'var(--text-muted)' }}>{fmt(ytdAmt)}</td>
+                  )}
+                </tr>
+              );
+            };
+            return (
+              <div className="card" style={{ width: 740, maxWidth: '96vw', maxHeight: '92vh', overflowY: 'auto', padding: 0, borderRadius: 12 }}>
+                {/* Header */}
+                <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                    <div>
+                      <div style={{ fontWeight: 800, fontSize: 20 }}>{emp.firstName} {emp.lastName}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>{isSalary ? 'Salary' : 'Hourly'} · Ungrouped Check · Preview</div>
+                    </div>
+                    <button onClick={() => { setUngroupedModal(false); setUgPreview(null); setUgOtherOpen(false); }}
+                      style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+                  </div>
+                  <div style={{ display: 'flex', marginTop: 14, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
+                    {[['Period Start', ugForm.start], ['Period End', ugForm.end], ['Pay Date', ugForm.payDate]].map(([label, val], i, arr) => (
+                      <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
+                        <div style={{ ...MONO, fontSize: 13, fontWeight: 600 }}>{fmtDate(val)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Two-column body */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid var(--border)' }}>
+                  {/* Employee Summary */}
+                  <div style={{ padding: '18px 20px 18px 24px', borderRight: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Employee Summary</div>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead><tr>
+                        <th style={{ padding: '0 0 6px 0', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textAlign: 'left' }}>Item Name</th>
+                        <th style={{ padding: '0 0 6px 10px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textAlign: 'right' }}>Amount</th>
+                        <th style={{ padding: '0 0 6px 10px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textAlign: 'right' }}>YTD</th>
+                      </tr></thead>
+                      <tbody>
+                        {!isSalary && regH > 0 && <Row label={`Hourly (${regH} hrs)`} amount={regPay} color="var(--accent)" />}
+                        {!isSalary && otH  > 0 && <Row label={`Overtime (${otH} hrs)`} amount={otPay}  color="var(--accent)" />}
+                        {isSalary && <Row label="Salary / Period" amount={regPay} color="var(--accent)" />}
+                        {ugTips  > 0 && <Row label="Reported Tips"  amount={ugTips}  color="var(--accent)" />}
+                        {ugBonus > 0 && <Row label="Bonus"          amount={ugBonus} color="var(--accent)" />}
+                        {ugComm  > 0 && <Row label="Commission"     amount={ugComm}  color="var(--accent)" />}
+                        <Row label="Gross Pay"         amount={gross}                        ytdAmt={ytd.gross}    color="var(--accent)" bold borderTop />
+                        <Row label="Federal Income Tax" amount={calc.fitWithholding || 0}    ytdAmt={ytd.fit}      negative color={(calc.fitWithholding || 0) > 0 ? '#dc2626' : 'var(--text-muted)'} />
+                        <Row label="Social Security"    amount={calc.employeeSS || 0}        ytdAmt={ytd.eeSS}     negative color={(calc.employeeSS || 0) > 0 ? '#dc2626' : 'var(--text-muted)'} />
+                        <Row label="Medicare"           amount={calc.employeeMedicare || 0}  ytdAmt={ytd.eeMed}    negative color={(calc.employeeMedicare || 0) > 0 ? '#dc2626' : 'var(--text-muted)'} />
+                        <Row label="State Income Tax"   amount={calc.stateIncomeTax || 0}    ytdAmt={ytd.stateTax} negative color={(calc.stateIncomeTax || 0) > 0 ? '#dc2626' : 'var(--text-muted)'} />
+                        {ugCashAdv > 0 && <Row label="Cash Advance (deduction)" amount={ugCashAdv} negative color="#dc2626" />}
+                      </tbody>
+                    </table>
+                  </div>
+                  {/* Company Summary */}
+                  <div style={{ padding: '18px 24px 18px 20px' }}>
+                    <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Company Summary</div>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead><tr>
+                        <th style={{ padding: '0 0 6px 0', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textAlign: 'left' }}>Item Name</th>
+                        <th style={{ padding: '0 0 6px 10px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textAlign: 'right' }}>Amount</th>
+                        <th style={{ padding: '0 0 6px 10px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textAlign: 'right' }}>YTD</th>
+                      </tr></thead>
+                      <tbody>
+                        <Row label="SS Match (Company)"       amount={calc.employerSS || 0}       ytdAmt={ytd.erSS ?? 0}  />
+                        <Row label="Medicare Match (Company)" amount={calc.employerMedicare || 0}  ytdAmt={ytd.erMed ?? 0} />
+                        <Row label="Federal Unemployment"     amount={calc.futaTax || 0}           ytdAmt={ytd.futa}       />
+                        <Row label={`${emp.workState || 'State'} Unemployment`} amount={calc.sutaTax || 0} ytdAmt={ytd.suta} />
+                        <Row label="Total Company Cost"       amount={erTotal}                     ytdAmt={r2((ytd.erSS ?? 0) + (ytd.erMed ?? 0) + ytd.futa + ytd.suta)} bold borderTop color="var(--text-primary)" />
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Check Amount */}
+                <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontWeight: 700, fontSize: 15 }}>Check Amount</div>
+                  <div style={{ ...MONO, fontWeight: 800, fontSize: 22, color: '#16a34a' }}>{fmt(netPay)}</div>
+                </div>
+
+                {/* Tax deposit tiles */}
+                <div style={{ padding: '14px 24px 16px', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+                  {[
+                    { label: '941 TAX DEPOSIT', value: fmt(dep941) },
+                    { label: '940 FUTA',         value: fmt(calc.futaTax || 0) },
+                    { label: 'STATE SUI',         value: fmt(calc.sutaTax || 0) },
+                    { label: 'TOTAL TAX COSTS',   value: fmt(r2(dep941 + (calc.futaTax || 0) + (calc.sutaTax || 0))), highlight: true },
+                  ].map(({ label, value, highlight }) => (
+                    <div key={label} style={{ background: highlight ? 'var(--accent-light, #f0fdf4)' : 'var(--bg-secondary)', borderRadius: 8, padding: '10px 14px' }}>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
+                      <div style={{ ...MONO, fontWeight: 700, fontSize: 14 }}>{value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Footer buttons */}
+                <div style={{ padding: '12px 24px 20px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center' }}>
+                  {ugErr && <span style={{ fontSize: 12, color: '#dc2626', flex: 1 }}>{ugErr}</span>}
+                  <button className="btn btn-ghost" onClick={() => setUgPreview(null)} disabled={ugRunning}>← Back</button>
+                  <button className="btn btn-secondary" onClick={() => handleUngroupedRun('print')} disabled={ugRunning}>
+                    {ugRunning ? <span className="spinner" /> : '🖨 Print'}
+                  </button>
+                  <button className="btn btn-primary" onClick={() => handleUngroupedRun('dd')} disabled={ugRunning || !hasDD}
+                    title={!hasDD ? 'No active direct deposit on file for this employee' : ''}>
+                    {ugRunning ? <span className="spinner" /> : '⚡ Direct Deposit'}
+                  </button>
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
     </div>
