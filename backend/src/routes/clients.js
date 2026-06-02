@@ -121,43 +121,58 @@ router.get('/', (req, res) => {
       .get(c.id);
     const nextDue = calcNextDueDate(c.deposit_schedule, lastSub?.pay_period_end);
 
-    // Next pay date: derived from pay groups → any paystub fallback → static field.
+    // Next pay date: per-pay-group schedule → static field fallback.
     let nextPayDate = null;
     try {
       const groups = db.prepare('SELECT * FROM pay_groups WHERE client_id = ? AND deleted_at IS NULL').all(c.id);
+      // Orphan paystubs created before pay groups existed have pay_group_id = NULL.
+      // Query them once so each group loop can incorporate them.
+      const orphanRow = db.prepare(`
+        SELECT MAX(pay_period_end) as last_end FROM paystubs
+        WHERE client_id = ? AND pay_group_id IS NULL
+          AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
+          AND pay_period_end IS NOT NULL
+      `).get(c.id);
+
+      console.log(`[nextPayDate] client=${c.id} (${c.business_name}) groups=${groups.length} orphan_end=${orphanRow?.last_end}`);
+
       for (const g of groups) {
         if (!g.frequency) continue;
-        // Any paystub in this group (not filtered by check_status — pending runs count too)
-        const lastRow = db.prepare(`
+        const groupRow = db.prepare(`
           SELECT MAX(pay_period_end) as last_end FROM paystubs
-          WHERE client_id = ? AND pay_group_id = ? AND pay_period_end IS NOT NULL
+          WHERE client_id = ? AND pay_group_id = ?
+            AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
+            AND pay_period_end IS NOT NULL
         `).get(c.id, g.id);
-        const baseEnd = (lastRow?.last_end || g.first_pay_period_end || '').slice(0, 10);
+
+        // Use the more recent of group-specific or orphan paystubs
+        const lastEnd = [groupRow?.last_end, orphanRow?.last_end]
+          .filter(Boolean)
+          .sort()
+          .pop() || null;
+
+        const baseEnd = (lastEnd || g.first_pay_period_end || '').slice(0, 10);
+        console.log(`[nextPayDate]   group=${g.id} freq=${g.frequency} first_end=${g.first_pay_period_end} last_end=${lastEnd} base=${baseEnd}`);
         if (!baseEnd) continue;
-        const nextEnd = lastRow?.last_end
-          ? nextPeriodEnd(lastRow.last_end.slice(0, 10), g.frequency)
+
+        const nextEnd = lastEnd
+          ? nextPeriodEnd(lastEnd.slice(0, 10), g.frequency)
           : baseEnd;
         const nextPay = addBizDays(nextEnd, 2);
+        console.log(`[nextPayDate]   → nextEnd=${nextEnd} nextPay=${nextPay}`);
         if (!nextPayDate || nextPay < nextPayDate) nextPayDate = nextPay;
+      }
+
+      // No pay groups: fall back to orphan paystubs using client-level frequency
+      if (!nextPayDate && orphanRow?.last_end) {
+        const freq = c.payroll_frequency || 'biweekly';
+        const nextEnd = nextPeriodEnd(orphanRow.last_end.slice(0, 10), freq);
+        nextPayDate = addBizDays(nextEnd, 2);
+        console.log(`[nextPayDate]   orphan-only fallback freq=${freq} → ${nextPayDate}`);
       }
     } catch (e) { console.error('[nextPayDate]', c.id, e.message); }
 
-    // Fallback: any paystub for the client (ignores pay groups entirely)
-    if (!nextPayDate) {
-      try {
-        const lastStub = db.prepare(`
-          SELECT MAX(pay_period_end) as last_end FROM paystubs
-          WHERE client_id = ? AND pay_period_end IS NOT NULL
-        `).get(c.id);
-        if (lastStub?.last_end) {
-          const freq = c.payroll_frequency || 'biweekly';
-          const nextEnd = nextPeriodEnd(lastStub.last_end.slice(0, 10), freq);
-          nextPayDate = addBizDays(nextEnd, 2);
-        }
-      } catch (e) { console.error('[nextPayDate fallback]', c.id, e.message); }
-    }
-
-    // Final fallback: manually set static field
+    // Final fallback: manually set static field on the client record
     if (!nextPayDate) nextPayDate = c.next_payroll_date ? c.next_payroll_date.slice(0, 10) : null;
     console.log(`[nextPayDate] client=${c.id} (${c.business_name}) → ${nextPayDate}`);
 
