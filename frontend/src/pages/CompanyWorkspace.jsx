@@ -1799,6 +1799,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
     // Editable date / gross / other payroll items state (hooks must be at top of history branch)
     const [dateForm, setDateForm]     = useState({ start: stub.pay_period_start || '', end: stub.pay_period_end || '', payDate: stub.settlement_date || '' });
     const [grossOverride, setGrossOverride] = useState('');
+    const [fitOverride, setFitOverride]     = useState('');
     const [otherOpen, setOtherOpen]   = useState(false);
     const [otherForm, setOtherForm]   = useState({
       reportedTips:  String(stub.reported_tips || ''),
@@ -1822,6 +1823,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       dateForm.end   !== (stub.pay_period_end   || '') ||
       dateForm.payDate !== (stub.settlement_date || '') ||
       (grossOverride !== '' && parseFloat(grossOverride) > 0) ||
+      (fitOverride !== '' && parseFloat(fitOverride) !== (stub.fit_withholding || 0)) ||
       otherDirty
     );
     async function saveModalEdits() {
@@ -1830,6 +1832,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
         const payload = { payPeriodStart: dateForm.start, payPeriodEnd: dateForm.end, settlementDate: dateForm.payDate };
         if (grossOverride && parseFloat(grossOverride) > 0) {
           payload.lineItems = [{ payType: 'salary', amount: parseFloat(grossOverride) }];
+        }
+        if (fitOverride !== '' && parseFloat(fitOverride) !== (stub.fit_withholding || 0)) {
+          payload.fitWithholdingOverride = parseFloat(fitOverride || 0);
+          if (!payload.lineItems) payload.lineItems = [{ payType: 'salary', amount: stub.gross_wages }];
         }
         if (otherDirty) {
           payload.reportedTips  = parseFloat(otherForm.reportedTips  || 0);
@@ -2007,6 +2013,14 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                     <input className="form-input mono" type="number" min="0" step="0.01"
                       value={grossOverride} placeholder={`${stub.gross_wages || 0}`}
                       onChange={e => setGrossOverride(e.target.value)}
+                      style={{ marginTop: 3, width: '100%', height: 28, fontSize: 12, textAlign: 'right', padding: '0 6px' }} />
+                  </label>
+                  <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                    Federal Income Tax
+                    <div style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 400 }}>direct override</div>
+                    <input className="form-input mono" type="number" min="0" step="0.01"
+                      value={fitOverride} placeholder={`${stub.fit_withholding || 0}`}
+                      onChange={e => setFitOverride(e.target.value)}
                       style={{ marginTop: 3, width: '100%', height: 28, fontSize: 12, textAlign: 'right', padding: '0 6px' }} />
                   </label>
                 </div>

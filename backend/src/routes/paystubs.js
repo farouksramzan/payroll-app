@@ -637,6 +637,7 @@ router.put('/:id', (req, res) => {
     lineItems, workState, ytdGross, notes, checkStatus,
     bonus: bonusIn, commission: commissionIn, reimbursement: reimbursementIn,
     deduction: deductionIn, garnishment: garnishmentIn, reportedTips: reportedTipsIn,
+    fitWithholdingOverride,
   } = req.body;
 
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(stub.client_id);
@@ -647,7 +648,8 @@ router.put('/:id', (req, res) => {
   const taxFieldsChanged = items !== null || workState !== undefined || ytdGross !== undefined ||
     payFrequency !== undefined || filingStatus !== undefined || step2Checkbox !== undefined ||
     step3Children !== undefined || step3Other !== undefined ||
-    step4a !== undefined || step4b !== undefined || step4c !== undefined;
+    step4a !== undefined || step4b !== undefined || step4c !== undefined ||
+    fitWithholdingOverride !== undefined;
 
   const { quarter, year } = getTaxPeriod(payPeriodEnd || stub.pay_period_end);
 
@@ -678,6 +680,15 @@ router.put('/:id', (req, res) => {
       ytdGross:   ytdBefore,
       sutaRate:   client.suta_rate || null,
     });
+
+    // FIT override — let caller set a specific withholding amount
+    if (fitWithholdingOverride !== undefined) {
+      const overrideFit = parseFloat(fitWithholdingOverride || 0);
+      const fitDelta = overrideFit - taxes.fitWithholding;
+      taxes.fitWithholding  = overrideFit;
+      taxes.totalDeposit    = Math.round((taxes.totalDeposit + fitDelta) * 100) / 100;
+      taxes.netPay          = Math.round((taxes.netPay       - fitDelta) * 100) / 100;
+    }
 
     const step3Credits =
       (parseInt(step3Children ?? stub.step3_children ?? 0, 10) * 2200) +
