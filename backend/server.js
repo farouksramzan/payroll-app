@@ -109,6 +109,7 @@ getDb();
     const db = getDb();
     const FREQUENCIES = [
       { ein: '562538997', frequency: 'monthly', next_payroll_date: '2026-06-24' }, // Latchme Corp
+      { ein: '810979054', frequency: 'monthly', next_payroll_date: '2026-02-17' }, // Habibi Hookah Cafe
     ];
     const allClients = db.prepare('SELECT id, ein FROM clients').all();
     let updated = 0;

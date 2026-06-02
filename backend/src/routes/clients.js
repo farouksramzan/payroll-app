@@ -151,15 +151,23 @@ router.get('/', (req, res) => {
           .sort()
           .pop() || null;
 
-        const baseEnd = (lastEnd || g.first_pay_period_end || '').slice(0, 10);
-        console.log(`[nextPayDate]   group=${g.id} freq=${g.frequency} first_end=${g.first_pay_period_end} last_end=${lastEnd} base=${baseEnd}`);
-        if (!baseEnd) continue;
+        // If last printed paystub exists, the next candidate is one period forward.
+        let candidateEnd = lastEnd ? nextPeriodEnd(lastEnd.slice(0, 10), g.frequency) : null;
 
-        const nextEnd = lastEnd
-          ? nextPeriodEnd(lastEnd.slice(0, 10), g.frequency)
-          : baseEnd;
-        const nextPay = addBizDays(nextEnd, 2);
-        console.log(`[nextPayDate]   → nextEnd=${nextEnd} nextPay=${nextPay}`);
+        // If the pay group's scheduled first period is LATER than the computed next
+        // (or there are no printed paystubs), the schedule hasn't started yet — use
+        // first_pay_period_end. This handles companies with old paystubs but a new
+        // pay group that begins in the future.
+        const firstEnd = (g.first_pay_period_end || '').slice(0, 10);
+        if (firstEnd && (!candidateEnd || firstEnd > candidateEnd)) {
+          candidateEnd = firstEnd;
+        }
+
+        console.log(`[nextPayDate]   group=${g.id} freq=${g.frequency} first_end=${firstEnd} last_end=${lastEnd} candidate=${candidateEnd}`);
+        if (!candidateEnd) continue;
+
+        const nextPay = addBizDays(candidateEnd, 2);
+        console.log(`[nextPayDate]   → nextPay=${nextPay}`);
         if (!nextPayDate || nextPay < nextPayDate) nextPayDate = nextPay;
       }
 
