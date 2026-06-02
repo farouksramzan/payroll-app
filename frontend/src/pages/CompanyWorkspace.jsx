@@ -2371,7 +2371,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           {[
             { value: 'printed',                label: 'Printed' },
             { value: 'direct_deposit_cleared', label: 'Deposited' },
-            { value: 'draft',                  label: 'Draft' },
+            { value: 'draft',                  label: 'Upcoming' },
           ].map(({ value, label }) => (
             <button key={value} disabled={bulkBusy}
               onClick={() => handleBulkStatusChange(value)}
