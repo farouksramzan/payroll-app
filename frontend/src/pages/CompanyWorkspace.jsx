@@ -1127,7 +1127,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
   const [empStatusDrop, setEmpStatusDrop]         = useState(null); // { stub, top, right }
   const [periodOverrides, setPeriodOverrides]     = useState({}); // { [periodEnd]: { start, end, payDate } }
   const [ungroupedModal, setUngroupedModal]       = useState(false);
-  const [ugForm, setUgForm]                       = useState({ employeeId: '', start: '', end: '', payDate: '', regHours: '', otHours: '', payType: 'regular', tips: '', bonus: '', commission: '', cashAdvance: '', mileage: '' });
+  const [ugForm, setUgForm]                       = useState({ employeeId: '', start: '', end: '', payDate: '', regHours: '', otHours: '', rate: '', payType: 'regular', tips: '', bonus: '', commission: '', cashAdvance: '', mileage: '' });
   const [ugOtherOpen, setUgOtherOpen]             = useState(false);
   const [ugRunning, setUgRunning]                 = useState(false);
   const [ugErr, setUgErr]                         = useState('');
@@ -1523,7 +1523,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
     try {
       const regH = parseFloat(regHours || 0);
       const otH  = parseFloat(otHours  || 0);
-      const rate = emp.hourlyRate || 0;
+      const rate = parseFloat(ugForm.rate) || emp.hourlyRate || 0;
       const regPay = isSalary ? r2((emp.annualSalary || 0) / ppy) : r2(Math.min(regH, 40) * rate);
       const otPay  = isSalary ? 0 : r2(otH * rate * 1.5);
       const lineItems = [
@@ -1545,10 +1545,15 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
       const newIds = (res?.paystubs || []).map(s => s.id);
       await Promise.all(newIds.map(id => api.updatePaystubStatus(id, 'printed').catch(() => {})));
       await reloadStubs();
+      const enteredRate = parseFloat(ugForm.rate);
       setUngroupedModal(false);
-      setUgForm({ employeeId: '', start: '', end: '', payDate: '', regHours: '', otHours: '', payType: 'regular', tips: '', bonus: '', commission: '', cashAdvance: '', mileage: '' });
+      setUgForm({ employeeId: '', start: '', end: '', payDate: '', regHours: '', otHours: '', rate: '', payType: 'regular', tips: '', bonus: '', commission: '', cashAdvance: '', mileage: '' });
       setUgOtherOpen(false);
       if (newIds.length > 0) setPrintModal(newIds);
+      // Prompt to persist rate change if user overrode it
+      if (!isSalary && !isNaN(enteredRate) && enteredRate !== emp.hourlyRate) {
+        setRateUpdatePrompt({ empId: emp.id, newRate: enteredRate });
+      }
     } catch (e) {
       setUgErr(e.message || 'Failed to run payroll.');
     } finally {
@@ -2208,7 +2213,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                 )}
                 <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: 12 }}>{stub.regular_hours != null ? stub.regular_hours : '—'}</td>
                 <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: 12 }}>{stub.overtime_hours > 0 ? stub.overtime_hours : '—'}</td>
-                <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: 12 }}>—</td>
+                <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: 12 }}>{
+                  (() => {
+                    const regItem = (stub.lineItems || []).find(li => li.pay_type === 'regular');
+                    return regItem?.rate != null ? `$${Number(regItem.rate).toFixed(2)}` : '—';
+                  })()
+                }</td>
                 <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--success, #16a34a)', fontSize: 13 }}>
                   {stub.net_pay != null ? fmt(stub.net_pay) : '—'}
                 </td>
@@ -2532,20 +2542,33 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
                   <option value="salary">Salary</option>
                 </select>
               </label>
-              {ugForm.payType !== 'salary' && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Reg Hours
-                    <input className="form-input mono" type="number" min="0" step="0.5" value={ugForm.regHours} placeholder="0"
-                      onChange={e => setUgForm(f => ({ ...f, regHours: e.target.value }))}
-                      style={{ marginTop: 4, width: '100%' }} />
-                  </label>
-                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>OT Hours
-                    <input className="form-input mono" type="number" min="0" step="0.5" value={ugForm.otHours} placeholder="0"
-                      onChange={e => setUgForm(f => ({ ...f, otHours: e.target.value }))}
-                      style={{ marginTop: 4, width: '100%' }} />
-                  </label>
-                </div>
-              )}
+              {ugForm.payType !== 'salary' && (() => {
+                const ugEmp = activeEmps.find(e => e.id === Number(ugForm.employeeId));
+                const empRate = ugEmp?.hourlyRate || '';
+                return (
+                  <>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Reg Hours
+                        <input className="form-input mono" type="number" min="0" step="0.5" value={ugForm.regHours} placeholder="0"
+                          onChange={e => setUgForm(f => ({ ...f, regHours: e.target.value }))}
+                          style={{ marginTop: 4, width: '100%' }} />
+                      </label>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>OT Hours
+                        <input className="form-input mono" type="number" min="0" step="0.5" value={ugForm.otHours} placeholder="0"
+                          onChange={e => setUgForm(f => ({ ...f, otHours: e.target.value }))}
+                          style={{ marginTop: 4, width: '100%' }} />
+                      </label>
+                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Hourly Rate
+                        <input className="form-input mono" type="number" min="0" step="0.01"
+                          value={ugForm.rate !== '' ? ugForm.rate : empRate}
+                          placeholder={String(empRate || '0.00')}
+                          onChange={e => setUgForm(f => ({ ...f, rate: e.target.value }))}
+                          style={{ marginTop: 4, width: '100%' }} />
+                      </label>
+                    </div>
+                  </>
+                );
+              })()}
               <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
                 <button type="button" onClick={() => setUgOtherOpen(o => !o)}
                   style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
