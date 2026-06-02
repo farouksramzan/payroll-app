@@ -3038,7 +3038,7 @@ function liabilityVendor(taxType, workState) {
 }
 
 // Shared detail modal for both pending and sent liabilities
-function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, onStubChange, onDelete }) {
+function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, onStubChange, onDelete, clientId }) {
   if (!stub) return null;
   const [settlementDate, setSettlementDate] = React.useState(stub.eftps_settlement_date || due || '');
   const [savingSettlement, setSavingSettlement] = React.useState(false);
@@ -3205,12 +3205,20 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
           <div style={{ ...MONO, fontSize: 22, fontWeight: 800, color: '#16a34a' }}>{fmt(liabilityAmount)}</div>
         </div>
 
-        <div style={{ padding: '0 24px 8px', display: 'flex', justifyContent: 'flex-end' }}>
+        <div style={{ padding: '0 24px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <button style={{ background: 'none', border: 'none', fontSize: 12, color: '#dc2626', cursor: 'pointer', fontWeight: 600 }}
             onClick={async () => {
               if (!window.confirm('Delete this check? This cannot be undone.')) return;
               if (onDelete) onDelete();
             }}>Delete</button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={async () => {
+              try { await api.printSelectedChecks(clientId, [stub.id]); } catch (e) { alert(e.message); }
+            }}>↓ Paycheck</button>
+            <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={async () => {
+              try { await api.printSelectedPaystubs(clientId, [stub.id]); } catch (e) { alert(e.message); }
+            }}>↓ Paystub</button>
+          </div>
         </div>
 
         {/* Tax deposit summary bar */}
@@ -3676,7 +3684,12 @@ function PayLiabilitiesTab({ clientId, client }) {
             <button onClick={async () => {
               try { await api.printSelectedChecks(clientId, allSelectedIds); } catch (e) { alert(e.message); }
             }} style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
-              ↓ PDF
+              ↓ Paycheck
+            </button>
+            <button onClick={async () => {
+              try { await api.printSelectedPaystubs(clientId, allSelectedIds); } catch (e) { alert(e.message); }
+            }} style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
+              ↓ Paystub
             </button>
             <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
             <button
@@ -3804,6 +3817,7 @@ function PayLiabilitiesTab({ clientId, client }) {
       {liabilityModal && (
         <LiabilityDetailModal stub={liabilityModal.stub} taxType={liabilityModal.taxType}
           due={liabilityModal.due} sendBy={liabilityModal.sendBy} todayStr={todayStr}
+          clientId={clientId}
           onClose={() => setLiabilityModal(null)}
           onStubChange={(id, patch) => {
             setPaystubs(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
