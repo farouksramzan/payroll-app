@@ -1232,11 +1232,13 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh }) {
 
   // Existing paystubs for this group, grouped by pay period end date
   const history = (() => {
+    const empIds = new Set(empsInGroup.map(e => e.id));
     const byGroupId = paystubs.filter(s => s.pay_group_id === currentGroupId);
-    const groupStubs = byGroupId.length > 0 ? byGroupId : (() => {
-      const empIds = new Set(empsInGroup.map(e => e.id));
-      return paystubs.filter(s => s.employee_id && empIds.has(s.employee_id));
-    })();
+    // Also include ungrouped checks (pay_group_id = null) for employees in this group
+    const ungrouped = paystubs.filter(s => s.pay_group_id == null && s.employee_id && empIds.has(s.employee_id));
+    const groupStubs = byGroupId.length > 0
+      ? [...byGroupId, ...ungrouped.filter(u => !byGroupId.some(b => b.id === u.id))]
+      : paystubs.filter(s => s.employee_id && empIds.has(s.employee_id));
     const map = {};
     groupStubs.forEach(stub => {
       const end = stub.pay_period_end;
