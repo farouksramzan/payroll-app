@@ -121,22 +121,28 @@ router.get('/', (req, res) => {
       .get(c.id);
     const nextDue = calcNextDueDate(c.deposit_schedule, lastSub?.pay_period_end);
 
-    // Next pay date: per-pay-group schedule → static field fallback.
+    // Next pay date: frequency-matched pay groups → static field fallback.
     let nextPayDate = null;
     try {
       const groups = db.prepare('SELECT * FROM pay_groups WHERE client_id = ? AND deleted_at IS NULL').all(c.id);
-      // Orphan paystubs created before pay groups existed have pay_group_id = NULL.
-      // Query them once so each group loop can incorporate them.
-      const orphanRow = db.prepare(`
+      const clientFreq = c.payroll_frequency || 'biweekly';
+
+      // Only use groups that match the client's payroll frequency.
+      // Groups with other frequencies (e.g., old test groups) would produce wrong dates.
+      // If no frequency-matched groups exist, fall back to all groups.
+      const preferredGroups = groups.filter(g => g.frequency === clientFreq);
+      const activeGroups = preferredGroups.length > 0 ? preferredGroups : groups;
+
+      // Orphan paystubs (pay_group_id IS NULL) are only attributed to groups when
+      // preferred (frequency-matched) groups exist — avoids cross-contamination.
+      const orphanRow = preferredGroups.length > 0 ? db.prepare(`
         SELECT MAX(pay_period_end) as last_end FROM paystubs
         WHERE client_id = ? AND pay_group_id IS NULL
           AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
           AND pay_period_end IS NOT NULL
-      `).get(c.id);
+      `).get(c.id) : null;
 
-      console.log(`[nextPayDate] client=${c.id} (${c.business_name}) groups=${groups.length} orphan_end=${orphanRow?.last_end}`);
-
-      for (const g of groups) {
+      for (const g of activeGroups) {
         if (!g.frequency) continue;
         const groupRow = db.prepare(`
           SELECT MAX(pay_period_end) as last_end FROM paystubs
@@ -145,44 +151,25 @@ router.get('/', (req, res) => {
             AND pay_period_end IS NOT NULL
         `).get(c.id, g.id);
 
-        // Use the more recent of group-specific or orphan paystubs
         const lastEnd = [groupRow?.last_end, orphanRow?.last_end]
-          .filter(Boolean)
-          .sort()
-          .pop() || null;
+          .filter(Boolean).sort().pop() || null;
 
-        // If last printed paystub exists, the next candidate is one period forward.
         let candidateEnd = lastEnd ? nextPeriodEnd(lastEnd.slice(0, 10), g.frequency) : null;
-
-        // If the pay group's scheduled first period is LATER than the computed next
-        // (or there are no printed paystubs), the schedule hasn't started yet — use
-        // first_pay_period_end. This handles companies with old paystubs but a new
-        // pay group that begins in the future.
         const firstEnd = (g.first_pay_period_end || '').slice(0, 10);
         if (firstEnd && (!candidateEnd || firstEnd > candidateEnd)) {
           candidateEnd = firstEnd;
         }
-
-        console.log(`[nextPayDate]   group=${g.id} freq=${g.frequency} first_end=${firstEnd} last_end=${lastEnd} candidate=${candidateEnd}`);
         if (!candidateEnd) continue;
 
         const nextPay = addBizDays(candidateEnd, 2);
-        console.log(`[nextPayDate]   → nextPay=${nextPay}`);
         if (!nextPayDate || nextPay < nextPayDate) nextPayDate = nextPay;
-      }
-
-      // No pay groups: fall back to orphan paystubs using client-level frequency
-      if (!nextPayDate && orphanRow?.last_end) {
-        const freq = c.payroll_frequency || 'biweekly';
-        const nextEnd = nextPeriodEnd(orphanRow.last_end.slice(0, 10), freq);
-        nextPayDate = addBizDays(nextEnd, 2);
-        console.log(`[nextPayDate]   orphan-only fallback freq=${freq} → ${nextPayDate}`);
       }
     } catch (e) { console.error('[nextPayDate]', c.id, e.message); }
 
-    // Final fallback: manually set static field on the client record
+    // Final fallback: static next_payroll_date on the client record.
+    // Also used when there are no pay groups (e.g., Habibi with orphan paystubs but
+    // no active pay group — the orphan schedule isn't reliable without a group context).
     if (!nextPayDate) nextPayDate = c.next_payroll_date ? c.next_payroll_date.slice(0, 10) : null;
-    console.log(`[nextPayDate] client=${c.id} (${c.business_name}) → ${nextPayDate}`);
 
     // Compute overdue/due-soon using JS IRS due-date logic (matches frontend MultiLiabPanel).
     // The SQL settlement_due_date column is often unset, so we compute dates from settlement_date.
