@@ -32,11 +32,11 @@ const TR = ({ label, amount, ytdAmount, color, bold, borderTop, negative, editVa
       <td style={{ padding: '6px 0', fontSize: 13, color: bold ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: bold ? 700 : 400, whiteSpace: 'nowrap' }}>{label}</td>
       <td style={{ padding: '6px 0 6px 12px', textAlign: 'right', ...MONO, fontSize: 13, fontWeight: bold ? 700 : 500, color: color || (negative && amount > 0 ? '#dc2626' : 'inherit') }}>
         {onEditChange
-          ? <input type="number" min="0" step="0.01"
+          ? <input type="text" inputMode="decimal"
               value={editValue}
-              placeholder={String(Math.abs(typeof display === 'number' ? display : 0))}
+              placeholder={fmt(Math.abs(typeof display === 'number' ? display : 0))}
               onChange={e => onEditChange(e.target.value)}
-              style={{ ...MONO, background: 'transparent', border: 'none', borderBottom: `1.5px solid ${editValue ? 'var(--accent)' : 'var(--border)'}`, outline: 'none', width: 90, textAlign: 'right', fontSize: 13, fontWeight: bold ? 700 : 500, color: editValue ? 'var(--accent)' : 'inherit', padding: '0 2px' }} />
+              style={{ ...MONO, background: 'transparent', border: 'none', outline: 'none', width: 90, textAlign: 'right', fontSize: 13, fontWeight: bold ? 700 : 500, color: editValue ? 'var(--accent)' : (color || (negative && amount > 0 ? '#dc2626' : 'inherit')), padding: 0, cursor: 'text' }} />
           : typeof display === 'number' ? fmt(display) : display
         }
       </td>
@@ -149,14 +149,39 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
   const compFromItems = lineItemsList.filter(li => li.pay_type === 'regular' && stub.regular_hours == null).reduce((s, li) => s + (li.amount || 0), 0);
   const displayedTips = stub.reported_tips || lineItemsList.filter(li => li.pay_type === 'tips').reduce((s, li) => s + (li.amount || 0), 0);
 
+  const canEdit = !isVoided && !stub._isPending;
   const earningRows = [
-    stub.regular_hours != null && stub.regular_pay != null && { label: `Hourly  (${stub.regular_hours} hrs)`, amount: stub.regular_pay },
-    compFromItems > 0                                       && { label: 'Compensation',   amount: compFromItems },
-    stub.overtime_hours > 0 && stub.overtime_pay > 0       && { label: `Overtime  (${stub.overtime_hours} hrs)`, amount: stub.overtime_pay },
-    displayedTips > 0                                       && { label: 'Reported Tips',  amount: displayedTips },
-    stub.bonus         > 0 && { label: 'Bonus',         amount: stub.bonus },
-    stub.commission    > 0 && { label: 'Commission',    amount: stub.commission },
-    stub.reimbursement > 0 && { label: 'Reimbursement', amount: stub.reimbursement },
+    stub.regular_hours != null && stub.regular_pay != null && {
+      label: `Hourly  (${stub.regular_hours} hrs)`, amount: stub.regular_pay,
+      editValue: canEdit ? grossOverride : undefined,
+      onEditChange: canEdit ? setGrossOverride : undefined,
+    },
+    compFromItems > 0 && {
+      label: 'Compensation', amount: compFromItems,
+      editValue: canEdit ? grossOverride : undefined,
+      onEditChange: canEdit ? setGrossOverride : undefined,
+    },
+    stub.overtime_hours > 0 && stub.overtime_pay > 0 && { label: `Overtime  (${stub.overtime_hours} hrs)`, amount: stub.overtime_pay },
+    displayedTips > 0 && {
+      label: 'Reported Tips', amount: displayedTips,
+      editValue: canEdit ? (otherForm.reportedTips === '0' ? '' : otherForm.reportedTips) : undefined,
+      onEditChange: canEdit ? (v => setOtherForm(f => ({ ...f, reportedTips: v }))) : undefined,
+    },
+    stub.bonus > 0 && {
+      label: 'Bonus', amount: stub.bonus,
+      editValue: canEdit ? (otherForm.bonus === '0' ? '' : otherForm.bonus) : undefined,
+      onEditChange: canEdit ? (v => setOtherForm(f => ({ ...f, bonus: v }))) : undefined,
+    },
+    stub.commission > 0 && {
+      label: 'Commission', amount: stub.commission,
+      editValue: canEdit ? (otherForm.commission === '0' ? '' : otherForm.commission) : undefined,
+      onEditChange: canEdit ? (v => setOtherForm(f => ({ ...f, commission: v }))) : undefined,
+    },
+    stub.reimbursement > 0 && {
+      label: 'Reimbursement', amount: stub.reimbursement,
+      editValue: canEdit ? (otherForm.reimbursement === '0' ? '' : otherForm.reimbursement) : undefined,
+      onEditChange: canEdit ? (v => setOtherForm(f => ({ ...f, reimbursement: v }))) : undefined,
+    },
   ].filter(Boolean);
   const showGrossOnly = earningRows.length === 0;
 
@@ -226,19 +251,20 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
               <tbody>
                 {showGrossOnly
                   ? <TR label="Gross Pay" amount={stub.gross_wages || 0} ytdAmount={ytd.gross} color="var(--accent)"
-                      editValue={!isVoided && !stub._isPending ? grossOverride : undefined}
-                      onEditChange={!isVoided && !stub._isPending ? setGrossOverride : undefined} />
+                      editValue={canEdit ? grossOverride : undefined}
+                      onEditChange={canEdit ? setGrossOverride : undefined} />
                   : <>
-                      {earningRows.map(r => <TR key={r.label} label={r.label} amount={r.amount} color="var(--accent)" />)}
-                      <TR label="Gross Pay" amount={stub.gross_wages || 0} ytdAmount={ytd.gross} color="var(--accent)" bold borderTop
-                        editValue={!isVoided && !stub._isPending ? grossOverride : undefined}
-                        onEditChange={!isVoided && !stub._isPending ? setGrossOverride : undefined} />
+                      {earningRows.map(r => (
+                        <TR key={r.label} label={r.label} amount={r.amount} color="var(--accent)"
+                          editValue={r.editValue} onEditChange={r.onEditChange} />
+                      ))}
+                      <TR label="Gross Pay" amount={stub.gross_wages || 0} ytdAmount={ytd.gross} color="var(--accent)" bold borderTop />
                     </>
                 }
                 {deductionRows.map(r => (
                   <TR key={r.label} label={r.label} amount={r.amount} ytdAmount={r.ytd} negative color={r.amount > 0 ? '#dc2626' : 'var(--text-muted)'}
-                    editValue={r.label === 'Federal Income Tax' && !isVoided && !stub._isPending ? fitOverride : undefined}
-                    onEditChange={r.label === 'Federal Income Tax' && !isVoided && !stub._isPending ? setFitOverride : undefined} />
+                    editValue={r.label === 'Federal Income Tax' && canEdit ? fitOverride : undefined}
+                    onEditChange={r.label === 'Federal Income Tax' && canEdit ? setFitOverride : undefined} />
                 ))}
               </tbody>
             </table>
