@@ -489,25 +489,37 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
   const [selected, setSelected] = useState(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [detailStub, setDetailStub] = useState(null);
+  const [debugInfo, setDebugInfo]   = useState([]);
   const clientKey = useMemo(() => [...clientIds].sort().join(','), [clientIds]);
 
   function fetchRows(key) {
-    if (!key) { setRows([]); return; }
+    if (!key) { setRows([]); setDebugInfo([]); return; }
     setLoading(true);
     const ids = key.split(',').filter(Boolean);
     const today = new Date().toISOString().slice(0, 10);
     const in14Str = (() => { const d = new Date(); d.setDate(d.getDate() + 14); return d.toISOString().slice(0, 10); })();
     Promise.allSettled(ids.map(id => api.getPaystubs(id).then(stubs => ({ id, stubs }))))
       .then(settled => {
-        const results = settled.filter(r => r.status === 'fulfilled').map(r => r.value);
+        const dbg = [];
+        const results = settled.map((r, i) => {
+          const id = ids[i];
+          const client = clients.find(c => c.id == id);
+          if (r.status === 'rejected') {
+            dbg.push({ name: client?.businessName || `id:${id}`, error: r.reason?.message || 'failed', statuses: [] });
+            return null;
+          }
+          const statuses = r.value.stubs.map(s => s.check_status || 'null');
+          dbg.push({ name: client?.businessName || `id:${id}`, total: r.value.stubs.length, statuses });
+          return r.value;
+        }).filter(Boolean);
+        setDebugInfo(dbg);
+
         const merged = [];
         results.forEach(({ id, stubs }) => {
           const client = clients.find(c => c.id == id);
-          // All unpaid checks (not printed/deposited/voided)
           stubs.filter(s => !['printed','deposited','direct_deposit_sent','direct_deposit_cleared','voided'].includes(s.check_status))
           .forEach(s => {
             const payDate = s.settlement_date || (s.pay_period_end ? addBizDays(s.pay_period_end, 2) : null);
-            // Backend sets check_status='late' explicitly — always treat as late
             const isLate    = s.check_status === 'late' || (payDate ? payDate < today : false);
             const isDueSoon = !isLate && (payDate ? payDate <= in14Str : false);
             merged.push({ ...s, _clientName: client?.businessName || '—', _clientId: id, _payDate: payDate, _isLate: isLate, _isDueSoon: isDueSoon });
@@ -649,6 +661,26 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                 ))}
               </tbody>
             </table>
+          )}
+          {debugInfo.length > 0 && (
+            <details style={{ padding: '8px 14px', fontSize: 11, color: 'var(--text-muted)', borderTop: '1px solid var(--border)' }}>
+              <summary style={{ cursor: 'pointer', fontWeight: 600, userSelect: 'none' }}>Debug: raw fetch results</summary>
+              <div style={{ marginTop: 6 }}>
+                {debugInfo.map(d => (
+                  <div key={d.name} style={{ marginTop: 4, fontFamily: 'JetBrains Mono, monospace' }}>
+                    <strong style={{ color: 'var(--text)' }}>{d.name}</strong>:{' '}
+                    {d.error
+                      ? <span style={{ color: '#dc2626' }}>ERROR — {d.error}</span>
+                      : <span>{d.total} stubs — statuses: [{[...new Set(d.statuses)].join(', ') || 'none'}]</span>}
+                    {!d.error && d.statuses.length > 0 && (
+                      <div style={{ marginLeft: 12, marginTop: 2, color: '#555' }}>
+                        {d.statuses.map((s, i) => <span key={i} style={{ display: 'inline-block', margin: '1px 3px', padding: '1px 5px', borderRadius: 3, background: s === 'late' || s === 'draft' ? '#fef3c7' : '#f3f4f6', color: s === 'late' ? '#d97706' : '#374151', fontSize: 10 }}>{s}</span>)}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </details>
           )}
         </>
       )}
