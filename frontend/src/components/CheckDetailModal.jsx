@@ -316,23 +316,23 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
         {/* Footer */}
         <div style={{ padding: '12px 24px 18px', display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
           <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: 12 }}>Close</button>
-          {clientId && !isVoided && (
+          {clientId && !isVoided && !stub._isPending && (
             <button className="btn btn-ghost" style={{ fontSize: 12, color: '#dc2626' }} onClick={async () => {
               if (!window.confirm('Delete this check? This cannot be undone.')) return;
               try { await api.deletePaystub(stub.id); onSaved && onSaved(); onClose(); } catch (e) { alert(e.message); }
             }}>Delete</button>
           )}
-          {clientId && (
+          {clientId && !stub._isPending && (
             <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={async () => {
               try { await api.printSelectedChecks(clientId, [stub.id]); } catch (e) { alert(e.message); }
             }}>↓ Paycheck</button>
           )}
-          {clientId && (
+          {clientId && !stub._isPending && (
             <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={async () => {
               try { await api.printSelectedPaystubs(clientId, [stub.id]); } catch (e) { alert(e.message); }
             }}>↓ Paystub</button>
           )}
-          {isDirty && (
+          {isDirty && !stub._isPending && (
             <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={saving} onClick={saveChanges}>
               {saving ? <span className="spinner" style={{ width: 12, height: 12 }} /> : 'Save Changes'}
             </button>

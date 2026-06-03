@@ -606,6 +606,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                 _clientName: client?.businessName || '—', _clientId: id,
                 _payDate: period.payDate, _isLate: period.isLate, _isDueSoon: period.isDueSoon,
                 _isPending: true,
+                employee_id: emp.id,
                 _employeeId: emp.id, _groupId: group.id,
                 _payType: emp.payType || 'hourly',
                 _hourlyRate: emp.hourlyRate || 0,
@@ -804,7 +805,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                       return (
                         <tr key={r.id}
                           style={{ background: r._isLate ? '#fff5f5' : r._isDueSoon ? '#fffbeb' : i % 2 === 0 ? '#fff' : '#f8fafc', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
-                          onClick={e => { if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') { if (r._isPending) navigate(`/clients/${r._clientId}`); else setDetailStub(r); } }}>
+                          onClick={e => { if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') setDetailStub(r); }}>
                           {/* Checkbox */}
                           <td style={{ padding: '7px 10px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                             {r._isPending
