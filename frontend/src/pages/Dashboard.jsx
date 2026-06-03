@@ -761,10 +761,20 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
               <thead>
                 <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
                   <th style={{ width: 36, padding: '7px 10px', textAlign: 'center' }}>
-                    <input type="checkbox" checked={allChecked} onChange={e => setSelected(e.target.checked ? new Set(rows.map(r => r.id)) : new Set())} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
+                    <input type="checkbox" checked={allChecked} onChange={e => setSelected(e.target.checked ? new Set(rows.filter(r => !r._isPending).map(r => r.id)) : new Set())} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
                   </th>
-                  {['Company', 'Employee', 'Period', 'Reg Hrs', 'OT Hrs', 'Net Pay', 'Pay Date', 'Status'].map(h => (
-                    <th key={h} style={{ padding: '7px 10px', textAlign: h === 'Net Pay' || h === 'Reg Hrs' || h === 'OT Hrs' ? 'right' : 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
+                  {[
+                    { label: 'Employee',     align: 'left'  },
+                    { label: 'Period Start', align: 'left'  },
+                    { label: 'Period End',   align: 'left'  },
+                    { label: 'Pay Date',     align: 'left'  },
+                    { label: 'Reg Hrs',      align: 'right' },
+                    { label: 'OT Hrs',       align: 'right' },
+                    { label: 'Rate',         align: 'right' },
+                    { label: 'Net Pay',      align: 'right' },
+                    { label: 'Status',       align: 'left'  },
+                  ].map(({ label, align }) => (
+                    <th key={label} style={{ padding: '7px 10px', textAlign: align, fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</th>
                   ))}
                 </tr>
               </thead>
@@ -774,70 +784,92 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                     <tr key={`hdr-${group.clientId}`} style={{ background: '#f0f4ff', borderBottom: '1px solid var(--border)' }}>
                       <td style={{ padding: '7px 10px', textAlign: 'center' }}>
                         <input type="checkbox"
-                          checked={group.rows.length > 0 && group.rows.every(r => selected.has(r.id))}
+                          checked={group.rows.filter(r => !r._isPending).length > 0 && group.rows.filter(r => !r._isPending).every(r => selected.has(r.id))}
                           onChange={e => setSelected(prev => {
                             const n = new Set(prev);
-                            if (e.target.checked) group.rows.forEach(r => n.add(r.id));
+                            if (e.target.checked) group.rows.filter(r => !r._isPending).forEach(r => n.add(r.id));
                             else group.rows.forEach(r => n.delete(r.id));
                             return n;
                           })}
                           style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
                       </td>
-                      <td colSpan={8} style={{ padding: '7px 10px', fontWeight: 700, fontSize: 13 }}>{group.clientName}</td>
+                      <td colSpan={9} style={{ padding: '7px 10px', fontWeight: 700, fontSize: 13 }}>{group.clientName}</td>
                     </tr>
-                    {group.rows.map((r, i) => (
-                      <tr key={r.id} style={{ background: r._isPending && r._isLate ? '#fff5f5' : r._isPending && r._isDueSoon ? '#fffbeb' : i % 2 === 0 ? '#fff' : '#f8fafc', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
-                        onClick={e => { if (e.target.type !== 'checkbox') { if (r._isPending) navigate(`/clients/${r._clientId}`); else setDetailStub(r); } }}>
-                        <td style={{ padding: '7px 10px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-                          {r._isPending
-                            ? <span style={{ fontSize: 10, color: '#d97706' }} title="Run payroll in company to process">→</span>
-                            : <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleCheck(r.id)} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />}
-                        </td>
-                        <td style={{ padding: '7px 10px', color: 'var(--text-muted)', fontSize: 11 }}></td>
-                        <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>{r.employee_name || '—'}</td>
-                        <td style={{ padding: '7px 10px', fontSize: 11, whiteSpace: 'nowrap', color: '#555' }}>{fmtPeriod(r.pay_period_start, r.pay_period_end)}</td>
-                        {/* Reg Hrs */}
-                        <td style={{ padding: '4px 6px', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
-                          {r._payType === 'hourly' ? (
-                            <input type="number" min="0" step="0.5"
-                              value={hoursEdits[r.id]?.reg ?? (r._isPending ? '' : (r.regular_hours ?? ''))}
-                              placeholder="0"
-                              style={{ width: 52, fontSize: 11, padding: '2px 4px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 3, background: savingHours.has(r.id) ? '#f3f4f6' : '#fff' }}
-                              disabled={savingHours.has(r.id)}
-                              onChange={e => setHours(r.id, 'reg', e.target.value)}
-                              onBlur={() => { if (!r._isPending) handleHoursSave(r); }}
-                            />
-                          ) : <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>}
-                        </td>
-                        {/* OT Hrs */}
-                        <td style={{ padding: '4px 6px', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
-                          {r._payType === 'hourly' ? (
-                            <input type="number" min="0" step="0.5"
-                              value={hoursEdits[r.id]?.ot ?? (r._isPending ? '' : (r.overtime_hours ?? ''))}
-                              placeholder="0"
-                              style={{ width: 52, fontSize: 11, padding: '2px 4px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 3, background: savingHours.has(r.id) ? '#f3f4f6' : '#fff' }}
-                              disabled={savingHours.has(r.id)}
-                              onChange={e => setHours(r.id, 'ot', e.target.value)}
-                              onBlur={() => { if (!r._isPending) handleHoursSave(r); }}
-                            />
-                          ) : <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>}
-                        </td>
-                        <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--text-muted)' }}>{r.net_pay != null ? fmt(r.net_pay) : <span style={{ fontSize: 11 }}>—</span>}</td>
-                        <td style={{ padding: '7px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, fontWeight: r._isLate || r._isDueSoon ? 700 : 400, color: r._isLate ? '#dc2626' : r._isDueSoon ? '#d97706' : 'inherit' }}>{fmtShort(r._payDate)}</td>
-                        <td style={{ padding: '7px 10px' }}>
-                          {r._isPending && r._payType === 'hourly' && (parseFloat(hoursEdits[r.id]?.reg || 0) + parseFloat(hoursEdits[r.id]?.ot || 0) > 0)
-                            ? <button onClick={e => { e.stopPropagation(); handleRunPending(r); }} disabled={savingHours.has(r.id)}
-                                style={{ fontSize: 10, padding: '3px 8px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 3, cursor: 'pointer', fontWeight: 700 }}>
-                                {savingHours.has(r.id) ? '…' : '▶ Run'}
-                              </button>
-                            : r._isLate
-                              ? <span className="badge badge-error" style={{ fontSize: 10 }}>Late</span>
-                              : r._isDueSoon
-                                ? <span className="badge badge-warning" style={{ fontSize: 10 }}>Due Soon</span>
-                                : <span className="badge" style={{ fontSize: 10, background: '#f3f4f6', color: '#6b7280' }}>Upcoming</span>}
-                        </td>
-                      </tr>
-                    ))}
+                    {group.rows.map((r, i) => {
+                      const isHourly = r._payType === 'hourly';
+                      const regItem  = (r.lineItems || []).find(li => li.pay_type === 'regular' || li.pay_type === 'hourly');
+                      const rate     = r._hourlyRate || regItem?.rate || (r.regular_hours > 0 && r.regular_pay > 0 ? r.regular_pay / r.regular_hours : 0);
+                      const regHrs   = r._isPending ? null : (r.regular_hours  || 0);
+                      const otHrs    = r._isPending ? null : (r.overtime_hours || 0);
+                      return (
+                        <tr key={r.id}
+                          style={{ background: r._isLate ? '#fff5f5' : r._isDueSoon ? '#fffbeb' : i % 2 === 0 ? '#fff' : '#f8fafc', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                          onClick={e => { if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') { if (r._isPending) navigate(`/clients/${r._clientId}`); else setDetailStub(r); } }}>
+                          {/* Checkbox */}
+                          <td style={{ padding: '7px 10px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
+                            {r._isPending
+                              ? <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>
+                              : <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleCheck(r.id)} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />}
+                          </td>
+                          {/* Employee */}
+                          <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
+                            <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{r.employee_name || '—'}</span>
+                            {r.check_number && <span style={{ marginLeft: 6, color: 'var(--text-muted)', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }}>#{r.check_number}</span>}
+                          </td>
+                          {/* Period Start */}
+                          <td style={{ padding: '7px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, whiteSpace: 'nowrap', color: '#374151' }}>{fmtDate(r.pay_period_start)}</td>
+                          {/* Period End */}
+                          <td style={{ padding: '7px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, whiteSpace: 'nowrap', color: '#374151' }}>{fmtDate(r.pay_period_end)}</td>
+                          {/* Pay Date */}
+                          <td style={{ padding: '7px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, fontWeight: r._isLate || r._isDueSoon ? 700 : 400, color: r._isLate ? '#dc2626' : r._isDueSoon ? '#d97706' : '#374151', whiteSpace: 'nowrap' }}>{fmtDate(r._payDate)}</td>
+                          {/* Reg Hrs */}
+                          <td style={{ padding: '4px 8px', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+                            {isHourly
+                              ? r._isPending
+                                ? <input type="number" min="0" step="0.5" value={hoursEdits[r.id]?.reg ?? ''} placeholder="0"
+                                    style={{ width: 54, fontSize: 11, padding: '2px 4px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 3 }}
+                                    disabled={savingHours.has(r.id)}
+                                    onChange={e => setHours(r.id, 'reg', e.target.value)}
+                                  />
+                                : <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{regHrs > 0 ? regHrs : '—'}</span>
+                              : <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>}
+                          </td>
+                          {/* OT Hrs */}
+                          <td style={{ padding: '4px 8px', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+                            {isHourly
+                              ? r._isPending
+                                ? <input type="number" min="0" step="0.5" value={hoursEdits[r.id]?.ot ?? ''} placeholder="0"
+                                    style={{ width: 54, fontSize: 11, padding: '2px 4px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 3 }}
+                                    disabled={savingHours.has(r.id)}
+                                    onChange={e => setHours(r.id, 'ot', e.target.value)}
+                                  />
+                                : <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{otHrs > 0 ? otHrs : '—'}</span>
+                              : <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>}
+                          </td>
+                          {/* Rate */}
+                          <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#374151' }}>
+                            {isHourly && rate ? Number(rate).toFixed(2) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                          </td>
+                          {/* Net Pay */}
+                          <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: r.net_pay != null && r.net_pay > 0 ? '#16a34a' : 'var(--text-muted)' }}>
+                            {r.net_pay != null && r.net_pay > 0 ? fmt(r.net_pay) : '—'}
+                          </td>
+                          {/* Status */}
+                          <td style={{ padding: '7px 10px' }}>
+                            {r._isPending && isHourly && (parseFloat(hoursEdits[r.id]?.reg || 0) + parseFloat(hoursEdits[r.id]?.ot || 0) > 0)
+                              ? <button onClick={e => { e.stopPropagation(); handleRunPending(r); }} disabled={savingHours.has(r.id)}
+                                  style={{ fontSize: 11, padding: '3px 10px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 700 }}>
+                                  {savingHours.has(r.id) ? '…' : '▶ Run'}
+                                </button>
+                              : r._isLate
+                                ? <span className="badge badge-error" style={{ fontSize: 10 }}>LATE</span>
+                                : r._isDueSoon
+                                  ? <span className="badge badge-warning" style={{ fontSize: 10 }}>Due Soon</span>
+                                  : <span className="badge" style={{ fontSize: 10, background: '#f3f4f6', color: '#6b7280' }}>UPCOMING</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </>
                 ))}
               </tbody>
