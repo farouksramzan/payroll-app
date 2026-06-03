@@ -511,6 +511,8 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
   const [submitting, setSubmitting] = useState(false);
   const [detailStub, setDetailStub] = useState(null);
   const [debugInfo, setDebugInfo]   = useState([]);
+  const [hoursEdits, setHoursEdits] = useState({}); // { [rowId]: { reg, ot } }
+  const [savingHours, setSavingHours] = useState(new Set());
   const clientKey = useMemo(() => [...clientIds].sort().join(','), [clientIds]);
 
   async function fetchRows(key) {
@@ -519,13 +521,14 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
     const ids = key.split(',').filter(Boolean);
     const today = new Date().toISOString().slice(0, 10);
     const in14Str = (() => { const d = new Date(); d.setDate(d.getDate() + 14); return d.toISOString().slice(0, 10); })();
+    const curYear = new Date().getFullYear();
     try {
-      // Fetch paystubs + pay groups for all companies in parallel
       const settled = await Promise.allSettled(ids.map(id =>
         Promise.all([
           api.getPaystubs(id),
           api.getPayGroups(id).catch(() => []),
-        ]).then(([stubs, groups]) => ({ id, stubs, groups }))
+          api.getEmployees(id).catch(() => []),
+        ]).then(([stubs, groups, employees]) => ({ id, stubs, groups, employees }))
       ));
 
       const dbg = [];
@@ -537,38 +540,43 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
           dbg.push({ name: client?.businessName || `id:${id}`, error: r.reason?.message || 'failed', statuses: [] });
           return;
         }
-        const { stubs, groups } = r.value;
+        const { stubs, groups, employees } = r.value;
         dbg.push({ name: client?.businessName || `id:${id}`, total: stubs.length, statuses: stubs.map(s => s.check_status || 'null') });
-        validResults.push({ id, stubs, groups: groups || [], client });
+        validResults.push({ id, stubs, groups: groups || [], employees: employees || [], client });
       });
       setDebugInfo(dbg);
 
       const merged = [];
 
-      // Stored paystubs (draft / late)
-      validResults.forEach(({ id, stubs, client }) => {
+      // Stored paystubs (draft / late) — include hourly rate derived from line items
+      validResults.forEach(({ id, stubs, employees, client }) => {
         stubs
           .filter(s => !['printed','deposited','direct_deposit_sent','direct_deposit_cleared','voided'].includes(s.check_status))
           .forEach(s => {
             const payDate = s.settlement_date || (s.pay_period_end ? addBizDays(s.pay_period_end, 2) : null);
             const isLate    = s.check_status === 'late' || (payDate ? payDate < today : false);
             const isDueSoon = !isLate && (payDate ? payDate <= in14Str : false);
-            merged.push({ ...s, _clientName: client?.businessName || '—', _clientId: id, _payDate: payDate, _isLate: isLate, _isDueSoon: isDueSoon, _isPending: false });
+            const regItem = (s.lineItems || []).find(li => li.pay_type === 'regular' || li.pay_type === 'hourly');
+            const _hourlyRate = regItem?.rate || (s.regular_hours > 0 && s.regular_pay > 0 ? s.regular_pay / s.regular_hours : 0);
+            const emp = employees.find(e => e.id === s.employee_id);
+            const _payType = emp?.payType || (s.regular_hours > 0 || regItem ? 'hourly' : 'salary');
+            merged.push({ ...s, _clientName: client?.businessName || '—', _clientId: id, _payDate: payDate, _isLate: isLate, _isDueSoon: isDueSoon, _isPending: false, _hourlyRate, _payType });
           });
       });
 
-      // Pending periods from pay schedules (groups with no stored paystub for that period)
-      const groupsNeedingEmps = [];
-      validResults.forEach(({ id, stubs, groups, client }) => {
+      // Pending periods from pay groups (no stored paystub yet)
+      validResults.forEach(({ id, stubs, groups, employees, client }) => {
         groups.forEach(group => {
           if (!group.firstPayPeriodEnd || group.deletedAt) return;
           const freq = group.frequency || 'biweekly';
           const anchor = group.firstPayPeriodStart || calcStartFromEnd(group.firstPayPeriodEnd, freq);
           if (!anchor) return;
 
-          // paidEnds: period-end dates that already have a stored stub for this group
+          const groupEmps = employees.filter(e => e.payGroupId === group.id);
+          const empIds = new Set(groupEmps.map(e => e.id));
           const groupStubs = stubs.filter(s => s.pay_group_id === group.id && s.check_status !== 'voided');
-          const paidEnds = new Set((groupStubs.length > 0 ? groupStubs : stubs.filter(s => s.check_status !== 'voided')).map(s => s.pay_period_end));
+          const fallbackStubs = groupStubs.length > 0 ? groupStubs : stubs.filter(s => s.employee_id && empIds.has(s.employee_id) && s.check_status !== 'voided');
+          const paidEnds = new Set(fallbackStubs.map(s => s.pay_period_end));
 
           let sDate = new Date(anchor + 'T00:00:00'), eDate = new Date(group.firstPayPeriodEnd + 'T00:00:00');
           const pendingPeriods = [];
@@ -578,28 +586,18 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
               const payDate = addBizDays(endStr, 2);
               const isLate    = payDate < today;
               const isDueSoon = !isLate && payDate <= in14Str;
-              if (isLate || isDueSoon) {
-                pendingPeriods.push({ start: sDate.toISOString().slice(0, 10), end: endStr, payDate, isLate, isDueSoon });
-              }
-              if (!isLate) break; // stop after first non-late period
+              if (isLate || isDueSoon) pendingPeriods.push({ start: sDate.toISOString().slice(0, 10), end: endStr, payDate, isLate, isDueSoon });
+              if (!isLate) break;
             }
             [sDate, eDate] = advancePeriod(sDate, eDate, freq);
           }
-          if (pendingPeriods.length > 0) {
-            groupsNeedingEmps.push({ id, client, group, pendingPeriods });
-          }
-        });
-      });
 
-      if (groupsNeedingEmps.length > 0) {
-        const empSettled = await Promise.allSettled(
-          groupsNeedingEmps.map(({ group }) => api.getPayGroupEmployees(group.id))
-        );
-        groupsNeedingEmps.forEach(({ id, client, group, pendingPeriods }, idx) => {
-          const emps = empSettled[idx].status === 'fulfilled' ? empSettled[idx].value : [];
           pendingPeriods.forEach(period => {
-            const rows = emps.length > 0 ? emps : [{ id: `grp${group.id}`, firstName: group.name, lastName: '' }];
-            rows.forEach(emp => {
+            const rowEmps = groupEmps.length > 0 ? groupEmps : [{ id: `g${group.id}`, firstName: group.name, lastName: '', payType: 'hourly', hourlyRate: 0 }];
+            rowEmps.forEach(emp => {
+              const ytdGross = stubs
+                .filter(s => s.employee_id === emp.id && s.check_status !== 'voided' && (s.tax_year === curYear || (s.pay_period_end || '').startsWith(String(curYear))))
+                .reduce((sum, s) => sum + (s.gross_wages || 0), 0);
               merged.push({
                 id: `pending-${id}-${group.id}-${period.end}-${emp.id}`,
                 employee_name: `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || group.name,
@@ -608,11 +606,17 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                 _clientName: client?.businessName || '—', _clientId: id,
                 _payDate: period.payDate, _isLate: period.isLate, _isDueSoon: period.isDueSoon,
                 _isPending: true,
+                _employeeId: emp.id, _groupId: group.id,
+                _payType: emp.payType || 'hourly',
+                _hourlyRate: emp.hourlyRate || 0,
+                _annualSalary: emp.annualSalary || 0,
+                _payFrequency: emp.payFrequency || freq,
+                _ytdGross: ytdGross,
               });
             });
           });
         });
-      }
+      });
 
       merged.sort((a, b) => {
         const rank = r => r._isLate ? 0 : r._isDueSoon ? 1 : 2;
@@ -630,6 +634,60 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
 
   function toggleCheck(id) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
+  }
+
+  function setHours(rowId, field, val) {
+    setHoursEdits(prev => ({ ...prev, [rowId]: { ...(prev[rowId] || {}), [field]: val } }));
+  }
+
+  async function handleHoursSave(r) {
+    const edit = hoursEdits[r.id];
+    if (!edit) return;
+    const regHrs = parseFloat(edit.reg ?? '');
+    const otHrs  = parseFloat(edit.ot  ?? '');
+    if (isNaN(regHrs) && isNaN(otHrs)) return;
+    const regItem = (r.lineItems || []).find(li => li.pay_type === 'regular' || li.pay_type === 'hourly');
+    const rate = r._hourlyRate || regItem?.rate || (r.regular_hours > 0 && r.regular_pay > 0 ? r.regular_pay / r.regular_hours : 0);
+    if (!rate) { alert('Cannot determine hourly rate — open the check to edit hours.'); return; }
+    const rh = isNaN(regHrs) ? (r.regular_hours || 0) : regHrs;
+    const oh = isNaN(otHrs)  ? (r.overtime_hours || 0) : otHrs;
+    const lineItems = [];
+    if (rh > 0) lineItems.push({ pay_type: 'regular', description: 'Regular', hours: rh, rate, amount: rh * rate });
+    if (oh > 0) lineItems.push({ pay_type: 'overtime', description: 'Overtime', hours: oh, rate: rate * 1.5, amount: oh * rate * 1.5 });
+    if (!lineItems.length) return;
+    setSavingHours(prev => new Set([...prev, r.id]));
+    try {
+      await api.updatePaystub(r.id, { lineItems });
+      setHoursEdits(prev => { const n = { ...prev }; delete n[r.id]; return n; });
+      fetchRows(clientKey);
+    } catch (e) { alert(`Save failed: ${e.message}`); }
+    finally { setSavingHours(prev => { const n = new Set(prev); n.delete(r.id); return n; }); }
+  }
+
+  async function handleRunPending(r) {
+    const edit = hoursEdits[r.id] || {};
+    const regHrs = parseFloat(edit.reg || 0);
+    const otHrs  = parseFloat(edit.ot  || 0);
+    if (regHrs + otHrs <= 0) { alert('Enter hours first.'); return; }
+    const rate = r._hourlyRate || 0;
+    if (!rate) { alert('Pay rate unknown — go to company workspace to run payroll.'); return; }
+    const lineItems = [];
+    if (regHrs > 0) lineItems.push({ pay_type: 'regular', description: 'Regular', hours: regHrs, rate, amount: regHrs * rate });
+    if (otHrs  > 0) lineItems.push({ pay_type: 'overtime', description: 'Overtime', hours: otHrs, rate: rate * 1.5, amount: otHrs * rate * 1.5 });
+    setSavingHours(prev => new Set([...prev, r.id]));
+    try {
+      await api.runPayroll({
+        clientId: Number(r._clientId),
+        payPeriodStart: r.pay_period_start,
+        payPeriodEnd: r.pay_period_end,
+        settlementDate: r._payDate,
+        payGroupId: r._groupId,
+        employees: [{ employeeId: r._employeeId, lineItems, ytdGross: r._ytdGross || 0 }],
+      });
+      setHoursEdits(prev => { const n = { ...prev }; delete n[r.id]; return n; });
+      fetchRows(clientKey);
+    } catch (e) { alert(`Payroll run failed: ${e.message}`); }
+    finally { setSavingHours(prev => { const n = new Set(prev); n.delete(r.id); return n; }); }
   }
 
   async function handlePrint() {
@@ -705,8 +763,8 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                   <th style={{ width: 36, padding: '7px 10px', textAlign: 'center' }}>
                     <input type="checkbox" checked={allChecked} onChange={e => setSelected(e.target.checked ? new Set(rows.map(r => r.id)) : new Set())} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
                   </th>
-                  {['Company', 'Employee', 'Period', 'Net Pay', 'Pay Date', 'Status'].map(h => (
-                    <th key={h} style={{ padding: '7px 10px', textAlign: h === 'Net Pay' ? 'right' : 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
+                  {['Company', 'Employee', 'Period', 'Reg Hrs', 'OT Hrs', 'Net Pay', 'Pay Date', 'Status'].map(h => (
+                    <th key={h} style={{ padding: '7px 10px', textAlign: h === 'Net Pay' || h === 'Reg Hrs' || h === 'OT Hrs' ? 'right' : 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -725,7 +783,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                           })}
                           style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
                       </td>
-                      <td colSpan={6} style={{ padding: '7px 10px', fontWeight: 700, fontSize: 13 }}>{group.clientName}</td>
+                      <td colSpan={8} style={{ padding: '7px 10px', fontWeight: 700, fontSize: 13 }}>{group.clientName}</td>
                     </tr>
                     {group.rows.map((r, i) => (
                       <tr key={r.id} style={{ background: r._isPending && r._isLate ? '#fff5f5' : r._isPending && r._isDueSoon ? '#fffbeb' : i % 2 === 0 ? '#fff' : '#f8fafc', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
@@ -738,14 +796,45 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                         <td style={{ padding: '7px 10px', color: 'var(--text-muted)', fontSize: 11 }}></td>
                         <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>{r.employee_name || '—'}</td>
                         <td style={{ padding: '7px 10px', fontSize: 11, whiteSpace: 'nowrap', color: '#555' }}>{fmtPeriod(r.pay_period_start, r.pay_period_end)}</td>
+                        {/* Reg Hrs */}
+                        <td style={{ padding: '4px 6px', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+                          {r._payType === 'hourly' ? (
+                            <input type="number" min="0" step="0.5"
+                              value={hoursEdits[r.id]?.reg ?? (r._isPending ? '' : (r.regular_hours ?? ''))}
+                              placeholder="0"
+                              style={{ width: 52, fontSize: 11, padding: '2px 4px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 3, background: savingHours.has(r.id) ? '#f3f4f6' : '#fff' }}
+                              disabled={savingHours.has(r.id)}
+                              onChange={e => setHours(r.id, 'reg', e.target.value)}
+                              onBlur={() => { if (!r._isPending) handleHoursSave(r); }}
+                            />
+                          ) : <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>}
+                        </td>
+                        {/* OT Hrs */}
+                        <td style={{ padding: '4px 6px', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+                          {r._payType === 'hourly' ? (
+                            <input type="number" min="0" step="0.5"
+                              value={hoursEdits[r.id]?.ot ?? (r._isPending ? '' : (r.overtime_hours ?? ''))}
+                              placeholder="0"
+                              style={{ width: 52, fontSize: 11, padding: '2px 4px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 3, background: savingHours.has(r.id) ? '#f3f4f6' : '#fff' }}
+                              disabled={savingHours.has(r.id)}
+                              onChange={e => setHours(r.id, 'ot', e.target.value)}
+                              onBlur={() => { if (!r._isPending) handleHoursSave(r); }}
+                            />
+                          ) : <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>}
+                        </td>
                         <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--text-muted)' }}>{r.net_pay != null ? fmt(r.net_pay) : <span style={{ fontSize: 11 }}>—</span>}</td>
                         <td style={{ padding: '7px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, fontWeight: r._isLate || r._isDueSoon ? 700 : 400, color: r._isLate ? '#dc2626' : r._isDueSoon ? '#d97706' : 'inherit' }}>{fmtShort(r._payDate)}</td>
                         <td style={{ padding: '7px 10px' }}>
-                          {r._isLate
-                            ? <span className="badge badge-error" style={{ fontSize: 10 }}>Late</span>
-                            : r._isDueSoon
-                              ? <span className="badge badge-warning" style={{ fontSize: 10 }}>Due Soon</span>
-                              : <span className="badge" style={{ fontSize: 10, background: '#f3f4f6', color: '#6b7280' }}>Upcoming</span>}
+                          {r._isPending && r._payType === 'hourly' && (parseFloat(hoursEdits[r.id]?.reg || 0) + parseFloat(hoursEdits[r.id]?.ot || 0) > 0)
+                            ? <button onClick={e => { e.stopPropagation(); handleRunPending(r); }} disabled={savingHours.has(r.id)}
+                                style={{ fontSize: 10, padding: '3px 8px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 3, cursor: 'pointer', fontWeight: 700 }}>
+                                {savingHours.has(r.id) ? '…' : '▶ Run'}
+                              </button>
+                            : r._isLate
+                              ? <span className="badge badge-error" style={{ fontSize: 10 }}>Late</span>
+                              : r._isDueSoon
+                                ? <span className="badge badge-warning" style={{ fontSize: 10 }}>Due Soon</span>
+                                : <span className="badge" style={{ fontSize: 10, background: '#f3f4f6', color: '#6b7280' }}>Upcoming</span>}
                         </td>
                       </tr>
                     ))}
