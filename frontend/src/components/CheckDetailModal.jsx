@@ -34,9 +34,10 @@ const TR = ({ label, amount, ytdAmount, color, bold, borderTop, negative, editVa
         {onEditChange
           ? <input type="text" inputMode="decimal"
               value={editValue}
-              placeholder={fmt(Math.abs(typeof display === 'number' ? display : 0))}
+              placeholder="0"
+              onFocus={() => { if (editValue === '') onEditChange(String(Math.abs(typeof display === 'number' ? display : 0))); }}
               onChange={e => onEditChange(e.target.value)}
-              style={{ ...MONO, background: 'transparent', border: 'none', outline: 'none', width: 90, textAlign: 'right', fontSize: 13, fontWeight: bold ? 700 : 500, color: editValue ? 'var(--accent)' : (color || (negative && amount > 0 ? '#dc2626' : 'inherit')), padding: 0, cursor: 'text' }} />
+              style={{ ...MONO, background: '#fff', border: '1px solid var(--border)', borderRadius: 4, outline: 'none', width: 90, textAlign: 'right', fontSize: 13, fontWeight: bold ? 700 : 500, color: 'var(--text-primary)', padding: '1px 5px', cursor: 'text', boxSizing: 'border-box' }} />
           : typeof display === 'number' ? fmt(display) : display
         }
       </td>
@@ -114,7 +115,7 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
     dateForm.start   !== (stub.pay_period_start || '') ||
     dateForm.end     !== (stub.pay_period_end   || '') ||
     dateForm.payDate !== (stub.settlement_date  || '') ||
-    (grossOverride !== '' && parseFloat(grossOverride) > 0) ||
+    (grossOverride !== '' && parseFloat(grossOverride) !== r2(stub.gross_wages || 0)) ||
     (fitOverride !== '' && parseFloat(fitOverride) !== (stub.fit_withholding || 0)) ||
     otherDirty
   );
@@ -123,7 +124,7 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
     setSaving(true);
     try {
       const payload = { payPeriodStart: dateForm.start, payPeriodEnd: dateForm.end, settlementDate: dateForm.payDate };
-      if (grossOverride && parseFloat(grossOverride) > 0) {
+      if (grossOverride !== '' && parseFloat(grossOverride) !== r2(stub.gross_wages || 0)) {
         payload.lineItems = [{ payType: 'salary', amount: parseFloat(grossOverride) }];
       }
       if (fitOverride !== '' && parseFloat(fitOverride) !== (stub.fit_withholding || 0)) {
