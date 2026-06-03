@@ -1,6 +1,26 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../api/client';
+
+function addDays(d, n) { const r = new Date(d); r.setDate(r.getDate() + n); return r; }
+function advancePeriod(s, e, freq) {
+  if (freq === 'weekly')      return [addDays(s, 7),  addDays(e, 7)];
+  if (freq === 'biweekly')    return [addDays(s, 14), addDays(e, 14)];
+  if (freq === 'monthly')     return [new Date(s.getFullYear(), s.getMonth() + 1, s.getDate()), new Date(e.getFullYear(), e.getMonth() + 1, e.getDate())];
+  if (freq === 'semimonthly') { const ns = addDays(e, 1); const ne = ns.getDate() === 1 ? new Date(ns.getFullYear(), ns.getMonth(), 15) : new Date(ns.getFullYear(), ns.getMonth() + 1, 0); return [ns, ne]; }
+  return [addDays(s, 14), addDays(e, 14)];
+}
+function calcStartFromEnd(endDate, freq) {
+  if (!endDate) return '';
+  const e = new Date(endDate + 'T00:00:00');
+  let s;
+  if (freq === 'weekly')           s = addDays(e, -6);
+  else if (freq === 'biweekly')    s = addDays(e, -13);
+  else if (freq === 'monthly')     s = new Date(e.getFullYear(), e.getMonth(), 1);
+  else if (freq === 'semimonthly') s = e.getDate() <= 15 ? new Date(e.getFullYear(), e.getMonth(), 1) : new Date(e.getFullYear(), e.getMonth(), 16);
+  else s = addDays(e, -13);
+  return s.toISOString().slice(0, 10);
+}
 import CheckDetailModal from '../components/CheckDetailModal';
 
 // ── Date helpers (mirrors CompanyWorkspace) ────────────────────────────────────
@@ -484,6 +504,7 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
 
 // ── PaycheckSection ────────────────────────────────────────────────────────────
 function PaycheckSection({ clientIds, clients, open, onToggle }) {
+  const navigate = useNavigate();
   const [rows, setRows]         = useState([]);
   const [loading, setLoading]   = useState(false);
   const [selected, setSelected] = useState(new Set());
@@ -492,48 +513,117 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
   const [debugInfo, setDebugInfo]   = useState([]);
   const clientKey = useMemo(() => [...clientIds].sort().join(','), [clientIds]);
 
-  function fetchRows(key) {
+  async function fetchRows(key) {
     if (!key) { setRows([]); setDebugInfo([]); return; }
     setLoading(true);
     const ids = key.split(',').filter(Boolean);
     const today = new Date().toISOString().slice(0, 10);
     const in14Str = (() => { const d = new Date(); d.setDate(d.getDate() + 14); return d.toISOString().slice(0, 10); })();
-    Promise.allSettled(ids.map(id => api.getPaystubs(id).then(stubs => ({ id, stubs }))))
-      .then(settled => {
-        const dbg = [];
-        const results = settled.map((r, i) => {
-          const id = ids[i];
-          const client = clients.find(c => c.id == id);
-          if (r.status === 'rejected') {
-            dbg.push({ name: client?.businessName || `id:${id}`, error: r.reason?.message || 'failed', statuses: [] });
-            return null;
-          }
-          const statuses = r.value.stubs.map(s => s.check_status || 'null');
-          dbg.push({ name: client?.businessName || `id:${id}`, total: r.value.stubs.length, statuses });
-          return r.value;
-        }).filter(Boolean);
-        setDebugInfo(dbg);
+    try {
+      // Fetch paystubs + pay groups for all companies in parallel
+      const settled = await Promise.allSettled(ids.map(id =>
+        Promise.all([
+          api.getPaystubs(id),
+          api.getPayGroups(id).catch(() => []),
+        ]).then(([stubs, groups]) => ({ id, stubs, groups }))
+      ));
 
-        const merged = [];
-        results.forEach(({ id, stubs }) => {
-          const client = clients.find(c => c.id == id);
-          stubs.filter(s => !['printed','deposited','direct_deposit_sent','direct_deposit_cleared','voided'].includes(s.check_status))
+      const dbg = [];
+      const validResults = [];
+      settled.forEach((r, i) => {
+        const id = ids[i];
+        const client = clients.find(c => c.id == id);
+        if (r.status === 'rejected') {
+          dbg.push({ name: client?.businessName || `id:${id}`, error: r.reason?.message || 'failed', statuses: [] });
+          return;
+        }
+        const { stubs, groups } = r.value;
+        dbg.push({ name: client?.businessName || `id:${id}`, total: stubs.length, statuses: stubs.map(s => s.check_status || 'null') });
+        validResults.push({ id, stubs, groups: groups || [], client });
+      });
+      setDebugInfo(dbg);
+
+      const merged = [];
+
+      // Stored paystubs (draft / late)
+      validResults.forEach(({ id, stubs, client }) => {
+        stubs
+          .filter(s => !['printed','deposited','direct_deposit_sent','direct_deposit_cleared','voided'].includes(s.check_status))
           .forEach(s => {
             const payDate = s.settlement_date || (s.pay_period_end ? addBizDays(s.pay_period_end, 2) : null);
             const isLate    = s.check_status === 'late' || (payDate ? payDate < today : false);
             const isDueSoon = !isLate && (payDate ? payDate <= in14Str : false);
-            merged.push({ ...s, _clientName: client?.businessName || '—', _clientId: id, _payDate: payDate, _isLate: isLate, _isDueSoon: isDueSoon });
+            merged.push({ ...s, _clientName: client?.businessName || '—', _clientId: id, _payDate: payDate, _isLate: isLate, _isDueSoon: isDueSoon, _isPending: false });
+          });
+      });
+
+      // Pending periods from pay schedules (groups with no stored paystub for that period)
+      const groupsNeedingEmps = [];
+      validResults.forEach(({ id, stubs, groups, client }) => {
+        groups.forEach(group => {
+          if (!group.firstPayPeriodEnd || group.deletedAt) return;
+          const freq = group.frequency || 'biweekly';
+          const anchor = group.firstPayPeriodStart || calcStartFromEnd(group.firstPayPeriodEnd, freq);
+          if (!anchor) return;
+
+          // paidEnds: period-end dates that already have a stored stub for this group
+          const groupStubs = stubs.filter(s => s.pay_group_id === group.id && s.check_status !== 'voided');
+          const paidEnds = new Set((groupStubs.length > 0 ? groupStubs : stubs.filter(s => s.check_status !== 'voided')).map(s => s.pay_period_end));
+
+          let sDate = new Date(anchor + 'T00:00:00'), eDate = new Date(group.firstPayPeriodEnd + 'T00:00:00');
+          const pendingPeriods = [];
+          for (let i = 0; i < 60; i++) {
+            const endStr = eDate.toISOString().slice(0, 10);
+            if (!paidEnds.has(endStr)) {
+              const payDate = addBizDays(endStr, 2);
+              const isLate    = payDate < today;
+              const isDueSoon = !isLate && payDate <= in14Str;
+              if (isLate || isDueSoon) {
+                pendingPeriods.push({ start: sDate.toISOString().slice(0, 10), end: endStr, payDate, isLate, isDueSoon });
+              }
+              if (!isLate) break; // stop after first non-late period
+            }
+            [sDate, eDate] = advancePeriod(sDate, eDate, freq);
+          }
+          if (pendingPeriods.length > 0) {
+            groupsNeedingEmps.push({ id, client, group, pendingPeriods });
+          }
+        });
+      });
+
+      if (groupsNeedingEmps.length > 0) {
+        const empSettled = await Promise.allSettled(
+          groupsNeedingEmps.map(({ group }) => api.getPayGroupEmployees(group.id))
+        );
+        groupsNeedingEmps.forEach(({ id, client, group, pendingPeriods }, idx) => {
+          const emps = empSettled[idx].status === 'fulfilled' ? empSettled[idx].value : [];
+          pendingPeriods.forEach(period => {
+            const rows = emps.length > 0 ? emps : [{ id: `grp${group.id}`, firstName: group.name, lastName: '' }];
+            rows.forEach(emp => {
+              merged.push({
+                id: `pending-${id}-${group.id}-${period.end}-${emp.id}`,
+                employee_name: `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || group.name,
+                pay_period_start: period.start, pay_period_end: period.end,
+                net_pay: null, check_status: period.isLate ? 'late' : 'draft',
+                _clientName: client?.businessName || '—', _clientId: id,
+                _payDate: period.payDate, _isLate: period.isLate, _isDueSoon: period.isDueSoon,
+                _isPending: true,
+              });
+            });
           });
         });
-        merged.sort((a, b) => {
-          const rank = r => r._isLate ? 0 : r._isDueSoon ? 1 : 2;
-          if (rank(a) !== rank(b)) return rank(a) - rank(b);
-          return (a._payDate || 'zzzz').localeCompare(b._payDate || 'zzzz');
-        });
-        setRows(merged);
-        setSelected(prev => { const valid = new Set(merged.map(r => r.id)); return new Set([...prev].filter(id => valid.has(id))); });
-      })
-      .finally(() => setLoading(false));
+      }
+
+      merged.sort((a, b) => {
+        const rank = r => r._isLate ? 0 : r._isDueSoon ? 1 : 2;
+        if (rank(a) !== rank(b)) return rank(a) - rank(b);
+        return (a._payDate || 'zzzz').localeCompare(b._payDate || 'zzzz');
+      });
+      setRows(merged);
+      setSelected(prev => { const valid = new Set(merged.map(r => r.id)); return new Set([...prev].filter(id => valid.has(id))); });
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => { fetchRows(clientKey); }, [clientKey]);
@@ -638,15 +728,17 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                       <td colSpan={6} style={{ padding: '7px 10px', fontWeight: 700, fontSize: 13 }}>{group.clientName}</td>
                     </tr>
                     {group.rows.map((r, i) => (
-                      <tr key={r.id} style={{ background: i % 2 === 0 ? '#fff' : '#f8fafc', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
-                        onClick={e => { if (e.target.type !== 'checkbox') setDetailStub(r); }}>
+                      <tr key={r.id} style={{ background: r._isPending ? '#fffbeb' : i % 2 === 0 ? '#fff' : '#f8fafc', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                        onClick={e => { if (e.target.type !== 'checkbox') { if (r._isPending) navigate(`/clients/${r._clientId}`); else setDetailStub(r); } }}>
                         <td style={{ padding: '7px 10px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-                          <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleCheck(r.id)} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
+                          {r._isPending
+                            ? <span style={{ fontSize: 10, color: '#d97706' }} title="Run payroll in company to process">→</span>
+                            : <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleCheck(r.id)} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />}
                         </td>
                         <td style={{ padding: '7px 10px', color: 'var(--text-muted)', fontSize: 11 }}></td>
                         <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>{r.employee_name || '—'}</td>
                         <td style={{ padding: '7px 10px', fontSize: 11, whiteSpace: 'nowrap', color: '#555' }}>{fmtPeriod(r.pay_period_start, r.pay_period_end)}</td>
-                        <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{fmt(r.net_pay)}</td>
+                        <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--text-muted)' }}>{r.net_pay != null ? fmt(r.net_pay) : <span style={{ fontSize: 11 }}>—</span>}</td>
                         <td style={{ padding: '7px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, fontWeight: r._isLate || r._isDueSoon ? 700 : 400, color: r._isLate ? '#dc2626' : r._isDueSoon ? '#d97706' : 'inherit' }}>{fmtShort(r._payDate)}</td>
                         <td style={{ padding: '7px 10px' }}>
                           {r._isLate
