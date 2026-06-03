@@ -728,7 +728,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                       <td colSpan={6} style={{ padding: '7px 10px', fontWeight: 700, fontSize: 13 }}>{group.clientName}</td>
                     </tr>
                     {group.rows.map((r, i) => (
-                      <tr key={r.id} style={{ background: r._isPending ? '#fffbeb' : i % 2 === 0 ? '#fff' : '#f8fafc', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                      <tr key={r.id} style={{ background: r._isPending && r._isLate ? '#fff5f5' : r._isPending && r._isDueSoon ? '#fffbeb' : i % 2 === 0 ? '#fff' : '#f8fafc', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
                         onClick={e => { if (e.target.type !== 'checkbox') { if (r._isPending) navigate(`/clients/${r._clientId}`); else setDetailStub(r); } }}>
                         <td style={{ padding: '7px 10px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                           {r._isPending
