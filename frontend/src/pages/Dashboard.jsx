@@ -663,24 +663,22 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
             </table>
           )}
           {debugInfo.length > 0 && (
-            <details style={{ padding: '8px 14px', fontSize: 11, color: 'var(--text-muted)', borderTop: '1px solid var(--border)' }}>
-              <summary style={{ cursor: 'pointer', fontWeight: 600, userSelect: 'none' }}>Debug: raw fetch results</summary>
-              <div style={{ marginTop: 6 }}>
-                {debugInfo.map(d => (
-                  <div key={d.name} style={{ marginTop: 4, fontFamily: 'JetBrains Mono, monospace' }}>
-                    <strong style={{ color: 'var(--text)' }}>{d.name}</strong>:{' '}
-                    {d.error
-                      ? <span style={{ color: '#dc2626' }}>ERROR — {d.error}</span>
-                      : <span>{d.total} stubs — statuses: [{[...new Set(d.statuses)].join(', ') || 'none'}]</span>}
-                    {!d.error && d.statuses.length > 0 && (
-                      <div style={{ marginLeft: 12, marginTop: 2, color: '#555' }}>
-                        {d.statuses.map((s, i) => <span key={i} style={{ display: 'inline-block', margin: '1px 3px', padding: '1px 5px', borderRadius: 3, background: s === 'late' || s === 'draft' ? '#fef3c7' : '#f3f4f6', color: s === 'late' ? '#d97706' : '#374151', fontSize: 10 }}>{s}</span>)}
-                      </div>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </details>
+            <div style={{ padding: '10px 14px', fontSize: 11, color: 'var(--text-muted)', borderTop: '1px solid var(--border)', background: '#f8fafc' }}>
+              <div style={{ fontWeight: 700, marginBottom: 6, color: 'var(--text)', fontSize: 12 }}>Debug — raw fetch results ({debugInfo.length} companies):</div>
+              {debugInfo.map(d => (
+                <div key={d.name} style={{ marginTop: 5, fontFamily: 'JetBrains Mono, monospace' }}>
+                  <strong style={{ color: 'var(--text)' }}>{d.name}</strong>:{' '}
+                  {d.error
+                    ? <span style={{ color: '#dc2626' }}>ERROR — {d.error}</span>
+                    : <span>{d.total} stubs — unique statuses: [{[...new Set(d.statuses)].join(', ') || 'none'}]</span>}
+                  {!d.error && d.statuses.length > 0 && (
+                    <div style={{ marginLeft: 12, marginTop: 2, lineHeight: '20px' }}>
+                      {d.statuses.map((s, i) => <span key={i} style={{ display: 'inline-block', margin: '1px 3px', padding: '1px 5px', borderRadius: 3, background: s === 'late' ? '#fee2e2' : s === 'draft' ? '#fef3c7' : '#f3f4f6', color: s === 'late' ? '#dc2626' : s === 'draft' ? '#d97706' : '#374151', fontSize: 10, fontWeight: 600 }}>{s}</span>)}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           )}
         </>
       )}
