@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '../api/client';
-import PaystubEditModal from '../components/PaystubEditModal';
+import CheckDetailModal from '../components/CheckDetailModal';
 
 // ── Date helpers (mirrors CompanyWorkspace) ────────────────────────────────────
 const FEDERAL_HOLIDAYS = new Set([
@@ -204,7 +204,6 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
   const [loading, setLoading]       = useState(false);
   const [selectedLiab, setSelectedLiab] = useState(new Set());
   const [detailRow, setDetailRow]   = useState(null);
-  const [editStub, setEditStub]     = useState(null);
   const [submitting, setSubmitting] = useState(null);
   const [refreshTick, setRefreshTick] = useState(0);
 
@@ -352,8 +351,8 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
 
   return (
     <>
-      {detailRow && <TaxDetailModal row={detailRow} onClose={() => setDetailRow(null)} onEdit={r => { setDetailRow(null); setEditStub(r); }} />}
-      {editStub && <PaystubEditModal paystub={editStub} onClose={() => setEditStub(null)} onSaved={() => { setEditStub(null); triggerReload(); }} />}
+      {detailRow && !detailRow._editing && <TaxDetailModal row={detailRow} onClose={() => setDetailRow(null)} onEdit={r => setDetailRow({ ...r, _editing: true })} />}
+      {detailRow?._editing && <CheckDetailModal stub={detailRow} clientId={detailRow._clientId} onClose={() => setDetailRow(null)} onSaved={() => { setDetailRow(null); triggerReload(); }} />}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
 
         {/* Accordion header */}
@@ -488,7 +487,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
   const [loading, setLoading]   = useState(false);
   const [selected, setSelected] = useState(new Set());
   const [submitting, setSubmitting] = useState(false);
-  const [editStub, setEditStub] = useState(null);
+  const [detailStub, setDetailStub] = useState(null);
   const clientKey = useMemo(() => [...clientIds].sort().join(','), [clientIds]);
 
   function fetchRows(key) {
@@ -504,7 +503,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
         const merged = [];
         results.forEach(({ id, stubs }) => {
           const client = clients.find(c => c.id == id);
-          stubs.filter(s => s.check_status === 'draft' || s.check_status === 'late').forEach(s => {
+          stubs.filter(s => (s.check_status === 'draft' || s.check_status === 'late') && !s.voided_at).forEach(s => {
             const payDate = s.settlement_date || (s.pay_period_end ? addBizDays(s.pay_period_end, 2) : null);
             if (!payDate) return;
             const isLate    = payDate < today;
@@ -560,7 +559,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
 
   return (
     <>
-      {editStub && <PaystubEditModal paystub={editStub} onClose={() => setEditStub(null)} onSaved={() => { setEditStub(null); fetchRows(clientKey); }} />}
+      {detailStub && <CheckDetailModal stub={detailStub} clientId={detailStub._clientId} onClose={() => setDetailStub(null)} onSaved={() => { setDetailStub(null); fetchRows(clientKey); }} />}
       <div className="card" style={{ padding: 0, overflow: 'hidden', marginTop: 16 }}>
       <button style={SECTION_BTN} onClick={onToggle}>
         <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{open ? '▾' : '▸'}</span>
@@ -622,7 +621,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                     </tr>
                     {group.rows.map((r, i) => (
                       <tr key={r.id} style={{ background: i % 2 === 0 ? '#fff' : '#f8fafc', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
-                        onClick={e => { if (e.target.type !== 'checkbox') setEditStub(r); }}>
+                        onClick={e => { if (e.target.type !== 'checkbox') setDetailStub(r); }}>
                         <td style={{ padding: '7px 10px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                           <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleCheck(r.id)} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
                         </td>
