@@ -600,7 +600,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                   <th style={{ width: 36, padding: '7px 10px', textAlign: 'center' }}>
                     <input type="checkbox" checked={allChecked} onChange={e => setSelected(e.target.checked ? new Set(rows.map(r => r.id)) : new Set())} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
                   </th>
-                  {['Company', 'Employee', 'Period', 'Net Pay', 'Pay Date', 'Status', ''].map(h => (
+                  {['Company', 'Employee', 'Period', 'Net Pay', 'Pay Date', 'Status'].map(h => (
                     <th key={h} style={{ padding: '7px 10px', textAlign: h === 'Net Pay' ? 'right' : 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
                   ))}
                 </tr>
@@ -620,7 +620,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                           })}
                           style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
                       </td>
-                      <td colSpan={7} style={{ padding: '7px 10px', fontWeight: 700, fontSize: 13 }}>{group.clientName}</td>
+                      <td colSpan={6} style={{ padding: '7px 10px', fontWeight: 700, fontSize: 13 }}>{group.clientName}</td>
                     </tr>
                     {group.rows.map((r, i) => (
                       <tr key={r.id} style={{ background: i % 2 === 0 ? '#fff' : '#f8fafc', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
@@ -639,16 +639,6 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                             : r._isDueSoon
                               ? <span className="badge badge-warning" style={{ fontSize: 10 }}>Due Soon</span>
                               : <span className="badge" style={{ fontSize: 10, background: '#f3f4f6', color: '#6b7280' }}>Upcoming</span>}
-                        </td>
-                        <td style={{ padding: '7px 6px', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
-                          <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#dc2626', fontSize: 13, opacity: 0.5, padding: '2px 4px', borderRadius: 4 }}
-                            title="Delete check"
-                            onMouseEnter={e => e.currentTarget.style.opacity = '1'}
-                            onMouseLeave={e => e.currentTarget.style.opacity = '0.5'}
-                            onClick={async () => {
-                              if (!window.confirm(`Delete ${r.employee_name}'s check? This cannot be undone.`)) return;
-                              try { await api.deletePaystub(r.id); fetchRows(clientKey); } catch (e) { alert(e.message); }
-                            }}>✕</button>
                         </td>
                       </tr>
                     ))}
