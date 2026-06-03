@@ -693,7 +693,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
 
   async function handlePrint() {
     const byClient = {};
-    rows.filter(r => selected.has(r.id)).forEach(r => {
+    selStored.forEach(r => {
       if (!byClient[r._clientId]) byClient[r._clientId] = [];
       byClient[r._clientId].push(r.id);
     });
@@ -705,8 +705,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
   async function handleDD() {
     setSubmitting(true);
     try {
-      const sel = rows.filter(r => selected.has(r.id));
-      await Promise.all(sel.map(r => api.updatePaystubStatus(r.id, 'direct_deposit_sent')));
+      await Promise.all(selStored.map(r => api.updatePaystubStatus(r.id, 'direct_deposit_sent')));
       setSelected(new Set());
       fetchRows(clientKey);
     } catch (e) { alert(e.message); }
@@ -722,6 +721,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
   const dueSoonCount = rows.filter(r => r._isDueSoon).length;
   const selCount     = selected.size;
   const allChecked   = rows.length > 0 && rows.every(r => selected.has(r.id));
+  const selStored    = rows.filter(r => selected.has(r.id) && !r._isPending);
 
   return (
     <>
@@ -749,8 +749,8 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
             )}
             {selCount > 0 && <>
               <span style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-secondary)', marginLeft: rows.some(r => r._isLate) ? 8 : 0 }}>{selCount} selected</span>
-              <button style={bulkBtn({ background: '#374151', border: '1px solid #1f2937', color: '#fff' })} onClick={handlePrint}>Print PDF</button>
-              <button style={bulkBtn({ background: '#2563eb', border: '1px solid #1d4ed8', color: '#fff' })} onClick={handleDD} disabled={submitting}>{submitting ? 'Sending…' : 'Direct Deposit'}</button>
+              {selStored.length > 0 && <button style={bulkBtn({ background: '#374151', border: '1px solid #1f2937', color: '#fff' })} onClick={handlePrint}>Print PDF ({selStored.length})</button>}
+              {selStored.length > 0 && <button style={bulkBtn({ background: '#2563eb', border: '1px solid #1d4ed8', color: '#fff' })} onClick={handleDD} disabled={submitting}>{submitting ? 'Sending…' : `Direct Deposit (${selStored.length})`}</button>}
               <button style={{ ...bulkBtn(), marginLeft: 'auto', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-secondary)' }} onClick={() => setSelected(new Set())}>Clear</button>
             </>}
           </div>
@@ -762,7 +762,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
               <thead>
                 <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
                   <th style={{ width: 36, padding: '7px 10px', textAlign: 'center' }}>
-                    <input type="checkbox" checked={allChecked} onChange={e => setSelected(e.target.checked ? new Set(rows.filter(r => !r._isPending).map(r => r.id)) : new Set())} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
+                    <input type="checkbox" checked={allChecked} onChange={e => setSelected(e.target.checked ? new Set(rows.map(r => r.id)) : new Set())} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
                   </th>
                   {[
                     { label: 'Employee',     align: 'left'  },
@@ -785,10 +785,10 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                     <tr key={`hdr-${group.clientId}`} style={{ background: '#f0f4ff', borderBottom: '1px solid var(--border)' }}>
                       <td style={{ padding: '7px 10px', textAlign: 'center' }}>
                         <input type="checkbox"
-                          checked={group.rows.filter(r => !r._isPending).length > 0 && group.rows.filter(r => !r._isPending).every(r => selected.has(r.id))}
+                          checked={group.rows.length > 0 && group.rows.every(r => selected.has(r.id))}
                           onChange={e => setSelected(prev => {
                             const n = new Set(prev);
-                            if (e.target.checked) group.rows.filter(r => !r._isPending).forEach(r => n.add(r.id));
+                            if (e.target.checked) group.rows.forEach(r => n.add(r.id));
                             else group.rows.forEach(r => n.delete(r.id));
                             return n;
                           })}
@@ -808,9 +808,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                           onClick={e => { if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') setDetailStub(r); }}>
                           {/* Checkbox */}
                           <td style={{ padding: '7px 10px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-                            {r._isPending
-                              ? <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>—</span>
-                              : <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleCheck(r.id)} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />}
+                            <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleCheck(r.id)} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
                           </td>
                           {/* Employee */}
                           <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
