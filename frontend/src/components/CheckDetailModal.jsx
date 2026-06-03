@@ -30,14 +30,15 @@ const TR = ({ label, amount, ytdAmount, color, bold, borderTop, negative, editVa
   return (
     <tr style={{ borderTop: borderTop ? '2px solid var(--border)' : undefined }}>
       <td style={{ padding: '6px 0', fontSize: 13, color: bold ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: bold ? 700 : 400, whiteSpace: 'nowrap' }}>{label}</td>
-      <td style={{ padding: '6px 0 6px 12px', textAlign: 'right', ...MONO, fontSize: 13, fontWeight: bold ? 700 : 500, color: color || (negative && amount > 0 ? '#dc2626' : 'inherit') }}>
+      <td style={{ padding: '4px 0 4px 12px', textAlign: 'right', ...MONO, fontSize: 13, fontWeight: bold ? 700 : 500, color: color || (negative && amount > 0 ? '#dc2626' : 'inherit') }}>
         {onEditChange
-          ? <input type="text" inputMode="decimal"
-              value={editValue}
-              placeholder="0"
-              onFocus={() => { if (editValue === '') onEditChange(String(Math.abs(typeof display === 'number' ? display : 0))); }}
-              onChange={e => onEditChange(e.target.value)}
-              style={{ ...MONO, background: '#fff', border: '1px solid var(--border)', borderRadius: 4, outline: 'none', width: 90, textAlign: 'right', fontSize: 13, fontWeight: bold ? 700 : 500, color: 'var(--text-primary)', padding: '1px 5px', cursor: 'text', boxSizing: 'border-box' }} />
+          ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+              <span style={{ ...MONO, fontSize: 13, fontWeight: bold ? 700 : 500, color: 'var(--text-muted)', marginRight: 1 }}>$</span>
+              <input type="text" inputMode="decimal"
+                value={editValue}
+                onChange={e => onEditChange(e.target.value)}
+                style={{ ...MONO, background: '#fff', border: '1px solid var(--border)', borderRadius: 4, outline: 'none', width: 80, textAlign: 'right', fontSize: 13, fontWeight: bold ? 700 : 500, color: 'var(--text-primary)', padding: '1px 5px', cursor: 'text', boxSizing: 'border-box' }} />
+            </span>
           : typeof display === 'number' ? fmt(display) : display
         }
       </td>
@@ -64,10 +65,18 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
   const isVoided = stub.check_status === 'voided';
   const curYear = new Date().getFullYear();
 
+  // Compute before state so we can initialize override inputs with actual values
+  const lineItemsList = stub.lineItems || [];
+  const compFromItems = lineItemsList.filter(li => li.pay_type === 'regular' && stub.regular_hours == null).reduce((s, li) => s + (li.amount || 0), 0);
+  const displayedTips = stub.reported_tips || lineItemsList.filter(li => li.pay_type === 'tips').reduce((s, li) => s + (li.amount || 0), 0);
+  // initialGross = the base compensation amount (excluding addons like tips/bonus)
+  const initialGross = r2(compFromItems > 0 ? compFromItems : stub.regular_pay != null ? stub.regular_pay : (stub.gross_wages || 0));
+  const initialFit   = r2(stub.fit_withholding || 0);
+
   const [ytd, setYtd] = useState({ gross: null, fit: null, eeSS: null, eeMed: null, stateTax: null, futa: null, suta: null, netPay: null, erSS: null, erMed: null });
   const [dateForm, setDateForm] = useState({ start: stub.pay_period_start || '', end: stub.pay_period_end || '', payDate: stub.settlement_date || '' });
-  const [grossOverride, setGrossOverride] = useState('');
-  const [fitOverride, setFitOverride] = useState('');
+  const [grossOverride, setGrossOverride] = useState(String(initialGross));
+  const [fitOverride,   setFitOverride]   = useState(String(initialFit));
   const [otherOpen, setOtherOpen] = useState(false);
   const [otherForm, setOtherForm] = useState({
     reportedTips:  String(stub.reported_tips  || ''),
@@ -103,6 +112,20 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
     }).catch(() => {});
   }, [stub.id, clientId]);
 
+  function revertChanges() {
+    setGrossOverride(String(initialGross));
+    setFitOverride(String(initialFit));
+    setOtherForm({
+      reportedTips:  String(stub.reported_tips  || ''),
+      bonus:         String(stub.bonus          || ''),
+      commission:    String(stub.commission     || ''),
+      reimbursement: String(stub.reimbursement  || ''),
+      deduction:     String(stub.deduction      || ''),
+      garnishment:   String(stub.garnishment    || ''),
+    });
+    setDateForm({ start: stub.pay_period_start || '', end: stub.pay_period_end || '', payDate: stub.settlement_date || '' });
+  }
+
   const otherDirty = !isVoided && (
     parseFloat(otherForm.reportedTips  || 0) !== (stub.reported_tips  || 0) ||
     parseFloat(otherForm.bonus         || 0) !== (stub.bonus          || 0) ||
@@ -115,8 +138,8 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
     dateForm.start   !== (stub.pay_period_start || '') ||
     dateForm.end     !== (stub.pay_period_end   || '') ||
     dateForm.payDate !== (stub.settlement_date  || '') ||
-    (grossOverride !== '' && parseFloat(grossOverride) !== r2(stub.gross_wages || 0)) ||
-    (fitOverride !== '' && parseFloat(fitOverride) !== (stub.fit_withholding || 0)) ||
+    parseFloat(grossOverride) !== initialGross ||
+    parseFloat(fitOverride)   !== initialFit   ||
     otherDirty
   );
 
@@ -124,12 +147,12 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
     setSaving(true);
     try {
       const payload = { payPeriodStart: dateForm.start, payPeriodEnd: dateForm.end, settlementDate: dateForm.payDate };
-      if (grossOverride !== '' && parseFloat(grossOverride) !== r2(stub.gross_wages || 0)) {
+      if (parseFloat(grossOverride) !== initialGross) {
         payload.lineItems = [{ payType: 'salary', amount: parseFloat(grossOverride) }];
       }
-      if (fitOverride !== '' && parseFloat(fitOverride) !== (stub.fit_withholding || 0)) {
+      if (parseFloat(fitOverride) !== initialFit) {
         payload.fitWithholdingOverride = parseFloat(fitOverride || 0);
-        if (!payload.lineItems) payload.lineItems = [{ payType: 'salary', amount: stub.gross_wages }];
+        if (!payload.lineItems) payload.lineItems = [{ payType: 'salary', amount: parseFloat(grossOverride) }];
       }
       if (otherDirty) {
         payload.reportedTips  = parseFloat(otherForm.reportedTips  || 0);
@@ -146,10 +169,6 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
     finally { setSaving(false); }
   }
 
-  const lineItemsList = stub.lineItems || [];
-  const compFromItems = lineItemsList.filter(li => li.pay_type === 'regular' && stub.regular_hours == null).reduce((s, li) => s + (li.amount || 0), 0);
-  const displayedTips = stub.reported_tips || lineItemsList.filter(li => li.pay_type === 'tips').reduce((s, li) => s + (li.amount || 0), 0);
-
   const canEdit = !isVoided && !stub._isPending;
   const earningRows = [
     stub.regular_hours != null && stub.regular_pay != null && {
@@ -165,26 +184,41 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
     stub.overtime_hours > 0 && stub.overtime_pay > 0 && { label: `Overtime  (${stub.overtime_hours} hrs)`, amount: stub.overtime_pay },
     displayedTips > 0 && {
       label: 'Reported Tips', amount: displayedTips,
-      editValue: canEdit ? (otherForm.reportedTips === '0' ? '' : otherForm.reportedTips) : undefined,
+      editValue: canEdit ? otherForm.reportedTips : undefined,
       onEditChange: canEdit ? (v => setOtherForm(f => ({ ...f, reportedTips: v }))) : undefined,
     },
     stub.bonus > 0 && {
       label: 'Bonus', amount: stub.bonus,
-      editValue: canEdit ? (otherForm.bonus === '0' ? '' : otherForm.bonus) : undefined,
+      editValue: canEdit ? otherForm.bonus : undefined,
       onEditChange: canEdit ? (v => setOtherForm(f => ({ ...f, bonus: v }))) : undefined,
     },
     stub.commission > 0 && {
       label: 'Commission', amount: stub.commission,
-      editValue: canEdit ? (otherForm.commission === '0' ? '' : otherForm.commission) : undefined,
+      editValue: canEdit ? otherForm.commission : undefined,
       onEditChange: canEdit ? (v => setOtherForm(f => ({ ...f, commission: v }))) : undefined,
     },
     stub.reimbursement > 0 && {
       label: 'Reimbursement', amount: stub.reimbursement,
-      editValue: canEdit ? (otherForm.reimbursement === '0' ? '' : otherForm.reimbursement) : undefined,
+      editValue: canEdit ? otherForm.reimbursement : undefined,
       onEditChange: canEdit ? (v => setOtherForm(f => ({ ...f, reimbursement: v }))) : undefined,
     },
   ].filter(Boolean);
-  const showGrossOnly = earningRows.length === 0;
+
+  // Old checks with no lineItems get a synthetic Compensation row so Gross Pay is never the sole editable field
+  const effectiveEarningRows = earningRows.length > 0 ? earningRows : [{
+    label: 'Compensation', amount: stub.gross_wages || 0,
+    editValue: canEdit ? grossOverride : undefined,
+    onEditChange: canEdit ? setGrossOverride : undefined,
+  }];
+
+  // Live gross updates in real-time as user edits
+  const liveGross = r2(
+    parseFloat(grossOverride || 0) +
+    parseFloat(otherForm.reportedTips || 0) +
+    parseFloat(otherForm.bonus        || 0) +
+    parseFloat(otherForm.commission   || 0) +
+    parseFloat(otherForm.reimbursement || 0)
+  );
 
   const deductionRows = [
     { label: 'Federal Income Tax', amount: stub.fit_withholding   || 0, ytd: ytd.fit },
@@ -250,18 +284,11 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <ColHeader hasYTD={true} />
               <tbody>
-                {showGrossOnly
-                  ? <TR label="Gross Pay" amount={stub.gross_wages || 0} ytdAmount={ytd.gross} color="var(--accent)"
-                      editValue={canEdit ? grossOverride : undefined}
-                      onEditChange={canEdit ? setGrossOverride : undefined} />
-                  : <>
-                      {earningRows.map(r => (
-                        <TR key={r.label} label={r.label} amount={r.amount} color="var(--accent)"
-                          editValue={r.editValue} onEditChange={r.onEditChange} />
-                      ))}
-                      <TR label="Gross Pay" amount={stub.gross_wages || 0} ytdAmount={ytd.gross} color="var(--accent)" bold borderTop />
-                    </>
-                }
+                {effectiveEarningRows.map(r => (
+                  <TR key={r.label} label={r.label} amount={r.amount} color="var(--accent)"
+                    editValue={r.editValue} onEditChange={r.onEditChange} />
+                ))}
+                <TR label="Gross Pay" amount={liveGross} ytdAmount={ytd.gross} color="var(--accent)" bold borderTop />
                 {deductionRows.map(r => (
                   <TR key={r.label} label={r.label} amount={r.amount} ytdAmount={r.ytd} negative color={r.amount > 0 ? '#dc2626' : 'var(--text-muted)'}
                     editValue={r.label === 'Federal Income Tax' && canEdit ? fitOverride : undefined}
@@ -355,6 +382,9 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
             <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={async () => {
               try { await api.printSelectedPaystubs(clientId, [stub.id]); } catch (e) { alert(e.message); }
             }}>↓ Paystub</button>
+          )}
+          {isDirty && !stub._isPending && (
+            <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={revertChanges}>Revert</button>
           )}
           {isDirty && !stub._isPending && (
             <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={saving} onClick={saveChanges}>
