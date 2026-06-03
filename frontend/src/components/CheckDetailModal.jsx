@@ -264,9 +264,29 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
           ))}
         </div>
 
-        {/* Other Payroll Items + overrides */}
+        {/* Gross Pay + FIT override strip — always visible when not voided */}
+        {!isVoided && !stub._isPending && (
+          <div style={{ margin: '12px 24px 0', display: 'flex', gap: 0, borderRadius: 8, overflow: 'hidden', border: `1px solid ${(grossOverride || fitOverride) ? 'var(--accent)' : 'var(--border)'}`, background: 'var(--bg-secondary)', transition: 'border-color 0.15s' }}>
+            <div style={{ flex: 1, padding: '10px 14px', borderRight: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Override Gross Pay <span style={{ fontSize: 9, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(taxes recalculate)</span></div>
+              <input className="form-input mono" type="number" min="0" step="0.01"
+                value={grossOverride} placeholder={`${stub.gross_wages || 0}`}
+                onChange={e => setGrossOverride(e.target.value)}
+                style={{ background: 'transparent', border: 'none', outline: 'none', width: '100%', fontSize: 14, fontWeight: 700, color: grossOverride ? 'var(--accent)' : 'var(--text-primary)', padding: 0, textAlign: 'right' }} />
+            </div>
+            <div style={{ flex: 1, padding: '10px 14px' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Federal Income Tax <span style={{ fontSize: 9, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(direct override)</span></div>
+              <input className="form-input mono" type="number" min="0" step="0.01"
+                value={fitOverride} placeholder={`${stub.fit_withholding || 0}`}
+                onChange={e => setFitOverride(e.target.value)}
+                style={{ background: 'transparent', border: 'none', outline: 'none', width: '100%', fontSize: 14, fontWeight: 700, color: fitOverride ? 'var(--accent)' : 'var(--text-primary)', padding: 0, textAlign: 'right' }} />
+            </div>
+          </div>
+        )}
+
+        {/* Other Payroll Items */}
         {!isVoided && (
-          <div style={{ margin: '0 24px', borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+          <div style={{ margin: '0 24px', borderTop: '1px solid var(--border)', paddingTop: 10, marginTop: 12 }}>
             <button type="button" onClick={() => setOtherOpen(o => !o)}
               style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
               {otherOpen ? '▴' : '▾'} Other Payroll Items
@@ -292,22 +312,6 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
                       style={{ marginTop: 3, width: '100%', height: 28, fontSize: 12, textAlign: 'right', padding: '0 6px' }} />
                   </label>
                 ))}
-                <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  Override Gross Pay
-                  <div style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 400 }}>taxes recalculate</div>
-                  <input className="form-input mono" type="number" min="0" step="0.01"
-                    value={grossOverride} placeholder={`${stub.gross_wages || 0}`}
-                    onChange={e => setGrossOverride(e.target.value)}
-                    style={{ marginTop: 3, width: '100%', height: 28, fontSize: 12, textAlign: 'right', padding: '0 6px' }} />
-                </label>
-                <label style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                  Federal Income Tax
-                  <div style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 400 }}>direct override</div>
-                  <input className="form-input mono" type="number" min="0" step="0.01"
-                    value={fitOverride} placeholder={`${stub.fit_withholding || 0}`}
-                    onChange={e => setFitOverride(e.target.value)}
-                    style={{ marginTop: 3, width: '100%', height: 28, fontSize: 12, textAlign: 'right', padding: '0 6px' }} />
-                </label>
               </div>
             )}
           </div>
