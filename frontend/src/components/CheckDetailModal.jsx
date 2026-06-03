@@ -25,13 +25,20 @@ function StatusBadge({ status }) {
   );
 }
 
-const TR = ({ label, amount, ytdAmount, color, bold, borderTop, negative }) => {
+const TR = ({ label, amount, ytdAmount, color, bold, borderTop, negative, editValue, onEditChange }) => {
   const display = negative ? (amount > 0 ? -amount : amount) : amount;
   return (
     <tr style={{ borderTop: borderTop ? '2px solid var(--border)' : undefined }}>
       <td style={{ padding: '6px 0', fontSize: 13, color: bold ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: bold ? 700 : 400, whiteSpace: 'nowrap' }}>{label}</td>
       <td style={{ padding: '6px 0 6px 12px', textAlign: 'right', ...MONO, fontSize: 13, fontWeight: bold ? 700 : 500, color: color || (negative && amount > 0 ? '#dc2626' : 'inherit') }}>
-        {typeof display === 'number' ? fmt(display) : display}
+        {onEditChange
+          ? <input type="number" min="0" step="0.01"
+              value={editValue}
+              placeholder={String(Math.abs(typeof display === 'number' ? display : 0))}
+              onChange={e => onEditChange(e.target.value)}
+              style={{ ...MONO, background: 'transparent', border: 'none', borderBottom: `1.5px solid ${editValue ? 'var(--accent)' : 'var(--border)'}`, outline: 'none', width: 90, textAlign: 'right', fontSize: 13, fontWeight: bold ? 700 : 500, color: editValue ? 'var(--accent)' : 'inherit', padding: '0 2px' }} />
+          : typeof display === 'number' ? fmt(display) : display
+        }
       </td>
       {ytdAmount !== undefined && (
         <td style={{ padding: '6px 0 6px 12px', textAlign: 'right', ...MONO, fontSize: 12, color: 'var(--text-muted)', fontWeight: 400 }}>{ytdAmount != null ? fmt(ytdAmount) : '—'}</td>
@@ -218,14 +225,20 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
               <ColHeader hasYTD={true} />
               <tbody>
                 {showGrossOnly
-                  ? <TR label="Gross Pay" amount={stub.gross_wages || 0} ytdAmount={ytd.gross} color="var(--accent)" />
+                  ? <TR label="Gross Pay" amount={stub.gross_wages || 0} ytdAmount={ytd.gross} color="var(--accent)"
+                      editValue={!isVoided && !stub._isPending ? grossOverride : undefined}
+                      onEditChange={!isVoided && !stub._isPending ? setGrossOverride : undefined} />
                   : <>
                       {earningRows.map(r => <TR key={r.label} label={r.label} amount={r.amount} color="var(--accent)" />)}
-                      <TR label="Gross Pay" amount={stub.gross_wages || 0} ytdAmount={ytd.gross} color="var(--accent)" bold borderTop />
+                      <TR label="Gross Pay" amount={stub.gross_wages || 0} ytdAmount={ytd.gross} color="var(--accent)" bold borderTop
+                        editValue={!isVoided && !stub._isPending ? grossOverride : undefined}
+                        onEditChange={!isVoided && !stub._isPending ? setGrossOverride : undefined} />
                     </>
                 }
                 {deductionRows.map(r => (
-                  <TR key={r.label} label={r.label} amount={r.amount} ytdAmount={r.ytd} negative color={r.amount > 0 ? '#dc2626' : 'var(--text-muted)'} />
+                  <TR key={r.label} label={r.label} amount={r.amount} ytdAmount={r.ytd} negative color={r.amount > 0 ? '#dc2626' : 'var(--text-muted)'}
+                    editValue={r.label === 'Federal Income Tax' && !isVoided && !stub._isPending ? fitOverride : undefined}
+                    onEditChange={r.label === 'Federal Income Tax' && !isVoided && !stub._isPending ? setFitOverride : undefined} />
                 ))}
               </tbody>
             </table>
@@ -263,26 +276,6 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
             </div>
           ))}
         </div>
-
-        {/* Gross Pay + FIT override strip — always visible when not voided */}
-        {!isVoided && !stub._isPending && (
-          <div style={{ margin: '12px 24px 0', display: 'flex', gap: 0, borderRadius: 8, overflow: 'hidden', border: `1px solid ${(grossOverride || fitOverride) ? 'var(--accent)' : 'var(--border)'}`, background: 'var(--bg-secondary)', transition: 'border-color 0.15s' }}>
-            <div style={{ flex: 1, padding: '10px 14px', borderRight: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Override Gross Pay <span style={{ fontSize: 9, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(taxes recalculate)</span></div>
-              <input className="form-input mono" type="number" min="0" step="0.01"
-                value={grossOverride} placeholder={`${stub.gross_wages || 0}`}
-                onChange={e => setGrossOverride(e.target.value)}
-                style={{ background: 'transparent', border: 'none', outline: 'none', width: '100%', fontSize: 14, fontWeight: 700, color: grossOverride ? 'var(--accent)' : 'var(--text-primary)', padding: 0, textAlign: 'right' }} />
-            </div>
-            <div style={{ flex: 1, padding: '10px 14px' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Federal Income Tax <span style={{ fontSize: 9, fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>(direct override)</span></div>
-              <input className="form-input mono" type="number" min="0" step="0.01"
-                value={fitOverride} placeholder={`${stub.fit_withholding || 0}`}
-                onChange={e => setFitOverride(e.target.value)}
-                style={{ background: 'transparent', border: 'none', outline: 'none', width: '100%', fontSize: 14, fontWeight: 700, color: fitOverride ? 'var(--accent)' : 'var(--text-primary)', padding: 0, textAlign: 'right' }} />
-            </div>
-          </div>
-        )}
 
         {/* Other Payroll Items */}
         {!isVoided && (
