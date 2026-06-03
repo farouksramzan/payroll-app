@@ -496,25 +496,28 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
     setLoading(true);
     const ids = key.split(',').filter(Boolean);
     const today = new Date().toISOString().slice(0, 10);
-    const in5Str = (() => { const d = new Date(); d.setDate(d.getDate() + 5); return d.toISOString().slice(0, 10); })();
+    const in14Str = (() => { const d = new Date(); d.setDate(d.getDate() + 14); return d.toISOString().slice(0, 10); })();
     Promise.allSettled(ids.map(id => api.getPaystubs(id).then(stubs => ({ id, stubs }))))
       .then(settled => {
         const results = settled.filter(r => r.status === 'fulfilled').map(r => r.value);
         const merged = [];
         results.forEach(({ id, stubs }) => {
           const client = clients.find(c => c.id == id);
-          // Include all draft/late checks; exclude voided (check_status, not a column)
-          stubs.filter(s =>
-            (s.check_status === 'draft' || s.check_status === 'late') &&
-            s.check_status !== 'voided'
-          ).forEach(s => {
+          // All unpaid checks (not printed/deposited/voided)
+          stubs.filter(s => !['printed','deposited','direct_deposit_sent','direct_deposit_cleared','voided'].includes(s.check_status))
+          .forEach(s => {
             const payDate = s.settlement_date || (s.pay_period_end ? addBizDays(s.pay_period_end, 2) : null);
-            const isLate    = payDate ? payDate < today : false;
-            const isDueSoon = payDate ? (!isLate && payDate <= in5Str) : false;
+            // Backend sets check_status='late' explicitly — always treat as late
+            const isLate    = s.check_status === 'late' || (payDate ? payDate < today : false);
+            const isDueSoon = !isLate && (payDate ? payDate <= in14Str : false);
             merged.push({ ...s, _clientName: client?.businessName || '—', _clientId: id, _payDate: payDate, _isLate: isLate, _isDueSoon: isDueSoon });
           });
         });
-        merged.sort((a, b) => (a._payDate || 'zzzz').localeCompare(b._payDate || 'zzzz'));
+        merged.sort((a, b) => {
+          const rank = r => r._isLate ? 0 : r._isDueSoon ? 1 : 2;
+          if (rank(a) !== rank(b)) return rank(a) - rank(b);
+          return (a._payDate || 'zzzz').localeCompare(b._payDate || 'zzzz');
+        });
         setRows(merged);
         setSelected(prev => { const valid = new Set(merged.map(r => r.id)); return new Set([...prev].filter(id => valid.has(id))); });
       })
