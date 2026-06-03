@@ -731,18 +731,26 @@ export default function Dashboard() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {clients.length > 0 && (
-            <div style={{ display: 'flex', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: 3, gap: 2 }}>
-              <button onClick={() => switchView('tiles')} title="Tile view"
-                style={{ padding: '5px 9px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13, lineHeight: 1,
-                  background: view === 'tiles' ? '#fff' : 'transparent',
-                  color: view === 'tiles' ? 'var(--accent)' : 'var(--text-muted)',
-                  boxShadow: view === 'tiles' ? '0 1px 4px rgba(0,0,0,0.1)' : 'none' }}>⊞</button>
-              <button onClick={() => switchView('list')} title="List view"
-                style={{ padding: '5px 9px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13, lineHeight: 1,
-                  background: view === 'list' ? '#fff' : 'transparent',
-                  color: view === 'list' ? 'var(--accent)' : 'var(--text-muted)',
-                  boxShadow: view === 'list' ? '0 1px 4px rgba(0,0,0,0.1)' : 'none' }}>☰</button>
-            </div>
+            <>
+              <button
+                onClick={() => setSelected(allSelected ? new Set() : new Set(clients.map(c => c.id)))}
+                className="btn btn-ghost"
+                style={{ fontSize: 12, padding: '5px 12px' }}>
+                {allSelected ? 'Deselect All' : 'Select All'}
+              </button>
+              <div style={{ display: 'flex', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: 3, gap: 2 }}>
+                <button onClick={() => switchView('tiles')} title="Tile view"
+                  style={{ padding: '5px 9px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13, lineHeight: 1,
+                    background: view === 'tiles' ? '#fff' : 'transparent',
+                    color: view === 'tiles' ? 'var(--accent)' : 'var(--text-muted)',
+                    boxShadow: view === 'tiles' ? '0 1px 4px rgba(0,0,0,0.1)' : 'none' }}>⊞</button>
+                <button onClick={() => switchView('list')} title="List view"
+                  style={{ padding: '5px 9px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13, lineHeight: 1,
+                    background: view === 'list' ? '#fff' : 'transparent',
+                    color: view === 'list' ? 'var(--accent)' : 'var(--text-muted)',
+                    boxShadow: view === 'list' ? '0 1px 4px rgba(0,0,0,0.1)' : 'none' }}>☰</button>
+              </div>
+            </>
           )}
           <Link to="/clients/new" className="btn btn-primary">+ Add Company</Link>
         </div>
@@ -884,8 +892,9 @@ export default function Dashboard() {
       {/* Multi-company panel — shown for both tile and list views */}
       {!loading && clients.length > 0 && selected.size > 0 && (
         <>
-          <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 10 }}>
-            <span>{selected.size} {selected.size === 1 ? 'company' : 'companies'} selected</span>
+          <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 600 }}>{selected.size} {selected.size === 1 ? 'company' : 'companies'} selected:</span>
+            <span>{clients.filter(c => selected.has(c.id)).map(c => c.businessName).join(', ')}</span>
             <button onClick={() => setSelected(new Set())}
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: 12, padding: 0, fontWeight: 600 }}>
               Clear
