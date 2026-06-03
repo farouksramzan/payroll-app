@@ -218,8 +218,9 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
 
   function buildLiabRows(results) {
     const today = new Date().toISOString().slice(0, 10);
-    const in5 = new Date(); in5.setDate(in5.getDate() + 5);
-    const in5Str = in5.toISOString().slice(0, 10);
+    // 30-day window — catches monthly depositors (941 due on the 15th of next month)
+    const in30 = new Date(); in30.setDate(in30.getDate() + 30);
+    const in30Str = in30.toISOString().slice(0, 10);
     const merged = [];
     results.forEach(({ id, stubs }) => {
       const client = clients.find(c => c.id == id);
@@ -236,9 +237,9 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
         const late941    = pending941 && due941 && today > due941;
         const late940    = pending940 && due940 && today > due940;
         const lateSUI    = pendingSUI && dueSUI && today > dueSUI;
-        const dueSoon941 = !late941 && pending941 && due941 && due941 <= in5Str;
-        const dueSoon940 = !late940 && pending940 && due940 && due940 <= in5Str;
-        const dueSoonSUI = !lateSUI && pendingSUI && dueSUI && dueSUI <= in5Str;
+        const dueSoon941 = !late941 && pending941 && due941 && due941 <= in30Str;
+        const dueSoon940 = !late940 && pending940 && due940 && due940 <= in30Str;
+        const dueSoonSUI = !lateSUI && pendingSUI && dueSUI && dueSUI <= in30Str;
         const isLate    = late941 || late940 || lateSUI;
         const isDueSoon = !isLate && (dueSoon941 || dueSoon940 || dueSoonSUI);
         merged.push({
@@ -495,24 +496,25 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
     setLoading(true);
     const ids = key.split(',').filter(Boolean);
     const today = new Date().toISOString().slice(0, 10);
-    const in5 = new Date(); in5.setDate(in5.getDate() + 5);
-    const in5Str = in5.toISOString().slice(0, 10);
+    const in5Str = (() => { const d = new Date(); d.setDate(d.getDate() + 5); return d.toISOString().slice(0, 10); })();
     Promise.allSettled(ids.map(id => api.getPaystubs(id).then(stubs => ({ id, stubs }))))
       .then(settled => {
         const results = settled.filter(r => r.status === 'fulfilled').map(r => r.value);
         const merged = [];
         results.forEach(({ id, stubs }) => {
           const client = clients.find(c => c.id == id);
-          stubs.filter(s => (s.check_status === 'draft' || s.check_status === 'late') && !s.voided_at).forEach(s => {
+          // Include all draft/late checks; exclude voided (check_status, not a column)
+          stubs.filter(s =>
+            (s.check_status === 'draft' || s.check_status === 'late') &&
+            s.check_status !== 'voided'
+          ).forEach(s => {
             const payDate = s.settlement_date || (s.pay_period_end ? addBizDays(s.pay_period_end, 2) : null);
-            if (!payDate) return;
-            const isLate    = payDate < today;
-            const isDueSoon = !isLate && payDate <= in5Str;
-            if (!isLate && !isDueSoon) return;
+            const isLate    = payDate ? payDate < today : false;
+            const isDueSoon = payDate ? (!isLate && payDate <= in5Str) : false;
             merged.push({ ...s, _clientName: client?.businessName || '—', _clientId: id, _payDate: payDate, _isLate: isLate, _isDueSoon: isDueSoon });
           });
         });
-        merged.sort((a, b) => (a._payDate || '').localeCompare(b._payDate || ''));
+        merged.sort((a, b) => (a._payDate || 'zzzz').localeCompare(b._payDate || 'zzzz'));
         setRows(merged);
         setSelected(prev => { const valid = new Set(merged.map(r => r.id)); return new Set([...prev].filter(id => valid.has(id))); });
       })
@@ -567,6 +569,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
           Paychecks
           {lateCount > 0 && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#dc2626', background: '#fee2e2', borderRadius: 99, padding: '2px 7px' }}>{lateCount} late</span>}
           {dueSoonCount > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#d97706', background: '#fef3c7', borderRadius: 99, padding: '2px 7px' }}>{dueSoonCount} due soon</span>}
+          {rows.length - lateCount - dueSoonCount > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 600, color: '#6b7280', background: '#f3f4f6', borderRadius: 99, padding: '2px 7px' }}>{rows.length - lateCount - dueSoonCount} upcoming</span>}
         </span>
         {loading && <span className="spinner spinner-dark" style={{ width: 12, height: 12 }} />}
       </button>
@@ -588,7 +591,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
             </>}
           </div>
           {!loading && rows.length === 0 && (
-            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No upcoming or late paychecks.</div>
+            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No pending paychecks.</div>
           )}
           {rows.length > 0 && (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -631,7 +634,11 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                         <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{fmt(r.net_pay)}</td>
                         <td style={{ padding: '7px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, fontWeight: r._isLate || r._isDueSoon ? 700 : 400, color: r._isLate ? '#dc2626' : r._isDueSoon ? '#d97706' : 'inherit' }}>{fmtShort(r._payDate)}</td>
                         <td style={{ padding: '7px 10px' }}>
-                          {r._isLate ? <span className="badge badge-error" style={{ fontSize: 10 }}>Late</span> : <span className="badge badge-warning" style={{ fontSize: 10 }}>Due Soon</span>}
+                          {r._isLate
+                            ? <span className="badge badge-error" style={{ fontSize: 10 }}>Late</span>
+                            : r._isDueSoon
+                              ? <span className="badge badge-warning" style={{ fontSize: 10 }}>Due Soon</span>
+                              : <span className="badge" style={{ fontSize: 10, background: '#f3f4f6', color: '#6b7280' }}>Upcoming</span>}
                         </td>
                       </tr>
                     ))}
