@@ -478,19 +478,15 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
   const sel941Ids       = [...selSet].filter(id => { const r = visibleRows.find(x => x.id === id); return r?._pending941 || r?._failed941; });
   const sel940Ids       = [...selSet].filter(id => { const r = visibleRows.find(x => x.id === id); return r?._pending940 || r?._failed940; });
   const selSUIIds       = [...selSet].filter(id => { const r = visibleRows.find(x => x.id === id); return r?._pendingSUI || r?._failedSUI; });
-  const selSubmittedIds = [...selSet].filter(id => { const r = visibleRows.find(x => x.id === id); return r?._submitted941 || r?._submitted940 || r?._submittedSUI; });
+  const selSubmitted941 = [...selSet].filter(id => visibleRows.find(x => x.id === id)?._submitted941);
+  const selSubmitted940 = [...selSet].filter(id => visibleRows.find(x => x.id === id)?._submitted940);
+  const selSubmittedSUI = [...selSet].filter(id => visibleRows.find(x => x.id === id)?._submittedSUI);
   const lateIds         = visibleRows.filter(r => r._isLate).map(r => r.id);
 
-  async function handleUndoSent(ids) {
-    setSubmitting('undo');
+  async function handleUndoSent(ids, taxType) {
+    setSubmitting(`undo_${taxType}`);
     try {
-      for (const id of ids) {
-        const r = visibleRows.find(x => x.id === id);
-        if (!r) continue;
-        if (r._submitted941) await api.updatePaystubStatus(id, 'pending', '941');
-        if (r._submitted940) await api.updatePaystubStatus(id, 'pending', '940');
-        if (r._submittedSUI) await api.updatePaystubStatus(id, 'pending', 'sui');
-      }
+      for (const id of ids) await api.updatePaystubStatus(id, 'pending', taxType);
       setSelectedLiab(new Set());
     } catch (e) { alert(e.message); }
     finally { setSubmitting(null); triggerReload(); }
@@ -591,10 +587,22 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
                   {submitting === 'all' ? '…' : 'Pay All'}
                 </button>
               )}
-              {selSubmittedIds.length > 0 && (
+              {selSubmitted941.length > 0 && (
                 <button style={bulkBtn({ background: '#6b7280', border: '1px solid #4b5563', color: '#fff' })}
-                  disabled={!!submitting} onClick={() => handleUndoSent(selSubmittedIds)}>
-                  {submitting === 'undo' ? '…' : `↩ Undo Sent (${selSubmittedIds.length})`}
+                  disabled={!!submitting} onClick={() => handleUndoSent(selSubmitted941, '941')}>
+                  {submitting === 'undo_941' ? '…' : `↩ 941 (${selSubmitted941.length})`}
+                </button>
+              )}
+              {selSubmitted940.length > 0 && (
+                <button style={bulkBtn({ background: '#6b7280', border: '1px solid #4b5563', color: '#fff' })}
+                  disabled={!!submitting} onClick={() => handleUndoSent(selSubmitted940, '940')}>
+                  {submitting === 'undo_940' ? '…' : `↩ 940 (${selSubmitted940.length})`}
+                </button>
+              )}
+              {selSubmittedSUI.length > 0 && (
+                <button style={bulkBtn({ background: '#6b7280', border: '1px solid #4b5563', color: '#fff' })}
+                  disabled={!!submitting} onClick={() => handleUndoSent(selSubmittedSUI, 'sui')}>
+                  {submitting === 'undo_sui' ? '…' : `↩ SUI (${selSubmittedSUI.length})`}
                 </button>
               )}
               <button style={{ ...bulkBtn(), marginLeft: 'auto', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-secondary)' }} onClick={() => setSelectedLiab(new Set())}>Clear</button>
