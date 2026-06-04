@@ -73,6 +73,7 @@ const api = {
   getPaystubCredits: (clientId) => request(`/paystubs/credits?clientId=${clientId}`),
   markLateChecks: () => request('/paystubs/mark-late', { method: 'POST' }),
   batchSubmitPaystubs: (data) => request('/paystubs/batch-submit', { method: 'POST', body: JSON.stringify(data) }),
+  batchResetTax: (clientIds, taxTypes) => request('/paystubs/batch-reset-tax', { method: 'POST', body: JSON.stringify({ clientIds, taxTypes }) }),
   getBridgeJobStatus: (jobId) => request(`/bridge/job-status/${jobId}`),
   printSelectedChecks: async (clientId, paystubIds) => {
     const token = localStorage.getItem('token');

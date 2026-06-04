@@ -1400,6 +1400,41 @@ router.get('/run-pdf/:runId', (req, res) => {
   `).run(runId, clientId);
 });
 
+// ── POST /api/paystubs/batch-reset-tax ───────────────────────────────────────
+// Resets erroneously submitted tax statuses back to 'pending'.
+// Body: { clientIds: number[], taxTypes: ('941'|'940'|'sui')[] }
+// Resets ALL paystubs for those clients whose check_status is in the issued set
+// and whose EFTPS status is 'submitted' (i.e. incorrectly marked without a real submission).
+router.post('/batch-reset-tax', (req, res) => {
+  const db = getDb();
+  const { clientIds, taxTypes } = req.body;
+  if (!Array.isArray(clientIds) || !clientIds.length || !Array.isArray(taxTypes) || !taxTypes.length) {
+    return res.status(400).json({ error: 'clientIds and taxTypes required' });
+  }
+  const ph = clientIds.map(() => '?').join(',');
+  // Verify ownership of all requested clients
+  const owned = db.prepare(`SELECT id FROM clients WHERE id IN (${ph}) AND user_id = ?`).all(...clientIds, req.user.id);
+  if (owned.length !== clientIds.length) return res.status(403).json({ error: 'One or more clients not found' });
+
+  const ISSUED = ['printed', 'deposited', 'direct_deposit_sent', 'direct_deposit_cleared'];
+  const issuedPh = ISSUED.map(() => '?').join(',');
+  let totalReset = 0;
+
+  if (taxTypes.includes('941')) {
+    const r = db.prepare(`UPDATE paystubs SET status = 'pending' WHERE client_id IN (${ph}) AND status = 'submitted' AND check_status IN (${issuedPh})`).run(...clientIds, ...ISSUED);
+    totalReset += r.changes;
+  }
+  if (taxTypes.includes('940')) {
+    const r = db.prepare(`UPDATE paystubs SET status_940 = 'pending' WHERE client_id IN (${ph}) AND status_940 = 'submitted' AND check_status IN (${issuedPh})`).run(...clientIds, ...ISSUED);
+    totalReset += r.changes;
+  }
+  if (taxTypes.includes('sui')) {
+    const r = db.prepare(`UPDATE paystubs SET status_sui = 'pending' WHERE client_id IN (${ph}) AND status_sui = 'submitted' AND check_status IN (${issuedPh})`).run(...clientIds, ...ISSUED);
+    totalReset += r.changes;
+  }
+  res.json({ reset: totalReset, taxTypes });
+});
+
 // taxType '941': aggregate FIT+SS+Medicare (optionally filtered by taxYear+taxQuarter)
 // taxType '940': aggregate FUTA for the year (taxYear required)
 router.post('/batch-submit', async (req, res) => {

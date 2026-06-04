@@ -297,38 +297,72 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
 
   function triggerReload() { setRefreshTick(t => t + 1); }
 
+  async function checkBridgeOrAbort() {
+    try {
+      const bs = await api.getBridgeStatus();
+      if (!bs.connected) {
+        alert('EFTPS bridge is not connected.\n\nStart the bridge service on your local machine to submit tax deposits. No payment was sent.');
+        return false;
+      }
+      return true;
+    } catch {
+      alert('Could not reach the server to verify bridge status. No payment was sent.');
+      return false;
+    }
+  }
+
   async function handlePayTaxType(taxType, selectedIds) {
     if (!selectedIds.length) return;
+    if (!await checkBridgeOrAbort()) return;
+    const byClient = {};
+    selectedIds.forEach(id => {
+      const r = visibleRows.find(x => x.id === id);
+      if (r) (byClient[r._clientId] = byClient[r._clientId] || []).push(id);
+    });
     setSubmitting(taxType);
     try {
-      for (const id of selectedIds) {
-        await api.updatePaystubStatus(id, 'submitted', taxType);
+      for (const [cid, ids] of Object.entries(byClient)) {
+        await api.batchSubmitPaystubs({ clientId: Number(cid), paystubIds: ids, taxType });
       }
       setSelectedLiab(new Set());
-    } catch (e) { alert(`Payment failed: ${e.message}`); }
+    } catch (e) { alert(`Submission failed: ${e.message}`); }
     finally { setSubmitting(null); triggerReload(); }
   }
 
   async function handlePayAll() {
-    const tasks = [];
+    const byClientTax = {};
     [...selectedLiab].forEach(id => {
       const r = visibleRows.find(x => x.id === id);
       if (!r) return;
-      if (r._pending941) tasks.push({ id, taxType: '941' });
-      if (r._pending940) tasks.push({ id, taxType: '940' });
-      if (r._pendingSUI) tasks.push({ id, taxType: 'sui' });
+      if (r._pending941) { const k = `${r._clientId}-941`; (byClientTax[k] = byClientTax[k] || { clientId: r._clientId, taxType: '941', ids: [] }).ids.push(id); }
+      if (r._pending940) { const k = `${r._clientId}-940`; (byClientTax[k] = byClientTax[k] || { clientId: r._clientId, taxType: '940', ids: [] }).ids.push(id); }
+      if (r._pendingSUI) { const k = `${r._clientId}-sui`; (byClientTax[k] = byClientTax[k] || { clientId: r._clientId, taxType: 'sui', ids: [] }).ids.push(id); }
     });
-    if (!tasks.length) {
-      alert('No pending tax liabilities found for the selected paystubs. They may have already been submitted or are not yet due.');
+    const keys = Object.values(byClientTax);
+    if (!keys.length) {
+      alert('No pending tax liabilities found for the selected paystubs. They may have already been submitted.');
       return;
     }
+    if (!await checkBridgeOrAbort()) return;
     setSubmitting('all');
     try {
-      for (const { id, taxType } of tasks) {
-        await api.updatePaystubStatus(id, 'submitted', taxType);
+      for (const { clientId, taxType, ids } of keys) {
+        await api.batchSubmitPaystubs({ clientId: Number(clientId), paystubIds: ids, taxType });
       }
       setSelectedLiab(new Set());
-    } catch (e) { alert(`Payment failed: ${e.message}`); }
+    } catch (e) { alert(`Submission failed: ${e.message}`); }
+    finally { setSubmitting(null); triggerReload(); }
+  }
+
+  async function handleResetTax() {
+    const allClientIds = [...new Set(clientIds.map(Number))];
+    if (!window.confirm(`This resets ALL paystubs across selected companies whose 941/940/SUI tax status was marked "submitted" without going through the bridge.\n\nUse this to undo incorrectly submitted tax statuses. Continue?`)) return;
+    setSubmitting('reset');
+    try {
+      const { reset } = await api.batchResetTax(allClientIds, ['941', '940', 'sui']);
+      setSelectedLiab(new Set());
+      alert(`${reset} paystub tax status${reset !== 1 ? 'es' : ''} reset to pending. They will reappear in the liabilities panel.`);
+    } catch (e) { alert(`Reset failed: ${e.message}`); }
     finally { setSubmitting(null); triggerReload(); }
   }
 
@@ -421,6 +455,11 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
               )}
               <button style={{ ...bulkBtn(), marginLeft: 'auto', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-secondary)' }} onClick={() => setSelectedLiab(new Set())}>Clear</button>
             </>}
+            <button style={{ ...bulkBtn({ background: '#92400e', border: '1px solid #78350f', color: '#fff' }), marginLeft: selSet.size > 0 ? 4 : 'auto' }}
+              disabled={!!submitting} onClick={handleResetTax}
+              title="Reset all submitted tax statuses back to pending for these companies">
+              {submitting === 'reset' ? '…' : 'Reset Submitted Taxes'}
+            </button>
           </div>
 
           {!loading && visibleRows.length === 0 && (
