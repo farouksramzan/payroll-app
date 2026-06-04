@@ -135,6 +135,26 @@ function clearPendingResult(jobId) {
   } catch {}
 }
 
+// ── Enrollment PIN store ──────────────────────────────────────────────────────
+// Persists the generated enrollment PIN so concurrent jobs waiting on the same
+// EIN's enrollment can use the correct PIN for their payment files.
+const ENROLLMENT_PINS_FILE = path.join(__dirname, '..', 'data', 'enrollment_pins.json');
+
+function saveEnrollmentPin(ein, pin) {
+  let pins = {};
+  try { pins = JSON.parse(fs.readFileSync(ENROLLMENT_PINS_FILE, 'utf8')); } catch {}
+  pins[cleanEin(ein)] = pin;
+  fs.mkdirSync(path.dirname(ENROLLMENT_PINS_FILE), { recursive: true });
+  fs.writeFileSync(ENROLLMENT_PINS_FILE, JSON.stringify(pins, null, 2));
+}
+
+function getStoredEnrollmentPin(ein) {
+  try {
+    const pins = JSON.parse(fs.readFileSync(ENROLLMENT_PINS_FILE, 'utf8'));
+    return pins[cleanEin(ein)] || null;
+  } catch { return null; }
+}
+
 // ── Enrollment tracking ───────────────────────────────────────────────────────
 
 function cleanEin(ein) {
@@ -200,7 +220,7 @@ function runPaymentAutomation(achFilePath, logFn) {
   }).then(() => ({ success: true, confirmation: 'BP_AUTOMATION_OK', achFilePath }));
 }
 
-const RETRY_DELAY_MS    = 10 * 60 * 1000; // 10 minutes
+const RETRY_DELAY_MS    = 10 * 1000; // 10 seconds — Error ID 88 is transient, retry quickly
 const MAX_IMPORT_RETRIES = 3;
 
 async function runPaymentWithRetry(achFilePath, logFn) {
@@ -433,19 +453,27 @@ class BridgeClient extends EventEmitter {
       // 1. Enroll client if not already enrolled.
       // Railway DB is authoritative (job.eftpsEnrolled). Local JSON is a fallback
       // in case the Railway DB is reset or the client was enrolled on a previous machine.
-      const enrollmentInProgress = loadPendingEnrollments().some(e => cleanEin(e.ein) === cleanEin(job.ein));
-      const alreadyEnrolled = job.eftpsEnrolled === 1 || isEnrolled(job.ein) || enrollmentInProgress;
-      if (enrollmentInProgress) {
-        log(`[ENROLL] EIN ${cleanEin(job.ein)} enrollment already in progress — skipping re-enrollment`);
+      const enrollmentWasInProgress = loadPendingEnrollments().some(e => cleanEin(e.ein) === cleanEin(job.ein));
+      const alreadyEnrolled = job.eftpsEnrolled === 1 || isEnrolled(job.ein) || enrollmentWasInProgress;
+      if (enrollmentWasInProgress) {
+        log(`[ENROLL] EIN ${cleanEin(job.ein)} enrollment already in progress — skipping re-enrollment, will wait before payment`);
       }
       if (!alreadyEnrolled) {
         log(`EIN ${cleanEin(job.ein)} not enrolled (Railway DB + local JSON both show unenrolled) — running enrollment first`);
+
+        // Write stub to pending_enrollments.json IMMEDIATELY so concurrent jobs for this
+        // EIN see enrollmentWasInProgress=true and don't generate duplicate enrollment files.
+        upsertPendingEnrollment({ ein: job.ein, businessName: job.businessName || '', jobId, submissionId, achFilePath: '', clientId: job.clientId, enrollmentPin: '', attempt: 0, maxRetries: 6 });
 
         // Generate a fresh PIN for the enrollment file regardless of what the server sent.
         // This guarantees the PIN stored in EFTPS matches what we record back in the DB.
         generatedEnrollmentPin = generatePin();
         effectivePin = generatedEnrollmentPin;
         log(`[ENROLL] Generated enrollment PIN: ${generatedEnrollmentPin} (will be stored in client record after Active confirmation)`);
+        // Store PIN on disk so concurrent jobs waiting on this enrollment can use it for payment
+        saveEnrollmentPin(job.ein, generatedEnrollmentPin);
+        // Update pending entry with the real PIN
+        upsertPendingEnrollment({ ein: job.ein, businessName: job.businessName || '', jobId, submissionId, achFilePath: '', clientId: job.clientId, enrollmentPin: generatedEnrollmentPin, attempt: 0, maxRetries: 6 });
 
         const enrollContent = generateEnrollmentFile({
           ein:           job.ein,
@@ -494,13 +522,33 @@ class BridgeClient extends EventEmitter {
         markEnrolled(job.ein);
         removePendingEnrollment(job.ein);
         log(`EIN ${cleanEin(job.ein)} confirmed Active and added to enrolled_clients.json`);
-      } else {
+      } else if (!enrollmentWasInProgress) {
         log(`EIN ${cleanEin(job.ein)} already enrolled (eftpsEnrolled=${job.eftpsEnrolled}, localJson=${isEnrolled(job.ein)}) — skipping enrollment`);
         // Sync local JSON cache if Railway says enrolled but local file doesn't know yet
         if (job.eftpsEnrolled === 1 && !isEnrolled(job.ein)) {
           markEnrolled(job.ein);
           log(`EIN ${cleanEin(job.ein)} synced to local enrolled_clients.json from Railway DB`);
         }
+      }
+
+      // If enrollment was already in progress (started by a concurrent job for the same EIN),
+      // wait until it completes so we don't try to pay before the client is enrolled.
+      if (enrollmentWasInProgress) {
+        log(`[ENROLL] Waiting for EIN ${cleanEin(job.ein)} enrollment to complete before payment...`);
+        const WAIT_POLL_MS = 30 * 1000;
+        const MAX_WAIT_MS  = 95 * 60 * 1000; // slightly more than the 90-min enrollment timeout
+        const waitStarted  = Date.now();
+        while (!isEnrolled(job.ein) && Date.now() - waitStarted < MAX_WAIT_MS) {
+          log(`[ENROLL] EIN ${cleanEin(job.ein)} still enrolling — will check again in 30s`);
+          await new Promise(r => setTimeout(r, WAIT_POLL_MS));
+        }
+        if (!isEnrolled(job.ein)) {
+          throw new Error('Enrollment did not complete within expected time — please retry this payment after enrollment confirms.');
+        }
+        // Use the PIN generated during enrollment so the payment ACH file is correct
+        const storedPin = getStoredEnrollmentPin(job.ein);
+        if (storedPin) { effectivePin = storedPin; log(`[ENROLL] Using stored enrollment PIN for payment`); }
+        log(`[ENROLL] EIN ${cleanEin(job.ein)} enrolled — proceeding to payment`);
       }
 
       // 2. Generate and save payment ACH file (reuse early-saved file if enrollment just ran)
