@@ -299,15 +299,10 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
 
   async function handlePayTaxType(taxType, selectedIds) {
     if (!selectedIds.length) return;
-    const byClient = {};
-    selectedIds.forEach(id => {
-      const r = visibleRows.find(x => x.id === id);
-      if (r) (byClient[r._clientId] = byClient[r._clientId] || []).push(id);
-    });
     setSubmitting(taxType);
     try {
-      for (const [cid, ids] of Object.entries(byClient)) {
-        await api.batchSubmitPaystubs({ clientId: Number(cid), paystubIds: ids, taxType });
+      for (const id of selectedIds) {
+        await api.updatePaystubStatus(id, 'submitted', taxType);
       }
       setSelectedLiab(new Set());
     } catch (e) { alert(`Payment failed: ${e.message}`); }
@@ -315,23 +310,22 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
   }
 
   async function handlePayAll() {
-    const byClientTax = {};
+    const tasks = [];
     [...selectedLiab].forEach(id => {
       const r = visibleRows.find(x => x.id === id);
       if (!r) return;
-      if (r._pending941) { const k = `${r._clientId}-941`; (byClientTax[k] = byClientTax[k] || { clientId: r._clientId, taxType: '941', ids: [] }).ids.push(id); }
-      if (r._pending940) { const k = `${r._clientId}-940`; (byClientTax[k] = byClientTax[k] || { clientId: r._clientId, taxType: '940', ids: [] }).ids.push(id); }
-      if (r._pendingSUI) { const k = `${r._clientId}-sui`; (byClientTax[k] = byClientTax[k] || { clientId: r._clientId, taxType: 'sui', ids: [] }).ids.push(id); }
+      if (r._pending941) tasks.push({ id, taxType: '941' });
+      if (r._pending940) tasks.push({ id, taxType: '940' });
+      if (r._pendingSUI) tasks.push({ id, taxType: 'sui' });
     });
-    const keys = Object.values(byClientTax);
-    if (!keys.length) {
+    if (!tasks.length) {
       alert('No pending tax liabilities found for the selected paystubs. They may have already been submitted or are not yet due.');
       return;
     }
     setSubmitting('all');
     try {
-      for (const { clientId, taxType, ids } of keys) {
-        await api.batchSubmitPaystubs({ clientId: Number(clientId), paystubIds: ids, taxType });
+      for (const { id, taxType } of tasks) {
+        await api.updatePaystubStatus(id, 'submitted', taxType);
       }
       setSelectedLiab(new Set());
     } catch (e) { alert(`Payment failed: ${e.message}`); }
