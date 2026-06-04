@@ -83,22 +83,36 @@ def is_file_format_selector_open():
 
 def dismiss_file_format_selector():
     """
-    Dismiss the File Format Selector error dialog by clicking the OK button
-    at the known coordinates (BP_ERROR_OK_X, BP_ERROR_OK_Y).
-    Falls back to pressing Enter if the window cannot be activated.
+    Dismiss the File Format Selector error dialog (e.g. Error ID 88).
+    Tries to activate the window, then clicks OK at (BP_ERROR_OK_X, BP_ERROR_OK_Y)
+    up to 5 times, confirming the dialog closed between attempts.
     """
+    log('Dismissing File Format Selector error dialog...')
     try:
         import pygetwindow as gw
         wins = [w for w in gw.getAllWindows() if 'File Format Selector' in w.title]
         if wins:
             wins[0].activate()
-            time.sleep(0.3)
+            log('Window activated')
+            time.sleep(0.5)
+        else:
+            log('WARNING: File Format Selector window not found by title')
     except Exception as e:
-        log('Could not activate File Format Selector: ' + str(e))
-    log('Clicking OK on error dialog at (' + str(BP_ERROR_OK_X) + ', ' + str(BP_ERROR_OK_Y) + ')')
-    pyautogui.click(BP_ERROR_OK_X, BP_ERROR_OK_Y)
-    time.sleep(0.8)
-    # Press Enter as a belt-and-suspenders fallback in case the click missed
+        log('Could not activate window: ' + str(e))
+
+    for attempt in range(5):
+        log('Clicking OK at (' + str(BP_ERROR_OK_X) + ', ' + str(BP_ERROR_OK_Y) + ') — attempt ' + str(attempt + 1))
+        pyautogui.moveTo(BP_ERROR_OK_X, BP_ERROR_OK_Y, duration=0.15)
+        time.sleep(0.1)
+        pyautogui.click(BP_ERROR_OK_X, BP_ERROR_OK_Y)
+        time.sleep(0.6)
+        if not is_file_format_selector_open():
+            log('Dialog closed after attempt ' + str(attempt + 1))
+            return
+        log('Dialog still open — retrying click')
+
+    # Final fallback
+    log('Coordinate clicks did not close dialog — pressing Enter')
     pyautogui.press('enter')
     time.sleep(0.5)
 
