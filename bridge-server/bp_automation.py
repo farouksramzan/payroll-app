@@ -74,6 +74,13 @@ def maximize_bp():
 
 def is_file_format_selector_open():
     """Return True if the File Format Selector dialog is still on screen."""
+    # win32gui is more reliable than pygetwindow for modal dialogs
+    try:
+        import win32gui
+        hwnd = win32gui.FindWindow(None, 'File Format Selector')
+        return hwnd != 0
+    except Exception:
+        pass
     try:
         import pygetwindow as gw
         return any('File Format Selector' in w.title for w in gw.getAllWindows())
@@ -84,21 +91,47 @@ def is_file_format_selector_open():
 def dismiss_file_format_selector():
     """
     Dismiss the File Format Selector error dialog (e.g. Error ID 88).
-    Tries to activate the window, then clicks OK at (BP_ERROR_OK_X, BP_ERROR_OK_Y)
-    up to 5 times, confirming the dialog closed between attempts.
+
+    Primary: send BM_CLICK directly to the OK button control via win32gui —
+    works without window focus and is immune to DPI-scaling coordinate issues.
+    Fallback: pyautogui coordinate click at (BP_ERROR_OK_X, BP_ERROR_OK_Y).
     """
     log('Dismissing File Format Selector error dialog...')
+    BM_CLICK = 0x00F5
+
+    # Primary — win32gui PostMessage to OK button (no focus required)
     try:
-        import pygetwindow as gw
-        wins = [w for w in gw.getAllWindows() if 'File Format Selector' in w.title]
-        if wins:
-            wins[0].activate()
-            log('Window activated')
-            time.sleep(0.5)
+        import win32gui
+        hwnd = win32gui.FindWindow(None, 'File Format Selector')
+        if hwnd:
+            log('Found File Format Selector hwnd=' + str(hwnd))
+            ok_hwnd = win32gui.FindWindowEx(hwnd, 0, 'Button', 'OK')
+            if ok_hwnd:
+                log('Sending BM_CLICK to OK button hwnd=' + str(ok_hwnd))
+                win32gui.PostMessage(ok_hwnd, BM_CLICK, 0, 0)
+                time.sleep(1.0)
+                if not is_file_format_selector_open():
+                    log('Dialog closed via BM_CLICK')
+                    return
+                log('BM_CLICK sent but dialog still open — falling through to coordinate click')
+            else:
+                log('OK button control not found by text — falling through to coordinate click')
         else:
-            log('WARNING: File Format Selector window not found by title')
+            log('File Format Selector window not found by win32gui')
     except Exception as e:
-        log('Could not activate window: ' + str(e))
+        log('win32gui BM_CLICK failed: ' + str(e))
+
+    # Fallback — pyautogui coordinate click
+    try:
+        import win32gui
+        hwnd = win32gui.FindWindow(None, 'File Format Selector')
+        if hwnd:
+            import win32con
+            win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+            win32gui.SetForegroundWindow(hwnd)
+            time.sleep(0.4)
+    except Exception as e:
+        log('Could not bring window to front: ' + str(e))
 
     for attempt in range(5):
         log('Clicking OK at (' + str(BP_ERROR_OK_X) + ', ' + str(BP_ERROR_OK_Y) + ') — attempt ' + str(attempt + 1))
@@ -107,12 +140,11 @@ def dismiss_file_format_selector():
         pyautogui.click(BP_ERROR_OK_X, BP_ERROR_OK_Y)
         time.sleep(0.6)
         if not is_file_format_selector_open():
-            log('Dialog closed after attempt ' + str(attempt + 1))
+            log('Dialog closed after coordinate click attempt ' + str(attempt + 1))
             return
-        log('Dialog still open — retrying click')
+        log('Dialog still open — retrying')
 
-    # Final fallback
-    log('Coordinate clicks did not close dialog — pressing Enter')
+    log('Pressing Enter as final fallback')
     pyautogui.press('enter')
     time.sleep(0.5)
 
