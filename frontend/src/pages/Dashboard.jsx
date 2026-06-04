@@ -120,79 +120,94 @@ function LiabStatusBadge({ status }) {
 const ISSUED = new Set(['printed', 'deposited']);
 
 
-// ── Tax detail modal ───────────────────────────────────────────────────────────
-function TaxDetailModal({ row, onClose, onEdit }) {
+// ── Liability detail modal (tax math only) ────────────────────────────────────
+function LiabilityDetailModal({ row, onClose, onAction }) {
   if (!row) return null;
-  const DL = ({ label, value, accent, bold }) => (
-    <div style={{ minWidth: 110 }}>
-      <div style={{ fontSize: 10, color: 'var(--text-muted)', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
-      <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: bold ? 800 : 600, fontSize: 13, color: accent || 'inherit' }}>{value}</div>
+  const MONO = { fontFamily: 'JetBrains Mono, monospace' };
+  const Row = ({ label, value, bold, accent, indent }) => (
+    <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--border)', paddingLeft: indent ? 12 : 0 }}>
+      <span style={{ fontSize: 12, color: indent ? 'var(--text-muted)' : 'var(--text)', fontWeight: bold ? 700 : 400 }}>{label}</span>
+      <span style={{ ...MONO, fontSize: 12, fontWeight: bold ? 700 : 500, color: accent || 'inherit' }}>{value}</span>
     </div>
   );
-  const Section = ({ title, children }) => (
-    <div style={{ marginBottom: 16 }}>
-      <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8, paddingBottom: 4, borderBottom: '1px solid var(--border)' }}>{title}</div>
-      <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>{children}</div>
-    </div>
-  );
+  const TaxBlock = ({ title, children, amount, dueDate, sendByDate, status, late, dueSoon, taxType }) => {
+    const statusColor = status === 'submitted' ? '#16a34a' : status === 'processing' ? '#1d4ed8' : status === 'failed' ? '#dc2626' : late ? '#dc2626' : dueSoon ? '#d97706' : 'var(--text-muted)';
+    const statusLabel = status === 'submitted' ? '✓ Sent' : status === 'processing' ? '⟳ Processing' : status === 'failed' ? '✗ Failed' : late ? 'LATE' : dueSoon ? 'Due Soon' : 'Pending';
+    return (
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, paddingBottom: 4, borderBottom: '2px solid var(--border)' }}>
+          <span style={{ fontWeight: 700, fontSize: 13 }}>{title}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {dueDate && <span style={{ fontSize: 11, color: statusColor, fontWeight: 600 }}>
+              {status === 'submitted' || status === 'processing' ? '' : `${late ? 'Was due' : 'Due'} ${fmtDate(dueDate)}`}
+              {sendByDate && !late && status !== 'submitted' && status !== 'processing' ? ` · send by ${fmtDate(sendByDate)}` : ''}
+            </span>}
+            <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: status === 'submitted' ? '#dcfce7' : status === 'processing' ? '#dbeafe' : status === 'failed' ? '#fee2e2' : late ? '#fee2e2' : dueSoon ? '#fef3c7' : '#f3f4f6', color: statusColor }}>{statusLabel}</span>
+          </div>
+        </div>
+        {children}
+        <div style={{ marginTop: 8, display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+          {status === 'submitted'
+            ? <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={() => onAction('reset', taxType)}>↩ Mark as Pending</button>
+            : status === 'processing'
+              ? <span style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>Processing via bridge — check back in ~15 min</span>
+              : <>
+                  <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={() => onAction('markSent', taxType)}>Mark as Sent</button>
+                  <button className="btn btn-primary" style={{ fontSize: 11 }} onClick={() => onAction('submit', taxType)}>Submit via Bridge</button>
+                </>
+          }
+        </div>
+      </div>
+    );
+  };
+
+  const has941 = (row.total_deposit || 0) > 0 || row._submitted941 || row._processing941;
+  const has940 = (row.futa_tax || 0) > 0 || row._submitted940 || row._processing940;
+  const hasSUI = (row.suta_tax || 0) > 0 || row._submittedSUI || row._processingSUI;
+  const taxStatus = t => t === '941' ? (row._submitted941 ? 'submitted' : row._processing941 ? 'processing' : row._failed941 ? 'failed' : 'pending')
+                       : t === '940' ? (row._submitted940 ? 'submitted' : row._processing940 ? 'processing' : row._failed940 ? 'failed' : 'pending')
+                       :               (row._submittedSUI ? 'submitted' : row._processingSUI ? 'processing' : row._failedSUI  ? 'failed' : 'pending');
+
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="card" style={{ width: 580, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', padding: 24 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
+      <div className="card" style={{ width: 520, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', padding: 24 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 18 }}>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 16 }}>{row.employee_name || '—'}</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-              {row._clientName} · {fmtDate(row.pay_period_start)} – {fmtDate(row.pay_period_end)}
-            </div>
+            <div style={{ fontWeight: 700, fontSize: 15 }}>{row.employee_name || '—'}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>{row._clientName} · {fmtPeriod(row.pay_period_start, row.pay_period_end)}</div>
           </div>
           <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
         </div>
 
-        <Section title="Earnings">
-          <DL label="Gross Pay" value={fmt(row.gross_wages)} accent="var(--accent)" bold />
-          {row.regular_hours != null && <DL label="Reg Hours" value={row.regular_hours} />}
-          {row.regular_pay   != null && <DL label="Reg Pay"   value={fmt(row.regular_pay)} />}
-          {row.overtime_hours > 0    && <DL label="OT Hours"  value={row.overtime_hours} />}
-          {row.overtime_pay   > 0    && <DL label="OT Pay"    value={fmt(row.overtime_pay)} />}
-          {row.bonus         > 0     && <DL label="Bonus"         value={fmt(row.bonus)} />}
-          {row.commission    > 0     && <DL label="Commission"    value={fmt(row.commission)} />}
-          {row.reimbursement > 0     && <DL label="Reimbursement" value={fmt(row.reimbursement)} />}
-        </Section>
-
-        <Section title="Employee Withholding">
-          <DL label="Federal Income Tax" value={fmt(row.fit_withholding)} />
-          <DL label="Social Security"    value={fmt(row.employee_ss)} />
-          <DL label="Medicare"           value={fmt(row.employee_medicare)} />
-          {row.state_income_tax > 0 && <DL label="State Income Tax" value={fmt(row.state_income_tax)} />}
-        </Section>
-
-        <Section title="Employer Taxes">
-          <DL label="SS Match"     value={fmt(row.employer_ss)} />
-          <DL label="Medicare Match" value={fmt(row.employer_medicare)} />
-          {row.futa_tax > 0 && <DL label="FUTA (940)"  value={fmt(row.futa_tax)} />}
-          {row.suta_tax > 0 && <DL label="SUI"         value={fmt(row.suta_tax)} />}
-        </Section>
-
-        <div style={{ display: 'flex', gap: 16, padding: '12px 16px', background: 'var(--bg-secondary)', borderRadius: 8, flexWrap: 'wrap' }}>
-          <DL label="Gross Pay"   value={fmt(row.gross_wages)}    accent="var(--accent)" bold />
-          <DL label="Net Pay"     value={fmt(row.net_pay)}        accent="var(--success, #16a34a)" bold />
-          <DL label="941 Deposit" value={fmt(row.total_deposit)}  bold />
-          {row.futa_tax > 0 && <DL label="940 FUTA" value={fmt(row.futa_tax)} bold />}
-          {row.suta_tax > 0 && <DL label="SUI"      value={fmt(row.suta_tax)} bold />}
-        </div>
-
-        {(row._due941 || row._due940 || row._dueSUI) && (
-          <div style={{ marginTop: 16, display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-            {row._due941 && <div style={{ fontSize: 12 }}><span style={{ color: 'var(--text-muted)' }}>941 Due: </span><span style={{ fontWeight: 600, color: row._late941 ? '#dc2626' : 'inherit' }}>{fmtDate(row._due941)}</span></div>}
-            {row._due940 && <div style={{ fontSize: 12 }}><span style={{ color: 'var(--text-muted)' }}>940 Due: </span><span style={{ fontWeight: 600 }}>{fmtDate(row._due940)}</span></div>}
-            {row._dueSUI && <div style={{ fontSize: 12 }}><span style={{ color: 'var(--text-muted)' }}>SUI Due: </span><span style={{ fontWeight: 600 }}>{fmtDate(row._dueSUI)}</span></div>}
-          </div>
+        {has941 && (
+          <TaxBlock title="Form 941 — Federal Tax Deposit" amount={row.total_deposit} dueDate={row._due941} sendByDate={row._sendBy941} status={taxStatus('941')} late={row._late941} dueSoon={row._dueSoon941} taxType="941">
+            <Row label="Federal Income Tax withheld"  value={fmt(row.fit_withholding)}    indent />
+            <Row label="Employee Social Security (6.2%)" value={fmt(row.employee_ss)}     indent />
+            <Row label="Employer Social Security (6.2%)" value={fmt(row.employer_ss)}     indent />
+            <Row label="Employee Medicare (1.45%)"    value={fmt(row.employee_medicare)}  indent />
+            <Row label="Employer Medicare (1.45%)"    value={fmt(row.employer_medicare)}  indent />
+            <Row label="Total 941 Deposit"            value={fmt(row.total_deposit)}      bold accent="var(--accent)" />
+          </TaxBlock>
         )}
 
-        <div style={{ marginTop: 20, display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+        {has940 && (
+          <TaxBlock title="Form 940 — FUTA Deposit" amount={row.futa_tax} dueDate={row._due940} sendByDate={row._sendBy940} status={taxStatus('940')} late={row._late940} dueSoon={row._dueSoon940} taxType="940">
+            <Row label="FUTA taxable wages" value={fmt(row.futa_wages || row.gross_wages)} indent />
+            <Row label="Rate"               value="0.6%"                                   indent />
+            <Row label="FUTA Tax (940)"     value={fmt(row.futa_tax)}                      bold accent="var(--accent)" />
+          </TaxBlock>
+        )}
+
+        {hasSUI && (
+          <TaxBlock title="SUI — State Unemployment" amount={row.suta_tax} dueDate={row._dueSUI} sendByDate={row._sendBySUI} status={taxStatus('sui')} late={row._lateSUI} dueSoon={row._dueSoonSUI} taxType="sui">
+            <Row label="SUI taxable wages" value={fmt(row.suta_wages || row.gross_wages)} indent />
+            <Row label="SUI Tax"           value={fmt(row.suta_tax)}                      bold accent="var(--accent)" />
+          </TaxBlock>
+        )}
+
+        <div style={{ marginTop: 4, display: 'flex', justifyContent: 'flex-end', borderTop: '1px solid var(--border)', paddingTop: 14 }}>
           <button className="btn btn-ghost" onClick={onClose}>Close</button>
-          {onEdit && <button className="btn btn-primary" onClick={() => onEdit(row)}>Edit Check</button>}
         </div>
       </div>
     </div>
@@ -226,6 +241,7 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
   const [detailRow, setDetailRow]   = useState(null);
   const [submitting, setSubmitting] = useState(null);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [popover, setPopover]       = useState(null); // { stubId, taxType }
 
   const clientKey = useMemo(() => [...clientIds].sort().join(','), [clientIds]);
 
@@ -250,33 +266,56 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
         const due941 = s.settlement_due_date || (refDate ? calcIRSDepositDue(refDate, schedule) : null);
         const due940 = refDate ? calcFutaQuarterlyDue(refDate) : null;
         const dueSUI = due940;
-        const pending941   = s.status     === 'pending' || s.status     === 'processing' || s.status     === 'failed';
-        const submitted941 = s.status     === 'submitted';
-        const pending940   = (s.status_940 === 'pending' || s.status_940 === 'processing' || s.status_940 === 'failed') && (s.futa_tax || 0) > 0;
-        const submitted940 = s.status_940 === 'submitted' && (s.futa_tax || 0) > 0;
-        // SUI uses its own status_sui column, independent of 941; null treated as pending
-        const pendingSUI   = (!s.status_sui || s.status_sui === 'pending' || s.status_sui === 'processing' || s.status_sui === 'failed') && (s.suta_tax || 0) > 0;
-        const submittedSUI = s.status_sui  === 'submitted' && (s.suta_tax || 0) > 0;
-        if (!pending941 && !pending940 && !pendingSUI && !submitted941 && !submitted940 && !submittedSUI) return;
-        const late941    = pending941 && due941 && today > due941;
-        const late940    = pending940 && due940 && today > due940;
-        const lateSUI    = pendingSUI && dueSUI && today > dueSUI;
-        const dueSoon941 = !late941 && pending941 && due941 && due941 <= in30Str;
-        const dueSoon940 = !late940 && pending940 && due940 && due940 <= in30Str;
-        const dueSoonSUI = !lateSUI && pendingSUI && dueSUI && dueSUI <= in30Str;
+        // Per-type: track each state independently
+        const futa = (s.futa_tax || 0) > 0;
+        const suta = (s.suta_tax || 0) > 0;
+        const pending941    = s.status     === 'pending';
+        const processing941 = s.status     === 'processing';
+        const failed941     = s.status     === 'failed';
+        const submitted941  = s.status     === 'submitted';
+        const pending940    = (s.status_940 === 'pending'  || !s.status_940) && futa;
+        const processing940 = s.status_940 === 'processing' && futa;
+        const failed940     = s.status_940 === 'failed'     && futa;
+        const submitted940  = s.status_940 === 'submitted'  && futa;
+        // SUI independent of 941; null = pending
+        const pending941_or_equiv = pending941 || processing941 || failed941;
+        const pendingSUI    = (!s.status_sui || s.status_sui === 'pending')  && suta;
+        const processingSUI = s.status_sui === 'processing' && suta;
+        const failedSUI     = s.status_sui === 'failed'     && suta;
+        const submittedSUI  = s.status_sui === 'submitted'  && suta;
+        // "active" = needs attention (pending/processing/failed)
+        const active941 = pending941 || processing941 || failed941;
+        const active940 = pending940 || processing940 || failed940;
+        const activeSUI = pendingSUI || processingSUI || failedSUI;
+        // Nothing to show for this row
+        if (!active941 && !active940 && !activeSUI && !submitted941 && !submitted940 && !submittedSUI) return;
+        // Late/due-soon only applies to pending+failed (not processing — already queued)
+        const needsTiming941 = pending941 || failed941;
+        const needsTiming940 = pending940 || failed940;
+        const needsTimingSUI = pendingSUI || failedSUI;
+        const late941    = needsTiming941 && due941 && today > due941;
+        const late940    = needsTiming940 && due940 && today > due940;
+        const lateSUI    = needsTimingSUI && dueSUI && today > dueSUI;
+        const dueSoon941 = !late941 && needsTiming941 && due941 && due941 <= in30Str;
+        const dueSoon940 = !late940 && needsTiming940 && due940 && due940 <= in30Str;
+        const dueSoonSUI = !lateSUI && needsTimingSUI && dueSUI && dueSUI <= in30Str;
         const isLate    = late941 || late940 || lateSUI;
         const isDueSoon = !isLate && (dueSoon941 || dueSoon940 || dueSoonSUI);
-        if (!isLate && !isDueSoon) return; // hide rows where everything is submitted / not yet due
+        // Also show rows that have processing/failed active (regardless of due date)
+        const hasProcessingOrFailed = processing941 || failed941 || processing940 || failed940 || processingSUI || failedSUI;
+        if (!isLate && !isDueSoon && !hasProcessingOrFailed) return;
         merged.push({
           ...s,
           _clientName: client?.businessName || '—', _clientId: id,
-          _due941: pending941 ? due941 : null, _due940: pending940 ? due940 : null, _dueSUI: pendingSUI ? dueSUI : null,
-          _sendBy941: pending941 ? calcSendByDate(due941) : null,
-          _sendBy940: pending940 ? calcSendByDate(due940) : null,
-          _sendBySUI: pendingSUI ? calcSendByDate(dueSUI) : null,
+          _due941: active941 ? due941 : null, _due940: active940 ? due940 : null, _dueSUI: activeSUI ? dueSUI : null,
+          _sendBy941: needsTiming941 ? calcSendByDate(due941) : null,
+          _sendBy940: needsTiming940 ? calcSendByDate(due940) : null,
+          _sendBySUI: needsTimingSUI  ? calcSendByDate(dueSUI) : null,
           _late941: late941, _late940: late940, _lateSUI: lateSUI,
           _dueSoon941: dueSoon941, _dueSoon940: dueSoon940, _dueSoonSUI: dueSoonSUI,
           _pending941: pending941, _pending940: pending940, _pendingSUI: pendingSUI,
+          _processing941: processing941, _processing940: processing940, _processingSUI: processingSUI,
+          _failed941: failed941, _failed940: failed940, _failedSUI: failedSUI,
           _submitted941: submitted941, _submitted940: submitted940, _submittedSUI: submittedSUI,
           _isLate: isLate, _isDueSoon: isDueSoon,
         });
@@ -307,65 +346,105 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
     try {
       const bs = await api.getBridgeStatus();
       if (!bs.connected) {
-        alert('EFTPS bridge is not connected.\n\nStart the bridge service on your local machine to submit tax deposits. No payment was sent.');
+        alert('EFTPS bridge is not connected.\n\nStart the bridge service on your local machine to submit tax deposits.');
         return false;
       }
       return true;
     } catch {
-      alert('Could not reach the server to verify bridge status. No payment was sent.');
+      alert('Could not reach the server to verify bridge status.');
       return false;
     }
+  }
+
+  // Group paystubIds by (clientId × IRS deposit due date) so the bridge
+  // receives one file per deposit period — never a single aggregated blob.
+  function groupByDepositPeriod(ids, taxType) {
+    const groups = {};
+    ids.forEach(id => {
+      const r = visibleRows.find(x => x.id === id);
+      if (!r) return;
+      const client = clients.find(c => c.id == r._clientId);
+      const schedule = client?.depositSchedule || 'monthly';
+      const refDate  = r.settlement_date || r.pay_period_end;
+      const dueDate  = (taxType === '941' ? r._due941 : taxType === '940' ? r._due940 : r._dueSUI)
+                        || calcIRSDepositDue(refDate, schedule);
+      const key = `${r._clientId}::${dueDate || 'unknown'}`;
+      if (!groups[key]) groups[key] = { clientId: Number(r._clientId), dueDate, ids: [] };
+      groups[key].ids.push(id);
+    });
+    return Object.values(groups);
   }
 
   async function handlePayTaxType(taxType, selectedIds) {
     if (!selectedIds.length) return;
     if (!await checkBridgeOrAbort()) return;
-    const byClient = {};
-    selectedIds.forEach(id => {
-      const r = visibleRows.find(x => x.id === id);
-      if (r) (byClient[r._clientId] = byClient[r._clientId] || []).push(id);
-    });
+    const groups = groupByDepositPeriod(selectedIds, taxType);
     setSubmitting(taxType);
     try {
-      for (const [cid, ids] of Object.entries(byClient)) {
-        await api.batchSubmitPaystubs({ clientId: Number(cid), paystubIds: ids, taxType });
+      for (const { clientId, ids } of groups) {
+        await api.batchSubmitPaystubs({ clientId, paystubIds: ids, taxType });
       }
       setSelectedLiab(new Set());
+      alert(`${groups.length} ${taxType.toUpperCase()} submission${groups.length > 1 ? 's' : ''} queued (one per deposit period). The bridge is processing — check back in ~15 minutes.`);
     } catch (e) { alert(`Submission failed: ${e.message}`); }
     finally { setSubmitting(null); triggerReload(); }
   }
 
   async function handlePayAll() {
-    const byClientTax = {};
+    const by941 = [], by940 = [], bySUI = [];
     [...selectedLiab].forEach(id => {
       const r = visibleRows.find(x => x.id === id);
       if (!r) return;
-      if (r._pending941) { const k = `${r._clientId}-941`; (byClientTax[k] = byClientTax[k] || { clientId: r._clientId, taxType: '941', ids: [] }).ids.push(id); }
-      if (r._pending940) { const k = `${r._clientId}-940`; (byClientTax[k] = byClientTax[k] || { clientId: r._clientId, taxType: '940', ids: [] }).ids.push(id); }
-      if (r._pendingSUI) { const k = `${r._clientId}-sui`; (byClientTax[k] = byClientTax[k] || { clientId: r._clientId, taxType: 'sui', ids: [] }).ids.push(id); }
+      if (r._pending941 || r._failed941) by941.push(id);
+      if (r._pending940 || r._failed940) by940.push(id);
+      if (r._pendingSUI  || r._failedSUI) bySUI.push(id);
     });
-    const keys = Object.values(byClientTax);
-    if (!keys.length) {
-      alert('No pending tax liabilities found for the selected paystubs. They may have already been submitted.');
+    if (!by941.length && !by940.length && !bySUI.length) {
+      alert('No pending tax liabilities found for the selected paystubs.');
       return;
     }
     if (!await checkBridgeOrAbort()) return;
     setSubmitting('all');
+    let totalGroups = 0;
     try {
-      for (const { clientId, taxType, ids } of keys) {
-        await api.batchSubmitPaystubs({ clientId: Number(clientId), paystubIds: ids, taxType });
+      for (const [taxType, ids] of [['941', by941], ['940', by940], ['sui', bySUI]]) {
+        if (!ids.length) continue;
+        const groups = groupByDepositPeriod(ids, taxType);
+        for (const { clientId, ids: gIds } of groups) {
+          await api.batchSubmitPaystubs({ clientId, paystubIds: gIds, taxType });
+          totalGroups++;
+        }
       }
       setSelectedLiab(new Set());
+      alert(`${totalGroups} submission${totalGroups !== 1 ? 's' : ''} queued across all tax types. The bridge is processing — check back in ~15 minutes.`);
     } catch (e) { alert(`Submission failed: ${e.message}`); }
     finally { setSubmitting(null); triggerReload(); }
   }
 
-  async function handleResetOneTax(stubId, taxType, e) {
-    e.stopPropagation();
+  async function handleMarkSentOne(stubId, taxType) {
+    try {
+      await api.updatePaystubStatus(stubId, 'submitted', taxType);
+      triggerReload();
+    } catch (e) { alert(e.message); }
+  }
+
+  async function handleResetOneTax(stubId, taxType) {
     try {
       await api.updatePaystubStatus(stubId, 'pending', taxType);
       triggerReload();
-    } catch (err) { alert(`Could not reset: ${err.message}`); }
+    } catch (err) { alert(err.message); }
+  }
+
+  async function handleSubmitOne(stubId, taxType) {
+    const groups = groupByDepositPeriod([stubId], taxType);
+    if (!await checkBridgeOrAbort()) return;
+    try {
+      for (const { clientId, ids } of groups) {
+        await api.batchSubmitPaystubs({ clientId, paystubIds: ids, taxType });
+      }
+      alert(`${taxType.toUpperCase()} submission queued. The bridge is processing — check back in ~15 minutes.`);
+    } catch (e) { alert(`Submission failed: ${e.message}`); }
+    finally { triggerReload(); }
   }
 
   // Always show only late + due-soon rows
@@ -373,9 +452,9 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
   const lateRows    = visibleRows.filter(r => r._isLate);
   const dueSoonRows = visibleRows.filter(r => r._isDueSoon);
 
-  const total941   = visibleRows.filter(r => r._pending941).reduce((s, r) => s + (r.total_deposit || 0), 0);
-  const total940   = visibleRows.filter(r => r._pending940).reduce((s, r) => s + (r.futa_tax || 0), 0);
-  const totalSUI   = visibleRows.filter(r => r._pendingSUI).reduce((s, r) => s + (r.suta_tax || 0), 0);
+  const total941   = visibleRows.filter(r => r._pending941 || r._failed941).reduce((s, r) => s + (r.total_deposit || 0), 0);
+  const total940   = visibleRows.filter(r => r._pending940 || r._failed940).reduce((s, r) => s + (r.futa_tax || 0), 0);
+  const totalSUI   = visibleRows.filter(r => r._pendingSUI || r._failedSUI).reduce((s, r) => s + (r.suta_tax || 0), 0);
   const grandTotal = total941 + total940 + totalSUI;
 
   const grouped = [];
@@ -396,15 +475,56 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
   );
 
   // Bulk pay buttons for selected rows
-  const sel941Ids = [...selSet].filter(id => { const r = visibleRows.find(x => x.id === id); return r?._pending941; });
-  const sel940Ids = [...selSet].filter(id => { const r = visibleRows.find(x => x.id === id); return r?._pending940; });
-  const selSUIIds = [...selSet].filter(id => { const r = visibleRows.find(x => x.id === id); return r?._pendingSUI; });
+  const sel941Ids = [...selSet].filter(id => { const r = visibleRows.find(x => x.id === id); return r?._pending941 || r?._failed941; });
+  const sel940Ids = [...selSet].filter(id => { const r = visibleRows.find(x => x.id === id); return r?._pending940 || r?._failed940; });
+  const selSUIIds = [...selSet].filter(id => { const r = visibleRows.find(x => x.id === id); return r?._pendingSUI || r?._failedSUI; });
   const lateIds   = visibleRows.filter(r => r._isLate).map(r => r.id);
+
+  const PopBtn = ({ onClick, accent, children }) => (
+    <button onClick={onClick} style={{ display:'block', width:'100%', padding:'7px 14px', background:'none', border:'none', textAlign:'left', fontSize:12, cursor:'pointer', fontWeight: accent ? 700 : 400, color: accent ? 'var(--accent)' : 'var(--text)', borderBottom:'1px solid var(--border)' }}>{children}</button>
+  );
+  function TaxCell({ r, taxType, amount, pending, processing, failed, submitted, late, dueSoon, sendBy }) {
+    const isOpen = popover?.stubId === r.id && popover?.taxType === taxType;
+    const toggle = e => { e.stopPropagation(); setPopover(isOpen ? null : { stubId: r.id, taxType }); };
+    let badge = null;
+    const bs = { fontSize:10, fontWeight:700, borderRadius:99, padding:'2px 7px', cursor:'pointer', display:'inline-block' };
+    if (submitted) badge = <span style={{...bs, background:'#dcfce7', color:'#16a34a'}} onClick={toggle}>✓ Sent</span>;
+    else if (processing) badge = <span style={{...bs, background:'#dbeafe', color:'1d4ed8'}} onClick={toggle}>⟳ Processing</span>;
+    else if (failed) badge = <span style={{...bs, background:'#fee2e2', color:'#dc2626'}} onClick={toggle}>✗ Failed</span>;
+    else if (late) badge = <span style={{...bs, background:'#fee2e2', color:'#dc2626', cursor:'default'}}>LATE</span>;
+    else if (dueSoon && sendBy) badge = <span style={{...bs, background:'#fef3c7', color:'#d97706', cursor:'default'}}>DUE {fmtShort(sendBy)}</span>;
+    const showAmt = amount && (pending || failed || submitted || processing);
+    return (
+      <td style={{ padding:'6px 8px', textAlign:'right', position:'relative', verticalAlign:'middle' }} onClick={e => e.stopPropagation()}>
+        {showAmt && <div style={{ fontFamily:'JetBrains Mono, monospace', fontWeight:700, fontSize:12 }}>{fmt(amount)}</div>}
+        {badge && <div style={{ marginTop: showAmt ? 3 : 0 }}>{badge}</div>}
+        {!showAmt && !badge && <span style={{ color:'var(--text-muted)' }}>—</span>}
+        {isOpen && <>
+          <div style={{ position:'fixed', inset:0, zIndex:999 }} onClick={e => { e.stopPropagation(); setPopover(null); }} />
+          <div style={{ position:'absolute', right:0, top:'100%', zIndex:1000, background:'#fff', border:'1px solid var(--border)', borderRadius:8, boxShadow:'0 4px 16px rgba(0,0,0,0.12)', minWidth:190, overflow:'hidden' }}>
+            {submitted ? (
+              <PopBtn onClick={() => { setPopover(null); handleResetOneTax(r.id, taxType); }}>↩ Mark as Pending</PopBtn>
+            ) : processing ? (
+              <div style={{ padding:'10px 14px', fontSize:12, color:'var(--text-muted)', fontStyle:'italic' }}>Processing via bridge.<br/>Check back in ~15 min.</div>
+            ) : <>
+              <PopBtn accent onClick={() => { setPopover(null); handleSubmitOne(r.id, taxType); }}>Submit via Bridge</PopBtn>
+              <PopBtn onClick={() => { setPopover(null); handleMarkSentOne(r.id, taxType); }}>Mark as Sent (manual)</PopBtn>
+              {failed && <PopBtn onClick={() => { setPopover(null); handleResetOneTax(r.id, taxType); }}>Reset to Pending</PopBtn>}
+            </>}
+          </div>
+        </>}
+      </td>
+    );
+  }
 
   return (
     <>
-      {detailRow && !detailRow._editing && <TaxDetailModal row={detailRow} onClose={() => setDetailRow(null)} onEdit={r => setDetailRow({ ...r, _editing: true })} />}
-      {detailRow?._editing && <CheckDetailModal stub={detailRow} clientId={detailRow._clientId} onClose={() => setDetailRow(null)} onSaved={() => { setDetailRow(null); triggerReload(); }} />}
+      {detailRow && <LiabilityDetailModal row={detailRow} onClose={() => setDetailRow(null)}
+        onAction={async (action, taxType) => {
+          if (action === 'submit')   { setDetailRow(null); await handleSubmitOne(detailRow.id, taxType); }
+          if (action === 'markSent') { setDetailRow(null); await handleMarkSentOne(detailRow.id, taxType); }
+          if (action === 'reset')    { setDetailRow(null); await handleResetOneTax(detailRow.id, taxType); }
+        }} />}
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
 
         {/* Accordion header */}
@@ -503,24 +623,18 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
                         <td style={{ padding: '7px 8px', color: 'var(--text-muted)', fontSize: 11 }}></td>
                         <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{r.employee_name || '—'}</td>
                         <td style={{ padding: '7px 8px', fontSize: 11, whiteSpace: 'nowrap', color: '#555' }}>{fmtPeriod(r.pay_period_start, r.pay_period_end)}</td>
-                        <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>
-                          {r._pending941 ? fmt(r.total_deposit) : r._submitted941
-                            ? <span onClick={e => handleResetOneTax(r.id, '941', e)} title="Click to mark as unpaid" style={{ display:'inline-block', background:'#dcfce7', color:'#16a34a', borderRadius:99, padding:'2px 8px', fontSize:10, fontWeight:700, cursor:'pointer', border:'1px solid #86efac' }}>✓ Sent</span>
-                            : <span style={{ color:'var(--text-muted)' }}>—</span>}
-                        </td>
-                        <DueCell due={r._pending941 ? r._sendBy941 : null} late={r._pending941 ? r._late941 : false} dueSoon={r._pending941 ? r._dueSoon941 : false} />
-                        <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>
-                          {r._pending940 ? fmt(r.futa_tax) : r._submitted940
-                            ? <span onClick={e => handleResetOneTax(r.id, '940', e)} title="Click to mark as unpaid" style={{ display:'inline-block', background:'#dcfce7', color:'#16a34a', borderRadius:99, padding:'2px 8px', fontSize:10, fontWeight:700, cursor:'pointer', border:'1px solid #86efac' }}>✓ Sent</span>
-                            : <span style={{ color:'var(--text-muted)' }}>—</span>}
-                        </td>
-                        <DueCell due={r._pending940 ? r._sendBy940 : null} late={r._pending940 ? r._late940 : false} dueSoon={r._pending940 ? r._dueSoon940 : false} />
-                        <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>
-                          {r._pendingSUI ? fmt(r.suta_tax) : r._submittedSUI
-                            ? <span onClick={e => handleResetOneTax(r.id, 'sui', e)} title="Click to mark as unpaid" style={{ display:'inline-block', background:'#dcfce7', color:'#16a34a', borderRadius:99, padding:'2px 8px', fontSize:10, fontWeight:700, cursor:'pointer', border:'1px solid #86efac' }}>✓ Sent</span>
-                            : <span style={{ color:'var(--text-muted)' }}>—</span>}
-                        </td>
-                        <DueCell due={r._pendingSUI ? r._sendBySUI : null} late={r._pendingSUI ? r._lateSUI : false} dueSoon={r._pendingSUI ? r._dueSoonSUI : false} />
+                        <TaxCell r={r} taxType="941" amount={r.total_deposit}
+                          pending={r._pending941} processing={r._processing941} failed={r._failed941} submitted={r._submitted941}
+                          late={r._late941} dueSoon={r._dueSoon941} sendBy={r._sendBy941} />
+                        <DueCell due={r._pending941||r._failed941 ? r._sendBy941 : null} late={r._late941} dueSoon={r._dueSoon941} />
+                        <TaxCell r={r} taxType="940" amount={r.futa_tax}
+                          pending={r._pending940} processing={r._processing940} failed={r._failed940} submitted={r._submitted940}
+                          late={r._late940} dueSoon={r._dueSoon940} sendBy={r._sendBy940} />
+                        <DueCell due={r._pending940||r._failed940 ? r._sendBy940 : null} late={r._late940} dueSoon={r._dueSoon940} />
+                        <TaxCell r={r} taxType="sui" amount={r.suta_tax}
+                          pending={r._pendingSUI} processing={r._processingSUI} failed={r._failedSUI} submitted={r._submittedSUI}
+                          late={r._lateSUI} dueSoon={r._dueSoonSUI} sendBy={r._sendBySUI} />
+                        <DueCell due={r._pendingSUI||r._failedSUI ? r._sendBySUI : null} late={r._lateSUI} dueSoon={r._dueSoonSUI} />
                       </tr>
                     ))}
                   </>
