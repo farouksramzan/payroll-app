@@ -250,10 +250,14 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
         const due941 = s.settlement_due_date || (refDate ? calcIRSDepositDue(refDate, schedule) : null);
         const due940 = refDate ? calcFutaQuarterlyDue(refDate) : null;
         const dueSUI = due940;
-        const pending941 = s.status     === 'pending' || s.status     === 'processing' || s.status     === 'failed';
-        const pending940 = (s.status_940 === 'pending' || s.status_940 === 'processing' || s.status_940 === 'failed') && (s.futa_tax || 0) > 0;
-        const pendingSUI = pending941 && (s.suta_tax || 0) > 0;
-        if (!pending941 && !pending940 && !pendingSUI) return;
+        const pending941   = s.status     === 'pending' || s.status     === 'processing' || s.status     === 'failed';
+        const submitted941 = s.status     === 'submitted';
+        const pending940   = (s.status_940 === 'pending' || s.status_940 === 'processing' || s.status_940 === 'failed') && (s.futa_tax || 0) > 0;
+        const submitted940 = s.status_940 === 'submitted' && (s.futa_tax || 0) > 0;
+        // SUI uses its own status_sui column, independent of 941; null treated as pending
+        const pendingSUI   = (!s.status_sui || s.status_sui === 'pending' || s.status_sui === 'processing' || s.status_sui === 'failed') && (s.suta_tax || 0) > 0;
+        const submittedSUI = s.status_sui  === 'submitted' && (s.suta_tax || 0) > 0;
+        if (!pending941 && !pending940 && !pendingSUI && !submitted941 && !submitted940 && !submittedSUI) return;
         const late941    = pending941 && due941 && today > due941;
         const late940    = pending940 && due940 && today > due940;
         const lateSUI    = pendingSUI && dueSUI && today > dueSUI;
@@ -262,6 +266,7 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
         const dueSoonSUI = !lateSUI && pendingSUI && dueSUI && dueSUI <= in30Str;
         const isLate    = late941 || late940 || lateSUI;
         const isDueSoon = !isLate && (dueSoon941 || dueSoon940 || dueSoonSUI);
+        if (!isLate && !isDueSoon) return; // hide rows where everything is submitted / not yet due
         merged.push({
           ...s,
           _clientName: client?.businessName || '—', _clientId: id,
@@ -272,6 +277,7 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
           _late941: late941, _late940: late940, _lateSUI: lateSUI,
           _dueSoon941: dueSoon941, _dueSoon940: dueSoon940, _dueSoonSUI: dueSoonSUI,
           _pending941: pending941, _pending940: pending940, _pendingSUI: pendingSUI,
+          _submitted941: submitted941, _submitted940: submitted940, _submittedSUI: submittedSUI,
           _isLate: isLate, _isDueSoon: isDueSoon,
         });
       });
@@ -354,16 +360,12 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
     finally { setSubmitting(null); triggerReload(); }
   }
 
-  async function handleResetTax() {
-    const allClientIds = [...new Set(clientIds.map(Number))];
-    if (!window.confirm(`This resets ALL paystubs across selected companies whose 941/940/SUI tax status was marked "submitted" without going through the bridge.\n\nUse this to undo incorrectly submitted tax statuses. Continue?`)) return;
-    setSubmitting('reset');
+  async function handleResetOneTax(stubId, taxType, e) {
+    e.stopPropagation();
     try {
-      const { reset } = await api.batchResetTax(allClientIds, ['941', '940', 'sui']);
-      setSelectedLiab(new Set());
-      alert(`${reset} paystub tax status${reset !== 1 ? 'es' : ''} reset to pending. They will reappear in the liabilities panel.`);
-    } catch (e) { alert(`Reset failed: ${e.message}`); }
-    finally { setSubmitting(null); triggerReload(); }
+      await api.updatePaystubStatus(stubId, 'pending', taxType);
+      triggerReload();
+    } catch (err) { alert(`Could not reset: ${err.message}`); }
   }
 
   // Always show only late + due-soon rows
@@ -455,11 +457,6 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
               )}
               <button style={{ ...bulkBtn(), marginLeft: 'auto', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-secondary)' }} onClick={() => setSelectedLiab(new Set())}>Clear</button>
             </>}
-            <button style={{ ...bulkBtn({ background: '#92400e', border: '1px solid #78350f', color: '#fff' }), marginLeft: selSet.size > 0 ? 4 : 'auto' }}
-              disabled={!!submitting} onClick={handleResetTax}
-              title="Reset all submitted tax statuses back to pending for these companies">
-              {submitting === 'reset' ? '…' : 'Reset Submitted Taxes'}
-            </button>
           </div>
 
           {!loading && visibleRows.length === 0 && (
@@ -506,12 +503,24 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
                         <td style={{ padding: '7px 8px', color: 'var(--text-muted)', fontSize: 11 }}></td>
                         <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{r.employee_name || '—'}</td>
                         <td style={{ padding: '7px 8px', fontSize: 11, whiteSpace: 'nowrap', color: '#555' }}>{fmtPeriod(r.pay_period_start, r.pay_period_end)}</td>
-                        <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{r._pending941 ? fmt(r.total_deposit) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
-                        <DueCell due={r._sendBy941} late={r._late941} dueSoon={r._dueSoon941} />
-                        <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{r._pending940 ? fmt(r.futa_tax) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
-                        <DueCell due={r._sendBy940} late={r._late940} dueSoon={r._dueSoon940} />
-                        <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{r._pendingSUI ? fmt(r.suta_tax) : <span style={{ color: 'var(--text-muted)' }}>—</span>}</td>
-                        <DueCell due={r._sendBySUI} late={r._lateSUI} dueSoon={r._dueSoonSUI} />
+                        <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>
+                          {r._pending941 ? fmt(r.total_deposit) : r._submitted941
+                            ? <span onClick={e => handleResetOneTax(r.id, '941', e)} title="Click to mark as unpaid" style={{ display:'inline-block', background:'#dcfce7', color:'#16a34a', borderRadius:99, padding:'2px 8px', fontSize:10, fontWeight:700, cursor:'pointer', border:'1px solid #86efac' }}>✓ Sent</span>
+                            : <span style={{ color:'var(--text-muted)' }}>—</span>}
+                        </td>
+                        <DueCell due={r._pending941 ? r._sendBy941 : null} late={r._pending941 ? r._late941 : false} dueSoon={r._pending941 ? r._dueSoon941 : false} />
+                        <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>
+                          {r._pending940 ? fmt(r.futa_tax) : r._submitted940
+                            ? <span onClick={e => handleResetOneTax(r.id, '940', e)} title="Click to mark as unpaid" style={{ display:'inline-block', background:'#dcfce7', color:'#16a34a', borderRadius:99, padding:'2px 8px', fontSize:10, fontWeight:700, cursor:'pointer', border:'1px solid #86efac' }}>✓ Sent</span>
+                            : <span style={{ color:'var(--text-muted)' }}>—</span>}
+                        </td>
+                        <DueCell due={r._pending940 ? r._sendBy940 : null} late={r._pending940 ? r._late940 : false} dueSoon={r._pending940 ? r._dueSoon940 : false} />
+                        <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>
+                          {r._pendingSUI ? fmt(r.suta_tax) : r._submittedSUI
+                            ? <span onClick={e => handleResetOneTax(r.id, 'sui', e)} title="Click to mark as unpaid" style={{ display:'inline-block', background:'#dcfce7', color:'#16a34a', borderRadius:99, padding:'2px 8px', fontSize:10, fontWeight:700, cursor:'pointer', border:'1px solid #86efac' }}>✓ Sent</span>
+                            : <span style={{ color:'var(--text-muted)' }}>—</span>}
+                        </td>
+                        <DueCell due={r._pendingSUI ? r._sendBySUI : null} late={r._pendingSUI ? r._lateSUI : false} dueSoon={r._pendingSUI ? r._dueSoonSUI : false} />
                       </tr>
                     ))}
                   </>
