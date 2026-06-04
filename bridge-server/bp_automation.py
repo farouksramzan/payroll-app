@@ -42,6 +42,8 @@ BP_SYNC_X                = int(os.environ.get('BP_SYNC_X',                '1848'
 BP_SYNC_Y                = int(os.environ.get('BP_SYNC_Y',                '964'))
 BP_CANCEL_X              = int(os.environ.get('BP_CANCEL_X',              '787'))
 BP_CANCEL_Y              = int(os.environ.get('BP_CANCEL_Y',              '630'))
+BP_ERROR_OK_X            = int(os.environ.get('BP_ERROR_OK_X',            '805'))
+BP_ERROR_OK_Y            = int(os.environ.get('BP_ERROR_OK_Y',            '684'))
 BP_EDIT_X                = int(os.environ.get('BP_EDIT_X',                '214'))
 BP_EDIT_Y                = int(os.environ.get('BP_EDIT_Y',                '963'))
 BP_SAVE_X                = int(os.environ.get('BP_SAVE_X',                '1149'))
@@ -81,10 +83,9 @@ def is_file_format_selector_open():
 
 def dismiss_file_format_selector():
     """
-    Dismiss the File Format Selector dialog by pressing Enter.
-    Works regardless of where the OK button is on screen — Enter always
-    activates the focused/default button in a Windows dialog, so no
-    coordinates are needed even when an error banner shifts the button down.
+    Dismiss the File Format Selector error dialog by clicking the OK button
+    at the known coordinates (BP_ERROR_OK_X, BP_ERROR_OK_Y).
+    Falls back to pressing Enter if the window cannot be activated.
     """
     try:
         import pygetwindow as gw
@@ -94,8 +95,12 @@ def dismiss_file_format_selector():
             time.sleep(0.3)
     except Exception as e:
         log('Could not activate File Format Selector: ' + str(e))
-    pyautogui.press('enter')
+    log('Clicking OK on error dialog at (' + str(BP_ERROR_OK_X) + ', ' + str(BP_ERROR_OK_Y) + ')')
+    pyautogui.click(BP_ERROR_OK_X, BP_ERROR_OK_Y)
     time.sleep(0.8)
+    # Press Enter as a belt-and-suspenders fallback in case the click missed
+    pyautogui.press('enter')
+    time.sleep(0.5)
 
 
 def find_and_click(filename, description, timeout=10):
