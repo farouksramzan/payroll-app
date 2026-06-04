@@ -475,10 +475,26 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
   );
 
   // Bulk pay buttons for selected rows
-  const sel941Ids = [...selSet].filter(id => { const r = visibleRows.find(x => x.id === id); return r?._pending941 || r?._failed941; });
-  const sel940Ids = [...selSet].filter(id => { const r = visibleRows.find(x => x.id === id); return r?._pending940 || r?._failed940; });
-  const selSUIIds = [...selSet].filter(id => { const r = visibleRows.find(x => x.id === id); return r?._pendingSUI || r?._failedSUI; });
-  const lateIds   = visibleRows.filter(r => r._isLate).map(r => r.id);
+  const sel941Ids       = [...selSet].filter(id => { const r = visibleRows.find(x => x.id === id); return r?._pending941 || r?._failed941; });
+  const sel940Ids       = [...selSet].filter(id => { const r = visibleRows.find(x => x.id === id); return r?._pending940 || r?._failed940; });
+  const selSUIIds       = [...selSet].filter(id => { const r = visibleRows.find(x => x.id === id); return r?._pendingSUI || r?._failedSUI; });
+  const selSubmittedIds = [...selSet].filter(id => { const r = visibleRows.find(x => x.id === id); return r?._submitted941 || r?._submitted940 || r?._submittedSUI; });
+  const lateIds         = visibleRows.filter(r => r._isLate).map(r => r.id);
+
+  async function handleUndoSent(ids) {
+    setSubmitting('undo');
+    try {
+      for (const id of ids) {
+        const r = visibleRows.find(x => x.id === id);
+        if (!r) continue;
+        if (r._submitted941) await api.updatePaystubStatus(id, 'pending', '941');
+        if (r._submitted940) await api.updatePaystubStatus(id, 'pending', '940');
+        if (r._submittedSUI) await api.updatePaystubStatus(id, 'pending', 'sui');
+      }
+      setSelectedLiab(new Set());
+    } catch (e) { alert(e.message); }
+    finally { setSubmitting(null); triggerReload(); }
+  }
 
   const PopBtn = ({ onClick, accent, children }) => (
     <button onClick={onClick} style={{ display:'block', width:'100%', padding:'7px 14px', background:'none', border:'none', textAlign:'left', fontSize:12, cursor:'pointer', fontWeight: accent ? 700 : 400, color: accent ? 'var(--accent)' : 'var(--text)', borderBottom:'1px solid var(--border)' }}>{children}</button>
@@ -573,6 +589,12 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
                 <button style={bulkBtn({ background: '#dc2626', border: '1px solid #b91c1c', color: '#fff' })}
                   disabled={!!submitting} onClick={handlePayAll}>
                   {submitting === 'all' ? '…' : 'Pay All'}
+                </button>
+              )}
+              {selSubmittedIds.length > 0 && (
+                <button style={bulkBtn({ background: '#6b7280', border: '1px solid #4b5563', color: '#fff' })}
+                  disabled={!!submitting} onClick={() => handleUndoSent(selSubmittedIds)}>
+                  {submitting === 'undo' ? '…' : `↩ Undo Sent (${selSubmittedIds.length})`}
                 </button>
               )}
               <button style={{ ...bulkBtn(), marginLeft: 'auto', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-secondary)' }} onClick={() => setSelectedLiab(new Set())}>Clear</button>
