@@ -36,6 +36,82 @@ def img(filename):
     return os.path.join(IMAGES_DIR, filename)
 
 
+BP_ERROR_OK_X = int(os.environ.get('BP_ERROR_OK_X', '805'))
+BP_ERROR_OK_Y = int(os.environ.get('BP_ERROR_OK_Y', '684'))
+
+
+def _is_file_format_selector_open():
+    """Return True if the File Format Selector dialog is still on screen (error state)."""
+    try:
+        import win32gui
+        found = [0]
+        def _cb(hwnd, _):
+            try:
+                if win32gui.IsWindowVisible(hwnd) and 'File Format' in win32gui.GetWindowText(hwnd):
+                    found[0] = hwnd
+            except Exception:
+                pass
+        win32gui.EnumWindows(_cb, None)
+        return found[0] != 0
+    except Exception:
+        pass
+    try:
+        import pygetwindow as gw
+        return any('File Format' in w.title for w in gw.getAllWindows())
+    except Exception:
+        return False
+
+
+def _dismiss_file_format_selector():
+    """Dismiss Error ID 88 dialog via BM_CLICK on OK button, falling back to coordinate click."""
+    log('Dismissing File Format Selector error dialog...')
+    BM_CLICK = 0x00F5
+    try:
+        import win32gui
+        found = [0]
+        def _cb(hwnd, _):
+            try:
+                if win32gui.IsWindowVisible(hwnd) and 'File Format' in win32gui.GetWindowText(hwnd):
+                    found[0] = hwnd
+            except Exception:
+                pass
+        win32gui.EnumWindows(_cb, None)
+        hwnd = found[0]
+        if hwnd:
+            ok_handles = []
+            def _child_cb(h, _):
+                try:
+                    cls = win32gui.GetClassName(h)
+                    txt = win32gui.GetWindowText(h).strip().lstrip('&').lower()
+                    if cls == 'Button' and txt == 'ok':
+                        ok_handles.append(h)
+                except Exception:
+                    pass
+            win32gui.EnumChildWindows(hwnd, _child_cb, None)
+            if ok_handles:
+                log('Sending BM_CLICK to OK button hwnd=' + str(ok_handles[0]))
+                win32gui.PostMessage(ok_handles[0], BM_CLICK, 0, 0)
+                time.sleep(1.0)
+                if not _is_file_format_selector_open():
+                    log('Dialog closed via BM_CLICK')
+                    return
+    except Exception as e:
+        log('win32gui dismiss failed: ' + str(e))
+
+    # Fallback: coordinate click
+    for attempt in range(4):
+        log('Clicking error OK at (' + str(BP_ERROR_OK_X) + ', ' + str(BP_ERROR_OK_Y) + ') attempt ' + str(attempt + 1))
+        pyautogui.moveTo(BP_ERROR_OK_X, BP_ERROR_OK_Y, duration=0.15)
+        time.sleep(0.1)
+        pyautogui.click(BP_ERROR_OK_X, BP_ERROR_OK_Y)
+        time.sleep(0.6)
+        if not _is_file_format_selector_open():
+            log('Dialog closed after coordinate click')
+            return
+    pyautogui.press('enter')
+    time.sleep(0.5)
+
+
 def maximize_bp():
     # Maximize Batch Provider window so all coordinates are deterministic
     try:
@@ -166,12 +242,22 @@ def main():
     log('Step 6 complete: first OK clicked - waiting 2s')
     time.sleep(2)
 
-    # Step 7 - Click second OK button (confirmation/summary)
+    # Step 7 - Click second OK button (triggers actual import)
     log('Executing step 7: click OK button (second) at (806, 634)')
     time.sleep(2)
     pyautogui.click(806, 634)
-    log('Step 7 complete: second OK clicked - waiting 4s for Send Enrollments list to load')
-    time.sleep(4)
+    log('Step 7 complete: second OK clicked - waiting for import to process')
+    time.sleep(6)
+
+    # Check for Error ID 88 — if File Format Selector is still open, the import was rejected
+    if _is_file_format_selector_open():
+        log('ERROR: File Format Selector still open after import — Error ID 88 detected')
+        _dismiss_file_format_selector()
+        print('ENROLLMENT_RETRY_NEEDED', flush=True)
+        sys.exit(0)
+
+    log('File Format Selector closed — import accepted, waiting for list to update')
+    time.sleep(2)
 
     # Step 8 - OCR scan to find all New status rows and click their checkboxes
     # Save debug screenshot so we can verify what is on screen when OCR runs

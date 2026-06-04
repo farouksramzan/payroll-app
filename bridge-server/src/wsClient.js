@@ -49,6 +49,12 @@ function removePendingEnrollment(ein) {
   fs.writeFileSync(PENDING_FILE, JSON.stringify(list, null, 2));
 }
 
+// ── In-memory enrollment guard ────────────────────────────────────────────────
+// Synchronous Set checked BEFORE any await so concurrent jobs for the same EIN
+// within one Node.js session can't both decide to enroll at the same time.
+// The file-based pending_enrollments.json handles persistence across restarts.
+const _enrollingEINs = new Set();
+
 // ── Computer 2 lock ───────────────────────────────────────────────────────────
 // Only one Python automation script can run on Computer 2 at a time.
 // Jobs acquire this lock only while their script is executing — NOT during
@@ -252,13 +258,29 @@ async function runPaymentWithRetry(achFilePath, logFn) {
   });
 }
 
-function runEnrollmentAutomation(enrollFilePath, logFn) {
-  logFn(`[ENROLL] Launching enrollment automation for: ${enrollFilePath}`);
-  return runPython(BP_ENROLL_SCRIPT, [enrollFilePath], logFn, {
-    timeout:      120000,
-    successToken: 'ENROLLMENT_COMPLETE',
-    failToken:    'ENROLLMENT_FAILED',
-  });
+async function runEnrollmentWithRetry(enrollFilePath, logFn) {
+  const MAX_RETRIES = 3;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    logFn(`[ENROLL] Launching enrollment automation for: ${enrollFilePath} (attempt ${attempt}/${MAX_RETRIES})`);
+    try {
+      await runPython(BP_ENROLL_SCRIPT, [enrollFilePath], logFn, {
+        timeout:      120000,
+        successToken: 'ENROLLMENT_COMPLETE',
+        failToken:    'ENROLLMENT_FAILED',
+        retryToken:   'ENROLLMENT_RETRY_NEEDED',
+      });
+      return; // success
+    } catch (err) {
+      const isRetry = err.message.includes('ENROLLMENT_RETRY_NEEDED')
+        || (err.stdout || '').includes('ENROLLMENT_RETRY_NEEDED');
+      if (isRetry && attempt < MAX_RETRIES) {
+        logFn(`[ENROLL] Error ID 88 on import — retrying in 10s (attempt ${attempt}/${MAX_RETRIES})`);
+        await new Promise(r => setTimeout(r, 10000));
+        continue;
+      }
+      throw err;
+    }
+  }
 }
 
 // Returns true if EFTPS confirms the EIN is Active, false otherwise (never rejects).
@@ -453,7 +475,8 @@ class BridgeClient extends EventEmitter {
       // 1. Enroll client if not already enrolled.
       // Railway DB is authoritative (job.eftpsEnrolled). Local JSON is a fallback
       // in case the Railway DB is reset or the client was enrolled on a previous machine.
-      const enrollmentWasInProgress = loadPendingEnrollments().some(e => cleanEin(e.ein) === cleanEin(job.ein));
+      const enrollmentWasInProgress = _enrollingEINs.has(cleanEin(job.ein))
+        || loadPendingEnrollments().some(e => cleanEin(e.ein) === cleanEin(job.ein));
       const alreadyEnrolled = job.eftpsEnrolled === 1 || isEnrolled(job.ein) || enrollmentWasInProgress;
       if (enrollmentWasInProgress) {
         log(`[ENROLL] EIN ${cleanEin(job.ein)} enrollment already in progress — skipping re-enrollment, will wait before payment`);
@@ -461,8 +484,10 @@ class BridgeClient extends EventEmitter {
       if (!alreadyEnrolled) {
         log(`EIN ${cleanEin(job.ein)} not enrolled (Railway DB + local JSON both show unenrolled) — running enrollment first`);
 
-        // Write stub to pending_enrollments.json IMMEDIATELY so concurrent jobs for this
-        // EIN see enrollmentWasInProgress=true and don't generate duplicate enrollment files.
+        // Claim the enrollment slot synchronously (before any await) so concurrent jobs
+        // for this EIN in the same session see it immediately via _enrollingEINs.
+        _enrollingEINs.add(cleanEin(job.ein));
+        // Also write to disk so restarts can resume.
         upsertPendingEnrollment({ ein: job.ein, businessName: job.businessName || '', jobId, submissionId, achFilePath: '', clientId: job.clientId, enrollmentPin: '', attempt: 0, maxRetries: 6 });
 
         // Generate a fresh PIN for the enrollment file regardless of what the server sent.
@@ -501,7 +526,7 @@ class BridgeClient extends EventEmitter {
         const achFilePathEarly = saveACHFile(achContentEarly, submissionId);
         log(`Payment ACH file saved early: ${achFilePathEarly}`);
 
-        await c2.run('enrollment', () => runEnrollmentAutomation(enrollFilePath, log));
+        await c2.run('enrollment', () => runEnrollmentWithRetry(enrollFilePath, log));
 
         // Poll until Active — persists to disk so a restart resumes automatically
         const enrollmentActive = await this._pollEnrollmentUntilActive({
@@ -521,6 +546,7 @@ class BridgeClient extends EventEmitter {
 
         markEnrolled(job.ein);
         removePendingEnrollment(job.ein);
+        _enrollingEINs.delete(cleanEin(job.ein));
         log(`EIN ${cleanEin(job.ein)} confirmed Active and added to enrolled_clients.json`);
       } else if (!enrollmentWasInProgress) {
         log(`EIN ${cleanEin(job.ein)} already enrolled (eftpsEnrolled=${job.eftpsEnrolled}, localJson=${isEnrolled(job.ein)}) — skipping enrollment`);
