@@ -310,9 +310,8 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
         await api.batchSubmitPaystubs({ clientId: Number(cid), paystubIds: ids, taxType });
       }
       setSelectedLiab(new Set());
-      triggerReload();
     } catch (e) { alert(`Payment failed: ${e.message}`); }
-    finally { setSubmitting(null); }
+    finally { setSubmitting(null); triggerReload(); }
   }
 
   async function handlePayAll() {
@@ -325,16 +324,18 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
       if (r._pendingSUI) { const k = `${r._clientId}-sui`; (byClientTax[k] = byClientTax[k] || { clientId: r._clientId, taxType: 'sui', ids: [] }).ids.push(id); }
     });
     const keys = Object.values(byClientTax);
-    if (!keys.length) return;
+    if (!keys.length) {
+      alert('No pending tax liabilities found for the selected paystubs. They may have already been submitted or are not yet due.');
+      return;
+    }
     setSubmitting('all');
     try {
       for (const { clientId, taxType, ids } of keys) {
         await api.batchSubmitPaystubs({ clientId: Number(clientId), paystubIds: ids, taxType });
       }
       setSelectedLiab(new Set());
-      triggerReload();
     } catch (e) { alert(`Payment failed: ${e.message}`); }
-    finally { setSubmitting(null); }
+    finally { setSubmitting(null); triggerReload(); }
   }
 
   // Always show only late + due-soon rows
@@ -560,7 +561,8 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
             const _hourlyRate = regItem?.rate || (s.regular_hours > 0 && s.regular_pay > 0 ? s.regular_pay / s.regular_hours : 0);
             const emp = employees.find(e => e.id === s.employee_id);
             const _payType = emp?.payType || (s.regular_hours > 0 || regItem ? 'hourly' : 'salary');
-            merged.push({ ...s, _clientName: client?.businessName || '—', _clientId: id, _payDate: payDate, _isLate: isLate, _isDueSoon: isDueSoon, _isPending: false, _hourlyRate, _payType });
+            const _ddEnabled = emp?.directDeposit?.status === 'active';
+            merged.push({ ...s, _clientName: client?.businessName || '—', _clientId: id, _payDate: payDate, _isLate: isLate, _isDueSoon: isDueSoon, _isPending: false, _hourlyRate, _payType, _ddEnabled });
           });
       });
 
@@ -703,9 +705,21 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
   }
 
   async function handleDD() {
+    const ddRows    = selStored.filter(r => r._ddEnabled);
+    const skipped   = selStored.filter(r => !r._ddEnabled);
+    if (!ddRows.length) {
+      alert(`None of the selected employees have direct deposit configured. Set up direct deposit in each employee's profile first.`);
+      return;
+    }
+    if (skipped.length) {
+      const names = skipped.map(r => r.employee_name || 'Unknown').join(', ');
+      if (!window.confirm(`${skipped.length} employee(s) don't have direct deposit set up and will be skipped:\n\n${names}\n\nContinue for the remaining ${ddRows.length}?`)) return;
+    }
     setSubmitting(true);
     try {
-      await Promise.all(selStored.map(r => api.updatePaystubStatus(r.id, 'direct_deposit_sent')));
+      for (const r of ddRows) {
+        await api.updatePaystubStatus(r.id, 'direct_deposit_sent');
+      }
       setSelected(new Set());
       fetchRows(clientKey);
     } catch (e) { alert(e.message); }
