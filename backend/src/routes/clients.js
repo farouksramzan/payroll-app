@@ -89,6 +89,8 @@ function sanitizeClient(client, includeSecrets = false) {
     hasBatchProviderPin: !!client.batch_provider_pin_encrypted && client.batch_provider_pin_encrypted !== '',
     hasBankAccount: !!client.bank_account_number_encrypted,
     hasInternetPassword: !!client.eftps_internet_password_encrypted,
+    twcUsername: client.twc_username || null,
+    hasTwcPassword: !!client.twc_password_encrypted,
     payrollFrequency: client.payroll_frequency || 'biweekly',
     nextPayrollDate:  client.next_payroll_date  || null,
     nextCheckNumber:  client.next_check_number  || 1001,
@@ -236,7 +238,8 @@ router.post('/', (req, res) => {
   const { businessName, ein, state, bankAccountNumber, bankRoutingNumber, bankAccountType, batchProviderPin,
     eftpsInternetPassword, eftpsEnrollmentNumber, depositSchedule, sutaRate,
     contactName, contactEmail, contactPhone,
-    payrollFrequency, nextPayrollDate, nextCheckNumber } = req.body;
+    payrollFrequency, nextPayrollDate, nextCheckNumber,
+    twcUsername, twcPassword } = req.body;
 
   if (!businessName || !ein) {
     return res.status(400).json({ error: 'Business name and EIN are required' });
@@ -253,8 +256,8 @@ router.post('/', (req, res) => {
     INSERT INTO clients (user_id, business_name, ein, state, bank_account_number_encrypted, bank_routing_number,
       bank_account_type, batch_provider_pin_encrypted, eftps_internet_password_encrypted, eftps_enrollment_number,
       deposit_schedule, suta_rate, contact_name, contact_email, contact_phone,
-      payroll_frequency, next_payroll_date, next_check_number)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      payroll_frequency, next_payroll_date, next_check_number, twc_username, twc_password_encrypted)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     req.user.id,
     businessName.trim(),
@@ -274,6 +277,8 @@ router.post('/', (req, res) => {
     payrollFrequency || 'biweekly',
     nextPayrollDate   || null,
     nextCheckNumber   ? parseInt(nextCheckNumber, 10) : 1001,
+    twcUsername || null,
+    twcPassword ? encrypt(twcPassword) : null,
   );
 
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(result.lastInsertRowid);
@@ -291,7 +296,8 @@ router.put('/:id', (req, res) => {
     contactName, contactEmail, contactPhone,
     payrollFrequency, nextPayrollDate,
     businessAddress, businessCity, businessZip,
-    notificationEmail, notificationPhone } = req.body;
+    notificationEmail, notificationPhone,
+    twcUsername, twcPassword } = req.body;
 
   if (ein && !/^\d{2}-?\d{7}$/.test(ein)) return res.status(400).json({ error: 'EIN must be in format XX-XXXXXXX' });
   if (batchProviderPin && !/^\d{4}$/.test(batchProviderPin)) return res.status(400).json({ error: 'Batch Provider PIN must be exactly 4 digits' });
@@ -319,6 +325,8 @@ router.put('/:id', (req, res) => {
       business_zip = ?,
       notification_email = ?,
       notification_phone = ?,
+      twc_username = ?,
+      twc_password_encrypted = ?,
       updated_at = CURRENT_TIMESTAMP
     WHERE id = ? AND user_id = ?
   `).run(
@@ -343,6 +351,8 @@ router.put('/:id', (req, res) => {
     businessZip        !== undefined ? (businessZip        || null) : existing.business_zip,
     notificationEmail  !== undefined ? (notificationEmail  || null) : existing.notification_email,
     notificationPhone  !== undefined ? (notificationPhone  || null) : existing.notification_phone,
+    twcUsername !== undefined ? (twcUsername || null) : existing.twc_username,
+    twcPassword ? encrypt(twcPassword) : existing.twc_password_encrypted,
     req.params.id,
     req.user.id,
   );

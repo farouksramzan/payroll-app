@@ -1154,6 +1154,146 @@ router.post('/payroll-run', (req, res) => {
   }
 });
 
+// ── SUI / TWC submission handler ─────────────────────────────────────────────
+function quarterRange(year, quarter) {
+  const starts = ['01-01', '04-01', '07-01', '10-01'];
+  const ends   = ['03-31', '06-30', '09-30', '12-31'];
+  const q = parseInt(quarter) - 1;
+  return { start: `${year}-${starts[q]}`, end: `${year}-${ends[q]}` };
+}
+
+async function handleSuiSubmission(req, res, db, client, paystubIds, taxYear, taxQuarter) {
+  // Get selected pending SUI paystubs
+  let pending;
+  if (Array.isArray(paystubIds) && paystubIds.length > 0) {
+    const ph = paystubIds.map(() => '?').join(',');
+    pending = db.prepare(
+      `SELECT * FROM paystubs WHERE client_id = ? AND status_sui IN ('pending','processing','failed') AND suta_tax > 0 AND id IN (${ph})`
+    ).all(client.id, ...paystubIds);
+  } else {
+    pending = db.prepare(
+      `SELECT * FROM paystubs WHERE client_id = ? AND status_sui IN ('pending','processing','failed') AND suta_tax > 0 ORDER BY pay_period_end ASC`
+    ).all(client.id);
+  }
+
+  if (pending.length === 0) {
+    return res.status(400).json({ error: 'No pending SUI paystubs to submit' });
+  }
+
+  const ids = pending.map(p => p.id);
+  const firstStub = pending[0];
+  const year = taxYear || firstStub.tax_year;
+  const quarter = taxQuarter || firstStub.tax_quarter;
+
+  if (!client.twc_username || !client.twc_password_encrypted) {
+    return res.status(400).json({ error: 'TWC credentials not configured for this client — add them in client settings' });
+  }
+
+  // Mark processing
+  db.prepare(`UPDATE paystubs SET status_sui = 'processing' WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids);
+
+  if (!bridgeManager.isConnected) {
+    db.prepare(`UPDATE paystubs SET status_sui = 'pending' WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids);
+    return res.status(503).json({ error: 'Bridge not connected — Computer 2 must be running' });
+  }
+
+  const totalSuta = Math.round(pending.reduce((s, p) => s + (p.suta_tax || 0), 0) * 100) / 100;
+
+  // Gather per-employee wages for the entire quarter (needed for C-3/C-4 wage report)
+  const { start: qStart, end: qEnd } = quarterRange(year, quarter);
+  const allQuarterStubs = db.prepare(`
+    SELECT p.gross_wages, p.employee_id, e.first_name, e.last_name, e.ssn_encrypted
+    FROM paystubs p
+    LEFT JOIN employees e ON p.employee_id = e.id
+    WHERE p.client_id = ?
+      AND p.pay_period_end >= ? AND p.pay_period_end <= ?
+      AND p.check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
+  `).all(client.id, qStart, qEnd);
+
+  // Also get prior-quarter YTD to calculate taxable wage base cap ($9,000)
+  const priorStubs = db.prepare(`
+    SELECT p.gross_wages, p.employee_id
+    FROM paystubs p
+    WHERE p.client_id = ? AND p.pay_period_end >= ? AND p.pay_period_end < ?
+      AND p.check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
+  `).all(client.id, `${year}-01-01`, qStart);
+  const ytdByEmp = {};
+  for (const s of priorStubs) {
+    const k = s.employee_id || 'x';
+    ytdByEmp[k] = (ytdByEmp[k] || 0) + (s.gross_wages || 0);
+  }
+
+  // Aggregate wages per employee and apply $9,000 wage base cap
+  const WAGE_BASE = 9000;
+  const byEmp = {};
+  for (const s of allQuarterStubs) {
+    const k = s.employee_id || 'x';
+    if (!byEmp[k]) {
+      byEmp[k] = { firstName: s.first_name || '', lastName: s.last_name || '', ssnEncrypted: s.ssn_encrypted, wages: 0, taxableWages: 0 };
+    }
+    const ytd = (ytdByEmp[k] || 0) + byEmp[k].wages;
+    const taxable = Math.max(0, Math.min(s.gross_wages || 0, Math.max(0, WAGE_BASE - ytd)));
+    byEmp[k].wages += s.gross_wages || 0;
+    byEmp[k].taxableWages += taxable;
+  }
+
+  // Decrypt SSNs server-side
+  const employees = Object.values(byEmp).map(e => ({
+    firstName:    e.firstName,
+    lastName:     e.lastName,
+    ssn:          e.ssnEncrypted ? (() => { try { return decrypt(e.ssnEncrypted).replace(/\D/g, ''); } catch { return ''; } })() : '',
+    wages:        Math.round(e.wages * 100) / 100,
+    taxableWages: Math.round(e.taxableWages * 100) / 100,
+  }));
+
+  // Compute TWC quarterly due date (last day of month after quarter end)
+  const qEndDate = new Date(qEnd + 'T00:00:00Z');
+  const dueMonth = qEndDate.getUTCMonth() + 1;
+  const dueYear  = dueMonth === 12 ? qEndDate.getUTCFullYear() + 1 : qEndDate.getUTCFullYear();
+  const dueMon   = dueMonth === 12 ? 0 : dueMonth;
+  const dueDays  = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const paymentDate = `${String(dueYear).padStart(4,'0')}-${String(dueMon + 1).padStart(2,'0')}-${String(dueDays[dueMon]).padStart(2,'0')}`;
+
+  const twcPassword = decrypt(client.twc_password_encrypted);
+
+  const submissionId = `sui-${client.id}-Q${quarter}-${year}-${Date.now()}`;
+  const jobPayload = {
+    jobType:      'submit_sui',
+    submissionId,
+    clientId:     client.id,
+    twcUsername:  client.twc_username,
+    twcPassword,
+    quarter,
+    year,
+    totalAmount:  totalSuta,
+    paymentDate,
+    employees,
+  };
+
+  const jobId = bridgeManager.queueJob(jobPayload, (success, msg) => {
+    const dbInst = getDb();
+    const ph = ids.map(() => '?').join(',');
+    if (success) {
+      dbInst.prepare(`UPDATE paystubs SET status_sui = 'submitted', bridge_job_id = NULL WHERE id IN (${ph})`).run(...ids);
+    } else {
+      dbInst.prepare(`UPDATE paystubs SET status_sui = 'failed', bridge_job_id = NULL WHERE id IN (${ph})`).run(...ids);
+    }
+  });
+
+  db.prepare(`UPDATE paystubs SET bridge_job_id = ? WHERE id IN (${ids.map(() => '?').join(',')})`).run(jobId, ...ids);
+
+  return res.json({
+    jobId,
+    submitted: ids.length,
+    taxType: 'sui',
+    totalAmount: totalSuta,
+    quarter,
+    year,
+    status: 'processing',
+    message: 'TWC SUI submission queued — bridge is automating UTS portal',
+  });
+}
+
 // ── POST /api/paystubs/batch-submit ──────────────────────────────────────────
 // ── GET /api/paystubs/run-pdf/:runId — check PDF for a payroll run ────────────
 function numberToWords(amount) {
@@ -1446,6 +1586,11 @@ router.post('/batch-submit', async (req, res) => {
   if (!client) return res.status(404).json({ error: 'Client not found' });
 
   const pin = resolvePin(db, client.id, client.batch_provider_pin_encrypted);
+
+  // ── SUI → TWC submission (separate path from EFTPS) ─────────────────────────
+  if (taxType === 'sui') {
+    return handleSuiSubmission(req, res, db, client, paystubIds, taxYear, taxQuarter);
+  }
 
   // Build query for pending paystubs based on taxType
   let pending;

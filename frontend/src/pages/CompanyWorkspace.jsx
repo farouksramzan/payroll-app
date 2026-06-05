@@ -966,6 +966,7 @@ function CompanyTab({ client, onSaved }) {
       bankAccountType: client.bankAccountType || 'checking',
       bankAccountNumber: '', batchProviderPin: '', eftpsInternetPassword: '',
       eftpsEnrollmentNumber: client.eftpsEnrollmentNumber || '',
+      twcUsername: client.twcUsername || '', twcPassword: '',
       contactName: client.contactName || '',
       contactEmail: client.contactEmail || '',
       contactPhone: client.contactPhone || '',
@@ -988,6 +989,7 @@ function CompanyTab({ client, onSaved }) {
       if (!payload.bankAccountNumber) delete payload.bankAccountNumber;
       if (!payload.batchProviderPin) delete payload.batchProviderPin;
       if (!payload.eftpsInternetPassword) delete payload.eftpsInternetPassword;
+      if (!payload.twcPassword) delete payload.twcPassword;
       await api.updateClient(client.id, payload);
       setSaved(true); onSaved();
     } catch (e) { setErr(e.message); }
@@ -1070,6 +1072,20 @@ function CompanyTab({ client, onSaved }) {
           <F label="EFTPS Internet Password"><input className="form-input mono" type="password" value={form.eftpsInternetPassword} onChange={set('eftpsInternetPassword')} placeholder="(leave blank to keep)" /></F>
           <F label="EFTPS Enrollment Number"><input className="form-input mono" value={form.eftpsEnrollmentNumber} onChange={set('eftpsEnrollmentNumber')} /></F>
         </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <p className="form-section-title" style={{ marginTop: 0 }}>TWC (Texas SUI) Credentials</p>
+        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
+          UTS portal login at apps.twc.texas.gov — used to automate quarterly SUI filing and payment.
+        </div>
+        <div className="form-grid">
+          <F label="TWC Username"><input className="form-input mono" value={form.twcUsername} onChange={set('twcUsername')} placeholder="UTS username" autoComplete="off" /></F>
+          <F label="TWC Password" hint="Stored encrypted. Leave blank to keep current."><input className="form-input mono" type="password" value={form.twcPassword} onChange={set('twcPassword')} placeholder="(leave blank to keep)" autoComplete="new-password" /></F>
+        </div>
+        {client.hasTwcPassword && !form.twcPassword && (
+          <div style={{ fontSize: 11, color: '#16a34a', marginTop: 4 }}>✓ Password saved</div>
+        )}
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>

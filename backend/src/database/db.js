@@ -241,6 +241,8 @@ function migrate() {
     { name: 'eftps_enrollment_number',           def: 'TEXT' },
     { name: 'suta_rate',                         def: 'REAL DEFAULT 0.027' },
     { name: 'state',                             def: "TEXT DEFAULT 'TX'" },
+    { name: 'twc_username',                      def: 'TEXT' },
+    { name: 'twc_password_encrypted',            def: 'TEXT' },
   ]);
 
   // Rename eftps_pin_encrypted → batch_provider_pin_encrypted on existing databases

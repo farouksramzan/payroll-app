@@ -468,6 +468,18 @@ class BridgeClient extends EventEmitter {
       markJobStatus(jobId, 'in-progress');
       const log = (msg) => this.emit('log', msg);
 
+      // ── SUI / TWC job — separate path from EFTPS ──────────────────────────
+      if (job.jobType === 'submit_sui') {
+        await c2.run('sui', () => this._runSuiJob(job, log));
+        this.stats.jobsSucceeded++;
+        this.emit('log', `SUI job ${submissionId} succeeded`);
+        this.emit('jobComplete', { job, result: { success: true }, success: true });
+        markJobStatus(jobId, 'completed');
+        _activeJobIds.delete(jobId);
+        this._send({ type: 'result', jobId, submissionId, success: true, message: 'SUI submitted to TWC' });
+        return;
+      }
+
       // PIN used throughout this job — generate a fresh one for new enrollments
       let effectivePin = job.pin || null;
       let generatedEnrollmentPin = null;  // set only when we generate a new PIN
@@ -643,6 +655,34 @@ class BridgeClient extends EventEmitter {
   }
 
   // ── Enrollment polling — shared by new jobs and resumed jobs ─────────────────
+
+  async _runSuiJob(job, log) {
+    const TWC_SCRIPT = path.join(__dirname, '..', 'twc_automation.py');
+    const dataDir    = path.join(__dirname, '..', 'data');
+    fs.mkdirSync(dataDir, { recursive: true });
+    const jobFile = path.join(dataDir, `twc_job_${job.submissionId}.json`);
+    // Write job data to disk — never log sensitive fields
+    fs.writeFileSync(jobFile, JSON.stringify({
+      twcUsername:  job.twcUsername,
+      twcPassword:  job.twcPassword,
+      quarter:      job.quarter,
+      year:         job.year,
+      totalAmount:  job.totalAmount,
+      paymentDate:  job.paymentDate,
+      employees:    job.employees,
+    }));
+    log(`[TWC] Job file written: ${jobFile}`);
+    log(`[TWC] Q${job.quarter} ${job.year} — $${job.totalAmount} — ${(job.employees || []).length} employees`);
+    try {
+      await runPython(TWC_SCRIPT, [jobFile], log, {
+        timeout: 180000,
+        successToken: 'TWC_COMPLETE',
+        failToken: 'TWC_FAILED',
+      });
+    } finally {
+      try { fs.unlinkSync(jobFile); } catch {}
+    }
+  }
 
   async _pollEnrollmentUntilActive({ ein, businessName, jobId, submissionId, achFilePath, clientId, enrollmentPin, startAtAttempt }) {
     const log          = (msg) => this.emit('log', msg);
