@@ -3104,10 +3104,11 @@ function liabilityVendor(taxType, workState) {
 }
 
 // Shared detail modal for both pending and sent liabilities
-function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, onStubChange, onDelete, clientId }) {
+function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, onStubChange, onDelete, onPay, clientId }) {
   if (!stub) return null;
   const [settlementDate, setSettlementDate] = React.useState(stub.eftps_settlement_date || due || '');
   const [savingSettlement, setSavingSettlement] = React.useState(false);
+  const [payingNow, setPayingNow] = React.useState(false);
   const settlementInputRef = React.useRef(null);
   const liabStatus = calcLiabilityStatus(stub, taxType, sendBy, due, todayStr);
   const vendor = liabilityVendor(taxType, stub.work_state);
@@ -3277,13 +3278,27 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
               if (!window.confirm('Delete this check? This cannot be undone.')) return;
               if (onDelete) onDelete();
             }}>Delete</button>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={async () => {
               try { await api.printSelectedChecks(clientId, [stub.id]); } catch (e) { alert(e.message); }
             }}>↓ Paycheck</button>
             <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={async () => {
               try { await api.printSelectedPaystubs(clientId, [stub.id]); } catch (e) { alert(e.message); }
             }}>↓ Paystub</button>
+            {taxType === 'sui' && (stub.status_sui || 'pending') !== 'submitted' && onPay && (
+              <button className="btn btn-primary" style={{ fontSize: 12 }}
+                disabled={payingNow}
+                onClick={async () => {
+                  if (!window.confirm(`Submit SUI payment (${fmt(stub.suta_tax || 0)}) to TWC?`)) return;
+                  setPayingNow(true);
+                  try { await onPay(stub); } finally { setPayingNow(false); }
+                }}>
+                {payingNow ? 'Submitting…' : 'Pay SUI'}
+              </button>
+            )}
+            {taxType === 'sui' && (stub.status_sui || 'pending') === 'submitted' && (
+              <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>✓ Submitted</span>
+            )}
           </div>
         </div>
 
@@ -3874,6 +3889,17 @@ function PayLiabilitiesTab({ clientId, client }) {
           }}
           onDelete={async () => {
             try { await api.deletePaystub(liabilityModal.stub.id); setLiabilityModal(null); await reload(); } catch (e) { alert(e.message); }
+          }}
+          onPay={async (stub) => {
+            setSubmitting('sui'); setResult(null);
+            try {
+              const res = await api.batchSubmitPaystubs({ clientId, paystubIds: [stub.id], taxType: 'sui' });
+              setResult(res);
+              if (res.jobId) { setActiveJobId(res.jobId); setActiveJobTaxType('sui'); setJobStatus('processing'); setJobMessage(''); }
+              setLiabilityModal(null);
+              await reload({ keepSelections: true });
+            } catch (e) { setResult({ error: e.message }); alert(e.message); }
+            finally { setSubmitting(null); }
           }} />
       )}
 
