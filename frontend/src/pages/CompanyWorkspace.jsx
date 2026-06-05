@@ -1695,6 +1695,27 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       const [dateForm, setDateForm] = useState({ start: ov.start || period.start || '', end: ov.end || period.end || '', payDate: ov.payDate || period.payDate || '' });
       const pendingDirty = dateForm.start !== period.start || dateForm.end !== period.end || dateForm.payDate !== period.payDate;
 
+      const pendingItemDefs = [
+        { field: 'tips',        label: 'Reported Tips',           hint: 'taxable',     isDeduction: false },
+        { field: 'bonus',       label: 'Bonus',                   hint: 'taxable',     isDeduction: false },
+        { field: 'commission',  label: 'Commission',              hint: 'taxable',     isDeduction: false },
+        { field: 'mileage',     label: 'Mileage / Reimbursement', hint: 'non-taxable', isDeduction: false },
+        { field: 'cashAdvance', label: 'Cash Advance',            hint: 'deduction',   isDeduction: true  },
+      ];
+      const [addedPendingItems, setAddedPendingItems] = useState(() => {
+        const s = new Set();
+        if (parseFloat(row.tips        || 0) > 0) s.add('tips');
+        if (parseFloat(row.bonus       || 0) > 0) s.add('bonus');
+        if (parseFloat(row.commission  || 0) > 0) s.add('commission');
+        if (parseFloat(row.mileage     || 0) > 0) s.add('mileage');
+        if (parseFloat(row.cashAdvance || 0) > 0) s.add('cashAdvance');
+        return s;
+      });
+      const [pendingOtherOpen, setPendingOtherOpen] = useState(false);
+      const addedPendingEarnings  = pendingItemDefs.filter(x => !x.isDeduction && addedPendingItems.has(x.field));
+      const hiddenPendingItems    = pendingItemDefs.filter(x => !addedPendingItems.has(x.field));
+      const liveGross = r2(regPay + otPay + addedPendingEarnings.reduce((s, x) => s + parseFloat(row[x.field] || 0), 0));
+
       return (
         <Overlay>
           <div className="card" style={{ width: 640, maxWidth: '95vw', maxHeight: '92vh', overflowY: 'auto', padding: 0, borderRadius: 12 }}>
@@ -1740,7 +1761,15 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                           {otH  > 0 && <TR label={`Overtime  (${otH} hrs)`} amount={otPay} color="var(--accent)" />}
                         </>
                     }
-                    <TR label="Gross Pay" amount={gross} color="var(--accent)" bold borderTop />
+                    {addedPendingEarnings.map(item => (
+                      <TR key={item.field} label={item.label} amount={parseFloat(row[item.field] || 0)} color="var(--accent)"
+                        editValue={row[item.field] || ''} onEditChange={v => setRow(period.end, emp.id, item.field, v)} />
+                    ))}
+                    <TR label="Gross Pay" amount={liveGross} color="var(--accent)" bold borderTop />
+                    {addedPendingItems.has('cashAdvance') && (
+                      <TR label="Cash Advance" amount={parseFloat(row.cashAdvance || 0)} negative color="#dc2626"
+                        editValue={row.cashAdvance || ''} onEditChange={v => setRow(period.end, emp.id, 'cashAdvance', v)} />
+                    )}
                     <TR label="—" amount="Taxes calculated at run time" color="var(--text-muted)" />
                   </tbody>
                 </table>
@@ -1775,32 +1804,25 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
               ))}
             </div>
             {/* Other Payroll Items */}
-            <div style={{ margin: '0 24px', borderTop: '1px solid var(--border)', paddingTop: 10 }}>
-              <button type="button" onClick={() => setExpandedOther(prev => { const s = new Set(prev); const key = `${period.end}|${emp.id}`; s.has(key) ? s.delete(key) : s.add(key); return s; })}
-                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                {expandedOther.has(`${period.end}|${emp.id}`) ? '▴' : '▾'} Other Payroll Items
-              </button>
-              {expandedOther.has(`${period.end}|${emp.id}`) && (
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, marginTop: 10 }}>
-                  {[
-                    { label: 'Reported Tips',           field: 'tips',        hint: 'taxable' },
-                    { label: 'Bonus',                   field: 'bonus',       hint: 'taxable' },
-                    { label: 'Commission',              field: 'commission',  hint: 'taxable' },
-                    { label: 'Mileage / Reimbursement', field: 'mileage',     hint: 'non-taxable' },
-                    { label: 'Cash Advance (deduction)',field: 'cashAdvance', hint: 'deduction' },
-                  ].map(({ label, field, hint }) => (
-                    <label key={field} style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)' }}>
-                      {label}
-                      <div style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 400 }}>{hint}</div>
-                      <input className="form-input mono" type="number" min="0" step="0.01"
-                        value={row[field] || ''} placeholder="0.00"
-                        onChange={e => setRow(period.end, emp.id, field, e.target.value)}
-                        style={{ marginTop: 3, width: '100%', height: 28, fontSize: 12, textAlign: 'right', padding: '0 6px' }} />
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
+            {hiddenPendingItems.length > 0 && (
+              <div style={{ margin: '0 24px', borderTop: '1px solid var(--border)', paddingTop: 10, paddingBottom: 6 }}>
+                <button type="button" onClick={() => setPendingOtherOpen(o => !o)}
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {pendingOtherOpen ? '▴' : '▾'} Other Payroll Items
+                </button>
+                {pendingOtherOpen && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                    {hiddenPendingItems.map(item => (
+                      <button key={item.field} type="button"
+                        onClick={() => { setAddedPendingItems(prev => new Set([...prev, item.field])); setPendingOtherOpen(false); }}
+                        style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-secondary)', cursor: 'pointer', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                        + {item.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Save date overrides footer */}
             <div style={{ padding: '10px 24px 18px', display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: '1px solid var(--border)', marginTop: 10 }}>
