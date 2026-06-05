@@ -3448,9 +3448,10 @@ function PayLiabilitiesTab({ clientId, client }) {
 
   const sel941 = e941.filter(s => selected941.has(s.id));
   const sel940 = e940.filter(s => selected940.has(s.id));
+  const selSUI = eSUI.filter(s => selectedSUI.has(s.id));
   const total941 = sel941.reduce((s, p) => s + p.total_deposit, 0) + credit941;
   const total940 = sel940.reduce((s, p) => s + p.futa_tax, 0) + credit940;
-  const totalSUI = eSUI.filter(s => selectedSUI.has(s.id)).reduce((s, p) => s + (p.suta_tax || 0), 0);
+  const totalSUI = selSUI.reduce((s, p) => s + (p.suta_tax || 0), 0);
 
   // Poll job status every 60s while a bridge job is active
   useEffect(() => {
@@ -3490,11 +3491,12 @@ function PayLiabilitiesTab({ clientId, client }) {
   useEffect(() => () => clearInterval(pollRef.current), []);
 
   async function handleSubmit(taxType) {
-    const sel = taxType === '941' ? sel941 : sel940;
+    const sel = taxType === '941' ? sel941 : taxType === '940' ? sel940 : selSUI;
     const ids = sel.map(s => s.id);
-    if (!ids.length && credit941 === 0) return;
-    const amt = taxType === '941' ? total941 : total940;
-    if (!window.confirm(`Submit ${taxType} (${fmt(amt)}) to EFTPS?`)) return;
+    if (!ids.length && (taxType !== 'sui' ? credit941 === 0 : true)) return;
+    const amt = taxType === '941' ? total941 : taxType === '940' ? total940 : totalSUI;
+    const dest = taxType === 'sui' ? 'TWC' : 'EFTPS';
+    if (!window.confirm(`Submit ${taxType.toUpperCase()} (${fmt(amt)}) to ${dest}?`)) return;
     setSubmitting(taxType); setResult(null);
     try {
       const res = await api.batchSubmitPaystubs({ clientId, paystubIds: ids, taxType });
@@ -3565,7 +3567,13 @@ function PayLiabilitiesTab({ clientId, client }) {
                 onChange={e => { const next = new Set(selected); enriched.forEach(s => e.target.checked ? next.add(s.id) : next.delete(s.id)); setSelected(next); }}
                 style={{ accentColor: 'var(--accent)', width: 14, height: 14 }} />
               <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>SELECT ALL</span>
-              {taxType !== 'sui' && (
+              {taxType === 'sui' ? (
+                <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }}
+                  onClick={() => handleSubmit('sui')}
+                  disabled={submitting !== null || activeJobId !== null || selSUI.length === 0}>
+                  {(submitting === 'sui' || (activeJobId && activeJobTaxType === 'sui')) ? 'Submitting…' : `Pay SUI to TWC — ${fmt(totalSUI)}`}
+                </button>
+              ) : (
                 <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }}
                   onClick={() => handleSubmit(taxType)}
                   disabled={submitting !== null || activeJobId !== null || (taxType === '941' ? sel941.length === 0 : sel940.length === 0)}>
