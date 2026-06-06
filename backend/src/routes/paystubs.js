@@ -1575,6 +1575,68 @@ router.post('/batch-reset-tax', (req, res) => {
   res.json({ reset: totalReset, taxTypes });
 });
 
+// ── POST /api/paystubs/sui-report — generate TWC quarterly wage report CSV ────
+router.post('/sui-report', async (req, res) => {
+  const { clientId, paystubIds } = req.body;
+  if (!clientId) return res.status(400).json({ error: 'clientId required' });
+
+  const db = getDb();
+  const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+
+  // Determine quarter/year from selected or all pending SUI stubs
+  let refStubs;
+  if (Array.isArray(paystubIds) && paystubIds.length > 0) {
+    const ph = paystubIds.map(() => '?').join(',');
+    refStubs = db.prepare(`SELECT * FROM paystubs WHERE client_id = ? AND id IN (${ph})`).all(client.id, ...paystubIds);
+  } else {
+    refStubs = db.prepare(`SELECT * FROM paystubs WHERE client_id = ? AND suta_tax > 0 ORDER BY pay_period_end DESC LIMIT 1`).all(client.id);
+  }
+  if (refStubs.length === 0) return res.status(400).json({ error: 'No paystubs found' });
+
+  const refStub = refStubs[0];
+  const year    = refStub.tax_year || new Date(refStub.pay_period_end + 'T00:00:00').getFullYear();
+  const quarter = refStub.tax_quarter || Math.ceil((new Date(refStub.pay_period_end + 'T00:00:00').getMonth() + 1) / 3);
+
+  const { start: qStart, end: qEnd } = quarterRange(year, quarter);
+
+  // All issued paystubs in the quarter (all employees — wage report covers everyone)
+  const allStubs = db.prepare(`
+    SELECT p.gross_wages, p.employee_id, e.first_name, e.last_name, e.ssn_encrypted
+    FROM paystubs p
+    LEFT JOIN employees e ON p.employee_id = e.id
+    WHERE p.client_id = ?
+      AND p.pay_period_end >= ? AND p.pay_period_end <= ?
+      AND p.check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
+  `).all(client.id, qStart, qEnd);
+
+  if (allStubs.length === 0) return res.status(400).json({ error: `No issued paystubs found for Q${quarter} ${year}` });
+
+  // Aggregate total gross wages per employee for the quarter
+  const byEmp = {};
+  for (const s of allStubs) {
+    const k = s.employee_id || `_${s.last_name}`;
+    if (!byEmp[k]) byEmp[k] = { firstName: s.first_name || '', lastName: s.last_name || '', ssnEncrypted: s.ssn_encrypted, wages: 0 };
+    byEmp[k].wages += s.gross_wages || 0;
+  }
+
+  // Build CSV rows: SSN,LastName,FirstName,MiddleInitial,Wages
+  const rows = Object.values(byEmp).map(e => {
+    const ssn = e.ssnEncrypted ? (() => { try { return decrypt(e.ssnEncrypted).replace(/\D/g, ''); } catch { return ''; } })() : '';
+    const wages = (Math.round(e.wages * 100) / 100).toFixed(2);
+    const last  = (e.lastName  || '').toUpperCase().replace(/,/g, '');
+    const first = (e.firstName || '').toUpperCase().replace(/,/g, '');
+    return `${ssn},${last},${first},,${wages}`;
+  });
+
+  const csv = rows.join('\r\n');
+  const filename = `TWC_SUI_Q${quarter}_${year}.csv`;
+
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+  res.send(csv);
+});
+
 // taxType '941': aggregate FIT+SS+Medicare (optionally filtered by taxYear+taxQuarter)
 // taxType '940': aggregate FUTA for the year (taxYear required)
 router.post('/batch-submit', async (req, res) => {

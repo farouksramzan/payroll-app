@@ -103,6 +103,23 @@ const api = {
     a.href = url; a.download = 'selected-paystubs.pdf'; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   },
+  downloadSuiReport: async (clientId, paystubIds) => {
+    const token = localStorage.getItem('token');
+    const res = await fetch('/api/paystubs/sui-report', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ clientId, paystubIds }),
+    });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Failed to generate SUI report'); }
+    const blob = await res.blob();
+    const cd = res.headers.get('Content-Disposition') || '';
+    const match = cd.match(/filename="([^"]+)"/);
+    const filename = match ? match[1] : 'TWC_SUI_Report.csv';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = filename; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  },
   getPayPeriods: (clientId) => request(`/paystubs/pay-periods?clientId=${clientId}`),
   runPayroll: (data) => request('/paystubs/payroll-run', { method: 'POST', body: JSON.stringify(data) }),
   downloadRunPdf: async (runId, clientId) => {

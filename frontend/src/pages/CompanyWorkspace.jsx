@@ -3311,11 +3311,10 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
               <button className="btn btn-primary" style={{ fontSize: 12 }}
                 disabled={payingNow}
                 onClick={async () => {
-                  if (!window.confirm(`Submit SUI payment (${fmt(stub.suta_tax || 0)}) to TWC?`)) return;
                   setPayingNow(true);
                   try { await onPay(stub); } finally { setPayingNow(false); }
                 }}>
-                {payingNow ? 'Submitting…' : 'Pay SUI'}
+                {payingNow ? 'Generating…' : '↓ Download SUI Report'}
               </button>
             )}
             {taxType === 'sui' && (stub.status_sui || 'pending') === 'submitted' && (
@@ -3491,12 +3490,21 @@ function PayLiabilitiesTab({ clientId, client }) {
   useEffect(() => () => clearInterval(pollRef.current), []);
 
   async function handleSubmit(taxType) {
-    const sel = taxType === '941' ? sel941 : taxType === '940' ? sel940 : selSUI;
+    if (taxType === 'sui') {
+      const ids = selSUI.map(s => s.id);
+      if (!ids.length) return;
+      setSubmitting('sui');
+      try {
+        await api.downloadSuiReport(clientId, ids);
+      } catch (e) { alert(e.message); }
+      finally { setSubmitting(null); }
+      return;
+    }
+    const sel = taxType === '941' ? sel941 : sel940;
     const ids = sel.map(s => s.id);
-    if (!ids.length && (taxType !== 'sui' ? credit941 === 0 : true)) return;
-    const amt = taxType === '941' ? total941 : taxType === '940' ? total940 : totalSUI;
-    const dest = taxType === 'sui' ? 'TWC' : 'EFTPS';
-    if (!window.confirm(`Submit ${taxType.toUpperCase()} (${fmt(amt)}) to ${dest}?`)) return;
+    if (!ids.length && credit941 === 0) return;
+    const amt = taxType === '941' ? total941 : total940;
+    if (!window.confirm(`Submit ${taxType.toUpperCase()} (${fmt(amt)}) to EFTPS?`)) return;
     setSubmitting(taxType); setResult(null);
     try {
       const res = await api.batchSubmitPaystubs({ clientId, paystubIds: ids, taxType });
@@ -3570,8 +3578,8 @@ function PayLiabilitiesTab({ clientId, client }) {
               {taxType === 'sui' ? (
                 <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }}
                   onClick={() => handleSubmit('sui')}
-                  disabled={submitting !== null || activeJobId !== null || selSUI.length === 0}>
-                  {(submitting === 'sui' || (activeJobId && activeJobTaxType === 'sui')) ? 'Submitting…' : `Pay SUI to TWC — ${fmt(totalSUI)}`}
+                  disabled={submitting !== null || selSUI.length === 0}>
+                  {submitting === 'sui' ? 'Generating…' : `↓ Download SUI Report — ${fmt(totalSUI)}`}
                 </button>
               ) : (
                 <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }}
@@ -3921,15 +3929,10 @@ function PayLiabilitiesTab({ clientId, client }) {
             try { await api.deletePaystub(liabilityModal.stub.id); setLiabilityModal(null); await reload(); } catch (e) { alert(e.message); }
           }}
           onPay={async (stub) => {
-            setSubmitting('sui'); setResult(null);
             try {
-              const res = await api.batchSubmitPaystubs({ clientId, paystubIds: [stub.id], taxType: 'sui' });
-              setResult(res);
-              if (res.jobId) { setActiveJobId(res.jobId); setActiveJobTaxType('sui'); setJobStatus('processing'); setJobMessage(''); }
+              await api.downloadSuiReport(clientId, [stub.id]);
               setLiabilityModal(null);
-              await reload({ keepSelections: true });
-            } catch (e) { setResult({ error: e.message }); alert(e.message); }
-            finally { setSubmitting(null); }
+            } catch (e) { alert(e.message); }
           }} />
       )}
 
