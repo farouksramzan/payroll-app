@@ -1884,12 +1884,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                   {isSalary
                     ? <TR label="Salary / Period" amount={salAmt} ytdAmount={null} color="var(--accent)" />
                     : <>
-                        <TR label="Reg Hours" amount={regPay} ytdAmount={null} color="var(--accent)"
-                          editValue={row.regHours || ''} onEditChange={v => setRow(period.end, emp.id, 'regHours', v)} />
-                        <TR label="OT Hours" amount={otPay} ytdAmount={null} color="var(--accent)"
-                          editValue={row.otHours || ''} onEditChange={v => setRow(period.end, emp.id, 'otHours', v)} />
-                        <TR label="Hourly Rate" amount={rate} ytdAmount={null} color="var(--accent)"
-                          editValue={row.rate !== undefined && row.rate !== '' ? row.rate : String(emp.hourlyRate || '')} onEditChange={v => setRow(period.end, emp.id, 'rate', v)} />
+                        <TR label={`Reg Hours @ $${rate % 1 === 0 ? rate : rate.toFixed(2)}`} amount={regPay} ytdAmount={null} color="var(--accent)" />
+                        {otPay > 0 && <TR label={`OT Hours @ $${(rate * 1.5) % 1 === 0 ? (rate * 1.5) : (rate * 1.5).toFixed(2)}`} amount={otPay} ytdAmount={null} color="var(--accent)" />}
                       </>
                   }
                   {addedPendingEarnings.map(item => (
