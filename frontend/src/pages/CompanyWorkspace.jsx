@@ -1344,23 +1344,21 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           const cashAdv  = parseFloat(row.cashAdvance || 0);
           const mileAmt  = parseFloat(row.mileage || 0);
           const rate = parseFloat(row.rate) || emp.hourlyRate || 0;
-          const effRegH = isSalary ? 0 : Math.min(regH, 40);
-          const effOtH  = isSalary ? 0 : otH + Math.max(0, regH - 40);
-          const regPay = isSalary ? r2((emp.annualSalary || 0) / ppy) : r2(effRegH * rate);
-          const otPay  = isSalary ? 0 : r2(effOtH * rate * 1.5);
+          const regPay = isSalary ? r2((emp.annualSalary || 0) / ppy) : r2(regH * rate);
+          const otPay  = isSalary ? 0 : r2(otH * rate * 1.5);
           const lineItems = [
             ...(isSalary
               ? [{ payType: 'salary', description: 'Salary', amount: regPay }]
               : [
-                  ...(effRegH > 0 ? [{ payType: 'regular',  description: 'Regular',  hours: effRegH, rate, amount: regPay }] : []),
-                  ...(effOtH  > 0 ? [{ payType: 'overtime', description: 'Overtime', hours: effOtH,  rate: rate * 1.5, amount: otPay }] : []),
+                  ...(regH > 0 ? [{ payType: 'regular',  description: 'Regular',  hours: regH, rate, amount: regPay }] : []),
+                  ...(otH  > 0 ? [{ payType: 'overtime', description: 'Overtime', hours: otH,  rate: rate * 1.5, amount: otPay }] : []),
                 ]),
             ...(tips      > 0 ? [{ payType: 'tips',       description: 'Reported Tips',      amount: tips }] : []),
             ...(bonusAmt  > 0 ? [{ payType: 'bonus',      description: 'Bonus',              amount: bonusAmt }] : []),
             ...(commAmt   > 0 ? [{ payType: 'commission', description: 'Commission',         amount: commAmt }] : []),
           ];
           const ytd = calcEmpYTD(emp.id, null);
-          return { employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: effRegH || null, overtimeHours: effOtH || null, regularPay: regPay, overtimePay: otPay, bonus: bonusAmt, commission: commAmt, reimbursement: mileAmt, deduction: cashAdv, reportedTips: tips };
+          return { employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay, bonus: bonusAmt, commission: commAmt, reimbursement: mileAmt, deduction: cashAdv, reportedTips: tips };
         });
         const ov = periodOverrides[period.end] || {};
         const res = await api.runPayroll({ clientId, payPeriodStart: ov.start || period.start, payPeriodEnd: ov.end || period.end, settlementDate: ov.payDate || period.payDate, payGroupId: currentGroupId, employees: payrollEmps });
@@ -1450,16 +1448,14 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
         const comm2    = parseFloat(rowData2.commission || 0);
         const cashAdv2 = parseFloat(rowData2.cashAdvance || 0);
         const mile2    = parseFloat(rowData2.mileage || 0);
-        const effRegH2 = isSalary ? 0 : Math.min(regH, 40);
-        const effOtH2  = isSalary ? 0 : otH + Math.max(0, regH - 40);
-        const regPay   = isSalary ? r2((emp.annualSalary || 0) / ppy) : r2(effRegH2 * rate);
-        const otPay    = isSalary ? 0 : r2(effOtH2 * rate * 1.5);
+        const regPay   = isSalary ? r2((emp.annualSalary || 0) / ppy) : r2(regH * rate);
+        const otPay    = isSalary ? 0 : r2(otH * rate * 1.5);
         const lineItems = [
           ...(isSalary
             ? [{ payType: 'salary', description: 'Salary', amount: regPay }]
             : [
-                ...(regPay > 0 ? [{ payType: 'regular',  description: 'Regular Pay',  hours: effRegH2, rate, amount: regPay }] : []),
-                ...(otPay  > 0 ? [{ payType: 'overtime', description: 'Overtime Pay', hours: effOtH2, rate: rate * 1.5, amount: otPay }] : []),
+                ...(regPay > 0 ? [{ payType: 'regular',  description: 'Regular Pay',  hours: regH, rate, amount: regPay }] : []),
+                ...(otPay  > 0 ? [{ payType: 'overtime', description: 'Overtime Pay', hours: otH, rate: rate * 1.5, amount: otPay }] : []),
               ]),
           ...(tips2  > 0 ? [{ payType: 'tips',       description: 'Reported Tips', amount: tips2  }] : []),
           ...(bonus2 > 0 ? [{ payType: 'bonus',      description: 'Bonus',         amount: bonus2 }] : []),
@@ -1470,8 +1466,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           employeeId: emp.id,
           lineItems,
           ytdGross:    ytd.gross,
-          regularHours: isSalary ? null : effRegH2,
-          overtimeHours: isSalary ? null : effOtH2,
+          regularHours: isSalary ? null : regH,
+          overtimeHours: isSalary ? null : otH,
           regularPay: regPay,
           overtimePay: otPay,
           bonus: bonus2, commission: comm2, reimbursement: mile2, deduction: cashAdv2, reportedTips: tips2,
@@ -1697,10 +1693,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       const rate     = parseFloat(row.rate) || emp.hourlyRate || 0;
       const regH     = parseFloat(row.regHours || 0);
       const otH      = parseFloat(row.otHours  || 0);
-      const effRegH3 = isSalary ? 0 : Math.min(regH, 40);
-      const effOtH3  = isSalary ? 0 : otH + Math.max(0, regH - 40);
-      const regPay   = isSalary ? salAmt : r2(effRegH3 * rate);
-      const otPay    = isSalary ? 0 : r2(effOtH3 * rate * 1.5);
+      const regPay   = isSalary ? salAmt : r2(regH * rate);
+      const otPay    = isSalary ? 0 : r2(otH * rate * 1.5);
       const gross    = r2(regPay + otPay);
       const ytd      = calcEmpYTD(emp.id, null);
 
@@ -1742,6 +1736,33 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       const suiRateEst = [client?.suiRateQ1, client?.suiRateQ2, client?.suiRateQ3, client?.suiRateQ4][curQtr - 1] ?? 0.027;
       const estSutaTaxable = Math.max(0, Math.min(liveGross, 9000 - ytd.gross));
       const estSuta    = r2(estSutaTaxable * suiRateEst);
+
+      // Live federal + state tax estimate via calculate API
+      const [liveCalc, setLiveCalc] = useState(null);
+      useEffect(() => {
+        if (liveGross <= 0) { setLiveCalc(null); return; }
+        const payFreqStr = ppy === 52 ? 'weekly' : ppy === 26 ? 'biweekly' : ppy === 24 ? 'semimonthly' : 'monthly';
+        api.calculate({
+          grossWages: liveGross,
+          payFrequency: payFreqStr,
+          filingStatus: emp.filingStatus || 'single',
+          step2Checkbox: emp.step2Checkbox || false,
+          step3Children: emp.step3Children || 0,
+          step3Other: emp.step3Other || 0,
+          step4a: emp.step4a || 0,
+          step4b: emp.step4b || 0,
+          step4c: emp.step4c || 0,
+          workState: emp.workState || 'TX',
+          ytdGross: ytd.gross,
+          sutaRate: suiRateEst,
+        }).then(r => setLiveCalc(r)).catch(() => setLiveCalc(null));
+      }, [liveGross]);
+
+      const estFIT      = liveCalc?.fitWithholding  ?? null;
+      const estStateTax = liveCalc?.stateIncomeTax  ?? null;
+      const estNetFull  = liveCalc != null
+        ? r2(liveGross - (liveCalc.fitWithholding || 0) - estSS - estMed - (liveCalc.stateIncomeTax || 0) - estCashAdv)
+        : estNet;
 
       return (
         <Overlay>
@@ -1790,8 +1811,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                   {isSalary
                     ? <TR label="Salary / Period" amount={salAmt} ytdAmount={null} color="var(--accent)" />
                     : <>
-                        {effRegH3 > 0 && <TR label={`Hourly (${effRegH3} hrs)`}   amount={regPay} ytdAmount={null} color="var(--accent)" />}
-                        {effOtH3  > 0 && <TR label={`Overtime (${effOtH3} hrs)`}  amount={otPay}  ytdAmount={null} color="var(--accent)" />}
+                        {regH > 0 && <TR label={`Hourly (${regH} hrs)`}   amount={regPay} ytdAmount={null} color="var(--accent)" />}
+                        {otH  > 0 && <TR label={`Overtime (${otH} hrs)`}  amount={otPay}  ytdAmount={null} color="var(--accent)" />}
                       </>
                   }
                   {addedPendingEarnings.map(item => (
@@ -1805,9 +1826,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                   )}
                   <TR label="Social Security (est.)" amount={estSS}  ytdAmount={ytd.eeSS}     negative color="#dc2626" />
                   <TR label="Medicare (est.)"        amount={estMed} ytdAmount={ytd.eeMed}    negative color="#dc2626" />
-                  <TR label="Federal Income Tax"     amount="est. at run time" ytdAmount={ytd.fit}      color="var(--text-muted)" />
-                  <TR label="State Income Tax"       amount="est. at run time" ytdAmount={ytd.stateTax} color="var(--text-muted)" />
-                  <TR label="Net Pay (est.)"         amount={estNet} ytdAmount={ytd.netPay}   color="#16a34a" bold borderTop />
+                  <TR label="Federal Income Tax"     amount={estFIT      ?? 'calculating…'} ytdAmount={ytd.fit}      negative={estFIT != null}      color={estFIT != null && estFIT > 0 ? '#dc2626' : 'var(--text-muted)'} />
+                  <TR label="State Income Tax"       amount={estStateTax ?? '—'}            ytdAmount={ytd.stateTax} negative={estStateTax != null} color={estStateTax != null && estStateTax > 0 ? '#dc2626' : 'var(--text-muted)'} />
+                  <TR label="Net Pay (est.)"         amount={estNetFull} ytdAmount={ytd.netPay}   color="#16a34a" bold borderTop />
                 </tbody>
               </table>
 
