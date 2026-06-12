@@ -1300,7 +1300,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
   const [expandedOther, setExpandedOther] = useState(new Set());
 
   function getRow(periodEnd, empId) {
-    return (pendingRows[periodEnd] || {})[empId] || { regHours: '', otHours: '', rate: '', tips: '', bonus: '', commission: '', cashAdvance: '', mileage: '', selected: false };
+    return (pendingRows[periodEnd] || {})[empId] || { regHours: '', otHours: '', tips: '', bonus: '', commission: '', cashAdvance: '', mileage: '', selected: false };
   }
   function setRow(periodEnd, empId, field, value) {
     setPendingRows(prev => ({
@@ -1649,7 +1649,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
     const MONO = { fontFamily: 'JetBrains Mono, monospace' };
 
     // Reusable table row: label | amount | ytd amount
-    const TR = ({ label, amount, ytdAmount, color, bold, borderTop, negative, editValue, onEditChange }) => {
+    const TR = ({ label, amount, ytdAmount, color, bold, borderTop, negative, editValue, onEditChange, editSuffix, noDollarSign }) => {
       const display = negative ? (amount > 0 ? -amount : amount) : amount;
       return (
         <tr style={{ borderTop: borderTop ? '2px solid var(--border)' : undefined }}>
@@ -1657,12 +1657,13 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           <td style={{ padding: '3px 0 3px 12px', textAlign: 'right', ...MONO, fontSize: 13, fontWeight: bold ? 700 : 500, color: color || (negative && amount > 0 ? '#dc2626' : 'inherit') }}>
             {onEditChange
               ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                  <span style={{ ...MONO, fontSize: 13, color: 'var(--text-muted)', marginRight: 1 }}>$</span>
+                  {!noDollarSign && <span style={{ ...MONO, fontSize: 13, color: 'var(--text-muted)', marginRight: 1 }}>$</span>}
                   <input type="text" inputMode="decimal"
                     value={editValue}
                     onChange={e => onEditChange(e.target.value)}
                     placeholder="0.00"
                     style={{ ...MONO, background: '#fff', border: '1px solid var(--border)', borderRadius: 4, outline: 'none', width: 80, textAlign: 'right', fontSize: 13, fontWeight: bold ? 700 : 500, color: 'var(--text-primary)', padding: '1px 5px', cursor: 'text', boxSizing: 'border-box' }} />
+                  {editSuffix && <span style={{ ...MONO, fontSize: 12, color: 'var(--text-muted)', marginLeft: 4 }}>{editSuffix}</span>}
                 </span>
               : typeof display === 'number' ? fmt(display) : display
             }
@@ -1884,8 +1885,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                   {isSalary
                     ? <TR label="Salary / Period" amount={salAmt} ytdAmount={null} color="var(--accent)" />
                     : <>
-                        <TR label={`Reg Hours @ $${rate % 1 === 0 ? rate : rate.toFixed(2)}`} amount={regPay} ytdAmount={null} color="var(--accent)" />
-                        {otPay > 0 && <TR label={`OT Hours @ $${(rate * 1.5) % 1 === 0 ? (rate * 1.5) : (rate * 1.5).toFixed(2)}`} amount={otPay} ytdAmount={null} color="var(--accent)" />}
+                        <TR label="Hourly Rate" amount={rate} ytdAmount={null} color="var(--accent)"
+                          editValue={row.rate !== undefined ? String(row.rate) : String(emp.hourlyRate || '')}
+                          onEditChange={v => setRow(period.end, emp.id, 'rate', v)}
+                          editSuffix="/hr" noDollarSign={false} />
+                        <TR label={`Reg Hours @ $${rate % 1 === 0 ? rate : rate.toFixed(2)} /hr`} amount={regPay} ytdAmount={null} color="var(--accent)" />
+                        {otPay > 0 && <TR label={`OT Hours @ $${(rate * 1.5) % 1 === 0 ? (rate * 1.5) : (rate * 1.5).toFixed(2)} /hr`} amount={otPay} ytdAmount={null} color="var(--accent)" />}
                       </>
                   }
                   {addedPendingEarnings.map(item => (
@@ -2373,8 +2378,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                           style={{ width: '100%', height: 26, fontSize: 12, textAlign: 'right', padding: '0 6px' }} />
                       </td>
                       <td style={{ padding: '4px 6px' }}>
-                        <input className="form-input mono" type="number" min="0" step="0.01"
-                          value={row.rate !== '' ? row.rate : (emp.hourlyRate || '')}
+                        <input className="form-input mono" type="text" inputMode="decimal"
+                          value={row.rate !== undefined ? row.rate : String(emp.hourlyRate || '')}
                           placeholder={String(emp.hourlyRate || '')}
                           onChange={ev => setRow(period.end, emp.id, 'rate', ev.target.value)}
                           onBlur={ev => {
