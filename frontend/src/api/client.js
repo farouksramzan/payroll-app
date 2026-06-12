@@ -169,6 +169,11 @@ const api = {
   getPreparerInfo: () => request('/auth/preparer'),
   savePreparerInfo: (data) => request('/auth/preparer', { method: 'PUT', body: JSON.stringify(data) }),
 
+  // User management (admin only)
+  getUsers: () => request('/auth/users'),
+  createUser: (username, password) => request('/auth/users', { method: 'POST', body: JSON.stringify({ username, password }) }),
+  deleteUser: (id) => request(`/auth/users/${id}`, { method: 'DELETE' }),
+
   // Employee import
   previewEmployeeImport: async (clientId, file) => {
     const token = localStorage.getItem('token');

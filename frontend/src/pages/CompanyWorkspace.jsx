@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import api from '../api/client';
+import { useAuth } from '../contexts/AuthContext';
 import ImportEmployeesModal from '../components/ImportEmployeesModal';
 import ImportPaychecksModal from '../components/ImportPaychecksModal';
 
@@ -4010,7 +4011,135 @@ function PayrollTab({ clientId, client, employees, onRefresh, refreshTick = 0 })
 // ── Main Workspace ────────────────────────────────────────────────────────────
 const WS_TAB_KEY = 'ws_activeTab';
 
+// ── Users Panel (admin only) ──────────────────────────────────────────────────
+function UsersPanel() {
+  const { user: currentUser } = useAuth();
+  const [users, setUsers] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [newUsername, setNewUsername] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState('');
+
+  useEffect(() => { loadUsers(); }, []);
+
+  async function loadUsers() {
+    setLoading(true);
+    try { setUsers(await api.getUsers()); }
+    catch (e) { setError(e.message); }
+    finally { setLoading(false); }
+  }
+
+  async function handleCreate(e) {
+    e.preventDefault();
+    setCreateError('');
+    if (!newUsername.trim()) { setCreateError('Username is required'); return; }
+    if (newPassword.length < 6) { setCreateError('Password must be at least 6 characters'); return; }
+    setCreating(true);
+    try {
+      await api.createUser(newUsername.trim(), newPassword);
+      setNewUsername('');
+      setNewPassword('');
+      await loadUsers();
+    } catch (err) {
+      setCreateError(err.message);
+    } finally {
+      setCreating(false);
+    }
+  }
+
+  async function handleDelete(u) {
+    if (!window.confirm(`Delete user "${u.username}"? All their data will be permanently removed.`)) return;
+    try {
+      await api.deleteUser(u.id);
+      await loadUsers();
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><div className="spinner spinner-dark" /></div>;
+  if (error) return <div style={{ padding: 24, color: 'var(--danger)' }}>{error}</div>;
+
+  return (
+    <div style={{ padding: 24, maxWidth: 640 }}>
+      <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20 }}>User Management</h2>
+
+      <div className="card" style={{ marginBottom: 24 }}>
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', fontWeight: 600, fontSize: 14 }}>Users</div>
+        <table className="table" style={{ margin: 0 }}>
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Created</th>
+              <th style={{ width: 80 }}></th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map(u => (
+              <tr key={u.id}>
+                <td>{u.username}{u.id === 1 && <span style={{ marginLeft: 6, fontSize: 11, background: 'var(--accent-light)', color: 'var(--accent)', borderRadius: 4, padding: '1px 5px', fontWeight: 600 }}>admin</span>}</td>
+                <td style={{ color: 'var(--text-muted)', fontSize: 13 }}>{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
+                <td>
+                  <button
+                    className="btn btn-danger btn-sm"
+                    disabled={u.id === 1 || u.id === currentUser?.id}
+                    onClick={() => handleDelete(u)}
+                    title={u.id === 1 ? 'Cannot delete admin' : u.id === currentUser?.id ? 'Cannot delete yourself' : `Delete ${u.username}`}
+                  >
+                    Delete
+                  </button>
+                </td>
+              </tr>
+            ))}
+            {users.length === 0 && (
+              <tr><td colSpan={3} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 20 }}>No users found</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="card">
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', fontWeight: 600, fontSize: 14 }}>Create User</div>
+        <form onSubmit={handleCreate} style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {createError && <div style={{ color: 'var(--danger)', fontSize: 13 }}>{createError}</div>}
+          <div style={{ display: 'flex', gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Username</label>
+              <input
+                className="form-control"
+                value={newUsername}
+                onChange={e => setNewUsername(e.target.value)}
+                placeholder="e.g. jsmith"
+                autoComplete="off"
+              />
+            </div>
+            <div style={{ flex: 1 }}>
+              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Password</label>
+              <input
+                className="form-control"
+                type="password"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                placeholder="Min. 6 characters"
+                autoComplete="new-password"
+              />
+            </div>
+          </div>
+          <div>
+            <button type="submit" className="btn btn-primary" disabled={creating}>
+              {creating ? 'Creating…' : 'Create User'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 export default function CompanyWorkspace() {
+  const { user } = useAuth();
   const { id } = useParams(), location = useLocation(), navigate = useNavigate();
   const [client, setClient]       = useState(null);
   const [employees, setEmployees] = useState([]);
@@ -4060,7 +4189,7 @@ export default function CompanyWorkspace() {
           </button>
         </div>
         <div className="ws-tabs">
-          {[['employees','Employees'],['company','Company'],['payroll','Payroll']].map(([k, label]) => (
+          {[['employees','Employees'],['company','Company'],['payroll','Payroll'],...(user?.username === 'admin' ? [['users','Users']] : [])].map(([k, label]) => (
             <button key={k} className={`ws-tab${activeTab === k ? ' active' : ''}`} onClick={() => setActiveTab(k)}>
               {label}
               {k === 'employees' && employees.length > 0 && <span style={{ marginLeft: 6, background: activeTab === k ? 'var(--accent)' : 'var(--bg-tertiary)', color: activeTab === k ? '#fff' : 'var(--text-muted)', borderRadius: 20, fontSize: 10, fontWeight: 700, padding: '1px 6px' }}>{employees.length}</span>}
@@ -4072,6 +4201,7 @@ export default function CompanyWorkspace() {
         {activeTab === 'employees' && <EmployeesTab clientId={id} employees={employees} onRefresh={loadAll} />}
         {activeTab === 'company'   && <CompanyTab client={client} onSaved={loadAll} />}
         {activeTab === 'payroll'   && <PayrollTab clientId={id} client={client} employees={employees} onRefresh={loadAll} refreshTick={refreshTick} />}
+        {activeTab === 'users'     && user?.username === 'admin' && <UsersPanel />}
       </div>
     </div>
   );
