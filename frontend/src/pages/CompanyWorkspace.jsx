@@ -1152,7 +1152,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
   const [periodEdit, setPeriodEdit]               = useState(null); // { id, start, end, payDate }
   const [savingPeriod, setSavingPeriod]           = useState(false);
   const [empStatusDrop, setEmpStatusDrop]         = useState(null); // { stub, top, right }
-  const [periodOverrides, setPeriodOverrides]     = useState({}); // { [periodEnd]: { start, end, payDate } }
+  const [periodOverrides, setPeriodOverrides]     = useState(() => { // { [periodEnd]: { start, end, payDate } }
+    try { const s = localStorage.getItem(`periodOverrides_${clientId}`); return s ? JSON.parse(s) : {}; } catch { return {}; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(`periodOverrides_${clientId}`, JSON.stringify(periodOverrides)); } catch {}
+  }, [periodOverrides, clientId]);
   const [ungroupedModal, setUngroupedModal]       = useState(false);
   const [ugForm, setUgForm]                       = useState({ employeeId: '', start: '', end: '', payDate: '', regHours: '', otHours: '', rate: '', payType: 'regular', tips: '', bonus: '', commission: '', cashAdvance: '', mileage: '' });
   const [ugOtherOpen, setUgOtherOpen]             = useState(false);
@@ -1212,13 +1217,28 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
     const paidEnds = new Set(groupStubs.map(s => s.pay_period_end));
     const todayStr = new Date().toISOString().slice(0, 10);
 
+    // Compute calendar-day offset between configured payDate and firstPayPeriodEnd
+    // so subsequent periods inherit the same offset (e.g. if group payDate is 2 days after period end, keep that pattern)
+    const configuredPayDateOffset = (g.payDate && g.firstPayPeriodEnd)
+      ? Math.round((new Date(g.payDate + 'T00:00:00') - new Date(g.firstPayPeriodEnd + 'T00:00:00')) / 86400000)
+      : null;
+
+    function calcGroupPayDate(endStr) {
+      if (configuredPayDateOffset === null) return calcDefaultPayDate(endStr);
+      const d = new Date(endStr + 'T00:00:00');
+      d.setDate(d.getDate() + configuredPayDateOffset);
+      // Push forward past weekends
+      while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+      return d.toISOString().slice(0, 10);
+    }
+
     let s = new Date(anchor + 'T00:00:00'), e = new Date(g.firstPayPeriodEnd + 'T00:00:00');
     const pending = [];
     let nonLateCount = 0;
     for (let i = 0; i < 60; i++) {
       const endStr = e.toISOString().slice(0, 10);
       if (!paidEnds.has(endStr)) {
-        const payDate = calcDefaultPayDate(endStr);
+        const payDate = calcGroupPayDate(endStr);
         const isLate = payDate < todayStr;
         pending.push({ start: s.toISOString().slice(0, 10), end: endStr, payDate, isLate });
         if (!isLate) {
