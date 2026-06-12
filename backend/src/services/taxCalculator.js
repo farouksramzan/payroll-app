@@ -99,7 +99,7 @@ function calculateWithholding({
 
   const credits = (step3Children || 0) * CHILD_CREDIT + (step3Other || 0) * DEPENDENT_CREDIT;
   const annualWithholding = Math.max(0, annualTax - credits);
-  const fitWithholding = round2(Math.max(0, annualWithholding / periods + (step4c || 0)));
+  const fitWithholding = Math.round(Math.max(0, annualWithholding / periods + (step4c || 0)));
 
   // ── FICA — Social Security (wage base cap via YTD) ────────────────────────────
   const ssWagesThisPeriod = Math.max(0, Math.min(grossWages, SS_WAGE_BASE - Math.min(ytdGross, SS_WAGE_BASE)));
