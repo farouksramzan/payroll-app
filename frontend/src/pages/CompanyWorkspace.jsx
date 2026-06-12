@@ -1342,21 +1342,23 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           const cashAdv  = parseFloat(row.cashAdvance || 0);
           const mileAmt  = parseFloat(row.mileage || 0);
           const rate = parseFloat(row.rate) || emp.hourlyRate || 0;
-          const regPay = isSalary ? r2((emp.annualSalary || 0) / ppy) : r2(Math.min(regH, 40) * rate);
-          const otPay  = isSalary ? 0 : r2(otH * rate * 1.5);
+          const effRegH = isSalary ? 0 : Math.min(regH, 40);
+          const effOtH  = isSalary ? 0 : otH + Math.max(0, regH - 40);
+          const regPay = isSalary ? r2((emp.annualSalary || 0) / ppy) : r2(effRegH * rate);
+          const otPay  = isSalary ? 0 : r2(effOtH * rate * 1.5);
           const lineItems = [
             ...(isSalary
               ? [{ payType: 'salary', description: 'Salary', amount: regPay }]
               : [
-                  ...(regH > 0 ? [{ payType: 'regular',  description: 'Regular',  hours: regH, rate, amount: regPay }] : []),
-                  ...(otH  > 0 ? [{ payType: 'overtime', description: 'Overtime', hours: otH,  rate: rate * 1.5, amount: otPay }] : []),
+                  ...(effRegH > 0 ? [{ payType: 'regular',  description: 'Regular',  hours: effRegH, rate, amount: regPay }] : []),
+                  ...(effOtH  > 0 ? [{ payType: 'overtime', description: 'Overtime', hours: effOtH,  rate: rate * 1.5, amount: otPay }] : []),
                 ]),
             ...(tips      > 0 ? [{ payType: 'tips',       description: 'Reported Tips',      amount: tips }] : []),
             ...(bonusAmt  > 0 ? [{ payType: 'bonus',      description: 'Bonus',              amount: bonusAmt }] : []),
             ...(commAmt   > 0 ? [{ payType: 'commission', description: 'Commission',         amount: commAmt }] : []),
           ];
           const ytd = calcEmpYTD(emp.id, null);
-          return { employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay, bonus: bonusAmt, commission: commAmt, reimbursement: mileAmt, deduction: cashAdv, reportedTips: tips };
+          return { employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: effRegH || null, overtimeHours: effOtH || null, regularPay: regPay, overtimePay: otPay, bonus: bonusAmt, commission: commAmt, reimbursement: mileAmt, deduction: cashAdv, reportedTips: tips };
         });
         const ov = periodOverrides[period.end] || {};
         const res = await api.runPayroll({ clientId, payPeriodStart: ov.start || period.start, payPeriodEnd: ov.end || period.end, settlementDate: ov.payDate || period.payDate, payGroupId: currentGroupId, employees: payrollEmps });
@@ -1446,14 +1448,16 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
         const comm2    = parseFloat(rowData2.commission || 0);
         const cashAdv2 = parseFloat(rowData2.cashAdvance || 0);
         const mile2    = parseFloat(rowData2.mileage || 0);
-        const regPay   = isSalary ? r2((emp.annualSalary || 0) / ppy) : r2(Math.min(regH, 40) * rate);
-        const otPay    = isSalary ? 0 : r2(otH * rate * 1.5);
+        const effRegH2 = isSalary ? 0 : Math.min(regH, 40);
+        const effOtH2  = isSalary ? 0 : otH + Math.max(0, regH - 40);
+        const regPay   = isSalary ? r2((emp.annualSalary || 0) / ppy) : r2(effRegH2 * rate);
+        const otPay    = isSalary ? 0 : r2(effOtH2 * rate * 1.5);
         const lineItems = [
           ...(isSalary
             ? [{ payType: 'salary', description: 'Salary', amount: regPay }]
             : [
-                ...(regPay > 0 ? [{ payType: 'regular',  description: 'Regular Pay',  hours: Math.min(regH, 40), rate, amount: regPay }] : []),
-                ...(otPay  > 0 ? [{ payType: 'overtime', description: 'Overtime Pay', hours: otH, rate: rate * 1.5, amount: otPay }] : []),
+                ...(regPay > 0 ? [{ payType: 'regular',  description: 'Regular Pay',  hours: effRegH2, rate, amount: regPay }] : []),
+                ...(otPay  > 0 ? [{ payType: 'overtime', description: 'Overtime Pay', hours: effOtH2, rate: rate * 1.5, amount: otPay }] : []),
               ]),
           ...(tips2  > 0 ? [{ payType: 'tips',       description: 'Reported Tips', amount: tips2  }] : []),
           ...(bonus2 > 0 ? [{ payType: 'bonus',      description: 'Bonus',         amount: bonus2 }] : []),
@@ -1464,8 +1468,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           employeeId: emp.id,
           lineItems,
           ytdGross:    ytd.gross,
-          regularHours: isSalary ? null : regH,
-          overtimeHours: isSalary ? null : otH,
+          regularHours: isSalary ? null : effRegH2,
+          overtimeHours: isSalary ? null : effOtH2,
           regularPay: regPay,
           overtimePay: otPay,
           bonus: bonus2, commission: comm2, reimbursement: mile2, deduction: cashAdv2, reportedTips: tips2,
@@ -1691,8 +1695,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       const rate     = parseFloat(row.rate) || emp.hourlyRate || 0;
       const regH     = parseFloat(row.regHours || 0);
       const otH      = parseFloat(row.otHours  || 0);
-      const regPay   = isSalary ? salAmt : r2(Math.min(regH, 40) * rate);
-      const otPay    = isSalary ? 0 : r2(otH * rate * 1.5);
+      const effRegH3 = isSalary ? 0 : Math.min(regH, 40);
+      const effOtH3  = isSalary ? 0 : otH + Math.max(0, regH - 40);
+      const regPay   = isSalary ? salAmt : r2(effRegH3 * rate);
+      const otPay    = isSalary ? 0 : r2(effOtH3 * rate * 1.5);
       const gross    = r2(regPay + otPay);
       const ytd      = calcEmpYTD(emp.id, null);
 
@@ -1763,8 +1769,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                     {isSalary
                       ? <TR label="Salary / Period" amount={salAmt} color="var(--accent)" />
                       : <>
-                          {regH > 0 && <TR label={`Hourly  (${regH} hrs)`} amount={regPay} color="var(--accent)" />}
-                          {otH  > 0 && <TR label={`Overtime  (${otH} hrs)`} amount={otPay} color="var(--accent)" />}
+                          {effRegH3 > 0 && <TR label={`Hourly  (${effRegH3} hrs)`} amount={regPay} color="var(--accent)" />}
+                          {effOtH3  > 0 && <TR label={`Overtime  (${effOtH3} hrs)`} amount={otPay} color="var(--accent)" />}
                         </>
                     }
                     {addedPendingEarnings.map(item => (
