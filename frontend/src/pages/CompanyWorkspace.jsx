@@ -1266,16 +1266,21 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       (!upToEnd || s.pay_period_end <= upToEnd)
     );
     return {
-      gross:    stubs.reduce((n, s) => n + (s.gross_wages        || 0), 0),
-      fit:      stubs.reduce((n, s) => n + (s.fit_withholding    || 0), 0),
-      eeSS:     stubs.reduce((n, s) => n + (s.employee_ss        || 0), 0),
-      eeMed:    stubs.reduce((n, s) => n + (s.employee_medicare  || 0), 0),
-      stateTax: stubs.reduce((n, s) => n + (s.state_income_tax   || 0), 0),
-      futa:     stubs.reduce((n, s) => n + (s.futa_tax           || 0), 0),
-      suta:     stubs.reduce((n, s) => n + (s.suta_tax           || 0), 0),
-      netPay:   stubs.reduce((n, s) => n + (s.net_pay            || 0), 0),
-      erSS:     stubs.reduce((n, s) => n + (s.employer_ss        || 0), 0),
-      erMed:    stubs.reduce((n, s) => n + (s.employer_medicare  || 0), 0),
+      gross:      stubs.reduce((n, s) => n + (s.gross_wages        || 0), 0),
+      fit:        stubs.reduce((n, s) => n + (s.fit_withholding    || 0), 0),
+      eeSS:       stubs.reduce((n, s) => n + (s.employee_ss        || 0), 0),
+      eeMed:      stubs.reduce((n, s) => n + (s.employee_medicare  || 0), 0),
+      stateTax:   stubs.reduce((n, s) => n + (s.state_income_tax   || 0), 0),
+      futa:       stubs.reduce((n, s) => n + (s.futa_tax           || 0), 0),
+      suta:       stubs.reduce((n, s) => n + (s.suta_tax           || 0), 0),
+      netPay:     stubs.reduce((n, s) => n + (s.net_pay            || 0), 0),
+      erSS:       stubs.reduce((n, s) => n + (s.employer_ss        || 0), 0),
+      erMed:      stubs.reduce((n, s) => n + (s.employer_medicare  || 0), 0),
+      regPay:     stubs.reduce((n, s) => n + (s.regular_pay        || 0), 0),
+      otPay:      stubs.reduce((n, s) => n + (s.overtime_pay       || 0), 0),
+      tips:       stubs.reduce((n, s) => n + (s.reported_tips      || 0), 0),
+      bonus:      stubs.reduce((n, s) => n + (s.bonus              || 0), 0),
+      commission: stubs.reduce((n, s) => n + (s.commission         || 0), 0),
     };
   }
 
@@ -1831,31 +1836,46 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
         const eSuta     = r2emp.suiOverride  !== undefined ? parseFloat(r2emp.suiOverride  || 0) : r2(eSutaTaxable * suiRateEst);
         const eNet      = r2(eGross - eSS - eMed - eFIT - eState - eCashAdv);
         return {
-          gross:    r2(acc.gross    + eGross),
-          eeSS:     r2(acc.eeSS    + eSS),
-          eeMed:    r2(acc.eeMed   + eMed),
-          fit:      r2(acc.fit     + eFIT),
-          stateTax: r2(acc.stateTax + eState),
-          netPay:   r2(acc.netPay  + eNet),
-          erSS:     r2(acc.erSS    + eErSS),
-          erMed:    r2(acc.erMed   + eErMed),
-          futa:     r2(acc.futa    + eFuta),
-          suta:     r2(acc.suta    + eSuta),
+          gross:      r2(acc.gross      + eGross),
+          eeSS:       r2(acc.eeSS      + eSS),
+          eeMed:      r2(acc.eeMed     + eMed),
+          fit:        r2(acc.fit       + eFIT),
+          stateTax:   r2(acc.stateTax  + eState),
+          netPay:     r2(acc.netPay    + eNet),
+          erSS:       r2(acc.erSS      + eErSS),
+          erMed:      r2(acc.erMed     + eErMed),
+          futa:       r2(acc.futa      + eFuta),
+          suta:       r2(acc.suta      + eSuta),
+          regPay:     r2(acc.regPay    + eReg),
+          otPay:      r2(acc.otPay     + eOt),
+          tips:       r2(acc.tips      + eTips),
+          bonus:      r2(acc.bonus     + eBonus),
+          commission: r2(acc.commission + eComm),
         };
-      }, { gross: 0, eeSS: 0, eeMed: 0, fit: 0, stateTax: 0, netPay: 0, erSS: 0, erMed: 0, futa: 0, suta: 0 });
+      }, { gross: 0, eeSS: 0, eeMed: 0, fit: 0, stateTax: 0, netPay: 0, erSS: 0, erMed: 0, futa: 0, suta: 0, regPay: 0, otPay: 0, tips: 0, bonus: 0, commission: 0 });
+
+      // Current-period per-type values
+      const curTips     = parseFloat(row.tips       || 0);
+      const curBonus    = parseFloat(row.bonus      || 0);
+      const curComm     = parseFloat(row.commission || 0);
 
       // YTD = printed checks + all other pending periods + this period
       const ytdWithCurrent = {
-        gross:    r2(ytd.gross    + otherPendingTotals.gross    + liveGross),
-        eeSS:     r2(ytd.eeSS    + otherPendingTotals.eeSS    + dispSS),
-        eeMed:    r2(ytd.eeMed   + otherPendingTotals.eeMed   + dispMed),
-        fit:      r2(ytd.fit     + otherPendingTotals.fit     + (dispFIT      ?? 0)),
-        stateTax: r2(ytd.stateTax + otherPendingTotals.stateTax + (dispStateTax ?? 0)),
-        netPay:   r2(ytd.netPay  + otherPendingTotals.netPay  + estNetFull),
-        erSS:     r2(ytd.erSS    + otherPendingTotals.erSS    + dispErSS),
-        erMed:    r2(ytd.erMed   + otherPendingTotals.erMed   + dispErMed),
-        futa:     r2(ytd.futa    + otherPendingTotals.futa    + dispFuta),
-        suta:     r2(ytd.suta    + otherPendingTotals.suta    + dispSuta),
+        gross:      r2(ytd.gross      + otherPendingTotals.gross      + liveGross),
+        eeSS:       r2(ytd.eeSS      + otherPendingTotals.eeSS      + dispSS),
+        eeMed:      r2(ytd.eeMed     + otherPendingTotals.eeMed     + dispMed),
+        fit:        r2(ytd.fit       + otherPendingTotals.fit       + (dispFIT      ?? 0)),
+        stateTax:   r2(ytd.stateTax  + otherPendingTotals.stateTax  + (dispStateTax ?? 0)),
+        netPay:     r2(ytd.netPay    + otherPendingTotals.netPay    + estNetFull),
+        erSS:       r2(ytd.erSS      + otherPendingTotals.erSS      + dispErSS),
+        erMed:      r2(ytd.erMed     + otherPendingTotals.erMed     + dispErMed),
+        futa:       r2(ytd.futa      + otherPendingTotals.futa      + dispFuta),
+        suta:       r2(ytd.suta      + otherPendingTotals.suta      + dispSuta),
+        regPay:     r2(ytd.regPay    + otherPendingTotals.regPay    + regPay),
+        otPay:      r2(ytd.otPay     + otherPendingTotals.otPay     + otPay),
+        tips:       r2(ytd.tips      + otherPendingTotals.tips      + curTips),
+        bonus:      r2(ytd.bonus     + otherPendingTotals.bonus     + curBonus),
+        commission: r2(ytd.commission + otherPendingTotals.commission + curComm),
       };
 
       return (
@@ -1903,18 +1923,19 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                 </thead>
                 <tbody>
                   {isSalary
-                    ? <TR label="Salary / Period" amount={salAmt} ytdAmount={null} color="var(--accent)" />
+                    ? <TR label="Salary / Period" amount={salAmt} ytdAmount={ytdWithCurrent.regPay} color="var(--accent)" />
                     : <>
                         <TR label="Hourly Rate" amount={rate} ytdAmount={null} color="var(--accent)"
                           editValue={row.rate !== undefined ? String(row.rate) : String(emp.hourlyRate || '')}
                           onEditChange={v => setRow(period.end, emp.id, 'rate', v)}
                           editSuffix="/hr" noDollarSign={false} />
-                        <TR label={`Reg Hours @ $${rate % 1 === 0 ? rate : rate.toFixed(2)} /hr`} amount={regPay} ytdAmount={null} color="var(--accent)" />
-                        {otPay > 0 && <TR label={`OT Hours @ $${(rate * 1.5) % 1 === 0 ? (rate * 1.5) : (rate * 1.5).toFixed(2)} /hr`} amount={otPay} ytdAmount={null} color="var(--accent)" />}
+                        <TR label={`Reg Hours @ $${rate % 1 === 0 ? rate : rate.toFixed(2)} /hr`} amount={regPay} ytdAmount={ytdWithCurrent.regPay} color="var(--accent)" />
+                        {otPay > 0 && <TR label={`OT Hours @ $${(rate * 1.5) % 1 === 0 ? (rate * 1.5) : (rate * 1.5).toFixed(2)} /hr`} amount={otPay} ytdAmount={ytdWithCurrent.otPay} color="var(--accent)" />}
                       </>
                   }
                   {addedPendingEarnings.map(item => (
-                    <TR key={item.field} label={item.label} amount={parseFloat(row[item.field] || 0)} ytdAmount={null} color="var(--accent)"
+                    <TR key={item.field} label={item.label} amount={parseFloat(row[item.field] || 0)}
+                      ytdAmount={ytdWithCurrent[item.field] ?? null} color="var(--accent)"
                       editValue={row[item.field] || ''} onEditChange={v => setRow(period.end, emp.id, item.field, v)} />
                   ))}
                   <TR label="Gross Pay"            amount={liveGross}    ytdAmount={ytdWithCurrent.gross}    color="var(--accent)" bold borderTop />
