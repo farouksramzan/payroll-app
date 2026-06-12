@@ -1247,6 +1247,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       futa:     stubs.reduce((n, s) => n + (s.futa_tax           || 0), 0),
       suta:     stubs.reduce((n, s) => n + (s.suta_tax           || 0), 0),
       netPay:   stubs.reduce((n, s) => n + (s.net_pay            || 0), 0),
+      erSS:     stubs.reduce((n, s) => n + (s.employer_ss        || 0), 0),
+      erMed:    stubs.reduce((n, s) => n + (s.employer_medicare  || 0), 0),
     };
   }
 
@@ -1726,11 +1728,20 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       const [pendingOtherOpen, setPendingOtherOpen] = useState(false);
       const addedPendingEarnings  = pendingItemDefs.filter(x => !x.isDeduction && addedPendingItems.has(x.field));
       const hiddenPendingItems    = pendingItemDefs.filter(x => !addedPendingItems.has(x.field));
-      const liveGross = r2(regPay + otPay + addedPendingEarnings.reduce((s, x) => s + parseFloat(row[x.field] || 0), 0));
-      const estSS     = r2(liveGross * EE_SS_RATE);
-      const estMed    = r2(liveGross * EE_MEDICARE_RATE);
+      const liveGross  = r2(regPay + otPay + addedPendingEarnings.reduce((s, x) => s + parseFloat(row[x.field] || 0), 0));
+      const estSS      = r2(liveGross * EE_SS_RATE);
+      const estMed     = r2(liveGross * EE_MEDICARE_RATE);
       const estCashAdv = addedPendingItems.has('cashAdvance') ? parseFloat(row.cashAdvance || 0) : 0;
-      const estNet    = r2(liveGross - estSS - estMed - estCashAdv);
+      const estNet     = r2(liveGross - estSS - estMed - estCashAdv);
+      // Employer estimates
+      const estErSS    = r2(liveGross * EE_SS_RATE);
+      const estErMed   = r2(liveGross * EE_MEDICARE_RATE);
+      const estFutaTaxable = Math.max(0, Math.min(liveGross, 7000 - ytd.gross));
+      const estFuta    = r2(estFutaTaxable * 0.006);
+      const curQtr     = Math.ceil((new Date().getMonth() + 1) / 3);
+      const suiRateEst = [client?.suiRateQ1, client?.suiRateQ2, client?.suiRateQ3, client?.suiRateQ4][curQtr - 1] ?? 0.027;
+      const estSutaTaxable = Math.max(0, Math.min(liveGross, 9000 - ytd.gross));
+      const estSuta    = r2(estSutaTaxable * suiRateEst);
 
       return (
         <Overlay>
@@ -1762,65 +1773,61 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
               </div>
             </div>
 
-            {/* Body: two columns */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid var(--border)' }}>
-              {/* Left — this period earnings */}
-              <div style={{ padding: '18px 20px 18px 24px', borderRight: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Employee Summary</div>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <ColHeader hasYTD={false} />
-                  <tbody>
-                    {isSalary
-                      ? <TR label="Salary / Period" amount={salAmt} color="var(--accent)" />
-                      : <>
-                          {effRegH3 > 0 && <TR label={`Hourly  (${effRegH3} hrs)`} amount={regPay} color="var(--accent)" />}
-                          {effOtH3  > 0 && <TR label={`Overtime  (${effOtH3} hrs)`} amount={otPay} color="var(--accent)" />}
-                        </>
-                    }
-                    {addedPendingEarnings.map(item => (
-                      <TR key={item.field} label={item.label} amount={parseFloat(row[item.field] || 0)} color="var(--accent)"
-                        editValue={row[item.field] || ''} onEditChange={v => setRow(period.end, emp.id, item.field, v)} />
-                    ))}
-                    <TR label="Gross Pay" amount={liveGross} color="var(--accent)" bold borderTop />
-                    {addedPendingItems.has('cashAdvance') && (
-                      <TR label="Cash Advance" amount={parseFloat(row.cashAdvance || 0)} negative color="#dc2626"
-                        editValue={row.cashAdvance || ''} onEditChange={v => setRow(period.end, emp.id, 'cashAdvance', v)} />
-                    )}
-                    <TR label="Social Security (est.)" amount={estSS}  negative color="#dc2626" />
-                    <TR label="Medicare (est.)"        amount={estMed} negative color="#dc2626" />
-                    <TR label="Federal / State Tax"    amount="calc. at run time" color="var(--text-muted)" />
-                    <TR label="Net Pay (est.)"         amount={estNet} color="#16a34a" bold borderTop />
-                  </tbody>
-                </table>
-              </div>
+            {/* Body: Employee Summary + Company Summary, each with YTD column */}
+            <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--border)' }}>
 
-              {/* Right — YTD to date */}
-              <div style={{ padding: '18px 24px 18px 20px' }}>
-                <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Year-to-Date {curYear}</div>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <ColHeader hasYTD={false} />
-                  <tbody>
-                    <TR label="Gross Pay"          amount={ytd.gross}    color="var(--accent)" />
-                    <TR label="Federal Income Tax" amount={-ytd.fit}     color={ytd.fit > 0 ? '#dc2626' : 'var(--text-muted)'} />
-                    <TR label="Social Security"    amount={-ytd.eeSS}    color={ytd.eeSS > 0 ? '#dc2626' : 'var(--text-muted)'} />
-                    <TR label="Medicare"           amount={-ytd.eeMed}   color={ytd.eeMed > 0 ? '#dc2626' : 'var(--text-muted)'} />
-                    <TR label="State Income Tax"   amount={-ytd.stateTax} color={ytd.stateTax > 0 ? '#dc2626' : 'var(--text-muted)'} />
-                    <TR label="Net Pay"            amount={ytd.netPay}   color="#16a34a" bold borderTop />
-                  </tbody>
-                </table>
-              </div>
-            </div>
+              {/* Employee Summary */}
+              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Employee Summary</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 22 }}>
+                <thead>
+                  <tr>
+                    <th style={{ padding: '0 0 6px 0', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Item Name</th>
+                    <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Amount</th>
+                    <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>YTD</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {isSalary
+                    ? <TR label="Salary / Period" amount={salAmt} ytdAmount={null} color="var(--accent)" />
+                    : <>
+                        {effRegH3 > 0 && <TR label={`Hourly (${effRegH3} hrs)`}   amount={regPay} ytdAmount={null} color="var(--accent)" />}
+                        {effOtH3  > 0 && <TR label={`Overtime (${effOtH3} hrs)`}  amount={otPay}  ytdAmount={null} color="var(--accent)" />}
+                      </>
+                  }
+                  {addedPendingEarnings.map(item => (
+                    <TR key={item.field} label={item.label} amount={parseFloat(row[item.field] || 0)} ytdAmount={null} color="var(--accent)"
+                      editValue={row[item.field] || ''} onEditChange={v => setRow(period.end, emp.id, item.field, v)} />
+                  ))}
+                  <TR label="Gross Pay"            amount={liveGross}    ytdAmount={ytd.gross}    color="var(--accent)" bold borderTop />
+                  {addedPendingItems.has('cashAdvance') && (
+                    <TR label="Cash Advance"       amount={parseFloat(row.cashAdvance || 0)} ytdAmount={null} negative color="#dc2626"
+                      editValue={row.cashAdvance || ''} onEditChange={v => setRow(period.end, emp.id, 'cashAdvance', v)} />
+                  )}
+                  <TR label="Social Security (est.)" amount={estSS}  ytdAmount={ytd.eeSS}     negative color="#dc2626" />
+                  <TR label="Medicare (est.)"        amount={estMed} ytdAmount={ytd.eeMed}    negative color="#dc2626" />
+                  <TR label="Federal Income Tax"     amount="est. at run time" ytdAmount={ytd.fit}      color="var(--text-muted)" />
+                  <TR label="State Income Tax"       amount="est. at run time" ytdAmount={ytd.stateTax} color="var(--text-muted)" />
+                  <TR label="Net Pay (est.)"         amount={estNet} ytdAmount={ytd.netPay}   color="#16a34a" bold borderTop />
+                </tbody>
+              </table>
 
-            <div style={{ padding: '12px 24px 0', display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-              {[
-                { label: 'YTD FUTA', value: fmt(ytd.futa) },
-                { label: 'YTD SUI',  value: fmt(ytd.suta) },
-              ].map(({ label, value }) => (
-                <div key={label}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 3 }}>{label}</div>
-                  <div style={{ ...MONO, fontSize: 13, fontWeight: 600 }}>{value}</div>
-                </div>
-              ))}
+              {/* Company Summary */}
+              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Company Summary</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={{ padding: '0 0 6px 0', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Item Name</th>
+                    <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Amount</th>
+                    <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>YTD</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <TR label="SS Match (est.)"              amount={estErSS}  ytdAmount={ytd.erSS}  color="var(--text-secondary)" />
+                  <TR label="Medicare Match (est.)"        amount={estErMed} ytdAmount={ytd.erMed} color="var(--text-secondary)" />
+                  <TR label="Federal Unemployment (est.)"  amount={estFuta}  ytdAmount={ytd.futa}  color="var(--text-secondary)" />
+                  <TR label="State Unemployment (est.)"    amount={estSuta}  ytdAmount={ytd.suta}  color="var(--text-secondary)" />
+                </tbody>
+              </table>
             </div>
             {/* Other Payroll Items */}
             {hiddenPendingItems.length > 0 && (
