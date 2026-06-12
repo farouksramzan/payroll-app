@@ -1233,9 +1233,11 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
   // YTD aggregation from loaded paystubs (up to and including upToEnd)
   function calcEmpYTD(employeeId, upToEnd) {
     const stubs = paystubs.filter(s =>
-      s.employee_id === employeeId &&
+      // eslint-disable-next-line eqeqeq
+      s.employee_id == employeeId &&
       s.check_status !== 'voided' &&
-      (s.tax_year === curYear || (s.pay_period_end || '').startsWith(String(curYear))) &&
+      // eslint-disable-next-line eqeqeq
+      (s.tax_year == curYear || (s.pay_period_end || '').startsWith(String(curYear))) &&
       (!upToEnd || s.pay_period_end <= upToEnd)
     );
     return {
@@ -2261,11 +2263,16 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
               const tipsAmt  = parseFloat(row.tips || 0);
               const bonusAmt = parseFloat(row.bonus || 0);
               const commAmt  = parseFloat(row.commission || 0);
-              const basePay  = isSalary ? salAmt : r2(Math.min(regH, 40) * rate + otH * rate * 1.5);
+              const basePay  = isSalary ? salAmt : r2(regH * rate + otH * rate * 1.5);
               const grossPreview = r2(basePay + tipsAmt + bonusAmt + commAmt);
               const estEeSS    = r2(grossPreview * EE_SS_RATE);
               const estEeMed   = r2(grossPreview * EE_MEDICARE_RATE);
-              const estNetPay  = r2(grossPreview - estEeSS - estEeMed);
+              // Rough FIT estimate using annualized percentage method (single filer, 2026 std deduction)
+              const annualGross = grossPreview * ppy;
+              const taxableAnn  = Math.max(0, annualGross - 16100);
+              const annualFIT   = taxableAnn <= 12225 ? taxableAnn * 0.10 : 1222.5 + (Math.min(taxableAnn, 49675) - 12225) * 0.12 + Math.max(0, taxableAnn - 49675) * 0.22;
+              const estFIT      = Math.round(annualFIT / ppy);
+              const estNetPay  = r2(grossPreview - estEeSS - estEeMed - estFIT);
               const daysToPayDate = daysUntil(period.payDate);
               const isLate   = period.payDate < new Date().toISOString().slice(0, 10);
               const status   = isLate ? 'late' : (daysToPayDate !== null && daysToPayDate <= 5 ? 'due-soon' : 'upcoming');
