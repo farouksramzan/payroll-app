@@ -1780,18 +1780,61 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           ? r2(liveGross - (liveCalc.fitWithholding || 0) - dispSS - dispMed - (liveCalc.stateIncomeTax || 0) - estCashAdv)
           : estNet);
 
-      // YTD including this period's entered values (shows running total)
+      // Sum estimates from ALL OTHER pending periods for this employee
+      // (current period is added separately below via liveGross / disp* values)
+      const otherPendingTotals = Object.entries(pendingRows).reduce((acc, [pEnd, empMap]) => {
+        if (pEnd === period.end) return acc; // skip current period — handled by liveGross
+        const r2emp = empMap[String(emp.id)] || empMap[emp.id];
+        if (!r2emp) return acc;
+        const eIsSalary = emp.payType === 'salary';
+        const eRate     = parseFloat(r2emp.rate) || emp.hourlyRate || 0;
+        const eRegH     = parseFloat(r2emp.regHours || 0);
+        const eOtH      = parseFloat(r2emp.otHours  || 0);
+        const eReg      = eIsSalary ? r2((emp.annualSalary || 0) / ppy) : r2(eRegH * eRate);
+        const eOt       = eIsSalary ? 0 : r2(eOtH * eRate * 1.5);
+        const eTips     = parseFloat(r2emp.tips       || 0);
+        const eBonus    = parseFloat(r2emp.bonus      || 0);
+        const eComm     = parseFloat(r2emp.commission || 0);
+        const eGross    = r2(eReg + eOt + eTips + eBonus + eComm);
+        const eSS       = r2emp.ssOverride    !== undefined ? parseFloat(r2emp.ssOverride    || 0) : r2(eGross * EE_SS_RATE);
+        const eMed      = r2emp.medOverride   !== undefined ? parseFloat(r2emp.medOverride   || 0) : r2(eGross * EE_MEDICARE_RATE);
+        const eFIT      = r2emp.fitOverride   !== undefined ? parseFloat(r2emp.fitOverride   || 0) : 0;
+        const eState    = r2emp.stateOverride !== undefined ? parseFloat(r2emp.stateOverride || 0) : 0;
+        const eCashAdv  = parseFloat(r2emp.cashAdvance  || 0);
+        const eErSS     = r2emp.erSsOverride  !== undefined ? parseFloat(r2emp.erSsOverride  || 0) : r2(eGross * EE_SS_RATE);
+        const eErMed    = r2emp.erMedOverride !== undefined ? parseFloat(r2emp.erMedOverride || 0) : r2(eGross * EE_MEDICARE_RATE);
+        const eRunningGross = acc.gross + ytd.gross;
+        const eFutaTaxable  = Math.max(0, Math.min(eGross, 7000 - eRunningGross));
+        const eSutaTaxable  = Math.max(0, Math.min(eGross, 9000 - eRunningGross));
+        const eFuta     = r2emp.futaOverride !== undefined ? parseFloat(r2emp.futaOverride || 0) : r2(eFutaTaxable * 0.006);
+        const eSuta     = r2emp.suiOverride  !== undefined ? parseFloat(r2emp.suiOverride  || 0) : r2(eSutaTaxable * suiRateEst);
+        const eNet      = r2(eGross - eSS - eMed - eFIT - eState - eCashAdv);
+        return {
+          gross:    r2(acc.gross    + eGross),
+          eeSS:     r2(acc.eeSS    + eSS),
+          eeMed:    r2(acc.eeMed   + eMed),
+          fit:      r2(acc.fit     + eFIT),
+          stateTax: r2(acc.stateTax + eState),
+          netPay:   r2(acc.netPay  + eNet),
+          erSS:     r2(acc.erSS    + eErSS),
+          erMed:    r2(acc.erMed   + eErMed),
+          futa:     r2(acc.futa    + eFuta),
+          suta:     r2(acc.suta    + eSuta),
+        };
+      }, { gross: 0, eeSS: 0, eeMed: 0, fit: 0, stateTax: 0, netPay: 0, erSS: 0, erMed: 0, futa: 0, suta: 0 });
+
+      // YTD = printed checks + all other pending periods + this period
       const ytdWithCurrent = {
-        gross:    r2(ytd.gross    + liveGross),
-        eeSS:     r2(ytd.eeSS    + dispSS),
-        eeMed:    r2(ytd.eeMed   + dispMed),
-        fit:      r2(ytd.fit     + (dispFIT      ?? 0)),
-        stateTax: r2(ytd.stateTax + (dispStateTax ?? 0)),
-        netPay:   r2(ytd.netPay  + estNetFull),
-        erSS:     r2(ytd.erSS    + dispErSS),
-        erMed:    r2(ytd.erMed   + dispErMed),
-        futa:     r2(ytd.futa    + dispFuta),
-        suta:     r2(ytd.suta    + dispSuta),
+        gross:    r2(ytd.gross    + otherPendingTotals.gross    + liveGross),
+        eeSS:     r2(ytd.eeSS    + otherPendingTotals.eeSS    + dispSS),
+        eeMed:    r2(ytd.eeMed   + otherPendingTotals.eeMed   + dispMed),
+        fit:      r2(ytd.fit     + otherPendingTotals.fit     + (dispFIT      ?? 0)),
+        stateTax: r2(ytd.stateTax + otherPendingTotals.stateTax + (dispStateTax ?? 0)),
+        netPay:   r2(ytd.netPay  + otherPendingTotals.netPay  + estNetFull),
+        erSS:     r2(ytd.erSS    + otherPendingTotals.erSS    + dispErSS),
+        erMed:    r2(ytd.erMed   + otherPendingTotals.erMed   + dispErMed),
+        futa:     r2(ytd.futa    + otherPendingTotals.futa    + dispFuta),
+        suta:     r2(ytd.suta    + otherPendingTotals.suta    + dispSuta),
       };
 
       return (
