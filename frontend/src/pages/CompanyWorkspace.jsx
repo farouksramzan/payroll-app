@@ -1727,6 +1727,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       const addedPendingEarnings  = pendingItemDefs.filter(x => !x.isDeduction && addedPendingItems.has(x.field));
       const hiddenPendingItems    = pendingItemDefs.filter(x => !addedPendingItems.has(x.field));
       const liveGross = r2(regPay + otPay + addedPendingEarnings.reduce((s, x) => s + parseFloat(row[x.field] || 0), 0));
+      const estSS     = r2(liveGross * EE_SS_RATE);
+      const estMed    = r2(liveGross * EE_MEDICARE_RATE);
+      const estCashAdv = addedPendingItems.has('cashAdvance') ? parseFloat(row.cashAdvance || 0) : 0;
+      const estNet    = r2(liveGross - estSS - estMed - estCashAdv);
 
       return (
         <Overlay>
@@ -1782,7 +1786,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                       <TR label="Cash Advance" amount={parseFloat(row.cashAdvance || 0)} negative color="#dc2626"
                         editValue={row.cashAdvance || ''} onEditChange={v => setRow(period.end, emp.id, 'cashAdvance', v)} />
                     )}
-                    <TR label="—" amount="Taxes calculated at run time" color="var(--text-muted)" />
+                    <TR label="Social Security (est.)" amount={estSS}  negative color="#dc2626" />
+                    <TR label="Medicare (est.)"        amount={estMed} negative color="#dc2626" />
+                    <TR label="Federal / State Tax"    amount="calc. at run time" color="var(--text-muted)" />
+                    <TR label="Net Pay (est.)"         amount={estNet} color="#16a34a" bold borderTop />
                   </tbody>
                 </table>
               </div>
