@@ -81,6 +81,11 @@ function sanitizeClient(client, includeSecrets = false) {
     depositSchedule: client.deposit_schedule,
     eftpsEnrollmentNumber: client.eftps_enrollment_number || null,
     sutaRate: client.suta_rate || 0.027,
+    suiRateQ1: client.sui_rate_q1 != null ? client.sui_rate_q1 : null,
+    suiRateQ2: client.sui_rate_q2 != null ? client.sui_rate_q2 : null,
+    suiRateQ3: client.sui_rate_q3 != null ? client.sui_rate_q3 : null,
+    suiRateQ4: client.sui_rate_q4 != null ? client.sui_rate_q4 : null,
+    suiAccountNumber: client.sui_account_number || null,
     contactName: client.contact_name,
     contactEmail: client.contact_email,
     contactPhone: client.contact_phone,
@@ -237,6 +242,7 @@ router.get('/:id', (req, res) => {
 router.post('/', (req, res) => {
   const { businessName, ein, state, bankAccountNumber, bankRoutingNumber, bankAccountType, batchProviderPin,
     eftpsInternetPassword, eftpsEnrollmentNumber, depositSchedule, sutaRate,
+    suiRateQ1, suiRateQ2, suiRateQ3, suiRateQ4, suiAccountNumber,
     contactName, contactEmail, contactPhone,
     payrollFrequency, nextPayrollDate, nextCheckNumber,
     twcUsername, twcPassword } = req.body;
@@ -255,9 +261,10 @@ router.post('/', (req, res) => {
   const result = db.prepare(`
     INSERT INTO clients (user_id, business_name, ein, state, bank_account_number_encrypted, bank_routing_number,
       bank_account_type, batch_provider_pin_encrypted, eftps_internet_password_encrypted, eftps_enrollment_number,
-      deposit_schedule, suta_rate, contact_name, contact_email, contact_phone,
+      deposit_schedule, suta_rate, sui_rate_q1, sui_rate_q2, sui_rate_q3, sui_rate_q4, sui_account_number,
+      contact_name, contact_email, contact_phone,
       payroll_frequency, next_payroll_date, next_check_number, twc_username, twc_password_encrypted)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     req.user.id,
     businessName.trim(),
@@ -271,6 +278,11 @@ router.post('/', (req, res) => {
     eftpsEnrollmentNumber || null,
     depositSchedule || 'monthly',
     sutaRate ? parseFloat(sutaRate) : 0.027,
+    suiRateQ1 != null ? parseFloat(suiRateQ1) : null,
+    suiRateQ2 != null ? parseFloat(suiRateQ2) : null,
+    suiRateQ3 != null ? parseFloat(suiRateQ3) : null,
+    suiRateQ4 != null ? parseFloat(suiRateQ4) : null,
+    suiAccountNumber || null,
     contactName || null,
     contactEmail || null,
     contactPhone || null,
@@ -293,6 +305,7 @@ router.put('/:id', (req, res) => {
 
   const { businessName, ein, state, bankAccountNumber, bankRoutingNumber, bankAccountType, batchProviderPin,
     eftpsInternetPassword, eftpsEnrollmentNumber, depositSchedule, sutaRate,
+    suiRateQ1, suiRateQ2, suiRateQ3, suiRateQ4, suiAccountNumber,
     contactName, contactEmail, contactPhone,
     payrollFrequency, nextPayrollDate,
     businessAddress, businessCity, businessZip,
@@ -315,6 +328,11 @@ router.put('/:id', (req, res) => {
       eftps_enrollment_number = ?,
       deposit_schedule = ?,
       suta_rate = ?,
+      sui_rate_q1 = ?,
+      sui_rate_q2 = ?,
+      sui_rate_q3 = ?,
+      sui_rate_q4 = ?,
+      sui_account_number = ?,
       contact_name = ?,
       contact_email = ?,
       contact_phone = ?,
@@ -341,6 +359,11 @@ router.put('/:id', (req, res) => {
     eftpsEnrollmentNumber !== undefined ? eftpsEnrollmentNumber : existing.eftps_enrollment_number,
     depositSchedule || existing.deposit_schedule,
     sutaRate !== undefined ? parseFloat(sutaRate) : existing.suta_rate,
+    suiRateQ1 !== undefined ? (suiRateQ1 != null ? parseFloat(suiRateQ1) : null) : existing.sui_rate_q1,
+    suiRateQ2 !== undefined ? (suiRateQ2 != null ? parseFloat(suiRateQ2) : null) : existing.sui_rate_q2,
+    suiRateQ3 !== undefined ? (suiRateQ3 != null ? parseFloat(suiRateQ3) : null) : existing.sui_rate_q3,
+    suiRateQ4 !== undefined ? (suiRateQ4 != null ? parseFloat(suiRateQ4) : null) : existing.sui_rate_q4,
+    suiAccountNumber !== undefined ? (suiAccountNumber || null) : existing.sui_account_number,
     contactName !== undefined ? contactName : existing.contact_name,
     contactEmail !== undefined ? contactEmail : existing.contact_email,
     contactPhone !== undefined ? contactPhone : existing.contact_phone,

@@ -163,7 +163,8 @@ router.get('/twc', (req, res) => {
     const db = getDb();
     const client = assertClient(db, clientId, req.user.id);
     const { start, end } = quarterRange(parseInt(year), parseInt(quarter));
-    const sutaRate = client.suta_rate || 0.027;
+    const qRateField = `sui_rate_q${parseInt(quarter)}`;
+    const sutaRate = client[qRateField] != null ? client[qRateField] : (client.suta_rate || 0.027);
 
     const subs = db.prepare(`
       SELECT p.*, p.employee_id as emp_id, e.first_name, e.last_name
@@ -198,10 +199,15 @@ router.get('/twc', (req, res) => {
     for (const s of subs) {
       const key = s.emp_id || 'aggregate';
       if (!byEmployee[key]) {
-        let ssn = '***-**-****';
+        let ssn = '';
         if (s.emp_id && !empSsnCache[s.emp_id]) {
           const emp = db.prepare('SELECT ssn_encrypted FROM employees WHERE id = ?').get(s.emp_id);
-          if (emp?.ssn_encrypted) { try { empSsnCache[s.emp_id] = maskSSN(decrypt(emp.ssn_encrypted)); } catch (e) {} }
+          if (emp?.ssn_encrypted) {
+            try {
+              const raw = decrypt(emp.ssn_encrypted).replace(/\D/g, '');
+              empSsnCache[s.emp_id] = raw.length === 9 ? raw.replace(/(\d{3})(\d{2})(\d{4})/, '$1-$2-$3') : raw;
+            } catch (e) {}
+          }
         }
         if (s.emp_id && empSsnCache[s.emp_id]) ssn = empSsnCache[s.emp_id];
         byEmployee[key] = { name: s.first_name ? `${s.first_name} ${s.last_name}` : (s.employee_name || 'All Employees'), ssn, wages: 0, sutaTaxable: 0, sutaTax: 0 };
@@ -217,9 +223,32 @@ router.get('/twc', (req, res) => {
     const sutaTaxable   = round2(Object.values(byEmployee).reduce((s, e) => s + e.sutaTaxable, 0));
     const sutaTax       = round2(Object.values(byEmployee).reduce((s, e) => s + e.sutaTax, 0));
 
+    // Count distinct employees whose pay period includes the 12th of each quarter month
+    const QUARTER_MONTHS = { 1: [1,2,3], 2: [4,5,6], 3: [7,8,9], 4: [10,11,12] };
+    const qMonths = QUARTER_MONTHS[parseInt(quarter)] || [1,2,3];
+    const emp12th = qMonths.map(month => {
+      const the12th = `${year}-${String(month).padStart(2,'0')}-12`;
+      const row = db.prepare(`
+        SELECT COUNT(DISTINCT employee_id) as cnt FROM paystubs
+        WHERE client_id = ? AND pay_period_start <= ? AND pay_period_end >= ?
+          AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
+      `).get(clientId, the12th, the12th);
+      return row?.cnt || 0;
+    });
+
     res.json({
       reportType: 'TWC',
-      client: { businessName: client.business_name, ein: client.ein, businessAddress: client.business_address, businessCity: client.business_city, businessZip: client.business_zip, state: client.state || 'TX' },
+      client: {
+        businessName: client.business_name,
+        ein: client.ein,
+        businessAddress: client.business_address,
+        businessCity: client.business_city,
+        businessZip: client.business_zip,
+        state: client.state || 'TX',
+        suiAccountNumber: client.sui_account_number || '',
+        naicsCode: client.naics_code || '',
+        countyCode: client.county_code || '',
+      },
       period: { year: parseInt(year), quarter: parseInt(quarter), start, end },
       sutaRate,
       lines: {
@@ -234,6 +263,7 @@ router.get('/twc', (req, res) => {
         sutaTaxable: round2(e.sutaTaxable),
         sutaTax:     round2(e.sutaTax),
       })),
+      emp12th,
     });
   } catch (err) {
     res.status(err.status || 500).json({ error: err.message });
@@ -420,7 +450,8 @@ router.get('/pdf', async (req, res) => {
     } else if (form === 'TWC') {
       if (!quarter) return res.status(400).json({ error: 'quarter required for TWC' });
       const { start, end } = quarterRange(parseInt(year), parseInt(quarter));
-      const sutaRate = client.suta_rate || 0.027;
+      const qRateField2 = `sui_rate_q${parseInt(quarter)}`;
+      const sutaRate = client[qRateField2] != null ? client[qRateField2] : (client.suta_rate || 0.027);
       const subs = db.prepare(`
         SELECT p.*, p.employee_id as emp_id, e.first_name, e.last_name
         FROM paystubs p
@@ -438,16 +469,21 @@ router.get('/pdf', async (req, res) => {
       const ytdByEmp = {};
       for (const s of ytdSubs) { const k = s.employee_id || 'aggregate'; ytdByEmp[k] = (ytdByEmp[k] || 0) + s.gross_wages; }
       const byEmployee = {};
-      const empSsnCache = {};
+      const empSsnCache2 = {};
       for (const s of subs) {
         const key = s.emp_id || 'aggregate';
         if (!byEmployee[key]) {
-          let ssn = '***-**-****';
-          if (s.emp_id && !empSsnCache[s.emp_id]) {
+          let ssn = '';
+          if (s.emp_id && !empSsnCache2[s.emp_id]) {
             const emp = db.prepare('SELECT ssn_encrypted FROM employees WHERE id = ?').get(s.emp_id);
-            if (emp?.ssn_encrypted) { try { empSsnCache[s.emp_id] = maskSSN(decrypt(emp.ssn_encrypted)); } catch (e) {} }
+            if (emp?.ssn_encrypted) {
+              try {
+                const raw = decrypt(emp.ssn_encrypted).replace(/\D/g, '');
+                empSsnCache2[s.emp_id] = raw.length === 9 ? raw.replace(/(\d{3})(\d{2})(\d{4})/, '$1-$2-$3') : raw;
+              } catch (e) {}
+            }
           }
-          if (s.emp_id && empSsnCache[s.emp_id]) ssn = empSsnCache[s.emp_id];
+          if (s.emp_id && empSsnCache2[s.emp_id]) ssn = empSsnCache2[s.emp_id];
           byEmployee[key] = { name: s.first_name ? `${s.first_name} ${s.last_name}` : (s.employee_name || 'All Employees'), ssn, wages: 0, sutaTaxable: 0, sutaTax: 0 };
         }
         const ytd  = (ytdByEmp[key] || 0) + byEmployee[key].wages;
@@ -456,13 +492,35 @@ router.get('/pdf', async (req, res) => {
         byEmployee[key].sutaTaxable += suta.taxableWages;
         byEmployee[key].sutaTax += suta.sutaTax;
       }
+      const QUARTER_MONTHS2 = { 1: [1,2,3], 2: [4,5,6], 3: [7,8,9], 4: [10,11,12] };
+      const qMonths2 = QUARTER_MONTHS2[parseInt(quarter)] || [1,2,3];
+      const emp12th2 = qMonths2.map(month => {
+        const the12th = `${year}-${String(month).padStart(2,'0')}-12`;
+        const row = db.prepare(`
+          SELECT COUNT(DISTINCT employee_id) as cnt FROM paystubs
+          WHERE client_id = ? AND pay_period_start <= ? AND pay_period_end >= ?
+            AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
+        `).get(clientId, the12th, the12th);
+        return row?.cnt || 0;
+      });
       data = {
         reportType: 'TWC',
-        client: { businessName: client.business_name, ein: client.ein, businessAddress: client.business_address, businessCity: client.business_city, businessZip: client.business_zip, state: client.state || 'TX' },
+        client: {
+          businessName: client.business_name,
+          ein: client.ein,
+          businessAddress: client.business_address,
+          businessCity: client.business_city,
+          businessZip: client.business_zip,
+          state: client.state || 'TX',
+          suiAccountNumber: client.sui_account_number || '',
+          naicsCode: client.naics_code || '',
+          countyCode: client.county_code || '',
+        },
         period: { year: parseInt(year), quarter: parseInt(quarter), start, end },
         sutaRate,
         lines: { totalWages: round2(subs.reduce((s, r) => s + r.gross_wages, 0)), sutaTaxableWages: round2(Object.values(byEmployee).reduce((s, e) => s + e.sutaTaxable, 0)), sutaTax: round2(Object.values(byEmployee).reduce((s, e) => s + e.sutaTax, 0)), wageBase: SUTA_WAGE_BASE },
         byEmployee: Object.values(byEmployee).map((e) => ({ ...e, wages: round2(e.wages), sutaTaxable: round2(e.sutaTaxable), sutaTax: round2(e.sutaTax) })),
+        emp12th: emp12th2,
       };
 
     } else if (form === 'W-2') {

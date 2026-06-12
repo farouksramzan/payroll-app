@@ -961,11 +961,14 @@ function CompanyTab({ client, onSaved }) {
       ein: client.ein || '',
       state: client.state || 'TX',
       depositSchedule: client.depositSchedule || 'monthly',
-      sutaRate: client.sutaRate != null ? String(parseFloat(client.sutaRate) * 100) : '2.7',
+      suiRateQ1: client.suiRateQ1 != null ? String(parseFloat(client.suiRateQ1) * 100) : '',
+      suiRateQ2: client.suiRateQ2 != null ? String(parseFloat(client.suiRateQ2) * 100) : '',
+      suiRateQ3: client.suiRateQ3 != null ? String(parseFloat(client.suiRateQ3) * 100) : '',
+      suiRateQ4: client.suiRateQ4 != null ? String(parseFloat(client.suiRateQ4) * 100) : '',
+      suiAccountNumber: client.suiAccountNumber || '',
       bankRoutingNumber: client.bankRoutingNumber || '',
       bankAccountType: client.bankAccountType || 'checking',
-      bankAccountNumber: '', batchProviderPin: '', eftpsInternetPassword: '',
-      eftpsEnrollmentNumber: client.eftpsEnrollmentNumber || '',
+      bankAccountNumber: '', batchProviderPin: '',
       twcUsername: client.twcUsername || '', twcPassword: '',
       contactName: client.contactName || '',
       contactEmail: client.contactEmail || '',
@@ -985,10 +988,16 @@ function CompanyTab({ client, onSaved }) {
   async function handleSave() {
     setSaving(true); setErr(''); setSaved(false);
     try {
-      const payload = { ...form, sutaRate: parseFloat(form.sutaRate || 2.7) / 100 };
+      const payload = {
+        ...form,
+        suiRateQ1: form.suiRateQ1 ? parseFloat(form.suiRateQ1) / 100 : null,
+        suiRateQ2: form.suiRateQ2 ? parseFloat(form.suiRateQ2) / 100 : null,
+        suiRateQ3: form.suiRateQ3 ? parseFloat(form.suiRateQ3) / 100 : null,
+        suiRateQ4: form.suiRateQ4 ? parseFloat(form.suiRateQ4) / 100 : null,
+        suiAccountNumber: form.suiAccountNumber || null,
+      };
       if (!payload.bankAccountNumber) delete payload.bankAccountNumber;
       if (!payload.batchProviderPin) delete payload.batchProviderPin;
-      if (!payload.eftpsInternetPassword) delete payload.eftpsInternetPassword;
       if (!payload.twcPassword) delete payload.twcPassword;
       await api.updateClient(client.id, payload);
       setSaved(true); onSaved();
@@ -1030,12 +1039,16 @@ function CompanyTab({ client, onSaved }) {
               <option value="semiweekly">Semi-weekly Depositor</option>
             </select>
           </F>
-          <F label="SUI Rate (%)">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <input className="form-input mono" type="number" min="0" max="20" step="0.01" value={form.sutaRate} onChange={set('sutaRate')} style={{ maxWidth: 120 }} />
-              <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>%</span>
-            </div>
-          </F>
+        </div>
+        <div className="form-grid" style={{ marginTop: 14 }}>
+          {[['Q1','suiRateQ1'],['Q2','suiRateQ2'],['Q3','suiRateQ3'],['Q4','suiRateQ4']].map(([q, key]) => (
+            <F key={q} label={`SUI Rate ${q} (%)`}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input className="form-input mono" type="number" min="0" max="20" step="0.001" value={form[key]} onChange={set(key)} style={{ maxWidth: 120 }} placeholder="e.g. 0.32" />
+                <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>%</span>
+              </div>
+            </F>
+          ))}
         </div>
         <div className="form-grid">
           <F label="Default Payroll Frequency">
@@ -1064,21 +1077,13 @@ function CompanyTab({ client, onSaved }) {
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
-        <p className="form-section-title" style={{ marginTop: 0 }}>EFTPS Credentials</p>
-        <F label="Batch Provider PIN" hint="Stored encrypted. Leave blank to keep current.">
-          <input className="form-input mono" type="password" value={form.batchProviderPin} onChange={set('batchProviderPin')} placeholder="4-digit PIN" maxLength={4} />
-        </F>
-        <div className="form-grid">
-          <F label="EFTPS Internet Password"><input className="form-input mono" type="password" value={form.eftpsInternetPassword} onChange={set('eftpsInternetPassword')} placeholder="(leave blank to keep)" /></F>
-          <F label="EFTPS Enrollment Number"><input className="form-input mono" value={form.eftpsEnrollmentNumber} onChange={set('eftpsEnrollmentNumber')} /></F>
-        </div>
-      </div>
-
-      <div className="card" style={{ marginBottom: 16 }}>
         <p className="form-section-title" style={{ marginTop: 0 }}>TWC (Texas SUI) Credentials</p>
         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
           UTS portal login at apps.twc.texas.gov — used to automate quarterly SUI filing and payment.
         </div>
+        <F label="TWC Account Number" hint="Your TWC unemployment tax account number (e.g. 10-818766-2). Printed on SUI report.">
+          <input className="form-input mono" value={form.suiAccountNumber} onChange={set('suiAccountNumber')} placeholder="##-######-#" />
+        </F>
         <div className="form-grid">
           <F label="TWC Username"><input className="form-input mono" value={form.twcUsername} onChange={set('twcUsername')} placeholder="UTS username" autoComplete="off" /></F>
           <F label="TWC Password" hint="Stored encrypted. Leave blank to keep current."><input className="form-input mono" type="password" value={form.twcPassword} onChange={set('twcPassword')} placeholder="(leave blank to keep)" autoComplete="new-password" /></F>
@@ -1558,7 +1563,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
         step4c:        emp.step4c        || 0,
         workState:     emp.workState     || client?.state || 'TX',
         ytdGross:      ytd.gross,
-        sutaRate:      client?.sutaRate  || null,
+        sutaRate:      client?.suiRateQ1 || client?.suiRateQ2 || client?.suiRateQ3 || client?.suiRateQ4 || null,
       });
       setUgPreview({ emp, isSalary, regH, otH, rate, regPay, otPay, gross, ugTips, ugBonus, ugComm, ugCashAdv, ugMile, calc, ytd });
     } catch (e) {
@@ -2927,7 +2932,7 @@ function LiabilityCheckEditor({ stub, clientId, client, onUpdated, onClose }) {
     const gross = parseFloat(form.grossWages || 0);
     if (gross <= 0) return;
     try {
-      const result = await api.calculate({ grossWages: gross, payFrequency: form.payFrequency, filingStatus: form.filingStatus, step2Checkbox: false, step3Children: 0, step3Other: 0, step4a: 0, step4b: 0, step4c: 0, workState: form.workState, ytdGross: stub.ytd_wages_before || 0, sutaRate: client?.sutaRate || null });
+      const result = await api.calculate({ grossWages: gross, payFrequency: form.payFrequency, filingStatus: form.filingStatus, step2Checkbox: false, step3Children: 0, step3Other: 0, step4a: 0, step4b: 0, step4c: 0, workState: form.workState, ytdGross: stub.ytd_wages_before || 0, sutaRate: client?.suiRateQ1 || client?.suiRateQ2 || client?.suiRateQ3 || client?.suiRateQ4 || null });
       setTaxes(result);
     } catch {}
   }

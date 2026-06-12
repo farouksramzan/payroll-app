@@ -574,7 +574,7 @@ function html940(data, pr) {
 
 // ── TWC / SUTA ────────────────────────────────────────────────────────────────
 function htmlTWC(data, pr) {
-  const { client, period, sutaRate, lines, byEmployee } = data;
+  const { client, period, sutaRate, lines, byEmployee, emp12th } = data;
   const q = period.quarter;
   const PERIOD_END = {1:'03/31',2:'06/30',3:'09/30',4:'12/31'};
   const PENALTY_MO = {1:'04',2:'07',3:'10',4:'01'};
@@ -583,114 +583,226 @@ function htmlTWC(data, pr) {
   const penaltyYr = q === 4 ? period.year + 1 : period.year;
   const penaltyDate = `${PENALTY_MO[q]}/${PENALTY_DAY[q]}/${penaltyYr}`;
   const wageBase = lines.wageBase || 9000;
-  const excessWages = Math.max(0, (lines.totalWages || 0) - (lines.sutaTaxableWages || 0));
-  const empCount = byEmployee.length || 1;
+  const emp12thArr = emp12th && emp12th.length === 3 ? emp12th : [0, 0, 0];
+  const revDate = 'REV 03/27/26 QBDT';
 
-  const contribRows = byEmployee.length > 0 ? byEmployee.map(e => `<tr>
-    <td class="mono">${e.ssn || '***-**-****'}</td>
-    <td>${e.name}</td>
-    <td class="mono right">${fmtZ(e.wages)}</td>
-    <td class="mono right">${fmtZ(e.sutaTaxable)}</td>
-  </tr>`).join('') : '';
+  // Format employee names as "LASTNAME, FIRSTNAME" uppercase
+  function fmtEmpName(name) {
+    if (!name) return '';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length === 1) return parts[0].toUpperCase();
+    const last = parts[parts.length - 1].toUpperCase();
+    const first = parts.slice(0, parts.length - 1).join(' ').toUpperCase();
+    return `${last}, ${first}`;
+  }
 
-  const body = `
-  <div class="page">
-    <div style="border-bottom:2px solid #000;padding:5px 8px;text-align:center;">
-      <div style="font-size:13pt;font-weight:900;">Texas Unemployment Insurance — Quarterly Contribution Report</div>
-      <div style="font-size:9pt;color:#555;margin-top:1px;">Worksheet</div>
-      <div style="font-size:7.5pt;color:#777;margin-top:1px;">This is a record of your information to complete your Unemployment Insurance Contribution Report. Do not file the worksheet.</div>
-    </div>
+  // Build wage table rows (page 2) — minimum 20 rows
+  const dataRows = byEmployee.map(e => `
+    <tr>
+      <td style="font-family:'Courier New',monospace;padding:2px 6px;border-bottom:1px solid #ccc;">${e.ssn || ''}</td>
+      <td style="font-family:'Courier New',monospace;padding:2px 6px;border-bottom:1px solid #ccc;">${fmtEmpName(e.name)}</td>
+      <td style="font-family:'Courier New',monospace;text-align:right;padding:2px 6px;border-bottom:1px solid #ccc;border-left:1px solid #ccc;">${fmtZ(e.wages)}</td>
+      <td style="font-family:'Courier New',monospace;text-align:right;padding:2px 6px;border-bottom:1px solid #ccc;border-left:1px solid #ccc;">${fmtZ(e.sutaTaxable)}</td>
+    </tr>`).join('');
+  const emptyRowCount = Math.max(0, 20 - byEmployee.length);
+  const emptyRows = Array(emptyRowCount).fill(`
+    <tr style="height:18px;">
+      <td style="border-bottom:1px solid #ccc;padding:2px 6px;">&nbsp;</td>
+      <td style="border-bottom:1px solid #ccc;padding:2px 6px;">&nbsp;</td>
+      <td style="border-bottom:1px solid #ccc;border-left:1px solid #ccc;padding:2px 6px;">&nbsp;</td>
+      <td style="border-bottom:1px solid #ccc;border-left:1px solid #ccc;padding:2px 6px;">&nbsp;</td>
+    </tr>`).join('');
 
-    <div class="grid3 b-bottom">
-      <div class="p4 b-right"><div class="field-lbl">FEIN No.</div><div class="mono fw7" style="font-size:11pt;">${client.ein}</div></div>
-      <div class="p4 b-right"><div class="field-lbl">Company Legal Name</div><div style="font-size:10.5pt;font-weight:700;">${client.businessName}</div></div>
-      <div class="p4"><div class="field-lbl">Period Ending</div><div class="mono fw7" style="font-size:11pt;">${periodEnd}</div></div>
+  // PAGE 1
+  const page1 = `
+  <div style="max-width:760px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;font-size:9pt;color:#000;">
+    <div style="text-align:center;margin-bottom:6px;">
+      <div style="font-size:14pt;font-weight:700;line-height:1.3;">Texas Unemployment Insurance - Quarterly Contribution Report</div>
+      <div style="font-size:14pt;font-weight:700;line-height:1.3;">Worksheet</div>
     </div>
-    <div class="grid3 b-bottom">
-      <div class="p4 b-right"><div class="field-lbl">Account No.</div><div style="font-size:9.5pt;">${client.twcAccountNumber || ''}</div></div>
-      <div class="p4 b-right"><div class="field-lbl">Company Legal Address</div><div style="font-size:9pt;">${client.businessAddress || ''}</div></div>
-      <div class="p4"><div class="field-lbl">Penalty Date</div><div class="mono fw7" style="font-size:10.5pt;">${penaltyDate}</div></div>
+    <div style="border:1px solid #000;text-align:center;padding:4px 8px;font-size:9pt;margin-bottom:6px;">
+      This is a record of your information to complete your Unemployment Insurance Contribution Report.<br>
+      Do not file the worksheet.
     </div>
-    <div style="display:grid;grid-template-columns:auto 1fr 1fr;" class="b-bottom">
-      <div class="p4 b-right" style="min-width:80px;"><div class="field-lbl">NAICS Code</div><div style="font-size:9pt;">${client.naicsCode || ''}</div></div>
-      <div class="p4 b-right">
-        <div style="display:flex;gap:12px;">
-          <div><div class="field-lbl">City</div><div style="font-size:9pt;">${client.businessCity || ''}</div></div>
-          <div><div class="field-lbl">State</div><div style="font-size:9pt;">${client.state || 'TX'}</div></div>
-          <div><div class="field-lbl">Zip Code</div><div style="font-size:9pt;">${client.businessZip || ''}</div></div>
-        </div>
+    <div style="display:grid;grid-template-columns:1fr 2fr 1fr;border-bottom:1px solid #000;">
+      <div style="padding:4px 6px;border-right:1px solid #000;">
+        <div style="font-family:'Courier New',monospace;font-weight:700;border-bottom:1px solid #000;min-height:16px;padding-bottom:1px;">${client.ein || ''}</div>
+        <div style="font-size:7pt;">FEIN No.</div>
       </div>
-      <div class="p4">
-        <div style="display:flex;gap:16px;">
-          <div><div class="field-lbl">Company ID</div><div style="font-size:9pt;">${client.twcCompanyId || ''}</div></div>
-          <div><div class="field-lbl">County Code</div><div style="font-size:9pt;">${client.twcCountyCode || ''}</div></div>
-        </div>
+      <div style="padding:4px 6px;border-right:1px solid #000;">
+        <div style="font-family:'Courier New',monospace;font-weight:700;border-bottom:1px solid #000;min-height:16px;padding-bottom:1px;">${(client.businessName || '').toUpperCase()}</div>
+        <div style="font-size:7pt;">Company Legal Name</div>
+      </div>
+      <div style="padding:4px 6px;">
+        <div style="font-family:'Courier New',monospace;font-weight:700;border-bottom:1px solid #000;min-height:16px;padding-bottom:1px;">${periodEnd}</div>
+        <div style="font-size:7pt;">Period Ending</div>
       </div>
     </div>
-    <div class="do-not-mail">Do Not Mail — Keep for Your Records</div>
-
-    <div class="grid2 b-bottom">
-      <div class="p4 b-right">
-        <div style="display:flex;justify-content:space-between;margin-bottom:3px;font-size:9.5pt;font-weight:700;"><span>Total State Wages</span><span class="mono">$${fmtZ(lines.totalWages)}</span></div>
-        <div style="display:flex;justify-content:space-between;margin-bottom:3px;font-size:9.5pt;"><span>Excess Wages</span><span class="mono">$${fmtZ(excessWages)}</span></div>
-        <div style="border-top:1px solid #ccc;margin-bottom:4px;margin-top:2px;"></div>
-        <div style="display:flex;justify-content:space-between;margin-bottom:3px;font-size:9.5pt;"><span>Wage Base &nbsp; $${wageBase.toLocaleString()}</span><span></span></div>
-        <div style="display:flex;justify-content:space-between;margin-bottom:3px;font-size:9.5pt;font-weight:700;"><span>Taxable Wages</span><span class="mono">$${fmtZ(lines.sutaTaxableWages)}</span></div>
-        <div style="display:flex;justify-content:space-between;margin-bottom:3px;font-size:9.5pt;"><span>Rate</span><span class="mono">${fmtPct(sutaRate)}</span></div>
-        <div style="border-top:1px solid #000;padding-top:4px;margin-top:2px;">
-          <div style="display:flex;justify-content:space-between;font-size:9.5pt;font-weight:700;"><span>UI Contributions</span><span class="mono">$${fmtZ(lines.sutaTax)}</span></div>
-        </div>
+    <div style="display:grid;grid-template-columns:1fr 2fr 1fr;border-bottom:1px solid #000;">
+      <div style="padding:4px 6px;border-right:1px solid #000;">
+        <div style="font-family:'Courier New',monospace;font-weight:700;border-bottom:1px solid #000;min-height:16px;padding-bottom:1px;">${client.suiAccountNumber || ''}</div>
+        <div style="font-size:7pt;">Account No.</div>
       </div>
-      <div class="p4">
-        <div style="display:flex;justify-content:space-between;margin-bottom:3px;font-size:9.5pt;"><span>Overpayment (negative) / Bal Due from a previous period</span><span class="mono">$&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0.00</span></div>
-        <div style="border-top:1px solid #000;padding-top:6px;margin-bottom:14px;margin-top:4px;">
-          <div style="display:flex;justify-content:space-between;font-size:12pt;font-weight:700;"><span>Total Payment Due</span><span class="mono">$${fmtZ(lines.sutaTax)}</span></div>
-        </div>
-        <div style="border-top:1px solid #ccc;padding-top:8px;">
-          <div style="font-size:8pt;color:#555;margin-bottom:6px;">Number of employees receiving pay for pay period which includes 12th day of the month</div>
-          <div style="display:flex;gap:24px;font-size:9.5pt;">
-            ${['1st Month','2nd Month','3rd Month'].map(l=>`<div><div class="field-lbl">${l}</div><div class="mono fw7">${empCount}</div></div>`).join('')}
+      <div style="padding:4px 6px;border-right:1px solid #000;">
+        <div style="font-family:'Courier New',monospace;font-weight:700;border-bottom:1px solid #000;min-height:16px;padding-bottom:1px;">${(client.businessAddress || '').toUpperCase()}</div>
+        <div style="font-size:7pt;">Company Legal Address</div>
+      </div>
+      <div style="padding:4px 6px;">
+        <div style="font-family:'Courier New',monospace;font-weight:700;border-bottom:1px solid #000;min-height:16px;padding-bottom:1px;">${penaltyDate}</div>
+        <div style="font-size:7pt;">Penalty Date</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 2fr 1fr;border-bottom:1px solid #000;">
+      <div style="padding:4px 6px;border-right:1px solid #000;">
+        <div style="font-family:'Courier New',monospace;font-weight:700;border-bottom:1px solid #000;min-height:16px;padding-bottom:1px;">${client.naicsCode || ''}</div>
+        <div style="font-size:7pt;">NAICS Code</div>
+      </div>
+      <div style="padding:4px 6px;border-right:1px solid #000;">
+        <div style="font-family:'Courier New',monospace;font-weight:700;border-bottom:1px solid #000;min-height:16px;padding-bottom:1px;">${[(client.businessCity||'').toUpperCase(),(client.state||'TX').toUpperCase(),(client.businessZip||'')].filter(Boolean).join('  ')}</div>
+        <div style="font-size:7pt;">City / State / Zip Code</div>
+      </div>
+      <div style="padding:4px 6px;">
+        <div style="font-family:'Courier New',monospace;font-weight:700;border-bottom:1px solid #000;min-height:16px;padding-bottom:1px;"></div>
+        <div style="font-size:7pt;">Company ID</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 2fr;border-bottom:1px solid #000;">
+      <div style="padding:4px 6px;border-right:1px solid #000;">
+        <div style="font-family:'Courier New',monospace;font-weight:700;border-bottom:1px solid #000;min-height:16px;padding-bottom:1px;">${client.countyCode || ''}</div>
+        <div style="font-size:7pt;">County Code</div>
+      </div>
+      <div style="padding:4px 6px;">
+        <div style="font-family:'Courier New',monospace;font-weight:700;border-bottom:1px solid #000;min-height:16px;padding-bottom:1px;"></div>
+        <div style="font-size:7pt;">No. of Employees Outside the County</div>
+      </div>
+    </div>
+    <div style="text-align:center;font-size:14pt;font-weight:700;padding:8px 0;letter-spacing:1px;">DO NOT MAIL — KEEP FOR YOUR RECORDS</div>
+    <table style="width:100%;border-collapse:collapse;border:1px solid #000;margin-bottom:6px;">
+      <tr>
+        <td style="padding:4px 8px;border-bottom:1px solid #ccc;">Total State Wages</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #ccc;border-left:1px solid #000;font-family:'Courier New',monospace;text-align:right;width:160px;">$ ${fmtZ(lines.totalWages)}</td>
+      </tr>
+      <tr>
+        <td style="padding:4px 8px;border-bottom:1px solid #ccc;">Excess Wages</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #ccc;border-left:1px solid #000;font-family:'Courier New',monospace;text-align:right;"></td>
+      </tr>
+      <tr>
+        <td style="padding:4px 8px;border-bottom:1px solid #ccc;">Wage Base &nbsp; $${wageBase.toLocaleString()}</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #ccc;border-left:1px solid #000;font-family:'Courier New',monospace;text-align:right;">$ ${fmtZ(0)}</td>
+      </tr>
+      <tr>
+        <td style="padding:4px 8px;border-bottom:1px solid #ccc;">&nbsp;</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #ccc;border-left:1px solid #000;"></td>
+      </tr>
+      <tr>
+        <td style="padding:4px 8px;border-bottom:1px solid #ccc;font-weight:700;">Taxable Wages</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #ccc;border-left:1px solid #000;font-family:'Courier New',monospace;text-align:right;font-weight:700;">$ ${fmtZ(lines.sutaTaxableWages)}</td>
+      </tr>
+      <tr>
+        <td style="padding:4px 8px;border-bottom:1px solid #ccc;text-align:right;">${(sutaRate * 100).toFixed(5)}</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #ccc;border-left:1px solid #000;"></td>
+      </tr>
+      <tr>
+        <td style="padding:4px 8px;border-bottom:1px solid #ccc;font-weight:700;">UI Contributions</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #ccc;border-left:1px solid #000;font-family:'Courier New',monospace;text-align:right;font-weight:700;">$ ${fmtZ(lines.sutaTax)}</td>
+      </tr>
+      <tr>
+        <td style="padding:4px 8px;border-bottom:1px solid #ccc;">&nbsp;</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #ccc;border-left:1px solid #000;"></td>
+      </tr>
+      <tr>
+        <td style="padding:4px 8px;border-bottom:1px solid #ccc;">Overpayment (negative) / Bal Due<br>from a previous period</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #ccc;border-left:1px solid #000;font-family:'Courier New',monospace;text-align:right;">$</td>
+      </tr>
+      <tr style="height:18px;"><td style="border-bottom:1px solid #ccc;">&nbsp;</td><td style="border-bottom:1px solid #ccc;border-left:1px solid #000;"></td></tr>
+      <tr style="height:18px;"><td style="border-bottom:1px solid #ccc;">&nbsp;</td><td style="border-bottom:1px solid #ccc;border-left:1px solid #000;"></td></tr>
+      <tr style="height:18px;"><td style="border-bottom:1px solid #ccc;">&nbsp;</td><td style="border-bottom:1px solid #ccc;border-left:1px solid #000;"></td></tr>
+      <tr>
+        <td colspan="2" style="padding:10px 8px;border-bottom:1px solid #ccc;text-align:center;font-size:16pt;font-weight:700;letter-spacing:1px;">DO NOT MAIL — KEEP FOR YOUR RECORDS</td>
+      </tr>
+      <tr style="height:18px;"><td style="border-bottom:1px solid #ccc;">&nbsp;</td><td style="border-bottom:1px solid #ccc;border-left:1px solid #000;"></td></tr>
+      <tr style="height:18px;"><td style="border-bottom:1px solid #ccc;">&nbsp;</td><td style="border-bottom:1px solid #ccc;border-left:1px solid #000;"></td></tr>
+      <tr>
+        <td style="padding:4px 8px;border-bottom:1px solid #ccc;font-weight:700;">Total Payment Due</td>
+        <td style="padding:4px 8px;border-bottom:1px solid #ccc;border-left:1px solid #000;font-family:'Courier New',monospace;text-align:right;font-weight:700;">$ ${fmtZ(lines.sutaTax)}</td>
+      </tr>
+      <tr>
+        <td colspan="2" style="padding:6px 8px;border-bottom:1px solid #ccc;">
+          <div style="font-size:8pt;margin-bottom:4px;">Number of employees receiving pay for pay period which includes 12th day of the month</div>
+          <div style="display:flex;gap:40px;">
+            <div><div style="font-size:7pt;">1st Month</div><div style="font-family:'Courier New',monospace;font-weight:700;font-size:11pt;">${emp12thArr[0]}</div></div>
+            <div><div style="font-size:7pt;">2nd Month</div><div style="font-family:'Courier New',monospace;font-weight:700;font-size:11pt;">${emp12thArr[1]}</div></div>
+            <div><div style="font-size:7pt;">3rd Month</div><div style="font-family:'Courier New',monospace;font-weight:700;font-size:11pt;">${emp12thArr[2]}</div></div>
           </div>
-        </div>
-      </div>
-    </div>
-    <div class="do-not-mail">Do Not Mail — Keep for Your Records</div>
-
-    ${byEmployee.length > 0 ? `
-    <div style="border-top:2px solid #000;padding:5px 8px;text-align:center;border-bottom:1px solid #000;">
-      <div style="font-size:12pt;font-weight:900;">Texas Unemployment Insurance — Wage Report</div>
-      <div style="font-size:9pt;color:#555;margin-top:1px;">Worksheet</div>
-      <div style="font-size:7.5pt;color:#777;margin-top:1px;">This is a record of your information to complete your Unemployment Insurance Wage Report. Do not file the worksheet.</div>
-    </div>
-    <div class="grid3 b-bottom">
-      <div class="p4 b-right"><div class="field-lbl">Company Legal Name</div><div style="font-size:10.5pt;font-weight:700;">${client.businessName}</div></div>
-      <div class="p4 b-right"><div class="field-lbl">FEIN</div><div class="mono fw7" style="font-size:11pt;">${client.ein}</div></div>
-      <div class="p4"><div class="field-lbl">Period Ending</div><div class="mono fw7" style="font-size:11pt;">${periodEnd}</div></div>
-    </div>
-    <div class="grid2 b-bottom">
-      <div class="p4 b-right"><div class="field-lbl">Company ID</div><div style="font-size:9pt;">${client.twcAccountNumber || ''}</div></div>
-      <div class="p4"><div class="field-lbl">Unemployment No.</div><div style="font-size:9pt;">${client.twcAccountNumber || ''}</div></div>
-    </div>
-    <div class="do-not-mail">Do Not Mail — Keep for Your Records</div>
-    <table class="supp-table">
-      <thead><tr>
-        <th style="text-align:left;">Employee Social Security No.</th>
-        <th style="text-align:left;">Employee Name (Last, First, MI)</th>
-        <th class="right">Total Wages</th>
-        <th class="right">Taxable Wages</th>
-      </tr></thead>
-      <tbody>${contribRows}</tbody>
-      <tfoot><tr style="background:#f0f0f0;font-weight:700;">
-        <td colspan="2" style="font-size:7.5pt;">Totals for this page</td>
-        <td class="mono right">${fmtZ(lines.totalWages)}</td>
-        <td class="mono right">${fmtZ(lines.sutaTaxableWages)}</td>
-      </tr></tfoot>
+        </td>
+      </tr>
     </table>
-    <div class="do-not-mail" style="border-top:1px solid #999;border-bottom:none;">Do Not Mail — Keep for Your Records</div>
-    ` : ''}
+    <div style="text-align:center;font-size:8pt;color:#555;margin-top:4px;">${revDate}</div>
   </div>`;
 
-  return baseHtml(body);
+  // PAGE 2
+  const page2 = `
+  <div style="max-width:760px;margin:0 auto;font-family:Arial,Helvetica,sans-serif;font-size:9pt;color:#000;page-break-before:always;">
+    <div style="text-align:center;margin-bottom:6px;">
+      <div style="font-size:14pt;font-weight:700;line-height:1.3;">Texas Unemployment Insurance - Wage Report</div>
+      <div style="font-size:14pt;font-weight:700;line-height:1.3;">Worksheet</div>
+    </div>
+    <div style="border:1px solid #000;text-align:center;padding:4px 8px;font-size:9pt;margin-bottom:6px;">
+      This is a record of your information to complete your Unemployment Insurance Wage Report.<br>
+      Do not file the worksheet.
+    </div>
+    <div style="display:grid;grid-template-columns:2fr 1fr;border-bottom:1px solid #000;">
+      <div style="padding:4px 6px;border-right:1px solid #000;">
+        <div style="font-family:'Courier New',monospace;font-weight:700;border-bottom:1px solid #000;min-height:16px;padding-bottom:1px;">${(client.businessName || '').toUpperCase()}</div>
+        <div style="font-size:7pt;">Company Legal Name</div>
+      </div>
+      <div style="padding:4px 6px;">
+        <div style="font-family:'Courier New',monospace;font-weight:700;border-bottom:1px solid #000;min-height:16px;padding-bottom:1px;">${client.ein || ''}</div>
+        <div style="font-size:7pt;">FEIN</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;border-bottom:1px solid #000;">
+      <div style="padding:4px 6px;border-right:1px solid #000;">
+        <div style="font-family:'Courier New',monospace;font-weight:700;border-bottom:1px solid #000;min-height:16px;padding-bottom:1px;">${periodEnd}</div>
+        <div style="font-size:7pt;">Period Ending</div>
+      </div>
+      <div style="padding:4px 6px;border-right:1px solid #000;">
+        <div style="font-family:'Courier New',monospace;font-weight:700;border-bottom:1px solid #000;min-height:16px;padding-bottom:1px;"></div>
+        <div style="font-size:7pt;">Company ID</div>
+      </div>
+      <div style="padding:4px 6px;">
+        <div style="font-family:'Courier New',monospace;font-weight:700;border-bottom:1px solid #000;min-height:16px;padding-bottom:1px;">${client.suiAccountNumber || ''}</div>
+        <div style="font-size:7pt;">Unemployment No.</div>
+      </div>
+    </div>
+    <div style="text-align:center;font-size:14pt;font-weight:700;padding:8px 0;letter-spacing:1px;">DO NOT MAIL — KEEP FOR YOUR RECORDS</div>
+    <table style="width:100%;border-collapse:collapse;border:1px solid #000;margin-bottom:6px;">
+      <thead>
+        <tr style="background:#f0f0f0;">
+          <th style="padding:4px 6px;text-align:center;font-weight:700;font-size:8.5pt;border-bottom:1px solid #000;border-right:1px solid #ccc;">Employee Social Security No.</th>
+          <th style="padding:4px 6px;text-align:center;font-weight:700;font-size:8.5pt;border-bottom:1px solid #000;border-right:1px solid #ccc;">Employee Name (Last, First, MI)</th>
+          <th style="padding:4px 6px;text-align:center;font-weight:700;font-size:8.5pt;border-bottom:1px solid #000;border-right:1px solid #ccc;">Total Wages</th>
+          <th style="padding:4px 6px;text-align:center;font-weight:700;font-size:8.5pt;border-bottom:1px solid #000;">Taxable Wages</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${dataRows}
+        ${emptyRows}
+        <tr style="background:#f0f0f0;font-weight:700;">
+          <td colspan="2" style="padding:4px 6px;border-top:1px solid #000;font-size:8pt;">Totals for this page</td>
+          <td style="padding:4px 6px;border-top:1px solid #000;border-left:1px solid #000;font-family:'Courier New',monospace;text-align:right;">${fmtZ(lines.totalWages)}</td>
+          <td style="padding:4px 6px;border-top:1px solid #000;border-left:1px solid #000;font-family:'Courier New',monospace;text-align:right;">${fmtZ(lines.sutaTaxableWages)}</td>
+        </tr>
+      </tbody>
+    </table>
+    <div style="text-align:center;font-size:14pt;font-weight:700;padding:8px 0;letter-spacing:1px;">DO NOT MAIL — KEEP FOR YOUR RECORDS</div>
+    <div style="display:flex;justify-content:space-between;font-size:8pt;color:#555;margin-top:4px;">
+      <span>${revDate}</span>
+      <span>Page 1 of 1</span>
+    </div>
+  </div>`;
+
+  return baseHtml(page1 + page2);
 }
 
 // ── W-2 ───────────────────────────────────────────────────────────────────────

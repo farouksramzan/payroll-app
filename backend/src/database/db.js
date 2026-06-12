@@ -243,6 +243,11 @@ function migrate() {
     { name: 'state',                             def: "TEXT DEFAULT 'TX'" },
     { name: 'twc_username',                      def: 'TEXT' },
     { name: 'twc_password_encrypted',            def: 'TEXT' },
+    { name: 'sui_rate_q1',                       def: 'REAL' },
+    { name: 'sui_rate_q2',                       def: 'REAL' },
+    { name: 'sui_rate_q3',                       def: 'REAL' },
+    { name: 'sui_rate_q4',                       def: 'REAL' },
+    { name: 'sui_account_number',                def: 'TEXT' },
   ]);
 
   // Rename eftps_pin_encrypted → batch_provider_pin_encrypted on existing databases
