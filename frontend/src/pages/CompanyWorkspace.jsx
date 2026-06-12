@@ -1132,7 +1132,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
   const [editGroup, setEditGroup]     = useState(null);
   const [paystubs, setPaystubs]                   = useState([]);
   // pendingRows[periodEnd][empId] = { regHours, otHours, rate, selected }
-  const [pendingRows, setPendingRows]             = useState({});
+  const [pendingRows, setPendingRows] = useState(() => {
+    try { const s = localStorage.getItem(`pendingRows_${clientId}`); return s ? JSON.parse(s) : {}; } catch { return {}; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(`pendingRows_${clientId}`, JSON.stringify(pendingRows)); } catch {}
+  }, [pendingRows, clientId]);
   const [rateUpdatePrompt, setRateUpdatePrompt]   = useState(null); // { empId, newRate, periodEnd }
   const [selectedLateStubs, setSelectedLateStubs]     = useState(new Set());
   const [selectedHistoryStubs, setSelectedHistoryStubs] = useState(new Set());
@@ -1775,6 +1780,20 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           ? r2(liveGross - (liveCalc.fitWithholding || 0) - dispSS - dispMed - (liveCalc.stateIncomeTax || 0) - estCashAdv)
           : estNet);
 
+      // YTD including this period's entered values (shows running total)
+      const ytdWithCurrent = {
+        gross:    r2(ytd.gross    + liveGross),
+        eeSS:     r2(ytd.eeSS    + dispSS),
+        eeMed:    r2(ytd.eeMed   + dispMed),
+        fit:      r2(ytd.fit     + (dispFIT      ?? 0)),
+        stateTax: r2(ytd.stateTax + (dispStateTax ?? 0)),
+        netPay:   r2(ytd.netPay  + estNetFull),
+        erSS:     r2(ytd.erSS    + dispErSS),
+        erMed:    r2(ytd.erMed   + dispErMed),
+        futa:     r2(ytd.futa    + dispFuta),
+        suta:     r2(ytd.suta    + dispSuta),
+      };
+
       return (
         <Overlay>
           <div className="card" style={{ width: 640, maxWidth: '95vw', maxHeight: '92vh', overflowY: 'auto', padding: 0, borderRadius: 12 }}>
@@ -1827,27 +1846,27 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                         <TR label="OT Hours" amount={otPay} ytdAmount={null} color="var(--accent)"
                           editValue={row.otHours || ''} onEditChange={v => setRow(period.end, emp.id, 'otHours', v)} />
                         <TR label="Hourly Rate" amount={rate} ytdAmount={null} color="var(--accent)"
-                          editValue={row.rate || ''} onEditChange={v => setRow(period.end, emp.id, 'rate', v)} />
+                          editValue={row.rate !== undefined && row.rate !== '' ? row.rate : String(emp.hourlyRate || '')} onEditChange={v => setRow(period.end, emp.id, 'rate', v)} />
                       </>
                   }
                   {addedPendingEarnings.map(item => (
                     <TR key={item.field} label={item.label} amount={parseFloat(row[item.field] || 0)} ytdAmount={null} color="var(--accent)"
                       editValue={row[item.field] || ''} onEditChange={v => setRow(period.end, emp.id, item.field, v)} />
                   ))}
-                  <TR label="Gross Pay"            amount={liveGross}    ytdAmount={ytd.gross}    color="var(--accent)" bold borderTop />
+                  <TR label="Gross Pay"            amount={liveGross}    ytdAmount={ytdWithCurrent.gross}    color="var(--accent)" bold borderTop />
                   {addedPendingItems.has('cashAdvance') && (
                     <TR label="Cash Advance"       amount={parseFloat(row.cashAdvance || 0)} ytdAmount={null} negative color="#dc2626"
                       editValue={row.cashAdvance || ''} onEditChange={v => setRow(period.end, emp.id, 'cashAdvance', v)} />
                   )}
-                  <TR label="Social Security (est.)" amount={dispSS}  ytdAmount={ytd.eeSS}     negative color="#dc2626"
+                  <TR label="Social Security (est.)" amount={dispSS}  ytdAmount={ytdWithCurrent.eeSS}     negative color="#dc2626"
                     editValue={row.ssOverride !== undefined ? row.ssOverride : String(estSSCalc)} onEditChange={v => setRow(period.end, emp.id, 'ssOverride', v)} />
-                  <TR label="Medicare (est.)"        amount={dispMed} ytdAmount={ytd.eeMed}    negative color="#dc2626"
+                  <TR label="Medicare (est.)"        amount={dispMed} ytdAmount={ytdWithCurrent.eeMed}    negative color="#dc2626"
                     editValue={row.medOverride !== undefined ? row.medOverride : String(estMedCalc)} onEditChange={v => setRow(period.end, emp.id, 'medOverride', v)} />
-                  <TR label="Federal Income Tax"     amount={dispFIT      ?? 'calculating…'} ytdAmount={ytd.fit}      negative={dispFIT != null}      color={dispFIT != null && dispFIT > 0 ? '#dc2626' : 'var(--text-muted)'}
+                  <TR label="Federal Income Tax"     amount={dispFIT      ?? 'calculating…'} ytdAmount={ytdWithCurrent.fit}      negative={dispFIT != null}      color={dispFIT != null && dispFIT > 0 ? '#dc2626' : 'var(--text-muted)'}
                     editValue={row.fitOverride !== undefined ? row.fitOverride : (estFITCalc != null ? String(estFITCalc) : '')} onEditChange={v => setRow(period.end, emp.id, 'fitOverride', v)} />
-                  <TR label="State Income Tax"       amount={dispStateTax ?? '—'}            ytdAmount={ytd.stateTax} negative={dispStateTax != null} color={dispStateTax != null && dispStateTax > 0 ? '#dc2626' : 'var(--text-muted)'}
+                  <TR label="State Income Tax"       amount={dispStateTax ?? '—'}            ytdAmount={ytdWithCurrent.stateTax} negative={dispStateTax != null} color={dispStateTax != null && dispStateTax > 0 ? '#dc2626' : 'var(--text-muted)'}
                     editValue={row.stateOverride !== undefined ? row.stateOverride : (estStateTaxCalc != null ? String(estStateTaxCalc) : '')} onEditChange={v => setRow(period.end, emp.id, 'stateOverride', v)} />
-                  <TR label="Net Pay (est.)"         amount={estNetFull} ytdAmount={ytd.netPay}   color="#16a34a" bold borderTop />
+                  <TR label="Net Pay (est.)"         amount={estNetFull} ytdAmount={ytdWithCurrent.netPay}   color="#16a34a" bold borderTop />
                 </tbody>
               </table>
 
@@ -1862,13 +1881,13 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                   </tr>
                 </thead>
                 <tbody>
-                  <TR label="SS Match (est.)"              amount={dispErSS}  ytdAmount={ytd.erSS}  color="var(--text-secondary)"
+                  <TR label="SS Match (est.)"              amount={dispErSS}  ytdAmount={ytdWithCurrent.erSS}  color="var(--text-secondary)"
                     editValue={row.erSsOverride !== undefined ? row.erSsOverride : String(r2(liveGross * EE_SS_RATE))} onEditChange={v => setRow(period.end, emp.id, 'erSsOverride', v)} />
-                  <TR label="Medicare Match (est.)"        amount={dispErMed} ytdAmount={ytd.erMed} color="var(--text-secondary)"
+                  <TR label="Medicare Match (est.)"        amount={dispErMed} ytdAmount={ytdWithCurrent.erMed} color="var(--text-secondary)"
                     editValue={row.erMedOverride !== undefined ? row.erMedOverride : String(r2(liveGross * EE_MEDICARE_RATE))} onEditChange={v => setRow(period.end, emp.id, 'erMedOverride', v)} />
-                  <TR label="Federal Unemployment (est.)"  amount={dispFuta}  ytdAmount={ytd.futa}  color="var(--text-secondary)"
+                  <TR label="Federal Unemployment (est.)"  amount={dispFuta}  ytdAmount={ytdWithCurrent.futa}  color="var(--text-secondary)"
                     editValue={row.futaOverride !== undefined ? row.futaOverride : String(estFutaCalc)} onEditChange={v => setRow(period.end, emp.id, 'futaOverride', v)} />
-                  <TR label="State Unemployment (est.)"    amount={dispSuta}  ytdAmount={ytd.suta}  color="var(--text-secondary)"
+                  <TR label="State Unemployment (est.)"    amount={dispSuta}  ytdAmount={ytdWithCurrent.suta}  color="var(--text-secondary)"
                     editValue={row.suiOverride !== undefined ? row.suiOverride : String(estSutaCalc)} onEditChange={v => setRow(period.end, emp.id, 'suiOverride', v)} />
                 </tbody>
               </table>
@@ -2305,12 +2324,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                   ) : (
                     <>
                       <td style={{ padding: '4px 6px' }}>
-                        <input className="form-input mono" type="number" min="0" step="0.5" value={row.regHours} placeholder="0"
+                        <input className="form-input mono" type="text" inputMode="decimal" value={row.regHours} placeholder="0"
                           onChange={ev => setRow(period.end, emp.id, 'regHours', ev.target.value)}
                           style={{ width: '100%', height: 26, fontSize: 12, textAlign: 'right', padding: '0 6px' }} />
                       </td>
                       <td style={{ padding: '4px 6px' }}>
-                        <input className="form-input mono" type="number" min="0" step="0.5" value={row.otHours} placeholder="0"
+                        <input className="form-input mono" type="text" inputMode="decimal" value={row.otHours} placeholder="0"
                           onChange={ev => setRow(period.end, emp.id, 'otHours', ev.target.value)}
                           style={{ width: '100%', height: 26, fontSize: 12, textAlign: 'right', padding: '0 6px' }} />
                       </td>
