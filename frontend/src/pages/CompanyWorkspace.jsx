@@ -2721,11 +2721,6 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
             <span style={{ fontWeight: 700, fontSize: 13 }}>✓ {totalSel} check{totalSel !== 1 ? 's' : ''} selected</span>
             <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
 
-            {/* Run payroll + print — for pending/late rows */}
-            <button disabled={running || bulkBusy} onClick={() => handleRunPayroll('print')} style={btn}>🖨 Print Check</button>
-            <button disabled={running || bulkBusy} onClick={() => handleRunPayroll('paystub')} style={btn}>📄 Print Paystub</button>
-            <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
-
             {/* Download PDFs — history checks only */}
             {selectedHistoryStubs.size > 0 && <>
               <button disabled={bulkBusy} onClick={async () => { setBulkBusy(true); try { await api.printSelectedChecks(clientId, [...selectedHistoryStubs]); } catch (e) { alert(e.message); } finally { setBulkBusy(false); } }} style={btn}>↓ Paycheck PDF</button>
