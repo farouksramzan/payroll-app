@@ -312,6 +312,13 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
     const existing = new Set(
       db.prepare('SELECT check_number FROM paystubs WHERE client_id = ? AND check_number IS NOT NULL').all(clientId).map(r => String(r.check_number))
     );
+    // Dedup by (employee_name, pay_period_start, pay_period_end) — catches re-imports
+    // of the same pay period for the same person even when check numbers differ
+    const existingPeriods = new Set(
+      db.prepare('SELECT employee_name, pay_period_start, pay_period_end FROM paystubs WHERE client_id = ?')
+        .all(clientId)
+        .map(r => `${(r.employee_name||'').toLowerCase()}|${r.pay_period_start||''}|${r.pay_period_end||''}`)
+    );
     const checks = buildChecks(wb, employees, client);
 
     const insert = db.prepare(`
@@ -336,6 +343,7 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
     const importAll = db.transaction((rows) => {
       let imported = 0, skipped = 0, patched = 0;
       for (const c of rows) {
+        // Skip if same check number already exists
         if (skipExisting === 'true' && existing.has(String(c.checkNumber))) {
           // Patch reported_tips and tip line item on existing checks when missing
           if (c.reportedTips > 0) {
@@ -351,6 +359,15 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
           skipped++;
           continue;
         }
+        // Skip if same employee + same pay period already exists (catches re-imports
+        // of the same period even when check numbers differ or are missing)
+        const periodKey = `${(c.empName||'').toLowerCase()}|${c.periodStart||''}|${c.periodEnd||''}`;
+        if (existingPeriods.has(periodKey)) {
+          skipped++;
+          continue;
+        }
+        // Track this period so duplicate rows within the same import file are also caught
+        existingPeriods.add(periodKey);
         const r = insert.run(
           clientId, c.employeeId || null, c.empName,
           c.periodStart, c.periodEnd, c.checkDate, c.payFrequency, c.filingStatus, c.workState,

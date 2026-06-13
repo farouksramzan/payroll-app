@@ -2643,7 +2643,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       {runSuccess && <div className="alert alert-success" style={{ marginBottom: 10 }}><span>✓</span>{runSuccess}<button onClick={() => setRunSuccess('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button></div>}
 
       {/* Bulk action bar */}
-      {selectedHistoryStubs.size > 1 && (
+      {selectedHistoryStubs.size > 0 && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--accent)', color: '#fff', padding: '8px 14px', borderRadius: 8, marginBottom: 10, flexWrap: 'wrap' }}>
           <span style={{ fontWeight: 700, fontSize: 13 }}>{selectedHistoryStubs.size} check{selectedHistoryStubs.size !== 1 ? 's' : ''} selected</span>
           <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
