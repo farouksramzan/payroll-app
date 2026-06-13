@@ -19,17 +19,9 @@ if os.path.isfile(_env_path):
 
 CONFIDENCE = 0.7
 IMAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'button_images')
-
-# ── Checkbox column position ──────────────────────────────────────────────────
-# BP_CHECKBOX_X: fixed screen X coordinate of the checkbox column in the
-# Send Enrollments list (when BP is maximized).  Set this in .env once you
-# know the right value — look at the debug_checkbox_click.png screenshot
-# saved after each attempt to see exactly where the script clicked.
-# BP_CHECKBOX_OFFSET_X: fallback — pixel delta from the "New" text's left
-# edge to the checkbox.  Only used when BP_CHECKBOX_X is not set.
-_CHECKBOX_X_ENV = os.environ.get('BP_CHECKBOX_X', '')
-CHECKBOX_X_FIXED  = int(_CHECKBOX_X_ENV) if _CHECKBOX_X_ENV.strip().lstrip('-').isdigit() else None
-CHECKBOX_OFFSET_X = int(os.environ.get('BP_CHECKBOX_OFFSET_X', '-357'))
+# Pixel offset from the left edge of the "New" word to the checkbox in the same row.
+# Negative because the checkbox column is to the LEFT of the Status column.
+CHECKBOX_OFFSET_X = -357
 
 pytesseract.pytesseract.tesseract_cmd = os.environ.get(
     'TESSERACT_PATH', r'C:\Users\mramz\OneDrive\Desktop\tesseract.exe'
@@ -171,12 +163,8 @@ def find_new_rows():
         if text.strip() in ('New', 'NEW', 'new'):
             new_x    = data['left'][i]
             center_y = data['top'][i] + data['height'][i] // 2
-            if CHECKBOX_X_FIXED is not None:
-                chk_x = CHECKBOX_X_FIXED
-                log('Found New row at y=' + str(center_y) + ' -> using fixed checkbox x=' + str(chk_x) + ' (BP_CHECKBOX_X)')
-            else:
-                chk_x = new_x + CHECKBOX_OFFSET_X
-                log('Found New row at y=' + str(center_y) + ' -> New text at x=' + str(new_x) + ', checkbox at x=' + str(chk_x) + ' (offset ' + str(CHECKBOX_OFFSET_X) + ')')
+            chk_x = new_x + CHECKBOX_OFFSET_X
+            log('Found New row at y=' + str(center_y) + ' -> New text at x=' + str(new_x) + ', checkbox at x=' + str(chk_x))
             # Deduplicate rows within 10 pixels of each other
             if not any(abs(center_y - r[1]) < 10 for r in rows):
                 rows.append((chk_x, center_y))
@@ -308,13 +296,7 @@ def main():
     RETRY_WAITS = [0, 4, 6, 8]   # seconds to wait before each attempt (attempt 0 is immediate)
     for attempt, wait in enumerate(RETRY_WAITS):
         if wait > 0:
-            log('Step 8: no New rows on attempt ' + str(attempt) + ' — scrolling list and retrying in ' + str(wait) + 's')
-            # Scroll the Send Enrollments list to the top so we don't miss rows
-            # added at the beginning, then scroll to the bottom for rows added at end
-            pyautogui.click(960, 500)   # click list area to focus it
-            time.sleep(0.3)
-            pyautogui.hotkey('ctrl', 'Home')
-            time.sleep(0.5)
+            log('Step 8: no New rows on attempt ' + str(attempt) + ' — waiting ' + str(wait) + 's for list to refresh')
             time.sleep(wait)
 
         ocr_debug_path = os.path.join(debug_dir, 'debug_before_ocr_attempt' + str(attempt) + '.png')
@@ -325,20 +307,6 @@ def main():
         if new_rows:
             log('Step 8: found ' + str(len(new_rows)) + ' New row(s) on attempt ' + str(attempt + 1))
             break
-
-        # Also check bottom of list on later attempts
-        if attempt >= 1:
-            pyautogui.click(960, 500)
-            time.sleep(0.3)
-            pyautogui.hotkey('ctrl', 'End')
-            time.sleep(1)
-            ocr_debug_path2 = os.path.join(debug_dir, 'debug_before_ocr_attempt' + str(attempt) + '_bottom.png')
-            pyautogui.screenshot(ocr_debug_path2)
-            log('Step 8 attempt ' + str(attempt + 1) + ' (bottom): screenshot saved to ' + ocr_debug_path2)
-            new_rows, all_words = find_new_rows()
-            if new_rows:
-                log('Step 8: found ' + str(len(new_rows)) + ' New row(s) at bottom on attempt ' + str(attempt + 1))
-                break
 
     if not new_rows:
         # Check whether EFTPS has already processed this EIN as Synchronized.
