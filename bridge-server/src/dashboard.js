@@ -57,6 +57,19 @@ function buildDashboard(bridgeClient, jobLog) {
     res.json({ ok: true });
   });
 
+  app.post('/api/clear-pending-enrollments', (req, res) => {
+    try {
+      const fs   = require('fs');
+      const path = require('path');
+      const PENDING_FILE = path.join(__dirname, '..', 'data', 'pending_enrollments.json');
+      fs.writeFileSync(PENDING_FILE, '[]');
+      console.log('[Bridge] Pending enrollments cleared via dashboard');
+      res.json({ ok: true, message: 'Pending enrollments cleared' });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
   // ── Dashboard HTML ────────────────────────────────────────────────────────
   app.get('/', (req, res) => {
     res.send(DASHBOARD_HTML);
@@ -108,6 +121,8 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
   btn{padding:6px 14px;border-radius:6px;border:none;cursor:pointer;font-size:12px;font-weight:600}
   #reconnect-btn{background:#2563eb;color:#fff;padding:6px 16px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600}
   #reconnect-btn:hover{background:#1d4ed8}
+  #clear-enroll-btn{background:rgba(239,68,68,.15);color:#ef4444;border:1px solid rgba(239,68,68,.3);padding:6px 16px;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;margin-left:8px}
+  #clear-enroll-btn:hover{background:rgba(239,68,68,.25)}
   .empty{padding:32px;text-align:center;color:#475569}
 </style>
 </head>
@@ -119,6 +134,7 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
   </div>
   <div id="status-pill" class="pill disconnected"><span class="dot"></span><span id="status-text">Connecting…</span></div>
   <button id="reconnect-btn" onclick="reconnect()">Reconnect</button>
+  <button id="clear-enroll-btn" onclick="clearPendingEnrollments()" title="Wipe pending_enrollments.json — use before retesting enrollment">🗑 Clear Pending Enrollments</button>
 </header>
 <main>
   <div class="grid">
@@ -211,6 +227,14 @@ es.onerror = () => setStatus('disconnected');
 function reconnect() {
   fetch('/api/reconnect', {method:'POST'}).catch(()=>{});
   addLog('Reconnect requested…');
+}
+
+function clearPendingEnrollments() {
+  if (!confirm('Clear all pending enrollments? The bridge will no longer resume any in-progress enrollment checks on restart.')) return;
+  fetch('/api/clear-pending-enrollments', {method:'POST'})
+    .then(r=>r.json())
+    .then(d => addLog(d.ok ? '✓ Pending enrollments cleared' : '✗ Clear failed: ' + d.error))
+    .catch(()=>addLog('✗ Clear request failed'));
 }
 
 // Initial load
