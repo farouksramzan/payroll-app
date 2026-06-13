@@ -1,27 +1,24 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 
 const STORAGE_KEY = 'payrolltaxpro_tour_v4';
 const TOTAL_STEPS = 7;
 
-// ── Wait for a DOM element and optionally click it ────────────────────────────
-function waitAndAct(tourId, { click = false, scroll = false } = {}, maxMs = 4000) {
+// ── Cancellable DOM poller — stops if generation token changes ────────────────
+function waitAndAct(tourId, { click = false, scroll = false } = {}, tokenRef, myToken, delayMs = 200) {
   const start = Date.now();
-  return new Promise(resolve => {
-    const attempt = () => {
-      const el = document.querySelector(`[data-tour-id="${tourId}"]`);
-      if (el) {
-        if (scroll) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        if (click) el.click();
-        resolve(el);
-        return;
-      }
-      if (Date.now() - start < maxMs) setTimeout(attempt, 150);
-      else resolve(null);
-    };
-    setTimeout(attempt, 120);
-  });
+  const attempt = () => {
+    if (tokenRef.current !== myToken) return; // step changed — abort
+    const el = document.querySelector(`[data-tour-id="${tourId}"]`);
+    if (el) {
+      if (scroll) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      if (click) el.click();
+      return;
+    }
+    if (Date.now() - start < 5000) setTimeout(attempt, 200);
+  };
+  setTimeout(attempt, delayMs);
 }
 
 // ── Pulsing spotlight overlay ─────────────────────────────────────────────────
@@ -52,11 +49,12 @@ function TourSpotlight({ targetId, padding = 10 }) {
 
   return (
     <>
-      {/* Dark surround via box-shadow spreading outward from spotlight area */}
+      {/* Dark surround via box-shadow spreading outward from spotlight area.
+          zIndex MUST be below ModalOverlay (1000) so modals render above it. */}
       <div
         style={{
           position: 'fixed',
-          zIndex: 9600,
+          zIndex: 500,
           top: rect.top,
           left: rect.left,
           width: rect.width,
@@ -71,7 +69,7 @@ function TourSpotlight({ targetId, padding = 10 }) {
       {/* Animated arrow label */}
       <div style={{
         position: 'fixed',
-        zIndex: 9601,
+        zIndex: 501,
         top: rect.top - 38,
         left: rect.left + rect.width / 2,
         transform: 'translateX(-50%)',
@@ -189,13 +187,15 @@ function StepDots({ current, total, onGoto }) {
 // ── Main component ────────────────────────────────────────────────────────────
 export default function OnboardingModal() {
   const navigate = useNavigate();
-  const location = useLocation();
 
   const [step, setStep] = useState(() => {
     try { return localStorage.getItem(STORAGE_KEY) === 'dismissed' ? null : 0; } catch { return 0; }
   });
   const [habibiId, setHabibiId] = useState(null);
   const [spotlight, setSpotlight] = useState(null);
+
+  // Generation counter — incremented on every step change to cancel stale auto-clicks
+  const genRef = useRef(0);
 
   // Fetch Habibi client ID once tour starts
   useEffect(() => {
@@ -217,20 +217,31 @@ export default function OnboardingModal() {
     const s = steps[step];
     if (!s) return;
 
+    // Invalidate any pending waitAndAct from the previous step
+    genRef.current += 1;
+    const myToken = genRef.current;
+
     // Navigate
     if (s.doNav && s.to) {
       navigate(s.to, { state: s.toState, replace: false });
     }
 
-    // Set spotlight
-    setSpotlight(s.spotlight || null);
+    // Clear spotlight immediately so a stale spotlight never covers a modal
+    setSpotlight(null);
 
-    // Auto-click after short delay to let render settle
+    // Auto-click or scroll after render settles (longer delay for step 4 so
+    // the modal opens cleanly without any spotlight active)
+    const actionDelay = step === 4 ? 500 : 220;
+
     if (s.autoClick) {
-      waitAndAct(s.autoClick, { click: true, scroll: true });
-    } else if (s.spotlight) {
-      // Just scroll to the spotlight target
-      waitAndAct(s.spotlight, { scroll: true });
+      waitAndAct(s.autoClick, { click: true, scroll: true }, genRef, myToken, actionDelay);
+    }
+
+    // Set spotlight slightly after action so it never races with a modal
+    if (s.spotlight) {
+      setTimeout(() => {
+        if (genRef.current === myToken) setSpotlight(s.spotlight);
+      }, s.autoClick ? actionDelay + 300 : 300);
     }
   }, [step, habibiId]); // eslint-disable-line
 
