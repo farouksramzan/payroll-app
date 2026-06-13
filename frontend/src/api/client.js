@@ -73,6 +73,7 @@ const api = {
   voidPaystub: (id, reason) => request(`/paystubs/${id}/void`, { method: 'POST', body: JSON.stringify({ reason }) }),
   getPaystubCredits: (clientId) => request(`/paystubs/credits?clientId=${clientId}`),
   markLateChecks: () => request('/paystubs/mark-late', { method: 'POST' }),
+  markPendingPeriods: (data) => request('/paystubs/mark-pending', { method: 'POST', body: JSON.stringify(data) }),
   batchSubmitPaystubs: (data) => request('/paystubs/batch-submit', { method: 'POST', body: JSON.stringify(data) }),
   batchResetTax: (clientIds, taxTypes) => request('/paystubs/batch-reset-tax', { method: 'POST', body: JSON.stringify({ clientIds, taxTypes }) }),
   getBridgeJobStatus: (jobId) => request(`/bridge/job-status/${jobId}`),

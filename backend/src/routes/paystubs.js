@@ -103,6 +103,57 @@ router.get('/pay-periods', (req, res) => {
   res.json(periods);
 });
 
+// ── POST /api/paystubs/mark-pending — mark scheduled pending periods as handled ──
+// Creates minimal $0 paystub records so those periods disappear from the
+// pending schedule. Use status='voided' to effectively delete them.
+router.post('/mark-pending', (req, res) => {
+  const { clientId, groupId, periods, status } = req.body;
+  // periods = [{ employeeId, employeeName, periodStart, periodEnd, settlementDate, payFrequency }]
+  if (!clientId || !Array.isArray(periods) || periods.length === 0) {
+    return res.status(400).json({ error: 'clientId and periods[] required' });
+  }
+  const db = getDb();
+  const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+
+  const targetStatus = status || 'voided';
+  const { quarter, year } = getTaxPeriod(periods[0].periodEnd || new Date().toISOString().slice(0, 10));
+
+  const ids = db.transaction(() => {
+    return periods.map(p => {
+      const r = db.prepare(`
+        INSERT INTO paystubs (
+          client_id, employee_id, employee_name, pay_group_id,
+          pay_period_start, pay_period_end, settlement_date, pay_frequency,
+          filing_status, work_state,
+          gross_wages, net_pay,
+          fit_withholding, employee_ss, employee_medicare,
+          employer_ss, employer_medicare,
+          futa_tax, suta_tax, total_deposit,
+          check_status, quarter, tax_year, status, status_940
+        ) VALUES (
+          ?, ?, ?, ?,
+          ?, ?, ?, ?,
+          'single', ?,
+          0, 0,
+          0, 0, 0,
+          0, 0,
+          0, 0, 0,
+          ?, ?, ?, 'n/a', 'n/a'
+        )
+      `).run(
+        clientId, p.employeeId || null, p.employeeName || null, groupId || null,
+        p.periodStart, p.periodEnd, p.settlementDate || p.periodEnd, p.payFrequency || 'biweekly',
+        client.state || 'TX',
+        targetStatus, quarter, year
+      );
+      return r.lastInsertRowid;
+    });
+  })();
+
+  res.json({ ok: true, ids });
+});
+
 // ── POST /api/paystubs/print-selected — PDF for arbitrary paystub IDs ─────────
 // POST /api/paystubs/mark-late — sweep draft checks with a past pay date → 'late'
 router.post('/mark-late', (req, res) => {

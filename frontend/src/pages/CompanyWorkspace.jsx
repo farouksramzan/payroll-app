@@ -1261,14 +1261,15 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
     if (!anchor) return [];
     const freq = g.frequency || 'biweekly';
 
-    // Consistent with getHistory: prefer pay_group_id filter, fall back to employee_id
-    const byGroupId = paystubs.filter(s => s.pay_group_id === currentGroupId && s.check_status !== 'voided');
-    const groupStubs = byGroupId.length > 0 ? byGroupId : (() => {
+    // paidEnds includes ALL stubs (even voided) so that a deleted/voided pending
+    // period is hidden from the schedule immediately after marking it.
+    const byGroupId = paystubs.filter(s => s.pay_group_id === currentGroupId);
+    const allGroupStubs = byGroupId.length > 0 ? byGroupId : (() => {
       const empIds = new Set(empsInGroup.map(e => e.id));
-      return paystubs.filter(s => s.employee_id && empIds.has(s.employee_id) && s.check_status !== 'voided');
+      return paystubs.filter(s => s.employee_id && empIds.has(s.employee_id));
     })();
 
-    const paidEnds = new Set(groupStubs.map(s => s.pay_period_end));
+    const paidEnds = new Set(allGroupStubs.map(s => s.pay_period_end));
     const todayStr = new Date().toISOString().slice(0, 10);
 
     // Compute calendar-day offset between configured payDate and firstPayPeriodEnd
@@ -2666,10 +2667,42 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
         )}
       </div>
 
-      {/* Bulk action bar — appears at top whenever any checkbox is checked */}
+      {/* Bulk action bar */}
       {(selectedHistoryStubs.size > 0 || totalActionCount > 0) && (() => {
-        const btnStyle = { background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '4px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 600 };
+        const btn = { background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '4px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 600 };
         const totalSel = selectedHistoryStubs.size + totalActionCount;
+
+        // Collect pending rows currently selected
+        const selectedPendingData = pendingPeriods.flatMap(period =>
+          empsInGroup.filter(emp => getRow(period.end, emp.id).selected).map(emp => ({
+            employeeId: emp.id,
+            employeeName: `${emp.firstName} ${emp.lastName}`,
+            periodStart: period.start,
+            periodEnd: period.end,
+            settlementDate: period.payDate,
+            payFrequency: currentGroup?.frequency || 'biweekly',
+          }))
+        );
+
+        async function handlePendingStatus(newStatus) {
+          if (selectedPendingData.length === 0) return;
+          setBulkBusy(true);
+          try {
+            await api.markPendingPeriods({ clientId, groupId: currentGroupId, periods: selectedPendingData, status: newStatus });
+            await reloadStubs();
+            setSelectedLateStubs(new Set());
+            setPendingRows(prev => {
+              const next = {};
+              for (const [end, empMap] of Object.entries(prev)) {
+                next[end] = {};
+                for (const [empId, row] of Object.entries(empMap)) next[end][empId] = { ...row, selected: false };
+              }
+              return next;
+            });
+          } catch (e) { alert(e.message); }
+          finally { setBulkBusy(false); }
+        }
+
         function clearAll() {
           setSelectedHistoryStubs(new Set());
           setSelectedLateStubs(new Set());
@@ -2677,41 +2710,25 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
             const next = {};
             for (const [end, empMap] of Object.entries(prev)) {
               next[end] = {};
-              for (const [empId, row] of Object.entries(empMap)) {
-                next[end][empId] = { ...row, selected: false };
-              }
+              for (const [empId, row] of Object.entries(empMap)) next[end][empId] = { ...row, selected: false };
             }
             return next;
           });
         }
+
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#15803d', color: '#fff', padding: '9px 16px', borderRadius: 10, marginBottom: 12, flexWrap: 'wrap', boxShadow: '0 2px 12px rgba(21,128,61,0.25)' }}>
-            <span style={{ fontWeight: 700, fontSize: 13, marginRight: 4 }}>✓ {totalSel} check{totalSel !== 1 ? 's' : ''} selected</span>
-
-            {/* Run payroll — always shown */}
-            <button disabled={running || bulkBusy} onClick={() => handleRunPayroll('print')} style={btnStyle}>🖨 Print Paycheck</button>
-            <button disabled={running || bulkBusy} onClick={() => handleRunPayroll('paystub')} style={btnStyle}>📄 Print Paystub</button>
-            <button disabled={running || bulkBusy} onClick={() => handleRunPayroll('dd')} style={btnStyle}>⚡ Direct Deposit</button>
-
+            <span style={{ fontWeight: 700, fontSize: 13 }}>✓ {totalSel} check{totalSel !== 1 ? 's' : ''} selected</span>
             <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
 
-            {/* Download PDFs for already-processed checks */}
-            <button disabled={bulkBusy} onClick={async () => {
-              if (selectedHistoryStubs.size === 0) { alert('Select checks from the Printed & Deposited section to download paychecks.'); return; }
-              setBulkBusy(true);
-              try { await api.printSelectedChecks(clientId, [...selectedHistoryStubs]); } catch (e) { alert(e.message); }
-              finally { setBulkBusy(false); }
-            }} style={btnStyle}>↓ Paycheck PDF</button>
-            <button disabled={bulkBusy} onClick={async () => {
-              if (selectedHistoryStubs.size === 0) { alert('Select checks from the Printed & Deposited section to download paystubs.'); return; }
-              setBulkBusy(true);
-              try { await api.printSelectedPaystubs(clientId, [...selectedHistoryStubs]); } catch (e) { alert(e.message); }
-              finally { setBulkBusy(false); }
-            }} style={btnStyle}>↓ Paystub PDF</button>
+            {/* Download PDFs — history checks only */}
+            {selectedHistoryStubs.size > 0 && <>
+              <button disabled={bulkBusy} onClick={async () => { setBulkBusy(true); try { await api.printSelectedChecks(clientId, [...selectedHistoryStubs]); } catch (e) { alert(e.message); } finally { setBulkBusy(false); } }} style={btn}>↓ Paycheck PDF</button>
+              <button disabled={bulkBusy} onClick={async () => { setBulkBusy(true); try { await api.printSelectedPaystubs(clientId, [...selectedHistoryStubs]); } catch (e) { alert(e.message); } finally { setBulkBusy(false); } }} style={btn}>↓ Paystub PDF</button>
+              <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
+            </>}
 
-            <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
-
-            {/* Change status */}
+            {/* Status change — works for both pending and history */}
             <span style={{ fontSize: 12, opacity: 0.85 }}>Status:</span>
             {[
               { value: 'printed',                label: 'Printed' },
@@ -2719,24 +2736,42 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
               { value: 'draft',                  label: 'Upcoming' },
             ].map(({ value, label }) => (
               <button key={value} disabled={bulkBusy} onClick={async () => {
-                if (selectedHistoryStubs.size === 0) { alert('Select checks from the Printed & Deposited section to change status.'); return; }
-                await handleBulkStatusChange(value);
-              }} style={btnStyle}>{label}</button>
+                setBulkBusy(true);
+                try {
+                  // Update history checks inline (without handleBulkStatusChange which double-manages bulkBusy)
+                  if (selectedHistoryStubs.size > 0) {
+                    await Promise.all([...selectedHistoryStubs].map(id => api.updatePaystub(id, { checkStatus: value })));
+                    setSelectedHistoryStubs(new Set());
+                  }
+                  // Mark pending periods with the chosen status
+                  if (selectedPendingData.length > 0) await handlePendingStatus(value);
+                  await reloadStubs();
+                } catch (e) { alert(e.message || 'Failed'); }
+                finally { setBulkBusy(false); }
+              }} style={btn}>{label}</button>
             ))}
-
             <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
 
             {/* Delete */}
             <button disabled={bulkBusy} onClick={async () => {
-              if (selectedHistoryStubs.size === 0) { alert('Select checks from the Printed & Deposited section to delete them.\n\nThe LATE rows above are upcoming scheduled pay periods — they cannot be individually deleted.'); return; }
-              await handleBulkDelete();
+              if (!window.confirm(`Delete ${totalSel} check${totalSel !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+              setBulkBusy(true);
+              try {
+                // Delete history checks inline
+                if (selectedHistoryStubs.size > 0) {
+                  for (const id of selectedHistoryStubs) await api.deletePaystub(id).catch(() => {});
+                  setSelectedHistoryStubs(new Set());
+                }
+                // Void pending periods so they disappear from the schedule
+                if (selectedPendingData.length > 0) await handlePendingStatus('voided');
+                await reloadStubs();
+              } catch (e) { alert(e.message); }
+              finally { setBulkBusy(false); }
             }} style={{ background: '#dc2626', border: 'none', borderRadius: 5, color: '#fff', padding: '5px 14px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>
               {bulkBusy ? <span className="spinner" style={{ width: 12, height: 12 }} /> : '🗑 Delete'}
             </button>
 
-            <button onClick={clearAll} style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 5, color: '#fff', padding: '3px 8px', fontSize: 12, cursor: 'pointer' }}>
-              ✕ Cancel
-            </button>
+            <button onClick={clearAll} style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 5, color: '#fff', padding: '3px 8px', fontSize: 12, cursor: 'pointer' }}>✕ Cancel</button>
           </div>
         );
       })()}
