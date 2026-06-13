@@ -1200,7 +1200,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
   const [runErr, setRunErr]                       = useState('');
   const [runSuccess, setRunSuccess]               = useState('');
   const [detailModal, setDetailModal]             = useState(null); // rowData object
-  const [showPrinted, setShowPrinted]             = useState(false);
+  const [showPrinted, setShowPrinted]             = useState(true);
   const [printModal, setPrintModal]               = useState(null); // { ids: [], mode: 'paycheck'|'paystub' }
   const [drawerEmpId, setDrawerEmpId]             = useState(null);
   const [periodEdit, setPeriodEdit]               = useState(null); // { id, start, end, payDate }
@@ -2270,14 +2270,17 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           )}
 
           {/* Footer: save/close */}
-          <div style={{ padding: '12px 24px 18px', display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 8 }}>
-            <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: 12 }}>Close</button>
+          <div style={{ padding: '12px 24px 18px', display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
             {!isVoided && (
-              <button className="btn btn-ghost" style={{ fontSize: 12, color: '#dc2626' }} onClick={async () => {
+              <button onClick={async () => {
                 if (!window.confirm('Delete this check? This cannot be undone.')) return;
                 try { await api.deletePaystub(stub.id); onClose(); reloadStubs(); } catch (e) { alert(e.message); }
-              }}>Delete</button>
+              }} style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                🗑 Delete
+              </button>
             )}
+            <div style={{ flex: 1 }} />
+            <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: 12 }}>Close</button>
             <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={async () => {
               try { await api.printSelectedChecks(clientId, [stub.id]); } catch (e) { alert(e.message); }
             }}>↓ Paycheck</button>
@@ -2676,8 +2679,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           </button>
           <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
           <button disabled={bulkBusy} onClick={handleBulkDelete}
-            style={{ background: '#dc2626', border: 'none', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 700 }}>
-            {bulkBusy ? <span className="spinner" style={{ width: 12, height: 12 }} /> : 'Delete'}
+            style={{ background: '#dc2626', border: 'none', borderRadius: 5, color: '#fff', padding: '5px 14px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>
+            {bulkBusy ? <span className="spinner" style={{ width: 12, height: 12 }} /> : '🗑 Delete'}
           </button>
           <button onClick={() => setSelectedHistoryStubs(new Set())}
             style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 5, color: '#fff', padding: '3px 8px', fontSize: 12, cursor: 'pointer' }}>
