@@ -2157,7 +2157,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
     const employerYTD   = r2(employerRows.reduce((s, r) => s + (r.ytd || 0), 0));
 
     return (
-      <Overlay>
+      <ModalOverlay onClose={onClose}>
         <div className="card" style={{ width: 740, maxWidth: '96vw', maxHeight: '92vh', overflowY: 'auto', padding: 0, borderRadius: 12 }}>
 
           {/* Header */}
@@ -2308,7 +2308,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
             )}
           </div>
         </div>
-      </Overlay>
+      </ModalOverlay>
     );
   }
 

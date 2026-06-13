@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 
-const STORAGE_KEY = 'payrolltaxpro_tour_v4';
+const STORAGE_KEY = 'payrolltaxpro_tour_v5';
 const TOTAL_STEPS = 7;
 
 // ── Cancellable DOM poller — stops if generation token changes ────────────────
