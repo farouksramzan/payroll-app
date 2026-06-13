@@ -4337,6 +4337,10 @@ export default function CompanyWorkspace() {
 
   useEffect(() => { sessionStorage.setItem(WS_TAB_KEY, activeTab); }, [activeTab]);
   useEffect(() => { loadAll(); }, [id]);
+  // Allow the tour (or any navigation with state.tab) to switch the active tab
+  useEffect(() => {
+    if (location.state?.tab) setActiveTab(location.state.tab);
+  }, [location.state?.tab]);
 
   async function loadAll() {
     try { const [c, emps] = await Promise.all([api.getClient(id), api.getEmployees(id)]); setClient(c); setEmployees(emps); }
