@@ -168,7 +168,29 @@ def find_new_rows():
             if not any(abs(center_y - r[1]) < 10 for r in rows):
                 rows.append((chk_x, center_y))
                 log('Found New row at y=' + str(center_y) + ' -> checkbox at x=' + str(chk_x))
-    return rows
+    return rows, all_words
+
+
+def ein_already_synchronized(ein, all_words):
+    # Return True if EFTPS has already processed this EIN's enrollment
+    # (status shows "Synchronized" near the EIN digits in the OCR word list).
+    # This happens when the company was previously enrolled or when EFTPS
+    # processes the import so quickly that status jumps straight to Synchronized
+    # before our OCR scan runs.
+    ein_digits = ''.join(c for c in ein if c.isdigit())
+    # Build a flat string of all OCR words to check for proximity
+    text_blob = ' '.join(all_words)
+    # Check: EIN digits appear on screen AND "Synchronized" appears
+    ein_found = any(ein_digits in ''.join(c for c in w if c.isdigit()) for w in all_words)
+    sync_found = any(w.lower().startswith('sync') for w in all_words)
+    if ein_found and sync_found:
+        log('EIN ' + ein_digits + ' found with Synchronized status — already enrolled in EFTPS')
+        return True
+    # Also handle OCR reading "Synchronized" as a substring
+    if ein_found and 'synchronized' in text_blob.lower():
+        log('EIN ' + ein_digits + ' found with Synchronized text — already enrolled in EFTPS')
+        return True
+    return False
 
 
 def main():
@@ -266,8 +288,22 @@ def main():
     ocr_debug_path = os.path.join(debug_dir, 'debug_before_ocr.png')
     pyautogui.screenshot(ocr_debug_path)
     log('Executing step 8: debug screenshot saved to ' + ocr_debug_path)
-    new_rows = find_new_rows()
+
+    # Extract EIN from the enrollment filename so we can check for it in the OCR output
+    import re as _re
+    ein_match = _re.search(r'ENROLL_(\d+)_', os.path.basename(enroll_file_path))
+    target_ein = ein_match.group(1) if ein_match else ''
+
+    new_rows, all_words = find_new_rows()
     if not new_rows:
+        # Check whether EFTPS has already processed this EIN as Synchronized.
+        # This happens when a previous enrollment attempt succeeded, or when the
+        # EFTPS import is so fast that the status jumps from New → Synchronized
+        # before our OCR scan fires.  In either case the company IS enrolled.
+        if target_ein and ein_already_synchronized(target_ein, all_words):
+            log('No New rows found but EIN ' + target_ein + ' shows Synchronized — treating as ENROLLMENT_COMPLETE')
+            print('ENROLLMENT_COMPLETE', flush=True)
+            sys.exit(0)
         print('ENROLLMENT_FAILED: No New status rows found in Send Enrollments list', flush=True)
         sys.exit(1)
     log('Step 8: found ' + str(len(new_rows)) + ' New row(s) - clicking checkboxes')

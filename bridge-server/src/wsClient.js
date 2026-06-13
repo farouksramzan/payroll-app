@@ -538,7 +538,22 @@ class BridgeClient extends EventEmitter {
         const achFilePathEarly = saveACHFile(achContentEarly, submissionId);
         log(`Payment ACH file saved early: ${achFilePathEarly}`);
 
-        await c2.run('enrollment', () => runEnrollmentWithRetry(enrollFilePath, log));
+        try {
+          await c2.run('enrollment', () => runEnrollmentWithRetry(enrollFilePath, log));
+        } catch (enrollErr) {
+          // bp_enrollment.py can produce false ENROLLMENT_FAILED when the company
+          // was already in "Synchronized" state (prior enrollment or fast processing).
+          // Do an immediate inquiry before giving up — if it shows Active, we're good.
+          log(`[ENROLL] Enrollment script reported failure (${enrollErr.message}) — running immediate inquiry to verify actual status`);
+          const isActiveAnyway = await c2.run('enroll-check', () => checkEnrollmentActive(job.ein, job.businessName || '', log));
+          if (!isActiveAnyway) {
+            // Clean up persistent state so the resume path doesn't keep retrying a truly failed enrollment
+            _enrollingEINs.delete(cleanEin(job.ein));
+            removePendingEnrollment(job.ein);
+            throw enrollErr;  // re-throw — catch block at bottom handles result
+          }
+          log(`[ENROLL] Inquiry confirmed enrollment IS Active despite script error — continuing to payment`);
+        }
 
         // Poll until Active — persists to disk so a restart resumes automatically
         const enrollmentActive = await this._pollEnrollmentUntilActive({
