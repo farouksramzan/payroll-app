@@ -1123,6 +1123,60 @@ function CompanyTab({ client, onSaved }) {
   );
 }
 
+// ── Pay Employees Tab — shared stable sub-components ─────────────────────────
+// Defined at module scope so React never unmounts/remounts them on re-renders,
+// which would destroy input focus mid-typing.
+
+const PRINTED_STATUSES = new Set(['printed','direct_deposit_sent','direct_deposit_cleared','voided']);
+const MODAL_MONO = { fontFamily: 'JetBrains Mono, monospace' };
+
+function ModalTR({ label, amount, ytdAmount, color, bold, borderTop, negative, editValue, onEditChange, editSuffix, noDollarSign }) {
+  const display = negative ? (amount > 0 ? -amount : amount) : amount;
+  return (
+    <tr style={{ borderTop: borderTop ? '2px solid var(--border)' : undefined }}>
+      <td style={{ padding: '5px 0', fontSize: 13, color: bold ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: bold ? 700 : 400, whiteSpace: 'nowrap' }}>{label}</td>
+      <td style={{ padding: '3px 0 3px 12px', textAlign: 'right', ...MODAL_MONO, fontSize: 13, fontWeight: bold ? 700 : 500, color: color || (negative && amount > 0 ? '#dc2626' : 'inherit') }}>
+        {onEditChange
+          ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end' }}>
+              {!noDollarSign && <span style={{ ...MODAL_MONO, fontSize: 13, color: 'var(--text-muted)', marginRight: 1 }}>$</span>}
+              <input type="text" inputMode="decimal"
+                value={editValue}
+                onChange={e => onEditChange(e.target.value)}
+                placeholder="0.00"
+                style={{ ...MODAL_MONO, background: '#fff', border: '1px solid var(--border)', borderRadius: 4, outline: 'none', width: 80, textAlign: 'right', fontSize: 13, fontWeight: bold ? 700 : 500, color: 'var(--text-primary)', padding: '1px 5px', cursor: 'text', boxSizing: 'border-box' }} />
+              {editSuffix && <span style={{ ...MODAL_MONO, fontSize: 12, color: 'var(--text-muted)', marginLeft: 4 }}>{editSuffix}</span>}
+            </span>
+          : typeof display === 'number' ? fmt(display) : display
+        }
+      </td>
+      {ytdAmount !== undefined && (
+        <td style={{ padding: '5px 0 5px 12px', textAlign: 'right', ...MODAL_MONO, fontSize: 12, color: 'var(--text-muted)', fontWeight: 400 }}>{ytdAmount != null ? fmt(ytdAmount) : '—'}</td>
+      )}
+    </tr>
+  );
+}
+
+function ModalColHeader({ hasYTD }) {
+  return (
+    <thead>
+      <tr>
+        <th style={{ padding: '0 0 6px 0', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Item Name</th>
+        <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Amount</th>
+        {hasYTD && <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>YTD</th>}
+      </tr>
+    </thead>
+  );
+}
+
+function ModalOverlay({ children, onClose }) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      {children}
+    </div>
+  );
+}
+
 // ── Pay Employees Tab ─────────────────────────────────────────────────────────
 function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick = 0 }) {
   const [showPaycheckImport, setShowPaycheckImport] = useState(false);
@@ -1305,7 +1359,6 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
   })();
 
   // Split rows: main (pending + late history), printed (processed history)
-  const PRINTED_STATUSES = new Set(['printed','direct_deposit_sent','direct_deposit_cleared','voided']);
   const mainRows    = [];
   const printedRows = [];
 
@@ -1671,51 +1724,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
   function CheckDetailModal({ rowData, onClose }) {
     if (!rowData) return null;
 
-    const MONO = { fontFamily: 'JetBrains Mono, monospace' };
-
-    // Reusable table row: label | amount | ytd amount
-    const TR = ({ label, amount, ytdAmount, color, bold, borderTop, negative, editValue, onEditChange, editSuffix, noDollarSign }) => {
-      const display = negative ? (amount > 0 ? -amount : amount) : amount;
-      return (
-        <tr style={{ borderTop: borderTop ? '2px solid var(--border)' : undefined }}>
-          <td style={{ padding: '5px 0', fontSize: 13, color: bold ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: bold ? 700 : 400, whiteSpace: 'nowrap' }}>{label}</td>
-          <td style={{ padding: '3px 0 3px 12px', textAlign: 'right', ...MONO, fontSize: 13, fontWeight: bold ? 700 : 500, color: color || (negative && amount > 0 ? '#dc2626' : 'inherit') }}>
-            {onEditChange
-              ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-                  {!noDollarSign && <span style={{ ...MONO, fontSize: 13, color: 'var(--text-muted)', marginRight: 1 }}>$</span>}
-                  <input type="text" inputMode="decimal"
-                    value={editValue}
-                    onChange={e => onEditChange(e.target.value)}
-                    placeholder="0.00"
-                    style={{ ...MONO, background: '#fff', border: '1px solid var(--border)', borderRadius: 4, outline: 'none', width: 80, textAlign: 'right', fontSize: 13, fontWeight: bold ? 700 : 500, color: 'var(--text-primary)', padding: '1px 5px', cursor: 'text', boxSizing: 'border-box' }} />
-                  {editSuffix && <span style={{ ...MONO, fontSize: 12, color: 'var(--text-muted)', marginLeft: 4 }}>{editSuffix}</span>}
-                </span>
-              : typeof display === 'number' ? fmt(display) : display
-            }
-          </td>
-          {ytdAmount !== undefined && (
-            <td style={{ padding: '5px 0 5px 12px', textAlign: 'right', ...MONO, fontSize: 12, color: 'var(--text-muted)', fontWeight: 400 }}>{ytdAmount != null ? fmt(ytdAmount) : '—'}</td>
-          )}
-        </tr>
-      );
-    };
-
-    const ColHeader = ({ hasYTD }) => (
-      <thead>
-        <tr>
-          <th style={{ padding: '0 0 6px 0', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Item Name</th>
-          <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Amount</th>
-          {hasYTD && <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>YTD</th>}
-        </tr>
-      </thead>
-    );
-
-    const Overlay = ({ children }) => (
-      <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}
-        onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-        {children}
-      </div>
-    );
+    // Use module-scope stable components (ModalTR, ModalColHeader, ModalOverlay)
+    // so React never remounts inputs on re-renders (which would kill focus).
+    const TR = ModalTR;
+    const ColHeader = ModalColHeader;
 
     // ── Pending row ──────────────────────────────────────────────────────────────
     if (rowData.type === 'pending') {
@@ -1879,7 +1891,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       };
 
       return (
-        <Overlay>
+        <ModalOverlay onClose={onClose}>
           <div className="card" style={{ width: 640, maxWidth: '95vw', maxHeight: '92vh', overflowY: 'auto', padding: 0, borderRadius: 12 }}>
             {/* Header */}
             <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)' }}>
@@ -1902,7 +1914,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                   <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
                     <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
                     <input type="date" value={dateForm[key]} onChange={e => setDateForm(f => ({ ...f, [key]: e.target.value }))}
-                      style={{ ...MONO, fontSize: 13, fontWeight: 600, background: 'transparent', border: 'none', outline: 'none', width: '100%', color: dateForm[key] !== (key === 'start' ? period.start : key === 'end' ? period.end : period.payDate) ? 'var(--accent)' : period.isLate && key === 'payDate' ? '#dc2626' : 'var(--text-primary)', cursor: 'pointer' }} />
+                      style={{ ...MODAL_MONO, fontSize: 13, fontWeight: 600, background: 'transparent', border: 'none', outline: 'none', width: '100%', color: dateForm[key] !== (key === 'start' ? period.start : key === 'end' ? period.end : period.payDate) ? 'var(--accent)' : period.isLate && key === 'payDate' ? '#dc2626' : 'var(--text-primary)', cursor: 'pointer' }} />
                   </div>
                 ))}
               </div>
@@ -2009,7 +2021,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
               )}
             </div>
           </div>
-        </Overlay>
+        </ModalOverlay>
       );
     }
 
@@ -2155,7 +2167,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                 <div style={{ fontWeight: 800, fontSize: 20, textDecoration: isVoided ? 'line-through' : 'none' }}>{stub.employee_name}</div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
                   <StatusBadge status={stub.check_status || 'draft'} />
-                  {stub.check_number && <span style={{ ...MONO, fontSize: 13, color: 'var(--accent)', fontWeight: 700 }}>Check #{stub.check_number}</span>}
+                  {stub.check_number && <span style={{ ...MODAL_MONO, fontSize: 13, color: 'var(--accent)', fontWeight: 700 }}>Check #{stub.check_number}</span>}
                 </div>
               </div>
               <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
@@ -2170,10 +2182,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                 <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
                   <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
                   {isVoided
-                    ? <div style={{ ...MONO, fontSize: 13, fontWeight: 600 }}>{fmtDate(raw)}</div>
+                    ? <div style={{ ...MODAL_MONO, fontSize: 13, fontWeight: 600 }}>{fmtDate(raw)}</div>
                     : <input type="date" value={dateForm[key]}
                         onChange={e => setDateForm(f => ({ ...f, [key]: e.target.value }))}
-                        style={{ ...MONO, fontSize: 13, fontWeight: 600, background: 'transparent', border: 'none', outline: 'none', width: '100%', color: dateForm[key] !== (raw || '') ? 'var(--accent)' : 'var(--text-primary)', cursor: 'pointer' }} />
+                        style={{ ...MODAL_MONO, fontSize: 13, fontWeight: 600, background: 'transparent', border: 'none', outline: 'none', width: '100%', color: dateForm[key] !== (raw || '') ? 'var(--accent)' : 'var(--text-primary)', cursor: 'pointer' }} />
                   }
                 </div>
               ))}
@@ -2220,7 +2232,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           <div style={{ margin: '16px 24px 0', borderTop: '2px solid var(--border)' }} />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px 4px' }}>
             <div style={{ fontSize: 15, fontWeight: 700 }}>Check Amount</div>
-            <div style={{ ...MONO, fontSize: 22, fontWeight: 800, color: '#16a34a' }}>{fmt(stub.net_pay || 0)}</div>
+            <div style={{ ...MODAL_MONO, fontSize: 22, fontWeight: 800, color: '#16a34a' }}>{fmt(stub.net_pay || 0)}</div>
           </div>
           <div style={{ display: 'flex', gap: 0, margin: '12px 24px 0', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
             {[
@@ -2231,7 +2243,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
             ].map(({ label, value, accent }, i, arr) => (
               <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none', background: accent ? 'var(--accent-light)' : undefined }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
-                <div style={{ ...MONO, fontSize: 14, fontWeight: 800, color: accent ? 'var(--accent)' : 'var(--text-primary)' }}>{value}</div>
+                <div style={{ ...MODAL_MONO, fontSize: 14, fontWeight: 800, color: accent ? 'var(--accent)' : 'var(--text-primary)' }}>{value}</div>
               </div>
             ))}
           </div>
