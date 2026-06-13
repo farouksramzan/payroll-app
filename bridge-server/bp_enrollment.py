@@ -279,27 +279,59 @@ def main():
         sys.exit(0)
 
     log('File Format Selector closed — import accepted, waiting for list to update')
-    time.sleep(2)
+    time.sleep(3)
 
-    # Step 8 - OCR scan to find all New status rows and click their checkboxes
-    # Save debug screenshot so we can verify what is on screen when OCR runs
+    # Step 8 - OCR scan to find all New status rows and click their checkboxes.
+    # Retry up to 4 times with growing waits — the list can take several seconds
+    # to refresh after import, and the new row may be off the visible area.
     debug_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data')
     os.makedirs(debug_dir, exist_ok=True)
-    ocr_debug_path = os.path.join(debug_dir, 'debug_before_ocr.png')
-    pyautogui.screenshot(ocr_debug_path)
-    log('Executing step 8: debug screenshot saved to ' + ocr_debug_path)
 
-    # Extract EIN from the enrollment filename so we can check for it in the OCR output
     import re as _re
     ein_match = _re.search(r'ENROLL_(\d+)_', os.path.basename(enroll_file_path))
     target_ein = ein_match.group(1) if ein_match else ''
 
-    new_rows, all_words = find_new_rows()
+    new_rows = []
+    all_words = []
+    RETRY_WAITS = [0, 4, 6, 8]   # seconds to wait before each attempt (attempt 0 is immediate)
+    for attempt, wait in enumerate(RETRY_WAITS):
+        if wait > 0:
+            log('Step 8: no New rows on attempt ' + str(attempt) + ' — scrolling list and retrying in ' + str(wait) + 's')
+            # Scroll the Send Enrollments list to the top so we don't miss rows
+            # added at the beginning, then scroll to the bottom for rows added at end
+            pyautogui.click(960, 500)   # click list area to focus it
+            time.sleep(0.3)
+            pyautogui.hotkey('ctrl', 'Home')
+            time.sleep(0.5)
+            time.sleep(wait)
+
+        ocr_debug_path = os.path.join(debug_dir, 'debug_before_ocr_attempt' + str(attempt) + '.png')
+        pyautogui.screenshot(ocr_debug_path)
+        log('Step 8 attempt ' + str(attempt + 1) + ': screenshot saved to ' + ocr_debug_path)
+
+        new_rows, all_words = find_new_rows()
+        if new_rows:
+            log('Step 8: found ' + str(len(new_rows)) + ' New row(s) on attempt ' + str(attempt + 1))
+            break
+
+        # Also check bottom of list on later attempts
+        if attempt >= 1:
+            pyautogui.click(960, 500)
+            time.sleep(0.3)
+            pyautogui.hotkey('ctrl', 'End')
+            time.sleep(1)
+            ocr_debug_path2 = os.path.join(debug_dir, 'debug_before_ocr_attempt' + str(attempt) + '_bottom.png')
+            pyautogui.screenshot(ocr_debug_path2)
+            log('Step 8 attempt ' + str(attempt + 1) + ' (bottom): screenshot saved to ' + ocr_debug_path2)
+            new_rows, all_words = find_new_rows()
+            if new_rows:
+                log('Step 8: found ' + str(len(new_rows)) + ' New row(s) at bottom on attempt ' + str(attempt + 1))
+                break
+
     if not new_rows:
         # Check whether EFTPS has already processed this EIN as Synchronized.
-        # This happens when a previous enrollment attempt succeeded, or when the
-        # EFTPS import is so fast that the status jumps from New → Synchronized
-        # before our OCR scan fires.  In either case the company IS enrolled.
+        # This happens when a previous enrollment attempt succeeded, or when EFTPS
+        # processes the import so fast that status jumps straight to Synchronized.
         if target_ein and ein_already_synchronized(target_ein, all_words):
             log('No New rows found but EIN ' + target_ein + ' shows Synchronized — treating as ENROLLMENT_COMPLETE')
             print('ENROLLMENT_COMPLETE', flush=True)
