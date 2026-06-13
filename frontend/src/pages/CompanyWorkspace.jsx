@@ -2642,9 +2642,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       {runErr     && <div className="alert alert-error"   style={{ marginBottom: 10 }}><span>⚠</span>{runErr}<button onClick={() => setRunErr('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button></div>}
       {runSuccess && <div className="alert alert-success" style={{ marginBottom: 10 }}><span>✓</span>{runSuccess}<button onClick={() => setRunSuccess('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button></div>}
 
-      {/* Bulk action bar */}
+      {/* Bulk action bar — sticky at bottom so it's always visible when checks are selected */}
       {selectedHistoryStubs.size > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--accent)', color: '#fff', padding: '8px 14px', borderRadius: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+        <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 200, display: 'flex', alignItems: 'center', gap: 10, background: '#16a34a', color: '#fff', padding: '10px 24px', flexWrap: 'wrap', boxShadow: '0 -4px 20px rgba(0,0,0,0.18)' }}>
           <span style={{ fontWeight: 700, fontSize: 13 }}>{selectedHistoryStubs.size} check{selectedHistoryStubs.size !== 1 ? 's' : ''} selected</span>
           <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
           <span style={{ fontSize: 12, opacity: 0.85 }}>Change status:</span>
