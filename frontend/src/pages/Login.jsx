@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Navigate, Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import founderImg from '../assets/founder.jpg';
 
 const STATS = [
   { value: '$3–12', label: 'per check charged by QuickBooks / ADP / Paychex' },
@@ -155,6 +156,42 @@ export default function Login() {
               <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.55 }}>{f.desc}</div>
             </div>
           ))}
+        </div>
+
+        {/* Founder section */}
+        <div style={{
+          marginBottom: 32,
+          padding: '20px',
+          background: 'rgba(255,255,255,0.05)',
+          border: '1px solid rgba(255,255,255,0.1)',
+          borderRadius: 16,
+          display: 'flex',
+          gap: 18,
+          alignItems: 'flex-start',
+        }}>
+          <img
+            src={founderImg}
+            alt="Farouk Ramzan"
+            style={{
+              width: 80,
+              height: 80,
+              borderRadius: '50%',
+              objectFit: 'cover',
+              objectPosition: 'center top',
+              flexShrink: 0,
+              border: '2px solid rgba(74,222,128,0.4)',
+            }}
+          />
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#f1f5f9', marginBottom: 2 }}>Farouk Ramzan</div>
+            <div style={{ fontSize: 11, color: '#4ade80', fontWeight: 600, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Founder</div>
+            <p style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.7, margin: 0 }}>
+              Farouk spent months working with independent accountants to design a payroll platform
+              that is not only <strong style={{ color: '#fff' }}>cheaper than competitors</strong> —
+              so these accountants can keep their small businesses alive — but also
+              easier to use and learn for brand-new independent accountants entering the field.
+            </p>
+          </div>
         </div>
 
         {/* Claude Code badge */}
