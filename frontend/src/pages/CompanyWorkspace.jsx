@@ -2361,37 +2361,37 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
     }
 
     return (
-      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 12 }}>
+      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 15 }}>
         <colgroup>
-          <col style={{ width: 36 }} />
+          <col style={{ width: 48 }} />
           <col />
-          <col style={{ width: 84 }} />
-          <col style={{ width: 84 }} />
-          <col style={{ width: 84 }} />
-          <col style={{ width: 60 }} />
-          <col style={{ width: 60 }} />
-          <col style={{ width: 72 }} />
-          <col style={{ width: 88 }} />
+          <col style={{ width: 110 }} />
+          <col style={{ width: 110 }} />
+          <col style={{ width: 110 }} />
           <col style={{ width: 82 }} />
+          <col style={{ width: 82 }} />
+          <col style={{ width: 90 }} />
+          <col style={{ width: 110 }} />
+          <col style={{ width: 110 }} />
         </colgroup>
         <thead>
-          <tr style={{ borderBottom: '2px solid var(--border)', background: 'var(--bg-secondary)' }}>
-            <th style={{ padding: '7px 0 7px 12px' }}>
+          <tr style={{ borderBottom: '2px solid #d0d7de', background: '#f6f8fa' }}>
+            <th style={{ padding: '11px 0 11px 14px' }}>
               {totalSelectable > 0 && (
                 <input type="checkbox" checked={allSel} ref={el => { if (el) el.indeterminate = someSel && !allSel; }}
                   onChange={toggleAll}
-                  style={{ accentColor: 'var(--accent)', width: 13, height: 13, cursor: 'pointer' }} />
+                  style={{ accentColor: 'var(--accent)', width: 16, height: 16, cursor: 'pointer' }} />
               )}
             </th>
-            <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'left' }}>Employee</th>
-            <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'left' }}>Period Start</th>
-            <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'left' }}>Period End</th>
-            <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'left' }}>Pay Date</th>
-            <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>Reg Hrs</th>
-            <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>OT Hrs</th>
-            <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>Rate</th>
-            <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>Net Pay</th>
-            <th style={{ padding: '7px 8px', fontWeight: 600, fontSize: 11, color: 'var(--text-muted)', textAlign: 'right' }}>Status</th>
+            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Employee</th>
+            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Period Start</th>
+            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Period End</th>
+            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Pay Date</th>
+            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Reg Hrs</th>
+            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.04em' }}>OT Hrs</th>
+            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Rate</th>
+            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Net Pay</th>
+            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Status</th>
           </tr>
         </thead>
         <tbody>
@@ -2430,23 +2430,23 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
               return (
                 <React.Fragment key={rowData.key}>
                 <tr
-                  style={{ background: rowBg, borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                  style={{ background: rowBg, borderBottom: '1px solid #e1e7ed', cursor: 'pointer' }}
                   onClick={e => { if (e.target.type !== 'checkbox' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') setDetailModal(rowData); }}
                 >
-                  <td style={{ padding: '0 0 0 12px' }}>
+                  <td style={{ padding: '0 0 0 14px' }}>
                     <input type="checkbox" checked={row.selected}
-                      style={{ accentColor: 'var(--accent)', width: 13, height: 13, cursor: 'pointer' }}
+                      style={{ accentColor: 'var(--accent)', width: 16, height: 16, cursor: 'pointer' }}
                       onChange={ev => setRow(period.end, emp.id, 'selected', ev.target.checked)} />
                   </td>
                   <td style={{ padding: '7px 8px', fontWeight: 600 }}>
                     <button onClick={e => { e.stopPropagation(); setDrawerEmpId(emp.id); }}
-                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 600, fontSize: 12, color: 'var(--accent)', textDecoration: 'underline' }}>
+                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 700, fontSize: 15, color: 'var(--accent)', textDecoration: 'underline' }}>
                       {emp.firstName} {emp.lastName}
                     </button>
                   </td>
-                  <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: ov.start ? 'var(--accent)' : '#222' }}>{fmtDate(period.start)}</td>
-                  <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: ov.end ? 'var(--accent)' : '#222' }}>{fmtDate(period.end)}</td>
-                  <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: isLate ? '#dc2626' : ov.payDate ? 'var(--accent)' : '#222' }}>{fmtDate(period.payDate)}</td>
+                  <td style={{ padding: '12px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600, color: ov.start ? 'var(--accent)' : '#222' }}>{fmtDate(period.start)}</td>
+                  <td style={{ padding: '12px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600, color: ov.end ? 'var(--accent)' : '#222' }}>{fmtDate(period.end)}</td>
+                  <td style={{ padding: '12px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600, color: isLate ? '#dc2626' : ov.payDate ? 'var(--accent)' : '#222' }}>{fmtDate(period.payDate)}</td>
                   {isSalary ? (
                     <>
                       <td colSpan={3} style={{ padding: '7px 8px', textAlign: 'right', color: 'var(--text-secondary)', fontSize: 11 }}>salary</td>
@@ -2456,12 +2456,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                       <td style={{ padding: '4px 6px' }}>
                         <input className="form-input mono" type="text" inputMode="decimal" value={row.regHours} placeholder="0"
                           onChange={ev => setRow(period.end, emp.id, 'regHours', ev.target.value)}
-                          style={{ width: '100%', height: 26, fontSize: 12, textAlign: 'right', padding: '0 6px' }} />
+                          style={{ width: '100%', height: 42, fontSize: 15, textAlign: 'center', padding: '0 6px', borderRadius: 4, border: '2px solid #c8d0da', fontWeight: 600 }} />
                       </td>
                       <td style={{ padding: '4px 6px' }}>
                         <input className="form-input mono" type="text" inputMode="decimal" value={row.otHours} placeholder="0"
                           onChange={ev => setRow(period.end, emp.id, 'otHours', ev.target.value)}
-                          style={{ width: '100%', height: 26, fontSize: 12, textAlign: 'right', padding: '0 6px' }} />
+                          style={{ width: '100%', height: 42, fontSize: 15, textAlign: 'center', padding: '0 6px', borderRadius: 4, border: '2px solid #c8d0da', fontWeight: 600 }} />
                       </td>
                       <td style={{ padding: '4px 6px' }}>
                         <input className="form-input mono" type="text" inputMode="decimal"
@@ -2474,14 +2474,14 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                               setRateUpdatePrompt({ empId: emp.id, newRate: entered, periodEnd: period.end });
                             }
                           }}
-                          style={{ width: '100%', height: 26, fontSize: 12, textAlign: 'right', padding: '0 6px' }} />
+                          style={{ width: '100%', height: 42, fontSize: 15, textAlign: 'center', padding: '0 6px', borderRadius: 4, border: '2px solid #c8d0da', fontWeight: 600 }} />
                       </td>
                     </>
                   )}
-                  <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: grossPreview > 0 ? 'var(--success, #16a34a)' : '#aaa', fontSize: 13 }}>
+                  <td style={{ padding: '12px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: grossPreview > 0 ? 'var(--success, #16a34a)' : '#aaa', fontSize: 15 }}>
                     {grossPreview > 0 ? fmt(estNetPay) : '—'}
                   </td>
-                  <td style={{ padding: '4px 6px', textAlign: 'right' }}>
+                  <td style={{ padding: '8px 10px', textAlign: 'right' }}>
                     <span style={{ cursor: 'pointer' }} title="Click to change status"
                       onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setEmpStatusDrop(empStatusDrop?.period?.end === period.end && empStatusDrop?.emp?.id === emp.id ? null : { period, emp, top: r.bottom + 4, right: window.innerWidth - r.right }); }}>
                       <StatusBadge status={status} />
@@ -2506,21 +2506,21 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
             return (
               <tr key={rowData.key}
                 data-tour-id={startIdx > 0 && idx === 0 ? 'tour-first-check' : undefined}
-                style={{ background: rowBg, opacity: isVoided ? 0.5 : 1, borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                style={{ background: rowBg, opacity: isVoided ? 0.5 : 1, borderBottom: '1px solid #e1e7ed', cursor: 'pointer' }}
                 onClick={e => { if (e.target.type !== 'checkbox' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') setDetailModal(rowData); }}
               >
-                <td style={{ padding: '0 0 0 12px' }}>
+                <td style={{ padding: '0 0 0 14px' }}>
                   {!isVoided && (
                     <input type="checkbox"
                       checked={selectedHistoryStubs.has(stub.id)}
                       onChange={e => { e.stopPropagation(); setSelectedHistoryStubs(prev => { const next = new Set(prev); next.has(stub.id) ? next.delete(stub.id) : next.add(stub.id); return next; }); }}
-                      style={{ accentColor: 'var(--accent)', width: 13, height: 13, cursor: 'pointer' }} />
+                      style={{ accentColor: 'var(--accent)', width: 16, height: 16, cursor: 'pointer' }} />
                   )}
                 </td>
                 <td style={{ padding: '7px 8px' }}>
                   {stub.employee_id ? (
                     <button onClick={e => { e.stopPropagation(); setDrawerEmpId(stub.employee_id); }}
-                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 700, fontSize: 13, color: 'var(--accent)', textDecoration: 'underline', textDecorationStyle: isVoided ? 'line-through' : 'underline' }}>
+                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 700, fontSize: 15, color: 'var(--accent)', textDecoration: 'underline', textDecorationStyle: isVoided ? 'line-through' : 'underline' }}>
                       {stub.employee_name}
                     </button>
                   ) : (
@@ -2529,19 +2529,19 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                   {stub.check_number && <span style={{ marginLeft: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--accent)', fontWeight: 700 }}>#{stub.check_number}</span>}
                 </td>
                 {isEditingPeriod ? (
-                  <td colSpan={3} style={{ padding: '4px 8px' }} onClick={e => e.stopPropagation()}>
+                  <td colSpan={3} style={{ padding: '8px 10px' }} onClick={e => e.stopPropagation()}>
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
                       <input type="date" value={periodEdit.start}
                         onChange={e => setPeriodEdit(p => ({ ...p, start: e.target.value }))}
-                        style={{ height: 26, fontSize: 11, border: '1px solid var(--border)', borderRadius: 4, padding: '0 4px' }} />
+                        style={{ height: 36, fontSize: 13, border: '1px solid var(--border)', borderRadius: 4, padding: '0 4px' }} />
                       <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>–</span>
                       <input type="date" value={periodEdit.end}
                         onChange={e => { const end = e.target.value; setPeriodEdit(p => ({ ...p, end, payDate: end ? calcDefaultPayDate(end) : p.payDate })); }}
-                        style={{ height: 26, fontSize: 11, border: '1px solid var(--border)', borderRadius: 4, padding: '0 4px' }} />
+                        style={{ height: 36, fontSize: 13, border: '1px solid var(--border)', borderRadius: 4, padding: '0 4px' }} />
                       <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>Pay:</span>
                       <input type="date" value={periodEdit.payDate}
                         onChange={e => setPeriodEdit(p => ({ ...p, payDate: e.target.value }))}
-                        style={{ height: 26, fontSize: 11, border: '1px solid var(--border)', borderRadius: 4, padding: '0 4px' }} />
+                        style={{ height: 36, fontSize: 13, border: '1px solid var(--border)', borderRadius: 4, padding: '0 4px' }} />
                       <button className="btn btn-primary btn-sm" style={{ fontSize: 10, padding: '0 8px', height: 26 }}
                         onClick={() => handleSavePeriod(stub.id)} disabled={savingPeriod}>
                         {savingPeriod ? <span className="spinner" style={{ width: 10, height: 10 }} /> : 'Save'}
@@ -2552,28 +2552,28 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                   </td>
                 ) : (
                   <>
-                    <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: '#222',
+                    <td style={{ padding: '14px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600, color: '#222',
                       cursor: canEditPeriod ? 'pointer' : 'default' }}
                       onClick={canEditPeriod ? e => { e.stopPropagation(); setPeriodEdit({ id: stub.id, start: stub.pay_period_start || '', end: stub.pay_period_end || '', payDate: stub.settlement_date || '' }); } : undefined}
                       title={canEditPeriod ? 'Click to edit period' : ''}>
                       {fmtDate(stub.pay_period_start)}{canEditPeriod && <span style={{ marginLeft: 3, opacity: 0.35, fontSize: 9 }}>✏</span>}
                     </td>
-                    <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: '#222' }}>{fmtDate(stub.pay_period_end)}</td>
-                    <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 600, color: displayStatus === 'late' ? '#dc2626' : '#222' }}>{fmtDate(stub.settlement_date)}</td>
+                    <td style={{ padding: '14px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600, color: '#222' }}>{fmtDate(stub.pay_period_end)}</td>
+                    <td style={{ padding: '14px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600, color: displayStatus === 'late' ? '#dc2626' : '#222' }}>{fmtDate(stub.settlement_date)}</td>
                   </>
                 )}
-                <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: 12 }}>{stub.regular_hours != null ? stub.regular_hours : '—'}</td>
-                <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: 12 }}>{stub.overtime_hours > 0 ? stub.overtime_hours : '—'}</td>
-                <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: 12 }}>{
+                <td style={{ padding: '14px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: 14 }}>{stub.regular_hours != null ? stub.regular_hours : '—'}</td>
+                <td style={{ padding: '14px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: 14 }}>{stub.overtime_hours > 0 ? stub.overtime_hours : '—'}</td>
+                <td style={{ padding: '14px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: 14 }}>{
                   (() => {
                     const regItem = (stub.lineItems || []).find(li => li.pay_type === 'regular');
                     return regItem?.rate != null ? `$${Number(regItem.rate).toFixed(2)}` : '—';
                   })()
                 }</td>
-                <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--success, #16a34a)', fontSize: 13 }}>
+                <td style={{ padding: '14px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, color: '#16a34a', fontSize: 16 }}>
                   {stub.net_pay != null ? fmt(stub.net_pay) : '—'}
                 </td>
-                <td style={{ padding: '7px 8px', textAlign: 'right' }}>
+                <td style={{ padding: '8px 10px', textAlign: 'right' }}>
                   {!isVoided ? (
                     <span style={{ cursor: 'pointer' }} title="Click to change status"
                       onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setEmpStatusDrop(empStatusDrop?.stub?.id === stub.id ? null : { stub, top: r.bottom + 4, right: window.innerWidth - r.right }); }}>
