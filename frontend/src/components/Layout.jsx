@@ -20,6 +20,24 @@ export default function Layout() {
         </Link>
         <div className="top-nav-spacer" />
         <div className="top-nav-user">
+          <button
+            onClick={() => window.dispatchEvent(new CustomEvent('start-tour'))}
+            style={{
+              background: 'rgba(74,222,128,0.12)',
+              border: '1px solid rgba(74,222,128,0.35)',
+              borderRadius: 7,
+              padding: '5px 12px',
+              fontSize: 12,
+              fontWeight: 700,
+              color: '#16a34a',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 5,
+            }}
+          >
+            🎓 Tutorial
+          </button>
           <span>{user?.username}</span>
           <button onClick={handleLogout}>Sign out</button>
         </div>

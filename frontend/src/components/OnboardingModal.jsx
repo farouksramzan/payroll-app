@@ -197,6 +197,19 @@ export default function OnboardingModal() {
   // Generation counter — incremented on every step change to cancel stale auto-clicks
   const genRef = useRef(0);
 
+  // Listen for the global 'start-tour' event dispatched by the Tutorial button in the nav
+  useEffect(() => {
+    const handler = () => {
+      try { localStorage.removeItem(STORAGE_KEY); } catch {}
+      setSpotlight(null);
+      setHabibiId(null);
+      genRef.current += 1;
+      setStep(0);
+    };
+    window.addEventListener('start-tour', handler);
+    return () => window.removeEventListener('start-tour', handler);
+  }, []);
+
   // Fetch Habibi client ID once tour starts
   useEffect(() => {
     if (step === null || step === 0 || habibiId) return;
