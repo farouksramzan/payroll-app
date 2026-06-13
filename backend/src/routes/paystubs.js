@@ -126,26 +126,23 @@ router.post('/mark-pending', (req, res) => {
           client_id, employee_id, employee_name, pay_group_id,
           pay_period_start, pay_period_end, settlement_date, pay_frequency,
           filing_status, work_state,
-          gross_wages, net_pay,
-          fit_withholding, employee_ss, employee_medicare,
-          employer_ss, employer_medicare,
-          futa_tax, suta_tax, total_deposit,
-          check_status, quarter, tax_year, status, status_940
+          gross_wages, total_deposit, net_pay,
+          tax_quarter, tax_year,
+          check_status, status
         ) VALUES (
           ?, ?, ?, ?,
           ?, ?, ?, ?,
           'single', ?,
-          0, 0,
           0, 0, 0,
-          0, 0,
-          0, 0, 0,
-          ?, ?, ?, 'n/a', 'n/a'
+          ?, ?,
+          ?, 'n/a'
         )
       `).run(
         clientId, p.employeeId || null, p.employeeName || null, groupId || null,
         p.periodStart, p.periodEnd, p.settlementDate || p.periodEnd, p.payFrequency || 'biweekly',
         client.state || 'TX',
-        targetStatus, quarter, year
+        quarter, year,
+        targetStatus
       );
       return r.lastInsertRowid;
     });
