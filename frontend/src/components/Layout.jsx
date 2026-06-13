@@ -1,5 +1,6 @@
-import { Outlet, Link, useNavigate, useParams } from 'react-router-dom';
+import { Outlet, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import OnboardingModal from './OnboardingModal';
 
 export default function Layout() {
   const { user, logout } = useAuth();
@@ -12,6 +13,7 @@ export default function Layout() {
 
   return (
     <div className="app-shell">
+      <OnboardingModal />
       <nav className="top-nav">
         <Link to="/" className="top-nav-logo">
           <span>Payroll</span>Tax Pro
