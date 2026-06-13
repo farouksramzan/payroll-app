@@ -33,6 +33,10 @@ export default function Login() {
           <p>Federal Tax Management &amp; EFTPS Submission</p>
         </div>
 
+        <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#0369a1', lineHeight: 1.5 }}>
+          <strong>Demo account:</strong> username <code style={{ background: '#e0f2fe', padding: '1px 5px', borderRadius: 4 }}>admin</code> &nbsp;/&nbsp; password <code style={{ background: '#e0f2fe', padding: '1px 5px', borderRadius: 4 }}>admin123</code>
+        </div>
+
         {error && (
           <div className="alert alert-error mb-16" style={{ marginBottom: 16 }}>
             <span>⚠</span> {error}
