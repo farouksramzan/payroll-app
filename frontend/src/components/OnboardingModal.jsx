@@ -1,109 +1,183 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import api from '../api/client';
 
-const STORAGE_KEY = 'payrolltaxpro_tour_v3';
-const TOTAL_STEPS = 7; // guide steps 1–7 (0 = welcome, 8 = done)
+const STORAGE_KEY = 'payrolltaxpro_tour_v4';
+const TOTAL_STEPS = 7;
 
-// ── Step definitions ──────────────────────────────────────────────────────────
+// ── Wait for a DOM element and optionally click it ────────────────────────────
+function waitAndAct(tourId, { click = false, scroll = false } = {}, maxMs = 4000) {
+  const start = Date.now();
+  return new Promise(resolve => {
+    const attempt = () => {
+      const el = document.querySelector(`[data-tour-id="${tourId}"]`);
+      if (el) {
+        if (scroll) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        if (click) el.click();
+        resolve(el);
+        return;
+      }
+      if (Date.now() - start < maxMs) setTimeout(attempt, 150);
+      else resolve(null);
+    };
+    setTimeout(attempt, 120);
+  });
+}
+
+// ── Pulsing spotlight overlay ─────────────────────────────────────────────────
+function TourSpotlight({ targetId, padding = 10 }) {
+  const [rect, setRect] = useState(null);
+  const rafRef = useRef(null);
+
+  useEffect(() => {
+    if (!targetId) { setRect(null); return; }
+    let active = true;
+
+    const track = () => {
+      if (!active) return;
+      const el = document.querySelector(`[data-tour-id="${targetId}"]`);
+      if (el) {
+        const r = el.getBoundingClientRect();
+        setRect({ top: r.top - padding, left: r.left - padding, width: r.width + padding * 2, height: r.height + padding * 2 });
+      } else {
+        setRect(null);
+      }
+      rafRef.current = requestAnimationFrame(track);
+    };
+    rafRef.current = requestAnimationFrame(track);
+    return () => { active = false; cancelAnimationFrame(rafRef.current); };
+  }, [targetId, padding]);
+
+  if (!rect) return null;
+
+  return (
+    <>
+      {/* Dark surround via box-shadow spreading outward from spotlight area */}
+      <div
+        style={{
+          position: 'fixed',
+          zIndex: 9600,
+          top: rect.top,
+          left: rect.left,
+          width: rect.width,
+          height: rect.height,
+          borderRadius: 10,
+          pointerEvents: 'none',
+          boxShadow: '0 0 0 9999px rgba(0,0,0,0.52)',
+          border: '2px solid #4ade80',
+          animation: 'tour-pulse 1.8s ease-in-out infinite',
+        }}
+      />
+      {/* Animated arrow label */}
+      <div style={{
+        position: 'fixed',
+        zIndex: 9601,
+        top: rect.top - 38,
+        left: rect.left + rect.width / 2,
+        transform: 'translateX(-50%)',
+        background: '#4ade80',
+        color: '#052e16',
+        fontSize: 11,
+        fontWeight: 800,
+        padding: '4px 12px',
+        borderRadius: 20,
+        whiteSpace: 'nowrap',
+        pointerEvents: 'none',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+        letterSpacing: '0.04em',
+        textTransform: 'uppercase',
+      }}>
+        ↓ Look here
+      </div>
+    </>
+  );
+}
+
+// ── Step config factory ───────────────────────────────────────────────────────
 function buildSteps(habibiId) {
   const base = `/clients/${habibiId}`;
   return [
-    /* 0 — Welcome */ null, // handled inline
+    null, // 0 = welcome (inline)
     {
-      num: 1,
+      // Step 1 — Dashboard
       title: '🏢 Your Client Dashboard',
-      body: 'All your payroll clients live here. Each card shows the company name, upcoming payroll date, and deposit schedule. This is your command center.',
-      hint: 'Find the Habibi Hookah Cafe card and click it to open the workspace.',
-      hintDir: '↓',
-      doNav: true,
-      to: '/',
-      toState: null,
+      body: 'All your payroll clients are listed here. Each card shows the company name, upcoming payroll date, and deposit schedule.',
+      hint: 'Find and click the Habibi Hookah Cafe card to open its workspace.',
+      spotlight: null, // user needs to scroll/look themselves
+      doNav: true, to: '/', toState: null,
+      autoClick: null,
     },
     {
-      num: 2,
-      title: '📋 Payroll Tab — All Pay Periods',
-      body: "You're inside Habibi Hookah Cafe's workspace. The Payroll tab shows every pay period for this company — both upcoming pending ones at the top and completed printed checks below.",
-      hint: 'Make sure the Payroll tab is selected at the top of the workspace.',
-      hintDir: '↑',
-      doNav: true,
-      to: base,
-      toState: { tab: 'payroll' },
+      // Step 2 — Payroll tab
+      title: '📋 Payroll Tab — Pay Periods',
+      body: "You're inside Habibi Hookah Cafe's workspace. The Payroll tab shows every pay period — pending upcoming ones at the top and completed checks below.",
+      hint: 'The Payroll tab is being highlighted — it should already be active.',
+      spotlight: 'tour-payroll-tab-btn',
+      doNav: true, to: base, toState: { tab: 'payroll' },
+      autoClick: 'tour-payroll-tab-btn',
     },
     {
-      num: 3,
-      title: '✅ Deposited / Printed Checks',
-      body: 'Scroll down past the pending section to see printed checks — these are completed pay periods that have already been processed and deposited. Each row shows gross wages, net pay, taxes withheld, and check number.',
-      hint: 'Scroll down ↓ to see rows with a green "Printed" or blue "Direct Deposit" status badge.',
-      hintDir: '↓',
-      doNav: false,
-      to: null,
-      toState: null,
+      // Step 3 — Printed checks (auto-expand & scroll)
+      title: '✅ Deposited Checks',
+      body: 'Below the pending section are your printed/deposited checks — completed pay periods. Each row shows gross wages, net pay, taxes withheld, and check number.',
+      hint: 'The "Printed & Deposited Checks" section is expanding automatically — scroll down if needed.',
+      spotlight: 'tour-printed-section',
+      doNav: false, to: null, toState: null,
+      autoClick: 'tour-printed-toggle', // expands the section
     },
     {
-      num: 4,
+      // Step 4 — Tax breakdown (auto-open modal)
       title: '🧾 Live Tax Breakdown',
-      body: 'Click any check row to open the full detail modal. You\'ll see the complete IRS calculation: Federal Income Tax (2026 Pub 15-T percentage method), Social Security (6.2%), Medicare (1.45%), employer match, FUTA (0.6%), and state SUI — all computed live. YTD columns accumulate from all printed + pending checks in the year.',
-      hint: 'Click any printed check row in the table — the full breakdown opens instantly.',
-      hintDir: '↗',
-      doNav: false,
-      to: null,
-      toState: null,
+      body: 'Opening a check now so you can see the full IRS 2026 tax calculation: Federal Income Tax (Pub 15-T percentage method), Social Security (6.2%), Medicare (1.45%), employer match, FUTA (0.6%), and state SUI — all computed live. YTD columns accumulate across the year.',
+      hint: 'The check detail modal should be opening automatically.',
+      spotlight: null, // modal opens, nothing to spotlight on page
+      doNav: false, to: null, toState: null,
+      autoClick: 'tour-first-check',
     },
     {
-      num: 5,
+      // Step 5 — Pending checks
       title: '⏳ Pending Pay Periods',
-      body: 'At the top of the Payroll tab are pending pay periods — the next upcoming payroll run. Type hours and rates directly into the table. Net pay and all taxes update in real time. When ready, click "Run Payroll" to convert them to printed checks and update year-to-date totals.',
-      hint: 'Scroll back up ↑ — the pending section is above the printed checks.',
-      hintDir: '↑',
-      doNav: false,
-      to: null,
-      toState: null,
+      body: 'At the top of the Payroll tab are pending pay periods — the next upcoming payroll. Enter hours and rates inline; net pay and all taxes update in real time. Click "Run Payroll" when ready to deposit.',
+      hint: 'The pending section is highlighted at the top of the Payroll tab.',
+      spotlight: 'tour-pending-section',
+      doNav: false, to: null, toState: null,
+      autoClick: null,
     },
     {
-      num: 6,
+      // Step 6 — Pay Liabilities (auto-click sub-tab)
       title: '🏦 Pay Liabilities',
-      body: "Inside the Payroll tab there's a Liabilities sub-tab. It tracks your 941 deposit obligations (Federal Income Tax + FICA) and 940 deposits (FUTA) — complete with IRS due dates, semiweekly vs. monthly deposit schedules, and amounts owed per deposit period.",
-      hint: 'Click the "Liabilities" sub-tab inside the Payroll section to see deposit obligations.',
-      hintDir: '↑',
-      doNav: false,
-      to: null,
-      toState: null,
+      body: 'Switching to the Liabilities sub-tab now. It tracks your 941 deposit obligations (Federal Income Tax + FICA) and 940 deposits (FUTA) — with IRS due dates, semiweekly vs. monthly deposit schedules, and amounts owed per period.',
+      hint: 'The Pay Liabilities sub-tab is being activated automatically.',
+      spotlight: 'tour-liabilities-tab',
+      doNav: false, to: null, toState: null,
+      autoClick: 'tour-liabilities-tab',
     },
     {
-      num: 7,
+      // Step 7 — Employees tab
       title: '👥 Employees Tab',
-      body: "Click the Employees tab to see all employee records. Each profile includes full W-4 settings (Steps 1–4), pay type (hourly or salary), pay group assignment, hourly rate or annual salary, and bank account details for ACH direct deposit. Click any employee to view or edit their info.",
-      hint: 'Click the "Employees" tab at the top of the workspace.',
-      hintDir: '↑',
-      doNav: true,
-      to: base,
-      toState: { tab: 'employees' },
+      body: 'Switching to the Employees tab. Each employee profile shows full W-4 settings (Steps 1–4), pay type (hourly or salary), pay group assignment, and bank account for ACH direct deposit. Click any employee to view or edit their profile.',
+      hint: 'The Employees tab is being activated — see all team members listed.',
+      spotlight: 'tour-employees-tab-btn',
+      doNav: true, to: base, toState: { tab: 'employees' },
+      autoClick: 'tour-employees-tab-btn',
     },
   ];
 }
 
-// ── Dot progress indicator ────────────────────────────────────────────────────
+// ── Progress dots ─────────────────────────────────────────────────────────────
 function StepDots({ current, total, onGoto }) {
   return (
     <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
       {Array.from({ length: total }, (_, i) => {
-        const stepNum = i + 1;
-        const active = stepNum === current;
-        const done = stepNum < current;
+        const n = i + 1;
         return (
           <div
-            key={stepNum}
-            onClick={() => onGoto(stepNum)}
-            title={`Step ${stepNum}`}
+            key={n}
+            onClick={() => onGoto(n)}
             style={{
-              width: active ? 20 : 7,
-              height: 7,
-              borderRadius: 4,
-              background: active ? '#22c55e' : done ? 'rgba(34,197,94,0.4)' : 'rgba(255,255,255,0.2)',
-              transition: 'all 0.2s',
-              cursor: 'pointer',
-              flexShrink: 0,
+              width: n === current ? 20 : 7, height: 7, borderRadius: 4,
+              background: n === current ? '#22c55e' : n < current ? 'rgba(34,197,94,0.4)' : 'rgba(255,255,255,0.2)',
+              transition: 'all 0.2s', cursor: 'pointer', flexShrink: 0,
             }}
           />
         );
@@ -117,200 +191,132 @@ export default function OnboardingModal() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // 0 = welcome, 1–7 = guide steps, 8 = done, null = dismissed
   const [step, setStep] = useState(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved === 'dismissed') return null;
-      return 0; // always show welcome on fresh load
-    } catch {
-      return 0;
-    }
+    try { return localStorage.getItem(STORAGE_KEY) === 'dismissed' ? null : 0; } catch { return 0; }
   });
-
   const [habibiId, setHabibiId] = useState(null);
-  const [loadingHabibi, setLoadingHabibi] = useState(false);
+  const [spotlight, setSpotlight] = useState(null);
 
-  // Fetch Habibi's client ID when tour starts
+  // Fetch Habibi client ID once tour starts
   useEffect(() => {
     if (step === null || step === 0 || habibiId) return;
-    setLoadingHabibi(true);
     api.getClients()
       .then(clients => {
-        const habibi = clients.find(c =>
-          c.businessName?.toLowerCase().includes('habibi') ||
-          c.business_name?.toLowerCase().includes('habibi')
+        const h = clients.find(c =>
+          (c.businessName || c.business_name || '').toLowerCase().includes('habibi')
         );
-        if (habibi) setHabibiId(habibi.id);
+        if (h) setHabibiId(h.id);
       })
-      .catch(() => {})
-      .finally(() => setLoadingHabibi(false));
+      .catch(() => {});
   }, [step, habibiId]);
 
-  // Auto-navigate when step changes and doNav is true
+  // On step change: navigate if needed, run autoClick, set spotlight
   useEffect(() => {
-    if (!habibiId || step === null || step === 0 || step === 8) return;
+    if (step === null || step === 0 || step === 8 || !habibiId) return;
     const steps = buildSteps(habibiId);
     const s = steps[step];
-    if (!s || !s.doNav || !s.to) return;
-    navigate(s.to, { state: s.toState, replace: false });
+    if (!s) return;
+
+    // Navigate
+    if (s.doNav && s.to) {
+      navigate(s.to, { state: s.toState, replace: false });
+    }
+
+    // Set spotlight
+    setSpotlight(s.spotlight || null);
+
+    // Auto-click after short delay to let render settle
+    if (s.autoClick) {
+      waitAndAct(s.autoClick, { click: true, scroll: true });
+    } else if (s.spotlight) {
+      // Just scroll to the spotlight target
+      waitAndAct(s.spotlight, { scroll: true });
+    }
   }, [step, habibiId]); // eslint-disable-line
 
   const dismiss = useCallback(() => {
     try { localStorage.setItem(STORAGE_KEY, 'dismissed'); } catch {}
     setStep(null);
-  }, []);
-
-  const startTour = useCallback(() => {
-    setStep(1);
+    setSpotlight(null);
   }, []);
 
   const goNext = useCallback(() => {
-    setStep(s => (s >= TOTAL_STEPS ? 8 : s + 1));
+    setStep(s => s >= TOTAL_STEPS ? 8 : s + 1);
   }, []);
 
   const goPrev = useCallback(() => {
-    setStep(s => (s <= 1 ? 1 : s - 1));
-  }, []);
-
-  const goToStep = useCallback((n) => {
-    setStep(n);
+    setStep(s => s <= 1 ? 1 : s - 1);
   }, []);
 
   if (step === null) return null;
 
-  // ── Welcome modal ─────────────────────────────────────────────────────────
+  // ── Welcome ───────────────────────────────────────────────────────────────
   if (step === 0) {
     return (
-      <div style={{
-        position: 'fixed', inset: 0, zIndex: 9999,
-        background: 'rgba(0,0,0,0.65)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 20,
-      }}>
-        <div style={{
-          background: '#0f172a',
-          borderRadius: 20,
-          width: '100%',
-          maxWidth: 520,
-          boxShadow: '0 30px 80px rgba(0,0,0,0.5)',
-          border: '1px solid rgba(255,255,255,0.1)',
-          overflow: 'hidden',
-        }}>
-          {/* Green accent bar */}
-          <div style={{ height: 4, background: 'linear-gradient(90deg, #16a34a, #4ade80)' }} />
-
-          <div style={{ padding: '36px 36px 28px' }}>
-            {/* Skip */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 24 }}>
-              <button
-                onClick={dismiss}
-                style={{
-                  background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
-                  color: '#94a3b8', fontSize: 12, fontWeight: 600, borderRadius: 20,
-                  padding: '4px 12px', cursor: 'pointer', letterSpacing: '0.03em',
-                }}
-              >
-                Skip tour ×
-              </button>
-            </div>
-
-            <div style={{ fontSize: 40, marginBottom: 16 }}>👋</div>
-            <h2 style={{ fontSize: 24, fontWeight: 900, color: '#f1f5f9', margin: '0 0 10px', letterSpacing: '-0.3px' }}>
-              Welcome to PayrollTax Pro
-            </h2>
-            <p style={{ fontSize: 14, color: '#94a3b8', lineHeight: 1.75, margin: '0 0 28px' }}>
-              We'll walk you through <strong style={{ color: '#4ade80' }}>Habibi Hookah Cafe</strong> — a real client
-              in this account — so you can see exactly how the system works end-to-end:
-              deposited checks, pending payroll, live tax breakdowns, liabilities, and employee management.
-            </p>
-
-            {/* What you'll see */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 28 }}>
-              {[
-                { icon: '✅', text: 'Deposited & pending checks with live tax estimates' },
-                { icon: '🧾', text: 'Full IRS 2026 tax breakdown per check (FIT, SS, Medicare, FUTA)' },
-                { icon: '🏦', text: '941 and 940 deposit schedules with IRS due dates' },
-                { icon: '👥', text: 'Employee W-4 settings and direct deposit info' },
-              ].map(item => (
-                <div key={item.text} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                  <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>{item.icon}</span>
-                  <span style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.5 }}>{item.text}</span>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button
-                onClick={dismiss}
-                style={{
-                  flex: 1, padding: '11px 0', borderRadius: 10,
-                  background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
-                  color: '#94a3b8', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                }}
-              >
-                Skip for now
-              </button>
-              <button
-                onClick={startTour}
-                style={{
-                  flex: 2, padding: '11px 0', borderRadius: 10,
-                  background: 'linear-gradient(135deg, #16a34a, #15803d)',
-                  border: 'none', color: '#fff', fontSize: 14, fontWeight: 700,
-                  cursor: 'pointer', letterSpacing: '0.01em',
-                  boxShadow: '0 4px 20px rgba(22,163,74,0.35)',
-                }}
-              >
-                Start Tour →
-              </button>
+      <>
+        <style>{`
+          @keyframes tour-pulse {
+            0%   { box-shadow: 0 0 0 9999px rgba(0,0,0,0.52), 0 0 0 4px rgba(74,222,128,0.6); }
+            50%  { box-shadow: 0 0 0 9999px rgba(0,0,0,0.52), 0 0 0 8px rgba(74,222,128,0.2); }
+            100% { box-shadow: 0 0 0 9999px rgba(0,0,0,0.52), 0 0 0 4px rgba(74,222,128,0.6); }
+          }
+        `}</style>
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+          <div style={{ background: '#0f172a', borderRadius: 20, width: '100%', maxWidth: 520, boxShadow: '0 30px 80px rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)', overflow: 'hidden' }}>
+            <div style={{ height: 4, background: 'linear-gradient(90deg, #16a34a, #4ade80)' }} />
+            <div style={{ padding: '32px 36px 28px' }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
+                <button onClick={dismiss} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', fontSize: 12, fontWeight: 600, borderRadius: 20, padding: '4px 12px', cursor: 'pointer' }}>
+                  Skip tour ×
+                </button>
+              </div>
+              <div style={{ fontSize: 40, marginBottom: 14 }}>👋</div>
+              <h2 style={{ fontSize: 24, fontWeight: 900, color: '#f1f5f9', margin: '0 0 10px', letterSpacing: '-0.3px' }}>Welcome to PayrollTax Pro</h2>
+              <p style={{ fontSize: 14, color: '#94a3b8', lineHeight: 1.75, margin: '0 0 24px' }}>
+                We'll walk you through <strong style={{ color: '#4ade80' }}>Habibi Hookah Cafe</strong> — a real client in this account. The tour auto-navigates and auto-opens everything so you can just watch.
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 28 }}>
+                {[
+                  { icon: '✅', text: 'Deposited checks auto-expanded and highlighted' },
+                  { icon: '🧾', text: 'Tax breakdown modal auto-opened — FIT, SS, Medicare, FUTA' },
+                  { icon: '🏦', text: 'Pay Liabilities tab auto-switched — 941 and 940 schedules' },
+                  { icon: '👥', text: 'Employees tab — W-4 settings and direct deposit info' },
+                ].map(item => (
+                  <div key={item.text} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                    <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>{item.icon}</span>
+                    <span style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.5 }}>{item.text}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={dismiss} style={{ flex: 1, padding: '11px 0', borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                  Skip for now
+                </button>
+                <button onClick={() => setStep(1)} style={{ flex: 2, padding: '11px 0', borderRadius: 10, background: 'linear-gradient(135deg, #16a34a, #15803d)', border: 'none', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 20px rgba(22,163,74,0.35)' }}>
+                  Start Tour →
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      </>
     );
   }
 
-  // ── Done modal ────────────────────────────────────────────────────────────
+  // ── Done ──────────────────────────────────────────────────────────────────
   if (step === 8) {
     return (
-      <div style={{
-        position: 'fixed', inset: 0, zIndex: 9999,
-        background: 'rgba(0,0,0,0.65)',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-        padding: 20,
-      }}>
-        <div style={{
-          background: '#0f172a',
-          borderRadius: 20,
-          width: '100%',
-          maxWidth: 480,
-          boxShadow: '0 30px 80px rgba(0,0,0,0.5)',
-          border: '1px solid rgba(34,197,94,0.25)',
-          overflow: 'hidden',
-          textAlign: 'center',
-        }}>
+      <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+        <div style={{ background: '#0f172a', borderRadius: 20, width: '100%', maxWidth: 460, boxShadow: '0 30px 80px rgba(0,0,0,0.5)', border: '1px solid rgba(34,197,94,0.25)', overflow: 'hidden', textAlign: 'center' }}>
           <div style={{ height: 4, background: 'linear-gradient(90deg, #16a34a, #4ade80)' }} />
           <div style={{ padding: '40px 36px 36px' }}>
             <div style={{ fontSize: 48, marginBottom: 16 }}>🎉</div>
-            <h2 style={{ fontSize: 22, fontWeight: 900, color: '#f1f5f9', margin: '0 0 12px' }}>
-              You've seen it all!
-            </h2>
+            <h2 style={{ fontSize: 22, fontWeight: 900, color: '#f1f5f9', margin: '0 0 12px' }}>You've seen it all!</h2>
             <p style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.75, margin: '0 0 10px' }}>
-              That's the full PayrollTax Pro workflow — real IRS 2026 tax tables,
-              EFTPS submission, ACH direct deposit, and <strong style={{ color: '#4ade80' }}>zero per-check fees</strong>.
+              That's the full PayrollTax Pro workflow — real IRS 2026 tax tables, EFTPS submission, ACH direct deposit, and <strong style={{ color: '#4ade80' }}>zero per-check fees</strong>.
             </p>
-            <p style={{ fontSize: 13, color: '#64748b', lineHeight: 1.6, margin: '0 0 28px' }}>
-              Explore freely. Every number in this app uses real IRS logic — nothing is mocked.
-            </p>
-            <button
-              onClick={dismiss}
-              style={{
-                width: '100%', padding: '12px 0', borderRadius: 10,
-                background: 'linear-gradient(135deg, #16a34a, #15803d)',
-                border: 'none', color: '#fff', fontSize: 14, fontWeight: 700,
-                cursor: 'pointer', boxShadow: '0 4px 20px rgba(22,163,74,0.3)',
-              }}
-            >
+            <p style={{ fontSize: 13, color: '#64748b', lineHeight: 1.6, margin: '0 0 28px' }}>Every number in this app uses real IRS logic — nothing is mocked.</p>
+            <button onClick={dismiss} style={{ width: '100%', padding: '12px 0', borderRadius: 10, background: 'linear-gradient(135deg, #16a34a, #15803d)', border: 'none', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 20px rgba(22,163,74,0.3)' }}>
               Start Exploring →
             </button>
           </div>
@@ -319,116 +325,77 @@ export default function OnboardingModal() {
     );
   }
 
-  // ── Guide steps 1–7 (floating bottom panel) ───────────────────────────────
+  // ── Guide steps 1–7 ───────────────────────────────────────────────────────
   const steps = habibiId ? buildSteps(habibiId) : null;
   const current = steps?.[step];
 
   return (
-    <div style={{
-      position: 'fixed',
-      bottom: 24,
-      left: '50%',
-      transform: 'translateX(-50%)',
-      zIndex: 9990,
-      width: '100%',
-      maxWidth: 560,
-      pointerEvents: 'none', // let clicks fall through to page
-      padding: '0 16px',
-    }}>
+    <>
+      <style>{`
+        @keyframes tour-pulse {
+          0%   { box-shadow: 0 0 0 9999px rgba(0,0,0,0.52), 0 0 0 4px rgba(74,222,128,0.6); }
+          50%  { box-shadow: 0 0 0 9999px rgba(0,0,0,0.52), 0 0 0 10px rgba(74,222,128,0.15); }
+          100% { box-shadow: 0 0 0 9999px rgba(0,0,0,0.52), 0 0 0 4px rgba(74,222,128,0.6); }
+        }
+      `}</style>
+
+      {/* Spotlight */}
+      {spotlight && <TourSpotlight targetId={spotlight} />}
+
+      {/* Floating guide card — bottom center */}
       <div style={{
-        background: '#0f172a',
-        borderRadius: 16,
-        boxShadow: '0 8px 40px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.08)',
-        overflow: 'hidden',
-        pointerEvents: 'all',
+        position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)',
+        zIndex: 9700, width: '100%', maxWidth: 560, padding: '0 16px', pointerEvents: 'none',
       }}>
-        {/* Progress bar */}
-        <div style={{ height: 3, background: 'rgba(255,255,255,0.06)' }}>
-          <div style={{
-            height: '100%',
-            width: `${(step / TOTAL_STEPS) * 100}%`,
-            background: 'linear-gradient(90deg, #16a34a, #4ade80)',
-            transition: 'width 0.3s ease',
-            borderRadius: '0 2px 2px 0',
-          }} />
-        </div>
-
-        <div style={{ padding: '16px 20px 18px' }}>
-          {/* Top row: dots + skip */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-            <StepDots current={step} total={TOTAL_STEPS} onGoto={goToStep} />
-            <button
-              onClick={dismiss}
-              style={{
-                background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
-                color: '#64748b', fontSize: 11, fontWeight: 600, borderRadius: 20,
-                padding: '3px 10px', cursor: 'pointer', letterSpacing: '0.04em',
-              }}
-            >
-              Skip ×
-            </button>
+        <div style={{
+          background: '#0f172a', borderRadius: 16,
+          boxShadow: '0 8px 40px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.08)',
+          overflow: 'hidden', pointerEvents: 'all',
+        }}>
+          {/* Progress bar */}
+          <div style={{ height: 3, background: 'rgba(255,255,255,0.06)' }}>
+            <div style={{ height: '100%', width: `${(step / TOTAL_STEPS) * 100}%`, background: 'linear-gradient(90deg, #16a34a, #4ade80)', transition: 'width 0.3s ease', borderRadius: '0 2px 2px 0' }} />
           </div>
 
-          {/* Step label */}
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#4ade80', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 5 }}>
-            Step {step} of {TOTAL_STEPS}
-          </div>
-
-          {loadingHabibi ? (
-            <div style={{ color: '#64748b', fontSize: 13, padding: '8px 0' }}>Finding Habibi Hookah Cafe…</div>
-          ) : !current ? (
-            <div style={{ color: '#64748b', fontSize: 13, padding: '8px 0' }}>Loading step…</div>
-          ) : (
-            <>
-              <h3 style={{ fontSize: 15, fontWeight: 800, color: '#f1f5f9', margin: '0 0 7px', letterSpacing: '-0.2px' }}>
-                {current.title}
-              </h3>
-              <p style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.65, margin: '0 0 12px' }}>
-                {current.body}
-              </p>
-
-              {/* Action hint */}
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: 8,
-                background: 'rgba(34,197,94,0.08)',
-                border: '1px solid rgba(34,197,94,0.2)',
-                borderRadius: 8, padding: '8px 12px',
-                marginBottom: 14,
-              }}>
-                <span style={{ fontSize: 14, flexShrink: 0 }}>💡</span>
-                <span style={{ fontSize: 12, color: '#86efac', lineHeight: 1.5 }}>{current.hint}</span>
-              </div>
-            </>
-          )}
-
-          {/* Nav buttons */}
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            {step > 1 && (
-              <button
-                onClick={goPrev}
-                style={{
-                  padding: '8px 16px', borderRadius: 8,
-                  background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
-                  color: '#94a3b8', fontSize: 12, fontWeight: 600, cursor: 'pointer',
-                }}
-              >
-                ← Back
+          <div style={{ padding: '14px 18px 16px' }}>
+            {/* Top row */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <StepDots current={step} total={TOTAL_STEPS} onGoto={n => setStep(n)} />
+              <button onClick={dismiss} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#64748b', fontSize: 11, fontWeight: 600, borderRadius: 20, padding: '3px 10px', cursor: 'pointer' }}>
+                Skip ×
               </button>
+            </div>
+
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#4ade80', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>
+              Step {step} of {TOTAL_STEPS}
+            </div>
+
+            {!current ? (
+              <div style={{ color: '#64748b', fontSize: 13, padding: '6px 0' }}>Loading…</div>
+            ) : (
+              <>
+                <h3 style={{ fontSize: 15, fontWeight: 800, color: '#f1f5f9', margin: '0 0 6px', letterSpacing: '-0.2px' }}>{current.title}</h3>
+                <p style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.6, margin: '0 0 10px' }}>{current.body}</p>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 7, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 8, padding: '7px 11px', marginBottom: 12 }}>
+                  <span style={{ fontSize: 14, flexShrink: 0 }}>💡</span>
+                  <span style={{ fontSize: 12, color: '#86efac', lineHeight: 1.5 }}>{current.hint}</span>
+                </div>
+              </>
             )}
-            <button
-              onClick={goNext}
-              style={{
-                flex: 1, padding: '9px 0', borderRadius: 8,
-                background: 'linear-gradient(135deg, #16a34a, #15803d)',
-                border: 'none', color: '#fff', fontSize: 13, fontWeight: 700,
-                cursor: 'pointer', letterSpacing: '0.01em',
-              }}
-            >
-              {step === TOTAL_STEPS ? 'Finish Tour ✓' : 'Next →'}
-            </button>
+
+            <div style={{ display: 'flex', gap: 8 }}>
+              {step > 1 && (
+                <button onClick={goPrev} style={{ padding: '8px 16px', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                  ← Back
+                </button>
+              )}
+              <button onClick={goNext} style={{ flex: 1, padding: '9px 0', borderRadius: 8, background: 'linear-gradient(135deg, #16a34a, #15803d)', border: 'none', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                {step === TOTAL_STEPS ? 'Finish Tour ✓' : 'Next →'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

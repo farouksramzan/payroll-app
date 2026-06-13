@@ -2472,6 +2472,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
             const isEditingPeriod = periodEdit?.id === stub.id;
             return (
               <tr key={rowData.key}
+                data-tour-id={startIdx > 0 && idx === 0 ? 'tour-first-check' : undefined}
                 style={{ background: rowBg, opacity: isVoided ? 0.5 : 1, borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
                 onClick={e => { if (e.target.type !== 'checkbox' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') setDetailModal(rowData); }}
               >
@@ -2687,7 +2688,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
 
       {/* Main table: pending + late checks */}
       {mainRows.length > 0 && (
-        <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 12 }}>
+        <div className="card" data-tour-id="tour-pending-section" style={{ padding: 0, overflow: 'hidden', marginBottom: 12 }}>
           {renderTable(mainRows, 0)}
         </div>
       )}
@@ -2707,6 +2708,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       {printedRows.length > 0 && (
         <div style={{ marginTop: 8 }}>
           <button
+            data-tour-id="tour-printed-toggle"
             onClick={() => setShowPrinted(p => !p)}
             style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', padding: '6px 0', fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}
           >
@@ -2714,7 +2716,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
             Printed &amp; Deposited Checks ({printedRows.length})
           </button>
           {showPrinted && (
-            <div className="card" style={{ padding: 0, overflow: 'hidden', marginTop: 6 }}>
+            <div className="card" data-tour-id="tour-printed-section" style={{ padding: 0, overflow: 'hidden', marginTop: 6 }}>
               {renderTable(printedRows, mainRows.length)}
             </div>
           )}
@@ -4184,7 +4186,7 @@ function PayrollTab({ clientId, client, employees, onRefresh, refreshTick = 0 })
   return (
     <div>
       <div className="pay-subtabs">
-        {[['pay','Pay Employees'],['liabilities','Pay Liabilities'],['forms','File Forms']].map(([k, label]) => <button key={k} className={`pay-subtab${sub === k ? ' active' : ''}`} onClick={() => setSub(k)}>{label}</button>)}
+        {[['pay','Pay Employees'],['liabilities','Pay Liabilities'],['forms','File Forms']].map(([k, label]) => <button key={k} data-tour-id={k === 'liabilities' ? 'tour-liabilities-tab' : undefined} className={`pay-subtab${sub === k ? ' active' : ''}`} onClick={() => setSub(k)}>{label}</button>)}
       </div>
       {sub === 'pay'         && <PayEmployeesTab clientId={clientId} client={client} employees={employees} onRefresh={onRefresh} refreshTick={refreshTick} />}
       {sub === 'liabilities' && <PayLiabilitiesTab clientId={clientId} client={client} refreshTick={refreshTick} />}
@@ -4379,7 +4381,7 @@ export default function CompanyWorkspace() {
         </div>
         <div className="ws-tabs">
           {[['employees','Employees'],['company','Company'],['payroll','Payroll'],...(user?.username === 'admin' ? [['users','Users']] : [])].map(([k, label]) => (
-            <button key={k} className={`ws-tab${activeTab === k ? ' active' : ''}`} onClick={() => setActiveTab(k)}>
+            <button key={k} className={`ws-tab${activeTab === k ? ' active' : ''}`} onClick={() => setActiveTab(k)} data-tour-id={k === 'payroll' ? 'tour-payroll-tab-btn' : k === 'employees' ? 'tour-employees-tab-btn' : undefined}>
               {label}
               {k === 'employees' && employees.length > 0 && <span style={{ marginLeft: 6, background: activeTab === k ? 'var(--accent)' : 'var(--bg-tertiary)', color: activeTab === k ? '#fff' : 'var(--text-muted)', borderRadius: 20, fontSize: 10, fontWeight: 700, padding: '1px 6px' }}>{employees.length}</span>}
             </button>
