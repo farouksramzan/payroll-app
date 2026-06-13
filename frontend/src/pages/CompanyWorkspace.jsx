@@ -2637,45 +2637,85 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
         )}
       </div>
 
-      {/* Bulk action bar — appears at top when checks are selected */}
-      {selectedHistoryStubs.size > 0 && (
+      {/* Bulk action bar — appears at top whenever any checkbox is checked */}
+      {(selectedHistoryStubs.size > 0 || totalActionCount > 0) && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#15803d', color: '#fff', padding: '9px 16px', borderRadius: 10, marginBottom: 12, flexWrap: 'wrap', boxShadow: '0 2px 12px rgba(21,128,61,0.25)' }}>
-          <span style={{ fontWeight: 700, fontSize: 13 }}>✓ {selectedHistoryStubs.size} check{selectedHistoryStubs.size !== 1 ? 's' : ''} selected</span>
+          <span style={{ fontWeight: 700, fontSize: 13 }}>
+            ✓ {selectedHistoryStubs.size + totalActionCount} check{(selectedHistoryStubs.size + totalActionCount) !== 1 ? 's' : ''} selected
+          </span>
           <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
-          <span style={{ fontSize: 12, opacity: 0.85 }}>Set status:</span>
-          {[
-            { value: 'printed',                label: 'Printed' },
-            { value: 'direct_deposit_cleared', label: 'Deposited' },
-            { value: 'draft',                  label: 'Upcoming' },
-          ].map(({ value, label }) => (
-            <button key={value} disabled={bulkBusy}
-              onClick={() => handleBulkStatusChange(value)}
-              style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
-              {label}
-            </button>
-          ))}
-          <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
-          <button disabled={bulkBusy} onClick={async () => {
-            setBulkBusy(true);
-            try { await api.printSelectedChecks(clientId, [...selectedHistoryStubs]); } catch (e) { alert(e.message); }
-            finally { setBulkBusy(false); }
-          }} style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
-            ↓ Paycheck
-          </button>
-          <button disabled={bulkBusy} onClick={async () => {
-            setBulkBusy(true);
-            try { await api.printSelectedPaystubs(clientId, [...selectedHistoryStubs]); } catch (e) { alert(e.message); }
-            finally { setBulkBusy(false); }
-          }} style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
-            ↓ Paystub
-          </button>
-          <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
-          <button disabled={bulkBusy} onClick={handleBulkDelete}
-            style={{ background: '#dc2626', border: 'none', borderRadius: 5, color: '#fff', padding: '5px 14px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>
-            {bulkBusy ? <span className="spinner" style={{ width: 12, height: 12 }} /> : '🗑 Delete'}
-          </button>
-          <button onClick={() => setSelectedHistoryStubs(new Set())}
-            style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 5, color: '#fff', padding: '3px 8px', fontSize: 12, cursor: 'pointer' }}>
+
+          {/* Run payroll (for pending/late rows) */}
+          {totalActionCount > 0 && (
+            <>
+              <button disabled={running} onClick={() => handleRunPayroll('print')}
+                style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
+                🖨 Print Paycheck
+              </button>
+              <button disabled={running} onClick={() => handleRunPayroll('paystub')}
+                style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
+                📄 Print Paystub
+              </button>
+              <button disabled={running} onClick={() => handleRunPayroll('dd')}
+                style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
+                ⚡ Direct Deposit
+              </button>
+            </>
+          )}
+
+          {/* Status change + delete (for printed/deposited history rows) */}
+          {selectedHistoryStubs.size > 0 && (
+            <>
+              {totalActionCount > 0 && <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />}
+              <span style={{ fontSize: 12, opacity: 0.85 }}>Set status:</span>
+              {[
+                { value: 'printed',                label: 'Printed' },
+                { value: 'direct_deposit_cleared', label: 'Deposited' },
+                { value: 'draft',                  label: 'Upcoming' },
+              ].map(({ value, label }) => (
+                <button key={value} disabled={bulkBusy}
+                  onClick={() => handleBulkStatusChange(value)}
+                  style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
+                  {label}
+                </button>
+              ))}
+              <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
+              <button disabled={bulkBusy} onClick={async () => {
+                setBulkBusy(true);
+                try { await api.printSelectedChecks(clientId, [...selectedHistoryStubs]); } catch (e) { alert(e.message); }
+                finally { setBulkBusy(false); }
+              }} style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
+                ↓ Paycheck
+              </button>
+              <button disabled={bulkBusy} onClick={async () => {
+                setBulkBusy(true);
+                try { await api.printSelectedPaystubs(clientId, [...selectedHistoryStubs]); } catch (e) { alert(e.message); }
+                finally { setBulkBusy(false); }
+              }} style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
+                ↓ Paystub
+              </button>
+              <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
+              <button disabled={bulkBusy} onClick={handleBulkDelete}
+                style={{ background: '#dc2626', border: 'none', borderRadius: 5, color: '#fff', padding: '5px 14px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>
+                {bulkBusy ? <span className="spinner" style={{ width: 12, height: 12 }} /> : '🗑 Delete'}
+              </button>
+            </>
+          )}
+
+          <button onClick={() => {
+            setSelectedHistoryStubs(new Set());
+            setSelectedLateStubs(new Set());
+            setPendingRows(prev => {
+              const next = {};
+              for (const [end, empMap] of Object.entries(prev)) {
+                next[end] = {};
+                for (const [empId, row] of Object.entries(empMap)) {
+                  next[end][empId] = { ...row, selected: false };
+                }
+              }
+              return next;
+            });
+          }} style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 5, color: '#fff', padding: '3px 8px', fontSize: 12, cursor: 'pointer' }}>
             ✕ Cancel
           </button>
         </div>
