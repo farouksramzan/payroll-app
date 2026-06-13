@@ -2637,20 +2637,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
         )}
       </div>
 
-      {isGroupDeleted && (
-        <div className="alert alert-error" style={{ marginBottom: 12, fontSize: 12 }}>
-          <span>⚠</span> This pay group has been deleted. Historical checks are shown below for reference.
-        </div>
-      )}
-      {runErr     && <div className="alert alert-error"   style={{ marginBottom: 10 }}><span>⚠</span>{runErr}<button onClick={() => setRunErr('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button></div>}
-      {runSuccess && <div className="alert alert-success" style={{ marginBottom: 10 }}><span>✓</span>{runSuccess}<button onClick={() => setRunSuccess('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button></div>}
-
-      {/* Bulk action bar — sticky at bottom so it's always visible when checks are selected */}
+      {/* Bulk action bar — appears at top when checks are selected */}
       {selectedHistoryStubs.size > 0 && (
-        <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 200, display: 'flex', alignItems: 'center', gap: 10, background: '#16a34a', color: '#fff', padding: '10px 24px', flexWrap: 'wrap', boxShadow: '0 -4px 20px rgba(0,0,0,0.18)' }}>
-          <span style={{ fontWeight: 700, fontSize: 13 }}>{selectedHistoryStubs.size} check{selectedHistoryStubs.size !== 1 ? 's' : ''} selected</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#15803d', color: '#fff', padding: '9px 16px', borderRadius: 10, marginBottom: 12, flexWrap: 'wrap', boxShadow: '0 2px 12px rgba(21,128,61,0.25)' }}>
+          <span style={{ fontWeight: 700, fontSize: 13 }}>✓ {selectedHistoryStubs.size} check{selectedHistoryStubs.size !== 1 ? 's' : ''} selected</span>
           <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
-          <span style={{ fontSize: 12, opacity: 0.85 }}>Change status:</span>
+          <span style={{ fontSize: 12, opacity: 0.85 }}>Set status:</span>
           {[
             { value: 'printed',                label: 'Printed' },
             { value: 'direct_deposit_cleared', label: 'Deposited' },
@@ -2684,10 +2676,18 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           </button>
           <button onClick={() => setSelectedHistoryStubs(new Set())}
             style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 5, color: '#fff', padding: '3px 8px', fontSize: 12, cursor: 'pointer' }}>
-            Cancel
+            ✕ Cancel
           </button>
         </div>
       )}
+
+      {isGroupDeleted && (
+        <div className="alert alert-error" style={{ marginBottom: 12, fontSize: 12 }}>
+          <span>⚠</span> This pay group has been deleted. Historical checks are shown below for reference.
+        </div>
+      )}
+      {runErr     && <div className="alert alert-error"   style={{ marginBottom: 10 }}><span>⚠</span>{runErr}<button onClick={() => setRunErr('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button></div>}
+      {runSuccess && <div className="alert alert-success" style={{ marginBottom: 10 }}><span>✓</span>{runSuccess}<button onClick={() => setRunSuccess('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button></div>}
 
       {/* Main table: pending + late checks */}
       {mainRows.length > 0 && (
