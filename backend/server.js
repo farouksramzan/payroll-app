@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 const path    = require('path');
 const fs      = require('fs');
 const { getDb } = require('./src/database/db');
+const { seedDemo } = require('./scripts/seed-demo');
 const bridgeManager = require('./src/ws/bridge');
 const notificationService = require('./src/services/notificationService');
 const notificationCron    = require('./src/cron/notificationCron');
@@ -264,6 +265,9 @@ bridgeManager.attach(httpServer);
 // ── Initialize notifications ──────────────────────────────────────────────────
 notificationService.init();
 notificationCron.start();
+
+// Seed demo data on every boot (idempotent — skips if already present)
+try { seedDemo(getDb()); } catch (e) { console.warn('[seed-demo] Skipped:', e.message); }
 
 httpServer.listen(PORT, () => {
   console.log(`PayrollTax Pro server on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
