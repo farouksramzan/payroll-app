@@ -2317,19 +2317,48 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
 
   // Flat table renderer — clicking a row opens CheckDetailModal
   function renderTable(rows, startIdx = 0) {
+    // History rows (Printed & Deposited — have stubs in DB, support delete/status)
     const selectableIds = rows
       .filter(r => r.type === 'history' && r.stub.check_status !== 'voided')
       .map(r => r.stub.id);
-    const allSel = selectableIds.length > 0 && selectableIds.every(id => selectedHistoryStubs.has(id));
-    const someSel = selectableIds.some(id => selectedHistoryStubs.has(id));
+    const allHistSel = selectableIds.length > 0 && selectableIds.every(id => selectedHistoryStubs.has(id));
+    const someHistSel = selectableIds.some(id => selectedHistoryStubs.has(id));
+
+    // Pending rows (scheduled, not yet run — no stub in DB)
+    const pendingRowsInTable = rows.filter(r => r.type === 'pending');
+    const allPendSel = pendingRowsInTable.length > 0 && pendingRowsInTable.every(r => getRow(r.period.end, r.emp.id).selected);
+    const somePendSel = pendingRowsInTable.some(r => getRow(r.period.end, r.emp.id).selected);
+
+    // Combined select-all state
+    const totalSelectable = selectableIds.length + pendingRowsInTable.length;
+    const allSel = totalSelectable > 0
+      && (selectableIds.length === 0 || allHistSel)
+      && (pendingRowsInTable.length === 0 || allPendSel);
+    const someSel = someHistSel || somePendSel;
+
     function toggleAll() {
+      const shouldSelect = !allSel;
+      // Toggle history rows
       setSelectedHistoryStubs(prev => {
         const next = new Set(prev);
-        if (allSel) selectableIds.forEach(id => next.delete(id));
-        else selectableIds.forEach(id => next.add(id));
+        selectableIds.forEach(id => shouldSelect ? next.add(id) : next.delete(id));
         return next;
       });
+      // Toggle pending rows (batch update to avoid stale-state issues)
+      if (pendingRowsInTable.length > 0) {
+        setPendingRows(prev => {
+          const next = { ...prev };
+          pendingRowsInTable.forEach(r => {
+            next[r.period.end] = {
+              ...(next[r.period.end] || {}),
+              [r.emp.id]: { ...((next[r.period.end] || {})[r.emp.id] || {}), selected: shouldSelect },
+            };
+          });
+          return next;
+        });
+      }
     }
+
     return (
       <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 12 }}>
         <colgroup>
@@ -2347,7 +2376,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
         <thead>
           <tr style={{ borderBottom: '2px solid var(--border)', background: 'var(--bg-secondary)' }}>
             <th style={{ padding: '7px 0 7px 12px' }}>
-              {selectableIds.length > 0 && (
+              {totalSelectable > 0 && (
                 <input type="checkbox" checked={allSel} ref={el => { if (el) el.indeterminate = someSel && !allSel; }}
                   onChange={toggleAll}
                   style={{ accentColor: 'var(--accent)', width: 13, height: 13, cursor: 'pointer' }} />
