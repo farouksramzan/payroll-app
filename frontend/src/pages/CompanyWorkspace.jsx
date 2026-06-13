@@ -2667,88 +2667,79 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       </div>
 
       {/* Bulk action bar — appears at top whenever any checkbox is checked */}
-      {(selectedHistoryStubs.size > 0 || totalActionCount > 0) && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: '#15803d', color: '#fff', padding: '9px 16px', borderRadius: 10, marginBottom: 12, flexWrap: 'wrap', boxShadow: '0 2px 12px rgba(21,128,61,0.25)' }}>
-          <span style={{ fontWeight: 700, fontSize: 13 }}>
-            ✓ {selectedHistoryStubs.size + totalActionCount} check{(selectedHistoryStubs.size + totalActionCount) !== 1 ? 's' : ''} selected
-          </span>
-          <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
-
-          {/* Run payroll (for pending/late rows) */}
-          {totalActionCount > 0 && (
-            <>
-              <button disabled={running} onClick={() => handleRunPayroll('print')}
-                style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
-                🖨 Print Paycheck
-              </button>
-              <button disabled={running} onClick={() => handleRunPayroll('paystub')}
-                style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
-                📄 Print Paystub
-              </button>
-              <button disabled={running} onClick={() => handleRunPayroll('dd')}
-                style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
-                ⚡ Direct Deposit
-              </button>
-            </>
-          )}
-
-          {/* Status change + delete (for printed/deposited history rows) */}
-          {selectedHistoryStubs.size > 0 && (
-            <>
-              {totalActionCount > 0 && <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />}
-              <span style={{ fontSize: 12, opacity: 0.85 }}>Set status:</span>
-              {[
-                { value: 'printed',                label: 'Printed' },
-                { value: 'direct_deposit_cleared', label: 'Deposited' },
-                { value: 'draft',                  label: 'Upcoming' },
-              ].map(({ value, label }) => (
-                <button key={value} disabled={bulkBusy}
-                  onClick={() => handleBulkStatusChange(value)}
-                  style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
-                  {label}
-                </button>
-              ))}
-              <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
-              <button disabled={bulkBusy} onClick={async () => {
-                setBulkBusy(true);
-                try { await api.printSelectedChecks(clientId, [...selectedHistoryStubs]); } catch (e) { alert(e.message); }
-                finally { setBulkBusy(false); }
-              }} style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
-                ↓ Paycheck
-              </button>
-              <button disabled={bulkBusy} onClick={async () => {
-                setBulkBusy(true);
-                try { await api.printSelectedPaystubs(clientId, [...selectedHistoryStubs]); } catch (e) { alert(e.message); }
-                finally { setBulkBusy(false); }
-              }} style={{ background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 }}>
-                ↓ Paystub
-              </button>
-              <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
-              <button disabled={bulkBusy} onClick={handleBulkDelete}
-                style={{ background: '#dc2626', border: 'none', borderRadius: 5, color: '#fff', padding: '5px 14px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>
-                {bulkBusy ? <span className="spinner" style={{ width: 12, height: 12 }} /> : '🗑 Delete'}
-              </button>
-            </>
-          )}
-
-          <button onClick={() => {
-            setSelectedHistoryStubs(new Set());
-            setSelectedLateStubs(new Set());
-            setPendingRows(prev => {
-              const next = {};
-              for (const [end, empMap] of Object.entries(prev)) {
-                next[end] = {};
-                for (const [empId, row] of Object.entries(empMap)) {
-                  next[end][empId] = { ...row, selected: false };
-                }
+      {(selectedHistoryStubs.size > 0 || totalActionCount > 0) && (() => {
+        const btnStyle = { background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '4px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 600 };
+        const totalSel = selectedHistoryStubs.size + totalActionCount;
+        function clearAll() {
+          setSelectedHistoryStubs(new Set());
+          setSelectedLateStubs(new Set());
+          setPendingRows(prev => {
+            const next = {};
+            for (const [end, empMap] of Object.entries(prev)) {
+              next[end] = {};
+              for (const [empId, row] of Object.entries(empMap)) {
+                next[end][empId] = { ...row, selected: false };
               }
-              return next;
-            });
-          }} style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 5, color: '#fff', padding: '3px 8px', fontSize: 12, cursor: 'pointer' }}>
-            ✕ Cancel
-          </button>
-        </div>
-      )}
+            }
+            return next;
+          });
+        }
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#15803d', color: '#fff', padding: '9px 16px', borderRadius: 10, marginBottom: 12, flexWrap: 'wrap', boxShadow: '0 2px 12px rgba(21,128,61,0.25)' }}>
+            <span style={{ fontWeight: 700, fontSize: 13, marginRight: 4 }}>✓ {totalSel} check{totalSel !== 1 ? 's' : ''} selected</span>
+
+            {/* Run payroll — always shown */}
+            <button disabled={running || bulkBusy} onClick={() => handleRunPayroll('print')} style={btnStyle}>🖨 Print Paycheck</button>
+            <button disabled={running || bulkBusy} onClick={() => handleRunPayroll('paystub')} style={btnStyle}>📄 Print Paystub</button>
+            <button disabled={running || bulkBusy} onClick={() => handleRunPayroll('dd')} style={btnStyle}>⚡ Direct Deposit</button>
+
+            <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
+
+            {/* Download PDFs for already-processed checks */}
+            <button disabled={bulkBusy} onClick={async () => {
+              if (selectedHistoryStubs.size === 0) { alert('Select checks from the Printed & Deposited section to download paychecks.'); return; }
+              setBulkBusy(true);
+              try { await api.printSelectedChecks(clientId, [...selectedHistoryStubs]); } catch (e) { alert(e.message); }
+              finally { setBulkBusy(false); }
+            }} style={btnStyle}>↓ Paycheck PDF</button>
+            <button disabled={bulkBusy} onClick={async () => {
+              if (selectedHistoryStubs.size === 0) { alert('Select checks from the Printed & Deposited section to download paystubs.'); return; }
+              setBulkBusy(true);
+              try { await api.printSelectedPaystubs(clientId, [...selectedHistoryStubs]); } catch (e) { alert(e.message); }
+              finally { setBulkBusy(false); }
+            }} style={btnStyle}>↓ Paystub PDF</button>
+
+            <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
+
+            {/* Change status */}
+            <span style={{ fontSize: 12, opacity: 0.85 }}>Status:</span>
+            {[
+              { value: 'printed',                label: 'Printed' },
+              { value: 'direct_deposit_cleared', label: 'Deposited' },
+              { value: 'draft',                  label: 'Upcoming' },
+            ].map(({ value, label }) => (
+              <button key={value} disabled={bulkBusy} onClick={async () => {
+                if (selectedHistoryStubs.size === 0) { alert('Select checks from the Printed & Deposited section to change status.'); return; }
+                await handleBulkStatusChange(value);
+              }} style={btnStyle}>{label}</button>
+            ))}
+
+            <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
+
+            {/* Delete */}
+            <button disabled={bulkBusy} onClick={async () => {
+              if (selectedHistoryStubs.size === 0) { alert('Select checks from the Printed & Deposited section to delete them.\n\nThe LATE rows above are upcoming scheduled pay periods — they cannot be individually deleted.'); return; }
+              await handleBulkDelete();
+            }} style={{ background: '#dc2626', border: 'none', borderRadius: 5, color: '#fff', padding: '5px 14px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>
+              {bulkBusy ? <span className="spinner" style={{ width: 12, height: 12 }} /> : '🗑 Delete'}
+            </button>
+
+            <button onClick={clearAll} style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 5, color: '#fff', padding: '3px 8px', fontSize: 12, cursor: 'pointer' }}>
+              ✕ Cancel
+            </button>
+          </div>
+        );
+      })()}
 
       {isGroupDeleted && (
         <div className="alert alert-error" style={{ marginBottom: 12, fontSize: 12 }}>
