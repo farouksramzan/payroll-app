@@ -92,6 +92,7 @@ function sanitizeClient(client, includeSecrets = false) {
     createdAt: client.created_at,
     updatedAt: client.updated_at,
     hasBatchProviderPin: !!client.batch_provider_pin_encrypted && client.batch_provider_pin_encrypted !== '',
+    eftpsEnrolled: !!client.eftps_enrolled,
     hasBankAccount: !!client.bank_account_number_encrypted,
     hasInternetPassword: !!client.eftps_internet_password_encrypted,
     twcUsername: client.twc_username || null,
@@ -382,6 +383,19 @@ router.put('/:id', (req, res) => {
 
   const updated = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.params.id);
   res.json(sanitizeClient(updated));
+});
+
+// PUT /api/clients/:id/pin  — set EFTPS enrollment PIN directly (no bridge needed)
+router.put('/:id/pin', (req, res) => {
+  const db = getDb();
+  const client = db.prepare('SELECT id, business_name, ein FROM clients WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+  const { pin } = req.body;
+  if (!pin || !/^\d{4}$/.test(String(pin))) return res.status(400).json({ error: 'PIN must be exactly 4 digits' });
+  db.prepare('UPDATE clients SET batch_provider_pin_encrypted = ?, eftps_enrolled = 1 WHERE id = ?')
+    .run(encrypt(String(pin)), client.id);
+  console.log(`[PIN] Updated PIN for "${client.business_name}" (EIN ${client.ein}) via direct endpoint`);
+  res.json({ ok: true, message: `PIN updated for ${client.business_name}` });
 });
 
 // DELETE /api/clients/:id

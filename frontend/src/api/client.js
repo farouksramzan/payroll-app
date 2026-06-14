@@ -39,6 +39,7 @@ const api = {
   getClient: (id) => request(`/clients/${id}`),
   createClient: (data) => request('/clients', { method: 'POST', body: JSON.stringify(data) }),
   updateClient: (id, data) => request(`/clients/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  updateClientPin: (id, pin) => request(`/clients/${id}/pin`, { method: 'PUT', body: JSON.stringify({ pin }) }),
   deleteClient: (id) => request(`/clients/${id}`, { method: 'DELETE' }),
 
   // Employees
