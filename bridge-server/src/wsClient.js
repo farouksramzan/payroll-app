@@ -242,7 +242,7 @@ async function runPaymentWithRetry(achFilePath, logFn) {
           || (err.stdout || '').includes('IMPORT_RETRY_NEEDED');
 
         if (isRetrySignal && attempt < MAX_IMPORT_RETRIES) {
-          logFn(`[BP] Import error — will retry in 10 minutes (attempt ${attempt}/${MAX_IMPORT_RETRIES})`);
+          logFn(`[BP] Import error (Error ID 88 or similar) — retrying in 10 seconds (attempt ${attempt}/${MAX_IMPORT_RETRIES})`);
           await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
           logFn(`[BP] Retrying import now (attempt ${attempt + 1}/${MAX_IMPORT_RETRIES})`);
           continue;

@@ -109,6 +109,107 @@ def is_file_format_selector_open():
         return False
 
 
+# ── Error ID 88 popup detection ───────────────────────────────────────────────
+# When EFTPS throws Error ID 88 the File Format Selector sometimes CLOSES and
+# a *separate* error popup appears. wait_for_import() sees the selector close
+# and incorrectly returns True (apparent success). We detect and dismiss the
+# stray error popup here so the retry signal is sent correctly.
+
+_EFTPS_ERROR_KEYWORDS = ('Error ID', 'Unable to process', 'unsuccessful', 'EFTPS Batch Provider')
+
+def _find_eftps_error_popup():
+    """
+    Return (hwnd, title) of a visible EFTPS error popup, or (0, '') if none found.
+    Looks for windows whose title or child text matches known EFTPS error patterns.
+    """
+    try:
+        import win32gui
+        result = [0, '']
+        def _cb(hwnd, _):
+            try:
+                if not win32gui.IsWindowVisible(hwnd):
+                    return
+                title = win32gui.GetWindowText(hwnd)
+                if any(k in title for k in _EFTPS_ERROR_KEYWORDS):
+                    result[0] = hwnd
+                    result[1] = title
+            except Exception:
+                pass
+        win32gui.EnumWindows(_cb, None)
+        return result[0], result[1]
+    except Exception as e:
+        log('_find_eftps_error_popup error: ' + str(e))
+        return 0, ''
+
+
+def dismiss_eftps_error_popup():
+    """
+    Dismiss a stray EFTPS error popup (e.g. Error ID 88 shown in a separate dialog).
+    Returns True if a popup was found and dismissed, False if none found.
+    """
+    hwnd, title = _find_eftps_error_popup()
+    if not hwnd:
+        # pygetwindow fallback scan
+        try:
+            import pygetwindow as gw
+            for w in gw.getAllWindows():
+                if any(k in w.title for k in _EFTPS_ERROR_KEYWORDS):
+                    log('EFTPS error popup found via pygetwindow: "' + w.title + '"')
+                    hwnd = None  # can't get HWND from pygetwindow easily
+                    break
+        except Exception:
+            pass
+        if not hwnd:
+            return False
+
+    log('EFTPS error popup detected: "' + title + '" (hwnd=' + str(hwnd) + ')')
+    BM_CLICK = 0x00F5
+
+    # Try BM_CLICK on OK/Close child button
+    try:
+        import win32gui
+        ok_handles = []
+        def _child_cb(h, _):
+            try:
+                cls = win32gui.GetClassName(h)
+                txt = win32gui.GetWindowText(h).strip().lstrip('&').lower()
+                if cls == 'Button' and txt in ('ok', 'close', 'yes'):
+                    ok_handles.append(h)
+            except Exception:
+                pass
+        win32gui.EnumChildWindows(hwnd, _child_cb, None)
+        if ok_handles:
+            log('Sending BM_CLICK to error popup OK button (hwnd=' + str(ok_handles[0]) + ')')
+            win32gui.PostMessage(ok_handles[0], BM_CLICK, 0, 0)
+            time.sleep(1.0)
+            h2, _ = _find_eftps_error_popup()
+            if not h2:
+                log('Error popup dismissed via BM_CLICK')
+                return True
+        # Bring to foreground and click
+        import win32con
+        win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
+        win32gui.SetForegroundWindow(hwnd)
+        time.sleep(0.5)
+    except Exception as e:
+        log('win32gui dismiss attempt failed: ' + str(e))
+
+    # Coordinate click fallback at BP_ERROR_OK coords
+    for attempt in range(3):
+        log('Clicking error popup OK at (' + str(BP_ERROR_OK_X) + ', ' + str(BP_ERROR_OK_Y) + ') — attempt ' + str(attempt + 1))
+        pyautogui.click(BP_ERROR_OK_X, BP_ERROR_OK_Y)
+        time.sleep(0.8)
+        h2, _ = _find_eftps_error_popup()
+        if not h2:
+            log('Error popup dismissed via coordinate click')
+            return True
+
+    log('Pressing Enter as final fallback for error popup')
+    pyautogui.press('enter')
+    time.sleep(0.5)
+    return True
+
+
 def dismiss_file_format_selector():
     """
     Dismiss the File Format Selector error dialog (e.g. Error ID 88).
@@ -584,11 +685,21 @@ def main():
 
     # Poll until the import dialog closes (success) or times out (error).
     # On success the File Format Selector closes automatically.
-    # On error (e.g. Error ID 88) it stays open with an error banner.
+    # On error (e.g. Error ID 88) it may stay open WITH an error banner,
+    # OR it may close and a SEPARATE error popup appears (false-positive success).
     if not wait_for_import(max_wait=30):
-        log('Dismissing dialog with Enter key (coordinate-free)')
+        # File Format Selector still open — Error ID 88 banner inside it
+        log('File Format Selector still open — Error ID 88 detected (classic path)')
         dismiss_file_format_selector()
-        log('Dialog dismissed — signaling retry in 10 minutes')
+        log('Dialog dismissed — signaling retry')
+        print('IMPORT_RETRY_NEEDED', flush=True)
+        sys.exit(0)
+
+    # File Format Selector closed — but check for a stray EFTPS error popup
+    # (Error ID 88 variant where FFS closes and a separate error dialog appears)
+    time.sleep(1.5)
+    if dismiss_eftps_error_popup():
+        log('Stray EFTPS error popup detected and dismissed after apparent import success — signaling retry')
         print('IMPORT_RETRY_NEEDED', flush=True)
         sys.exit(0)
 
@@ -599,8 +710,11 @@ def main():
         img('checkbox.png'), confidence=CONFIDENCE, region=checkbox_region
     ))
     if not checkboxes:
-        print('IMPORT_FAILED: No payment checkboxes found', flush=True)
-        sys.exit(1)
+        # No checkboxes right after an apparent successful import = silent import failure.
+        # Signal retry rather than hard-failing so the job gets another chance.
+        log('No payment checkboxes found after import — treating as silent import failure, signaling retry')
+        print('IMPORT_RETRY_NEEDED', flush=True)
+        sys.exit(0)
     log('Found ' + str(len(checkboxes)) + ' checkbox(es)')
 
     first = pyautogui.center(checkboxes[0])
