@@ -70,6 +70,21 @@ function buildDashboard(bridgeClient, jobLog) {
     }
   });
 
+  // ── PIN update — sends update_pin message to Railway over the existing WS ──
+  app.post('/api/update-pin', (req, res) => {
+    const { ein, pin } = req.body;
+    if (!ein || !pin) return res.status(400).json({ ok: false, error: 'ein and pin required' });
+    if (!/^\d{4}$/.test(String(pin))) return res.status(400).json({ ok: false, error: 'PIN must be exactly 4 digits' });
+    if (bridgeClient.status !== 'connected') return res.status(503).json({ ok: false, error: 'Bridge not connected to Railway — cannot update PIN' });
+    try {
+      bridgeClient._send({ type: 'update_pin', ein: String(ein).replace(/-/g, ''), enrollmentPin: String(pin) });
+      console.log(`[Bridge] PIN update sent to Railway for EIN ${ein}`);
+      res.json({ ok: true, message: `PIN updated for EIN ${ein}` });
+    } catch (err) {
+      res.status(500).json({ ok: false, error: err.message });
+    }
+  });
+
   // ── Dashboard HTML ────────────────────────────────────────────────────────
   app.get('/', (req, res) => {
     res.send(DASHBOARD_HTML);
@@ -156,6 +171,40 @@ const DASHBOARD_HTML = `<!DOCTYPE html>
     <div class="panel-header">Live Log</div>
     <div class="log" id="log"></div>
   </div>
+
+  <div class="panel">
+    <div class="panel-header">Update Enrollment PIN</div>
+    <div style="padding:18px 20px">
+      <p style="color:#94a3b8;font-size:13px;margin-bottom:16px">
+        Use this to set or correct a company's EFTPS Batch Provider PIN without touching the web app.
+        The PIN is sent directly to the Railway database over the existing connection.
+      </p>
+      <div style="display:flex;gap:12px;align-items:flex-end;flex-wrap:wrap">
+        <div>
+          <label style="display:block;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">Company EIN</label>
+          <input id="pin-ein" type="text" placeholder="XX-XXXXXXX or 9 digits"
+            style="background:#0d1b2a;border:1px solid #2d4263;border-radius:6px;color:#f1f5f9;padding:8px 12px;font-size:14px;font-family:monospace;width:200px;outline:none" />
+        </div>
+        <div>
+          <label style="display:block;font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px">New PIN (4 digits)</label>
+          <input id="pin-val" type="text" maxlength="4" placeholder="0000"
+            style="background:#0d1b2a;border:1px solid #2d4263;border-radius:6px;color:#f1f5f9;padding:8px 12px;font-size:18px;font-family:monospace;width:100px;outline:none;letter-spacing:4px;text-align:center" />
+        </div>
+        <button onclick="updatePin()"
+          style="background:#2563eb;color:#fff;border:none;border-radius:6px;padding:9px 20px;font-size:13px;font-weight:700;cursor:pointer;height:38px">
+          Update PIN
+        </button>
+      </div>
+      <div id="pin-result" style="margin-top:12px;font-size:13px;display:none"></div>
+      <p style="color:#475569;font-size:12px;margin-top:14px">
+        💡 Tip — you can also pick an EIN from a recent submission:
+        <select id="pin-ein-picker" onchange="if(this.value)document.getElementById('pin-ein').value=this.value"
+          style="background:#0d1b2a;border:1px solid #2d4263;border-radius:4px;color:#94a3b8;padding:3px 8px;font-size:12px;margin-left:6px">
+          <option value="">— pick from recent jobs —</option>
+        </select>
+      </p>
+    </div>
+  </div>
 </main>
 
 <script>
@@ -192,6 +241,7 @@ function renderStats(stats) {
 
 function loadJobs() {
   fetch('/api/jobs').then(r=>r.json()).then(jobs => {
+    populateEinPicker(jobs);
     if (!jobs.length) { tableEl.innerHTML='<div class="empty">No submissions yet</div>'; return; }
     countEl.textContent = jobs.length + ' entries';
     tableEl.innerHTML = '<table><thead><tr>' +
@@ -235,6 +285,47 @@ function clearPendingEnrollments() {
     .then(r=>r.json())
     .then(d => addLog(d.ok ? '✓ Pending enrollments cleared' : '✗ Clear failed: ' + d.error))
     .catch(()=>addLog('✗ Clear request failed'));
+}
+
+function updatePin() {
+  const ein = document.getElementById('pin-ein').value.trim().replace(/-/g,'');
+  const pin = document.getElementById('pin-val').value.trim();
+  const res = document.getElementById('pin-result');
+  if (!ein || ein.length < 9) { showPinResult('✗ Enter a valid 9-digit EIN', false); return; }
+  if (!/^\d{4}$/.test(pin))   { showPinResult('✗ PIN must be exactly 4 digits', false); return; }
+  fetch('/api/update-pin', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ein, pin})})
+    .then(r=>r.json())
+    .then(d => {
+      showPinResult(d.ok ? '✓ ' + d.message : '✗ ' + d.error, d.ok);
+      if (d.ok) { addLog('PIN updated for EIN ' + ein); document.getElementById('pin-val').value = ''; }
+    })
+    .catch(()=>showPinResult('✗ Request failed', false));
+}
+
+function showPinResult(msg, ok) {
+  const el = document.getElementById('pin-result');
+  el.textContent = msg;
+  el.style.color  = ok ? '#10b981' : '#ef4444';
+  el.style.display = 'block';
+  setTimeout(()=>{ el.style.display='none'; }, 5000);
+}
+
+function populateEinPicker(jobs) {
+  const seen = new Map();
+  jobs.forEach(j => {
+    const ein = j.job?.ein;
+    const name = j.job?.businessName;
+    if (ein && !seen.has(ein)) seen.set(ein, name || ein);
+  });
+  const picker = document.getElementById('pin-ein-picker');
+  // Clear old options except the placeholder
+  while (picker.options.length > 1) picker.remove(1);
+  seen.forEach((name, ein) => {
+    const opt = document.createElement('option');
+    opt.value = ein;
+    opt.textContent = name + ' (' + ein + ')';
+    picker.appendChild(opt);
+  });
 }
 
 // Initial load

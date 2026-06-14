@@ -132,6 +132,7 @@ class BridgeManager extends EventEmitter {
       case 'result':               this._handleResult(msg);             break;
       case 'status_update':        this._handleStatusUpdate(msg);       break;
       case 'enrollment_confirmed': this._handleEnrollmentConfirmed(msg); break;
+      case 'update_pin':           this._handleUpdatePin(msg);           break;
       case 'ping':                 ws.send(JSON.stringify({ type: 'pong' })); break;
       case 'pong':                 ws.isAlive = true;                   break;
       default:                     console.log(`[Bridge WS] Unknown type: ${msg.type}`);
@@ -178,6 +179,35 @@ class BridgeManager extends EventEmitter {
       this.emit('enrollmentConfirmed', { clientId, ein });
     } catch (e) {
       console.error(`[Bridge WS] enrollment_confirmed DB update failed:`, e.message);
+    }
+  }
+
+  // Manual PIN update sent from the bridge dashboard — looks up client by EIN
+  _handleUpdatePin(msg) {
+    const { ein, enrollmentPin } = msg;
+    if (!ein || !enrollmentPin) {
+      console.warn(`[Bridge WS] update_pin missing ein or PIN`);
+      return;
+    }
+    if (!/^\d{4}$/.test(String(enrollmentPin))) {
+      console.warn(`[Bridge WS] update_pin rejected — PIN must be 4 digits`);
+      return;
+    }
+    try {
+      const { getDb }   = require('../database/db');
+      const { encrypt } = require('../services/cryptoService');
+      const db = getDb();
+      const cleanEin = String(ein).replace(/-/g, '');
+      const client = db.prepare(`SELECT id, business_name FROM clients WHERE REPLACE(ein, '-', '') = ?`).get(cleanEin);
+      if (!client) {
+        console.warn(`[Bridge WS] update_pin — no client found for EIN ${cleanEin}`);
+        return;
+      }
+      db.prepare('UPDATE clients SET batch_provider_pin_encrypted = ?, eftps_enrolled = 1 WHERE id = ?')
+        .run(encrypt(enrollmentPin), client.id);
+      console.log(`[Bridge WS] update_pin: PIN updated for "${client.business_name}" (EIN ${cleanEin}, client ${client.id}), marked eftps_enrolled=1`);
+    } catch (e) {
+      console.error(`[Bridge WS] update_pin failed:`, e.message);
     }
   }
 
