@@ -575,6 +575,20 @@ class BridgeClient extends EventEmitter {
         removePendingEnrollment(job.ein);
         _enrollingEINs.delete(cleanEin(job.ein));
         log(`EIN ${cleanEin(job.ein)} confirmed Active and added to enrolled_clients.json`);
+
+        // Immediately persist the PIN and enrolled status back to Railway DB.
+        // This runs before the payment attempt so that even if the payment fails
+        // (e.g. Error ID 88 exhausted), the PIN is already saved and the company
+        // won't be re-enrolled on the next run.
+        if (generatedEnrollmentPin && job.clientId) {
+          this._send({
+            type: 'enrollment_confirmed',
+            clientId:      job.clientId,
+            ein:           job.ein,
+            enrollmentPin: generatedEnrollmentPin,
+          });
+          log(`[ENROLL] Sent enrollment_confirmed to Railway — PIN saved for client ${job.clientId}`);
+        }
       } else if (!enrollmentWasInProgress) {
         log(`EIN ${cleanEin(job.ein)} already enrolled (eftpsEnrolled=${job.eftpsEnrolled}, localJson=${isEnrolled(job.ein)}) — skipping enrollment`);
         // Sync local JSON cache if Railway says enrolled but local file doesn't know yet

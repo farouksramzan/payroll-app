@@ -129,11 +129,12 @@ class BridgeManager extends EventEmitter {
     }
 
     switch (msg.type) {
-      case 'result':        this._handleResult(msg);       break;
-      case 'status_update': this._handleStatusUpdate(msg); break;
-      case 'ping':          ws.send(JSON.stringify({ type: 'pong' })); break;
-      case 'pong':          ws.isAlive = true;             break;
-      default:              console.log(`[Bridge WS] Unknown type: ${msg.type}`);
+      case 'result':               this._handleResult(msg);             break;
+      case 'status_update':        this._handleStatusUpdate(msg);       break;
+      case 'enrollment_confirmed': this._handleEnrollmentConfirmed(msg); break;
+      case 'ping':                 ws.send(JSON.stringify({ type: 'pong' })); break;
+      case 'pong':                 ws.isAlive = true;                   break;
+      default:                     console.log(`[Bridge WS] Unknown type: ${msg.type}`);
     }
   }
 
@@ -156,6 +157,28 @@ class BridgeManager extends EventEmitter {
       ws.isAlive = false;
       ws.ping();
     }, SERVER_PING_MS);
+  }
+
+  // Called as soon as EFTPS confirms the enrollment is Active — before the payment
+  // attempt. Persists the PIN and enrolled flag immediately so that if the payment
+  // subsequently fails, the company won't be re-enrolled on the next run.
+  _handleEnrollmentConfirmed(msg) {
+    const { clientId, ein, enrollmentPin } = msg;
+    if (!clientId || !enrollmentPin) {
+      console.warn(`[Bridge WS] enrollment_confirmed missing clientId or PIN — skipping DB update`);
+      return;
+    }
+    try {
+      const { getDb }     = require('../database/db');
+      const { encrypt }   = require('../services/cryptoService');
+      const db = getDb();
+      db.prepare('UPDATE clients SET batch_provider_pin_encrypted = ?, eftps_enrolled = 1 WHERE id = ?')
+        .run(encrypt(enrollmentPin), clientId);
+      console.log(`[Bridge WS] enrollment_confirmed: client ${clientId} (EIN ${ein}) marked enrolled, PIN saved`);
+      this.emit('enrollmentConfirmed', { clientId, ein });
+    } catch (e) {
+      console.error(`[Bridge WS] enrollment_confirmed DB update failed:`, e.message);
+    }
   }
 
   _handleStatusUpdate(msg) {
