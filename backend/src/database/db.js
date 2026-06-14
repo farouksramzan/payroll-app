@@ -493,7 +493,6 @@ function migrate() {
       FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
     )
   `);
-}
 
   // ── One-time PIN fixes — run once, idempotent via eftps_enrolled check ───────
   try {
