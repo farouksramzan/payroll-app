@@ -48,9 +48,6 @@ export default function ClientDetail() {
   const [ytdMap,       setYtdMap]       = useState({});
   const [loading,      setLoading]      = useState(true);
   const [activeTab,    setActiveTab]    = useState(location.state?.tab || 'overview');
-  const [pinInput,     setPinInput]     = useState('');
-  const [pinSaving,    setPinSaving]    = useState(false);
-  const [pinMsg,       setPinMsg]       = useState(null);
   const currentYear = new Date().getFullYear();
 
   useEffect(() => {
@@ -148,38 +145,6 @@ export default function ClientDetail() {
               <InfoRow label="Phone" value={client.contactPhone} />
               <InfoRow label="Added" value={client.createdAt ? new Date(client.createdAt).toLocaleDateString() : '—'} />
               <InfoRow label="Last Updated" value={client.updatedAt ? new Date(client.updatedAt).toLocaleDateString() : '—'} />
-            </div>
-
-            {/* EFTPS PIN — admin only, not shown to clients */}
-            <div className="card" style={{ gridColumn: '1 / -1', padding: '14px 20px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)' }}>EFTPS Enrollment PIN</span>
-                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{client.hasBatchProviderPin ? '•••• set' : 'not set'} · enrolled: {client.eftpsEnrolled ? 'yes' : 'no'}</span>
-                <input
-                  type="text" inputMode="numeric" maxLength={4} placeholder="4-digit PIN"
-                  value={pinInput} onChange={e => setPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                  style={{ fontFamily: 'JetBrains Mono, monospace', letterSpacing: 4, width: 90, padding: '5px 10px', border: '1px solid var(--border)', borderRadius: 6, fontSize: 16, textAlign: 'center' }}
-                />
-                <button
-                  disabled={pinSaving || pinInput.length !== 4}
-                  onClick={async () => {
-                    setPinSaving(true); setPinMsg(null);
-                    try {
-                      await api.updateClientPin(id, pinInput);
-                      setPinMsg({ ok: true, text: 'PIN saved ✓' });
-                      setPinInput('');
-                      const updated = await api.getClient(id);
-                      setClient(updated);
-                    } catch (e) { setPinMsg({ ok: false, text: e.message }); }
-                    finally { setPinSaving(false); }
-                  }}
-                  className="btn btn-secondary btn-sm"
-                  style={{ fontSize: 13 }}
-                >
-                  {pinSaving ? '...' : 'Save PIN'}
-                </button>
-                {pinMsg && <span style={{ fontSize: 12, color: pinMsg.ok ? '#16a34a' : '#dc2626', fontWeight: 600 }}>{pinMsg.text}</span>}
-              </div>
             </div>
 
             <div className="card" style={{ gridColumn: '1 / -1' }}>
