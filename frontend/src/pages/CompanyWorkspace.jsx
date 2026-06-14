@@ -969,7 +969,7 @@ function CompanyTab({ client, onSaved }) {
       suiAccountNumber: client.suiAccountNumber || '',
       bankRoutingNumber: client.bankRoutingNumber || '',
       bankAccountType: client.bankAccountType || 'checking',
-      bankAccountNumber: '', batchProviderPin: '',
+      bankAccountNumber: '',
       twcUsername: client.twcUsername || '', twcPassword: '',
       contactName: client.contactName || '',
       contactEmail: client.contactEmail || '',
@@ -998,8 +998,7 @@ function CompanyTab({ client, onSaved }) {
         suiAccountNumber: form.suiAccountNumber || null,
       };
       if (!payload.bankAccountNumber) delete payload.bankAccountNumber;
-      if (!payload.batchProviderPin) delete payload.batchProviderPin;
-      if (!payload.twcPassword) delete payload.twcPassword;
+if (!payload.twcPassword) delete payload.twcPassword;
       await api.updateClient(client.id, payload);
       setSaved(true); onSaved();
     } catch (e) { setErr(e.message); }

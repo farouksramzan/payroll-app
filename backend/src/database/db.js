@@ -495,6 +495,21 @@ function migrate() {
   `);
 }
 
+  // ── One-time PIN fixes — run once, idempotent via eftps_enrolled check ───────
+  try {
+    const { encrypt } = require('../services/cryptoService');
+    // Balaji 24 — EIN 331912942, PIN 1404
+    const balaji = db.prepare("SELECT id FROM clients WHERE REPLACE(REPLACE(ein,'-',''),' ','') = '331912942' AND (eftps_enrolled IS NULL OR eftps_enrolled = 0 OR batch_provider_pin_encrypted IS NULL OR batch_provider_pin_encrypted = '')").get();
+    if (balaji) {
+      db.prepare('UPDATE clients SET batch_provider_pin_encrypted = ?, eftps_enrolled = 1 WHERE id = ?')
+        .run(encrypt('1404'), balaji.id);
+      console.log('[DB] Balaji 24 PIN set to 1404, marked eftps_enrolled=1');
+    }
+  } catch (e) {
+    console.error('[DB] One-time PIN migration failed:', e.message);
+  }
+}
+
 function addCols(table, cols) {
   const existing = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
   for (const { name, def } of cols) {
