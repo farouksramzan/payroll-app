@@ -685,7 +685,7 @@ router.put('/:id', (req, res) => {
     lineItems, workState, ytdGross, notes, checkStatus,
     bonus: bonusIn, commission: commissionIn, reimbursement: reimbursementIn,
     deduction: deductionIn, garnishment: garnishmentIn, reportedTips: reportedTipsIn,
-    fitWithholdingOverride,
+    fitWithholdingOverride, ssWithholdingOverride, medicareWithholdingOverride,
   } = req.body;
 
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(stub.client_id);
@@ -697,7 +697,9 @@ router.put('/:id', (req, res) => {
     payFrequency !== undefined || filingStatus !== undefined || step2Checkbox !== undefined ||
     step3Children !== undefined || step3Other !== undefined ||
     step4a !== undefined || step4b !== undefined || step4c !== undefined ||
-    fitWithholdingOverride !== undefined;
+    fitWithholdingOverride !== undefined ||
+    ssWithholdingOverride !== undefined ||
+    medicareWithholdingOverride !== undefined;
 
   const { quarter, year } = getTaxPeriod(payPeriodEnd || stub.pay_period_end);
 
@@ -736,6 +738,22 @@ router.put('/:id', (req, res) => {
       taxes.fitWithholding  = overrideFit;
       taxes.totalDeposit    = Math.round((taxes.totalDeposit + fitDelta) * 100) / 100;
       taxes.netPay          = Math.round((taxes.netPay       - fitDelta) * 100) / 100;
+    }
+
+    // SS / Medicare employee-side overrides
+    if (ssWithholdingOverride !== undefined) {
+      const overrideSS = parseFloat(ssWithholdingOverride || 0);
+      const ssDelta    = overrideSS - taxes.employeeSS;
+      taxes.employeeSS   = overrideSS;
+      taxes.totalDeposit = Math.round((taxes.totalDeposit + ssDelta) * 100) / 100;
+      taxes.netPay       = Math.round((taxes.netPay       - ssDelta) * 100) / 100;
+    }
+    if (medicareWithholdingOverride !== undefined) {
+      const overrideMed = parseFloat(medicareWithholdingOverride || 0);
+      const medDelta     = overrideMed - taxes.employeeMedicare;
+      taxes.employeeMedicare = overrideMed;
+      taxes.totalDeposit     = Math.round((taxes.totalDeposit + medDelta) * 100) / 100;
+      taxes.netPay           = Math.round((taxes.netPay       - medDelta) * 100) / 100;
     }
 
     const step3Credits =

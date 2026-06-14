@@ -98,6 +98,32 @@ router.put('/:id', (req, res) => {
     payDate !== undefined ? (payDate || null) : g.pay_date,
     g.id,
   );
+
+  // Cascade pay-date change to draft paystubs so their settlement_date stays in sync.
+  // Only update checks that haven't been finalised (printed/deposited/voided) yet.
+  if (payDate !== undefined && payDate && g.pay_date && payDate !== g.pay_date) {
+    const oldDateMs = new Date(g.pay_date  + 'T00:00:00').getTime();
+    const newDateMs = new Date(payDate     + 'T00:00:00').getTime();
+    const deltaDays = Math.round((newDateMs - oldDateMs) / 86400000);
+    if (deltaDays !== 0) {
+      const empIds = db.prepare('SELECT id FROM employees WHERE pay_group_id = ?').all(g.id).map(e => e.id);
+      if (empIds.length > 0) {
+        const ph       = empIds.map(() => '?').join(',');
+        const drafts   = db.prepare(
+          `SELECT id, settlement_date FROM paystubs WHERE employee_id IN (${ph}) AND check_status IN ('draft','printed') AND settlement_date IS NOT NULL`
+        ).all(...empIds);
+        for (const s of drafts) {
+          const d = new Date(s.settlement_date + 'T00:00:00');
+          d.setDate(d.getDate() + deltaDays);
+          // Nudge off weekends
+          while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+          db.prepare('UPDATE paystubs SET settlement_date = ? WHERE id = ?')
+            .run(d.toISOString().slice(0, 10), s.id);
+        }
+      }
+    }
+  }
+
   res.json(sanitizeGroup(db.prepare('SELECT * FROM pay_groups WHERE id = ?').get(g.id)));
 });
 

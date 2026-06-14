@@ -1234,7 +1234,14 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
   }, [clientId, refreshTick]);
 
   async function reloadStubs() {
-    try { setPaystubs(await api.getPaystubs(clientId)); } catch {}
+    try {
+      const [stubs, emps] = await Promise.all([
+        api.getPaystubs(clientId),
+        api.getEmployees(clientId),
+      ]);
+      setPaystubs(stubs);
+      setEmployees(emps);
+    } catch {}
   }
 
   const activeEmps    = employees.filter(e => e.isActive);
@@ -1684,7 +1691,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
         employees: [{ employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay, bonus: ugBonus, commission: ugComm, reimbursement: ugMile, deduction: ugCashAdv, reportedTips: ugTips }],
       });
       const newIds = (res?.paystubs || []).map(s => s.id);
-      const isDD = method === 'dd' && emp.bank_account_status === 'active';
+      const isDD = method === 'dd' && emp.directDeposit?.status === 'active';
       const statusToSet = isDD ? 'direct_deposit_sent' : 'printed';
       await Promise.all(newIds.map(id => api.updatePaystubStatus(id, statusToSet).catch(() => {})));
       await reloadStubs();
@@ -2035,11 +2042,15 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
     const compFromItems = lineItemsList.filter(li => li.pay_type === 'regular' && stub.regular_hours == null).reduce((s, li) => s + (li.amount || 0), 0);
     const displayedTips = stub.reported_tips || lineItemsList.filter(li => li.pay_type === 'tips').reduce((s, li) => s + (li.amount || 0), 0);
     const initialGross  = r2(compFromItems > 0 ? compFromItems : stub.regular_pay != null ? stub.regular_pay : (stub.gross_wages || 0));
-    const initialFit    = r2(stub.fit_withholding || 0);
+    const initialFit    = r2(stub.fit_withholding    || 0);
+    const initialSS     = r2(stub.employee_ss        || 0);
+    const initialMed    = r2(stub.employee_medicare  || 0);
 
     const [dateForm, setDateForm]     = useState({ start: stub.pay_period_start || '', end: stub.pay_period_end || '', payDate: stub.settlement_date || '' });
     const [grossOverride, setGrossOverride] = useState(String(initialGross));
     const [fitOverride, setFitOverride]     = useState(String(initialFit));
+    const [ssOverride,  setSsOverride]      = useState(String(initialSS));
+    const [medOverride, setMedOverride]     = useState(String(initialMed));
     const [itemForm, setItemForm]   = useState({
       reportedTips:  String(displayedTips       || ''),
       bonus:         String(stub.bonus          || ''),
@@ -2074,6 +2085,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       dateForm.payDate !== (stub.settlement_date  || '') ||
       parseFloat(grossOverride) !== initialGross ||
       parseFloat(fitOverride)   !== initialFit   ||
+      parseFloat(ssOverride)    !== initialSS    ||
+      parseFloat(medOverride)   !== initialMed   ||
       itemDirty
     );
     async function saveModalEdits() {
@@ -2089,6 +2102,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           // taxes using the existing stub.gross_wages (avoiding corruption of hourly OT breakdown).
           // Only send lineItems if gross also changed.
         }
+        if (parseFloat(ssOverride)  !== initialSS)  payload.ssWithholdingOverride  = parseFloat(ssOverride  || 0);
+        if (parseFloat(medOverride) !== initialMed)  payload.medicareWithholdingOverride = parseFloat(medOverride || 0);
         if (itemDirty) {
           payload.reportedTips  = parseFloat(itemForm.reportedTips  || 0);
           payload.bonus         = parseFloat(itemForm.bonus         || 0);
@@ -2141,8 +2156,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
     const liveNetPay = r2(
       liveGross
       - parseFloat(fitOverride || 0)
-      - (stub.employee_ss       || 0)
-      - (stub.employee_medicare || 0)
+      - parseFloat(ssOverride  || 0)
+      - parseFloat(medOverride || 0)
       - (stub.additional_medicare || 0)
       - (stub.state_income_tax  || 0)
       - parseFloat(itemForm.deduction   || 0)
@@ -2152,8 +2167,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
 
     const deductionRows = [
       { label: 'Federal Income Tax', amount: stub.fit_withholding   || 0, ytd: ytd.fit,     editValue: canEdit ? fitOverride : undefined, onEditChange: canEdit ? setFitOverride : undefined },
-      { label: 'Social Security',    amount: stub.employee_ss       || 0, ytd: ytd.eeSS     },
-      { label: 'Medicare',           amount: stub.employee_medicare || 0, ytd: ytd.eeMed    },
+      { label: 'Social Security', amount: stub.employee_ss       || 0, ytd: ytd.eeSS,
+        editValue: canEdit ? ssOverride  : undefined, onEditChange: canEdit ? setSsOverride  : undefined },
+      { label: 'Medicare',        amount: stub.employee_medicare || 0, ytd: ytd.eeMed,
+        editValue: canEdit ? medOverride : undefined, onEditChange: canEdit ? setMedOverride : undefined },
       (stub.additional_medicare || 0) > 0 && { label: 'Addl Medicare', amount: stub.additional_medicare, ytd: 0 },
       { label: 'State Income Tax',   amount: stub.state_income_tax  || 0, ytd: ytd.stateTax },
       ...optionalDeductions
@@ -2307,6 +2324,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
               <button onClick={() => {
                 setGrossOverride(String(initialGross));
                 setFitOverride(String(initialFit));
+                setSsOverride(String(initialSS));
+                setMedOverride(String(initialMed));
                 setItemForm({ reportedTips: String(displayedTips || ''), bonus: String(stub.bonus || ''), commission: String(stub.commission || ''), reimbursement: String(stub.reimbursement || ''), deduction: String(stub.deduction || ''), garnishment: String(stub.garnishment || '') });
                 setDateForm({ start: stub.pay_period_start || '', end: stub.pay_period_end || '', payDate: stub.settlement_date || '' });
                 const s = new Set();
@@ -3090,7 +3109,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
             const netPay    = r2(gross - (calc.fitWithholding || 0) - (calc.employeeSS || 0) - (calc.employeeMedicare || 0) - (calc.additionalMedicare || 0) - (calc.stateIncomeTax || 0) - ugCashAdv);
             const erTotal   = r2((calc.employerSS || 0) + (calc.employerMedicare || 0) + (calc.futaTax || 0) + (calc.sutaTax || 0));
             const dep941    = r2((calc.fitWithholding || 0) + (calc.employeeSS || 0) + (calc.employerSS || 0) + (calc.employeeMedicare || 0) + (calc.employerMedicare || 0) + (calc.additionalMedicare || 0));
-            const hasDD     = emp.bank_account_status === 'active';
+            const hasDD     = emp.directDeposit?.status === 'active';
             const MONO      = { fontFamily: 'JetBrains Mono, monospace' };
             const Row = ({ label, amount, ytdAmt, color, bold, borderTop, negative }) => {
               const display = negative ? (amount > 0 ? -amount : amount) : amount;
