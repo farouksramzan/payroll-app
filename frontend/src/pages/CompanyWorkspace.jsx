@@ -2086,7 +2086,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
         }
         if (parseFloat(fitOverride) !== initialFit) {
           payload.fitWithholdingOverride = parseFloat(fitOverride || 0);
-          if (!payload.lineItems) payload.lineItems = [{ payType: 'salary', amount: parseFloat(grossOverride) }];
+          // Do NOT inject a lineItems when only FIT changed — backend will recalculate
+          // taxes using the existing stub.gross_wages (avoiding corruption of hourly OT breakdown).
+          // Only send lineItems if gross also changed.
         }
         if (itemDirty) {
           payload.reportedTips  = parseFloat(itemForm.reportedTips  || 0);
@@ -2133,6 +2135,20 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       parseFloat(grossOverride || 0) +
       (stub.overtime_pay || 0) +
       optionalEarnings.filter(x => addedItems.has(x.key)).reduce((s, x) => s + parseFloat(itemForm[x.key] || 0), 0)
+    );
+
+    // Live net pay — updates as user edits FIT or gross, so "Check Amount" is never stale.
+    // SS/Medicare stay pinned to saved values (backend recalculates on save).
+    const liveNetPay = r2(
+      liveGross
+      - parseFloat(fitOverride || 0)
+      - (stub.employee_ss       || 0)
+      - (stub.employee_medicare || 0)
+      - (stub.additional_medicare || 0)
+      - (stub.state_income_tax  || 0)
+      - parseFloat(itemForm.deduction   || 0)
+      - parseFloat(itemForm.garnishment || 0)
+      + parseFloat(itemForm.reimbursement || 0)
     );
 
     const deductionRows = [
@@ -2233,7 +2249,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           <div style={{ margin: '16px 24px 0', borderTop: '2px solid var(--border)' }} />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px 4px' }}>
             <div style={{ fontSize: 15, fontWeight: 700 }}>Check Amount</div>
-            <div style={{ ...MODAL_MONO, fontSize: 22, fontWeight: 800, color: '#16a34a' }}>{fmt(stub.net_pay || 0)}</div>
+            <div style={{ ...MODAL_MONO, fontSize: 22, fontWeight: 800, color: '#16a34a' }}>{fmt(liveNetPay)}</div>
           </div>
           <div style={{ display: 'flex', gap: 0, margin: '12px 24px 0', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
             {[
@@ -2456,25 +2472,34 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                       <td style={{ padding: '4px 6px' }}>
                         <input className="form-input mono" type="text" inputMode="decimal" value={row.regHours} placeholder="0"
                           onChange={ev => setRow(period.end, emp.id, 'regHours', ev.target.value)}
-                          style={{ width: '100%', height: 42, fontSize: 15, textAlign: 'center', padding: '0 6px', borderRadius: 4, border: '2px solid #c8d0da', fontWeight: 600 }} />
+                          onFocus={ev => ev.target.select()}
+                          style={{ width: '100%', height: 46, fontSize: 16, textAlign: 'right', padding: '0 8px', borderRadius: 3, border: '2px solid #b0bec5', fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
                       </td>
                       <td style={{ padding: '4px 6px' }}>
                         <input className="form-input mono" type="text" inputMode="decimal" value={row.otHours} placeholder="0"
                           onChange={ev => setRow(period.end, emp.id, 'otHours', ev.target.value)}
-                          style={{ width: '100%', height: 42, fontSize: 15, textAlign: 'center', padding: '0 6px', borderRadius: 4, border: '2px solid #c8d0da', fontWeight: 600 }} />
+                          onFocus={ev => ev.target.select()}
+                          style={{ width: '100%', height: 46, fontSize: 16, textAlign: 'right', padding: '0 8px', borderRadius: 3, border: '2px solid #b0bec5', fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
                       </td>
                       <td style={{ padding: '4px 6px' }}>
                         <input className="form-input mono" type="text" inputMode="decimal"
                           value={row.rate !== undefined ? row.rate : String(emp.hourlyRate || '')}
                           placeholder={String(emp.hourlyRate || '')}
                           onChange={ev => setRow(period.end, emp.id, 'rate', ev.target.value)}
+                          onFocus={ev => ev.target.select()}
                           onBlur={ev => {
                             const entered = parseFloat(ev.target.value);
                             if (!isNaN(entered) && entered !== emp.hourlyRate) {
-                              setRateUpdatePrompt({ empId: emp.id, newRate: entered, periodEnd: period.end });
+                              // Don't open the rate-change modal when the user is just tabbing
+                              // to another input in the same table — it steals focus mid-entry.
+                              const next = ev.relatedTarget;
+                              const isMovingToInput = next && (next.tagName === 'INPUT' || next.tagName === 'SELECT');
+                              if (!isMovingToInput) {
+                                setRateUpdatePrompt({ empId: emp.id, newRate: entered, periodEnd: period.end });
+                              }
                             }
                           }}
-                          style={{ width: '100%', height: 42, fontSize: 15, textAlign: 'center', padding: '0 6px', borderRadius: 4, border: '2px solid #c8d0da', fontWeight: 600 }} />
+                          style={{ width: '100%', height: 46, fontSize: 16, textAlign: 'right', padding: '0 8px', borderRadius: 3, border: '2px solid #b0bec5', fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
                       </td>
                     </>
                   )}
@@ -2686,9 +2711,17 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
 
         async function handlePendingStatus(newStatus) {
           if (selectedPendingData.length === 0) return;
+          // Only "voided" is allowed for pending rows — any other status (Printed, Deposited)
+          // requires actual payroll to be run first. Calling mark-pending with those statuses
+          // creates $0 paystub records which is the root cause of the "everything went to $0" bug.
+          if (newStatus !== 'voided') {
+            const label = newStatus === 'printed' ? 'Printed' : newStatus === 'direct_deposit_cleared' ? 'Deposited' : newStatus;
+            alert(`Cannot mark pending checks as "${label}".\n\nPending periods have no payroll data yet. Run payroll for these periods first (use the Run Payroll button), then change the status of the created checks.`);
+            return;
+          }
           setBulkBusy(true);
           try {
-            await api.markPendingPeriods({ clientId, groupId: currentGroupId, periods: selectedPendingData, status: newStatus });
+            await api.markPendingPeriods({ clientId, groupId: currentGroupId, periods: selectedPendingData, status: 'voided' });
             await reloadStubs();
             setSelectedLateStubs(new Set());
             setPendingRows(prev => {
