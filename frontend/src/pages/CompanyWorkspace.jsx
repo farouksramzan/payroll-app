@@ -2286,26 +2286,26 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
             </div>
           )}
 
-          {/* Footer: save/close */}
-          <div style={{ padding: '12px 24px 18px', display: 'flex', gap: 8, alignItems: 'center', marginTop: 8 }}>
+          {/* Footer: always-visible sticky bar */}
+          <div style={{ position: 'sticky', bottom: 0, background: '#fff', borderTop: '2px solid var(--border)', padding: '14px 24px', display: 'flex', gap: 8, alignItems: 'center', zIndex: 10, boxShadow: '0 -2px 10px rgba(0,0,0,0.07)' }}>
             {!isVoided && (
               <button onClick={async () => {
                 if (!window.confirm('Delete this check? This cannot be undone.')) return;
                 try { await api.deletePaystub(stub.id); onClose(); reloadStubs(); } catch (e) { alert(e.message); }
-              }} style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 7, padding: '7px 18px', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              }} style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 18px', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
                 🗑 Delete
               </button>
             )}
             <div style={{ flex: 1 }} />
-            <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: 12 }}>Close</button>
-            <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={async () => {
+            <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: 13 }}>Close</button>
+            <button className="btn btn-ghost" style={{ fontSize: 13 }} onClick={async () => {
               try { await api.printSelectedChecks(clientId, [stub.id]); } catch (e) { alert(e.message); }
             }}>↓ Paycheck</button>
-            <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={async () => {
+            <button className="btn btn-ghost" style={{ fontSize: 13 }} onClick={async () => {
               try { await api.printSelectedPaystubs(clientId, [stub.id]); } catch (e) { alert(e.message); }
             }}>↓ Paystub</button>
             {isDirty && (
-              <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={() => {
+              <button onClick={() => {
                 setGrossOverride(String(initialGross));
                 setFitOverride(String(initialFit));
                 setItemForm({ reportedTips: String(displayedTips || ''), bonus: String(stub.bonus || ''), commission: String(stub.commission || ''), reimbursement: String(stub.reimbursement || ''), deduction: String(stub.deduction || ''), garnishment: String(stub.garnishment || '') });
@@ -2319,13 +2319,24 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                 if (stub.garnishment > 0) s.add('garnishment');
                 setAddedItems(s);
                 setOtherOpen(false);
-              }}>Revert</button>
+              }} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-secondary)' }}>Revert</button>
             )}
-            {isDirty && (
-              <button className="btn btn-primary" style={{ fontSize: 12 }} disabled={editSaving} onClick={saveModalEdits}>
-                {editSaving ? <span className="spinner" style={{ width: 12, height: 12 }} /> : 'Save Changes'}
-              </button>
-            )}
+            <button
+              disabled={!isDirty || editSaving}
+              onClick={saveModalEdits}
+              style={{
+                background: isDirty ? '#16a34a' : '#e2e8f0',
+                color: isDirty ? '#fff' : '#94a3b8',
+                border: 'none', borderRadius: 7,
+                padding: '9px 24px',
+                fontSize: 15, fontWeight: 700,
+                cursor: isDirty ? 'pointer' : 'default',
+                transition: 'background 0.15s',
+                minWidth: 130,
+              }}
+            >
+              {editSaving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : isDirty ? '💾 Save Changes' : 'No Changes'}
+            </button>
           </div>
         </div>
       </ModalOverlay>
