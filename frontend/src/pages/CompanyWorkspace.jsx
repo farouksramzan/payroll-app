@@ -2345,14 +2345,15 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
               disabled={!isDirty || editSaving}
               onClick={saveModalEdits}
               style={{
-                background: isDirty ? '#16a34a' : '#e2e8f0',
-                color: isDirty ? '#fff' : '#94a3b8',
+                background: isDirty ? '#16a34a' : '#94a3b8',
+                color: '#fff',
                 border: 'none', borderRadius: 7,
                 padding: '9px 24px',
                 fontSize: 15, fontWeight: 700,
                 cursor: isDirty ? 'pointer' : 'default',
                 transition: 'background 0.15s',
                 minWidth: 130,
+                opacity: isDirty ? 1 : 0.45,
               }}
             >
               {editSaving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : '💾 Save Changes'}
