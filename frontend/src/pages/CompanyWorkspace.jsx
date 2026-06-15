@@ -3700,20 +3700,12 @@ function PayLiabilitiesTab({ clientId, client }) {
   const [paystubs, setPaystubs]     = useState([]);
   const [credits, setCredits]       = useState([]);
   const [loading,  setLoading]      = useState(true);
-  const [selected941, setSelected941] = useState(new Set());
-  const [selected940, setSelected940] = useState(new Set());
-  const [selectedSUI, setSelectedSUI] = useState(new Set());
   const [submitting, setSubmitting] = useState(null);
   const [result,   setResult]       = useState(null);
-  const [expanded, setExpanded]     = useState({ '941': true, '940': false, 'sui': false });
-  const [liabilityModal, setLiabilityModal] = useState(null); // { stub, taxType, due, sendBy }
+  const [periodModal, setPeriodModal] = useState(null); // { period, taxType } | null
   const [sched941, setSched941] = useState(client?.depositSchedule || 'monthly');
   const [sched940, setSched940] = useState('quarterly');
   const [schedSUI, setSchedSUI] = useState('quarterly');
-  const [markingPaid, setMarkingPaid] = useState(null);
-  const [sentOpen, setSentOpen] = useState(false);
-  const [statusDropdown, setStatusDropdown] = useState(null); // { stub, top, right }
-  const [updatingStatus, setUpdatingStatus] = useState(null);
   const [activeJobId,      setActiveJobId]      = useState(null);
   const [activeJobTaxType, setActiveJobTaxType] = useState(null);
   const [jobStatus,        setJobStatus]        = useState(null);   // 'enrollment_pending' | 'completed' | 'failed'
@@ -3721,24 +3713,6 @@ function PayLiabilitiesTab({ clientId, client }) {
   const pollRef = useRef(null);
 
   const todayStr = new Date().toISOString().slice(0, 10);
-
-  // Close liability status dropdown on outside click
-  useEffect(() => {
-    if (!statusDropdown) return;
-    const close = () => setStatusDropdown(null);
-    document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
-  }, [statusDropdown]);
-
-  async function handleStatusChange(stub, newComputedStatus) {
-    const dbStatus = newComputedStatus === 'completed' ? 'submitted' : 'pending';
-    const taxType  = statusDropdown?.taxType;
-    setStatusDropdown(null);
-    setUpdatingStatus(stub.id);
-    try { await api.updatePaystubStatus(stub.id, dbStatus, taxType); await reload(); }
-    catch (e) { alert(e.message); }
-    finally { setUpdatingStatus(null); }
-  }
 
   const ISSUED    = new Set(['printed', 'deposited', 'direct_deposit_sent', 'direct_deposit_cleared']);
   const UNPAID_941 = (s) => s.status     === 'pending' || s.status     === 'processing' || s.status     === 'failed';
@@ -3748,22 +3722,6 @@ function PayLiabilitiesTab({ clientId, client }) {
   async function reload({ keepSelections = false, skipJobRestore = false } = {}) {
     const [stubs, crds] = await Promise.all([api.getPaystubs(clientId), api.getPaystubCredits(clientId)]);
     setPaystubs(stubs); setCredits(crds);
-    const pending941Ids = new Set(stubs.filter(s => ISSUED.has(s.check_status) && UNPAID_941(s)).map(s => s.id));
-    const pending940Ids = new Set(stubs.filter(s => ISSUED.has(s.check_status) && UNPAID_940(s) && s.futa_tax > 0).map(s => s.id));
-    const pendingSUIIds = new Set(stubs.filter(s => ISSUED.has(s.check_status) && s.suta_tax > 0 && UNPAID_SUI(s)).map(s => s.id));
-    if (keepSelections) {
-      // Preserve the user's selection choices; only remove stubs that are no longer pending
-      setSelected941(prev => new Set([...prev].filter(id => pending941Ids.has(id))));
-      setSelected940(prev => new Set([...prev].filter(id => pending940Ids.has(id))));
-      setSelectedSUI(prev => new Set([...prev].filter(id => pendingSUIIds.has(id))));
-    } else {
-      setSelected941(pending941Ids);
-      setSelected940(pending940Ids);
-      setSelectedSUI(pendingSUIIds);
-    }
-
-    // Restore polling after page reload — but NOT when we just finished/failed a job,
-    // otherwise a 'processing' stub left over from a Railway restart causes an infinite loop.
     if (!skipJobRestore) {
       const processingStub = stubs.find(s =>
         (s.status === 'processing' || s.status_940 === 'processing') && s.bridge_job_id
@@ -3785,25 +3743,30 @@ function PayLiabilitiesTab({ clientId, client }) {
   const credit941 = unappCredits.reduce((s, c) => s + (c.total_941_credit || 0), 0);
   const credit940 = unappCredits.reduce((s, c) => s + (c.total_940_credit || 0), 0);
 
-  // Compute totals for selected stubs using schedule-derived due dates
-  function enrichedStubs(stubs, taxType, schedule) {
-    return stubs.map(s => {
+  function buildPeriods(stubs, taxType, schedule) {
+    const map = {};
+    stubs.forEach(s => {
       const due    = calcLiabilityDue(s, taxType, schedule);
       const sendBy = calcSendByDate(due);
       const status = calcLiabilityStatus(s, taxType, sendBy, due, todayStr);
-      return { ...s, _due: due, _sendBy: sendBy, _status: status };
+      const key    = due || 'unknown';
+      if (!map[key]) map[key] = { due, sendBy, status, stubs: [], total: 0 };
+      map[key].stubs.push({ ...s, _due: due, _sendBy: sendBy, _status: status });
+      const amt = taxType === '941' ? (s.total_deposit || 0)
+                : taxType === '940' ? (s.futa_tax      || 0)
+                : (s.suta_tax || 0);
+      map[key].total += amt;
     });
+    return Object.values(map).sort((a, b) => (a.due || '').localeCompare(b.due || ''));
   }
-  const e941 = enrichedStubs(pending941, '941', sched941);
-  const e940 = enrichedStubs(pending940, '940', sched940);
-  const eSUI = enrichedStubs(pendingSUI, 'sui', schedSUI);
 
-  const sel941 = e941.filter(s => selected941.has(s.id));
-  const sel940 = e940.filter(s => selected940.has(s.id));
-  const selSUI = eSUI.filter(s => selectedSUI.has(s.id));
-  const total941 = sel941.reduce((s, p) => s + p.total_deposit, 0) + credit941;
-  const total940 = sel940.reduce((s, p) => s + p.futa_tax, 0) + credit940;
-  const totalSUI = selSUI.reduce((s, p) => s + (p.suta_tax || 0), 0);
+  const periods941 = buildPeriods(pending941, '941', sched941);
+  const periods940 = buildPeriods(pending940, '940', sched940);
+  const periodsSUI = buildPeriods(pendingSUI, 'sui', schedSUI);
+
+  const total941 = periods941.reduce((s, p) => s + p.total, 0) + credit941;
+  const total940 = periods940.reduce((s, p) => s + p.total, 0) + credit940;
+  const totalSUI = periodsSUI.reduce((s, p) => s + p.total, 0);
 
   // Poll job status every 60s while a bridge job is active
   useEffect(() => {
@@ -3842,22 +3805,19 @@ function PayLiabilitiesTab({ clientId, client }) {
   // Clear polling on unmount
   useEffect(() => () => clearInterval(pollRef.current), []);
 
-  async function handleSubmit(taxType) {
+  async function handleSubmitPeriod(period, taxType) {
     if (taxType === 'sui') {
-      const ids = selSUI.map(s => s.id);
-      if (!ids.length) return;
+      const ids = period.stubs.map(s => s.id);
       setSubmitting('sui');
-      try {
-        await api.downloadSuiReport(clientId, ids);
-      } catch (e) { alert(e.message); }
+      try { await api.downloadSuiReport(clientId, ids); }
+      catch (e) { alert(e.message); }
       finally { setSubmitting(null); }
       return;
     }
-    const sel = taxType === '941' ? sel941 : sel940;
-    const ids = sel.map(s => s.id);
-    if (!ids.length && credit941 === 0) return;
-    const amt = taxType === '941' ? total941 : total940;
-    if (!window.confirm(`Submit ${taxType.toUpperCase()} (${fmt(amt)}) to EFTPS?`)) return;
+    const ids = period.stubs.map(s => s.id);
+    const credit = taxType === '941' ? credit941 : credit940;
+    const amt = period.total + credit;
+    if (!window.confirm(`Submit ${taxType.toUpperCase()} deposit of ${fmt(amt)} to EFTPS?`)) return;
     setSubmitting(taxType); setResult(null);
     try {
       const res = await api.batchSubmitPaystubs({ clientId, paystubIds: ids, taxType });
@@ -3868,166 +3828,179 @@ function PayLiabilitiesTab({ clientId, client }) {
         setJobStatus('processing');
         setJobMessage('');
       }
-      await reload({ keepSelections: true });
+      await reload({ skipJobRestore: false });
     } catch (e) { setResult({ error: e.message }); }
     finally { setSubmitting(null); }
   }
 
-  async function handleMarkPaid(stub, taxType) {
-    setMarkingPaid(stub.id);
-    try {
-      await api.updatePaystubStatus(stub.id, 'submitted', taxType);
-      await reload();
-    } catch (e) { alert(e.message); }
-    finally { setMarkingPaid(null); }
-  }
-
   if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><div className="spinner spinner-dark" style={{ width: 28, height: 28 }} /></div>;
 
-  // Group enriched stubs by deposit period (settlement due date)
-  function groupByPeriod(stubs, taxType) {
-    const map = {};
-    stubs.forEach(s => {
-      const key = s._due || 'unknown';
-      if (!map[key]) map[key] = { due: s._due, sendBy: s._sendBy, stubs: [] };
-      map[key].stubs.push(s);
-    });
-    return Object.values(map).sort((a, b) => (a.due || '').localeCompare(b.due || ''));
-  }
-
-  function LiabilityGroup({ title, enriched, taxType, total, credit, selected, setSelected }) {
-    const isOpen = expanded[taxType];
-    const lateCount    = enriched.filter(s => s._status === 'late').length;
-    const dueSoonCount = enriched.filter(s => s._status === 'due-soon').length;
-    const nextDue      = [...enriched].sort((a, b) => (a._due || '').localeCompare(b._due || ''))[0];
+  function LiabilitySection({ title, taxType, periods, credit }) {
+    if (periods.length === 0) return null;
+    const grandTotal = periods.reduce((s, p) => s + p.total, 0) + credit;
+    const lateCount  = periods.filter(p => p.status === 'late').length;
+    const TH = { padding: '7px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' };
 
     return (
       <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
-        <div onClick={() => setExpanded(prev => ({ ...prev, [taxType]: !prev[taxType] }))}
-          style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer', background: isOpen ? 'var(--accent-light)' : undefined, userSelect: 'none' }}>
-          <span style={{ fontSize: 16, color: 'var(--text-muted)', display: 'inline-block', transform: isOpen ? 'rotate(90deg)' : 'none' }}>›</span>
+        {/* Section header */}
+        <div style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12, background: lateCount > 0 ? '#fff5f5' : 'var(--accent-light)', borderBottom: '1px solid var(--border)' }}>
           <div style={{ flex: 1 }}>
             <div style={{ fontWeight: 700, fontSize: 14 }}>{title}</div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-              {enriched.length} check{enriched.length !== 1 ? 's' : ''}
-              {lateCount > 0 && <span style={{ color: '#dc2626', fontWeight: 700, marginLeft: 6 }}>⚠ {lateCount} late</span>}
-              {dueSoonCount > 0 && <span style={{ color: '#d97706', fontWeight: 600, marginLeft: 6 }}>{dueSoonCount} due soon</span>}
-              {nextDue?._due && <span style={{ marginLeft: 6 }}>· Next deposit {fmtDate(nextDue._due)}</span>}
-              {credit < 0 && <span style={{ color: 'var(--success)', marginLeft: 8 }}>Credit: {fmt(credit)}</span>}
+              {periods.length} deposit period{periods.length !== 1 ? 's' : ''} pending
+              {lateCount > 0 && <span style={{ color: '#dc2626', fontWeight: 700, marginLeft: 8 }}>· ⚠ {lateCount} late</span>}
+              {credit < 0 && <span style={{ color: 'var(--success)', fontWeight: 600, marginLeft: 8 }}>· Credit: {fmt(credit)}</span>}
             </div>
           </div>
-          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 18, color: total > 0 ? 'var(--accent)' : 'var(--success)' }}>{fmt(total)}</div>
+          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 20, color: grandTotal > 0 ? 'var(--accent)' : 'var(--success)' }}>
+            {fmt(grandTotal)}
+          </div>
         </div>
 
-        {isOpen && (
-          <div>
-            {/* Toolbar */}
-            <div style={{ padding: '8px 16px', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)', background: 'var(--bg-secondary)', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <input type="checkbox"
-                checked={enriched.length > 0 && enriched.every(s => selected.has(s.id))}
-                onChange={e => { const next = new Set(selected); enriched.forEach(s => e.target.checked ? next.add(s.id) : next.delete(s.id)); setSelected(next); }}
-                style={{ accentColor: 'var(--accent)', width: 14, height: 14 }} />
-              <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>SELECT ALL</span>
-              {taxType === 'sui' ? (
-                <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }}
-                  onClick={() => handleSubmit('sui')}
-                  disabled={submitting !== null || selSUI.length === 0}>
-                  {submitting === 'sui' ? 'Generating…' : `↓ Download SUI Report — ${fmt(totalSUI)}`}
-                </button>
-              ) : (
-                <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }}
-                  onClick={() => handleSubmit(taxType)}
-                  disabled={submitting !== null || activeJobId !== null || (taxType === '941' ? sel941.length === 0 : sel940.length === 0)}>
-                  {(submitting === taxType || (activeJobId && activeJobTaxType === taxType)) ? 'Sent' : `Pay to EFTPS — ${fmt(taxType === '941' ? total941 : total940)}`}
-                </button>
-              )}
-            </div>
-
-            {/* Credits */}
-            {taxType !== 'sui' && unappCredits.filter(c => taxType === '941' ? (c.total_941_credit || 0) < 0 : (c.total_940_credit || 0) < 0).map(c => (
-              <div key={`cr-${c.id}`} style={{ padding: '9px 16px', borderBottom: '1px solid var(--border)', background: '#f0fdf4', display: 'flex', gap: 12, alignItems: 'center' }}>
-                <div style={{ width: 14 }} />
-                <div style={{ flex: 1, fontSize: 12, color: 'var(--success)', fontWeight: 600 }}>CREDIT — {c.employee_name || 'Void reversal'}</div>
-                <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--success)', fontSize: 13 }}>{fmt(taxType === '941' ? c.total_941_credit : c.total_940_credit)}</span>
-              </div>
-            ))}
-
-            {/* Flat check rows — no period headers, no column headers */}
-            {enriched.length === 0 ? (
-              <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No pending {title.toLowerCase()} liabilities.</div>
-            ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                <colgroup>
-                  <col style={{ width: 36 }} />
-                  <col />
-                  <col style={{ width: 130 }} />
-                  <col style={{ width: 80 }} />
-                  <col style={{ width: 80 }} />
-                  <col style={{ width: 90 }} />
-                  <col style={{ width: 100 }} />
-                </colgroup>
-                <thead>
-                  <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
-                    <th style={{ width: 36 }} />
-                    <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' }}>Employee</th>
-                    <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' }}>Pay Period</th>
-                    <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' }}>Send By</th>
-                    <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' }}>IRS Due</th>
-                    <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'right' }}>Amount</th>
-                    <th style={{ padding: '6px 8px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'right' }}>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {enriched.map((stub, idx) => {
-                    const voided   = stub.check_status === 'voided';
-                    const stripeBg = idx % 2 === 0 ? 'var(--bg-primary, #fff)' : '#f8fafc';
-                    const lateBg   = stub._status === 'late' ? '#fff5f5' : stub._status === 'due-soon' ? '#fffbeb' : null;
-                    const rowBg    = voided ? '#fef2f2' : lateBg || stripeBg;
-                    const amount   = taxType === '941' ? (stub.total_deposit || 0) : taxType === '940' ? (stub.futa_tax || 0) : (stub.suta_tax || 0);
-                    return (
-                      <tr key={stub.id}
-                        style={{ background: rowBg, opacity: voided ? 0.6 : 1, borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
-                        onClick={e => { if (e.target.type !== 'checkbox' && e.target.tagName !== 'BUTTON' && !e.target.closest('[data-dropdown]')) setLiabilityModal({ stub, taxType, due: stub._due, sendBy: stub._sendBy }); }}>
-                        <td style={{ padding: '0 0 0 14px' }}>
-                          <input type="checkbox" checked={selected.has(stub.id)}
-                            onChange={() => { const n = new Set(selected); n.has(stub.id) ? n.delete(stub.id) : n.add(stub.id); setSelected(n); }}
-                            style={{ accentColor: 'var(--accent)', width: 13, height: 13, cursor: 'pointer' }} disabled={voided} />
-                        </td>
-                        <td style={{ padding: '8px 8px' }}>
-                          <span style={{ fontWeight: 600, textDecoration: voided ? 'line-through' : 'none' }}>{stub.employee_name || '—'}</span>
-                          {stub.check_number && <span style={{ marginLeft: 5, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--accent)' }}>#{stub.check_number}</span>}
-                        </td>
-                        <td style={{ padding: '8px 8px', fontSize: 12, color: '#555' }}>
-                          {fmtPeriod(stub.pay_period_start, stub.pay_period_end)}
-                        </td>
-                        <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 700, color: stub._status === 'late' ? '#dc2626' : stub._status === 'due-soon' ? '#d97706' : '#222' }}>
-                          {fmtShort(stub._sendBy)}
-                        </td>
-                        <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, fontWeight: 700, color: stub._status === 'late' ? '#dc2626' : '#222' }}>
-                          {fmtShort(stub._due)}
-                        </td>
-                        <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, color: '#111', fontSize: 13 }}>
-                          {fmt(amount)}
-                        </td>
-                        <td style={{ padding: '6px 8px', textAlign: 'right' }}>
-                          {updatingStatus === stub.id ? (
-                            <span className="spinner" style={{ width: 12, height: 12 }} />
-                          ) : (
-                            <span data-dropdown style={{ cursor: 'pointer' }}
-                              onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setStatusDropdown(statusDropdown?.stub?.id === stub.id ? null : { stub, taxType, top: r.bottom + 4, right: window.innerWidth - r.right }); }}>
-                              <LiabStatusBadge status={stub._status} />
-                            </span>
-                          )}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            )}
-          </div>
-        )}
+        {/* Period rows */}
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <colgroup>
+            <col />
+            <col style={{ width: 110 }} />
+            <col style={{ width: 70 }} />
+            <col style={{ width: 130 }} />
+            <col style={{ width: 150 }} />
+          </colgroup>
+          <thead>
+            <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
+              <th style={TH}>Pay Dates</th>
+              <th style={TH}>IRS Due</th>
+              <th style={TH}>Checks</th>
+              <th style={{ ...TH, textAlign: 'right' }}>Amount</th>
+              <th style={TH} />
+            </tr>
+          </thead>
+          <tbody>
+            {periods.map(period => {
+              const isLate    = period.status === 'late';
+              const isDueSoon = period.status === 'due-soon';
+              const rowBg     = isLate ? '#fff5f5' : isDueSoon ? '#fffbeb' : '#fff';
+              const payDates  = [...new Set(period.stubs.map(s => s.settlement_date || s.pay_period_end).filter(Boolean))].sort();
+              const dateLabel = payDates.length === 0 ? '—'
+                              : payDates.length === 1 ? fmtDate(payDates[0])
+                              : `${fmtDate(payDates[0])} – ${fmtDate(payDates[payDates.length - 1])}`;
+              return (
+                <tr key={period.due || 'unknown'}
+                  style={{ background: rowBg, borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
+                  onClick={() => setPeriodModal({ period, taxType })}>
+                  <td style={{ padding: '13px 16px' }}>
+                    {isLate && (
+                      <span style={{ display: 'inline-block', background: '#dc2626', color: '#fff', borderRadius: 4, fontSize: 10, fontWeight: 800, padding: '2px 7px', marginRight: 8, letterSpacing: '0.04em' }}>LATE</span>
+                    )}
+                    {isDueSoon && !isLate && (
+                      <span style={{ display: 'inline-block', background: '#d97706', color: '#fff', borderRadius: 4, fontSize: 10, fontWeight: 800, padding: '2px 7px', marginRight: 8 }}>DUE SOON</span>
+                    )}
+                    <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{dateLabel}</span>
+                  </td>
+                  <td style={{ padding: '13px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 700, color: isLate ? '#dc2626' : isDueSoon ? '#d97706' : '#222' }}>
+                    {fmtDate(period.due)}
+                  </td>
+                  <td style={{ padding: '13px 8px', fontSize: 12, color: 'var(--text-muted)' }}>
+                    {period.stubs.length}
+                  </td>
+                  <td style={{ padding: '13px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 15, color: '#111' }}>
+                    {fmt(period.total)}
+                  </td>
+                  <td style={{ padding: '8px 12px', textAlign: 'right' }}>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      style={{ fontSize: 12, whiteSpace: 'nowrap' }}
+                      disabled={submitting !== null || activeJobId !== null}
+                      onClick={e => { e.stopPropagation(); handleSubmitPeriod(period, taxType); }}>
+                      {taxType === 'sui' ? '↓ SUI Report' : activeJobId && activeJobTaxType === taxType ? 'Sent…' : 'Pay to EFTPS'}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
+    );
+  }
+
+  function PeriodDetailModal({ period, taxType, credit, onClose }) {
+    const title = taxType === '941' ? 'Federal 941' : taxType === '940' ? 'Federal 940 (FUTA)' : 'State SUI';
+    const isLate = period.status === 'late';
+    const isDueSoon = period.status === 'due-soon';
+    const periodTotal = period.total + credit;
+    const TH = { padding: '8px 14px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' };
+    return (
+      <ModalOverlay onClose={onClose}>
+        <div className="card" style={{ width: 580, maxWidth: '96vw', maxHeight: '85vh', overflowY: 'auto', padding: 0, borderRadius: 12 }}>
+          {/* Header */}
+          <div style={{ padding: '18px 24px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontWeight: 800, fontSize: 18 }}>{title}</div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
+                IRS Deposit Due:{' '}
+                <strong style={{ color: isLate ? '#dc2626' : isDueSoon ? '#d97706' : 'var(--text-primary)' }}>
+                  {fmtDate(period.due)}
+                </strong>
+                {isLate && <span style={{ color: '#dc2626', fontWeight: 700, marginLeft: 8 }}>⚠ Late</span>}
+              </div>
+            </div>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+          </div>
+
+          {/* Check list */}
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
+                <th style={TH}>Employee</th>
+                <th style={TH}>Pay Period</th>
+                <th style={TH}>Pay Date</th>
+                <th style={{ ...TH, textAlign: 'right' }}>Amount</th>
+              </tr>
+            </thead>
+            <tbody>
+              {period.stubs.map((stub, i) => {
+                const amount = taxType === '941' ? (stub.total_deposit || 0)
+                             : taxType === '940' ? (stub.futa_tax      || 0)
+                             : (stub.suta_tax || 0);
+                return (
+                  <tr key={stub.id} style={{ borderBottom: '1px solid var(--border-light)', background: i % 2 === 0 ? '#fff' : '#f8fafc' }}>
+                    <td style={{ padding: '11px 16px', fontWeight: 600 }}>{stub.employee_name || '—'}{stub.check_number ? <span style={{ marginLeft: 5, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--accent)' }}>#{stub.check_number}</span> : null}</td>
+                    <td style={{ padding: '11px 10px', fontSize: 12, color: 'var(--text-muted)' }}>{fmtPeriod(stub.pay_period_start, stub.pay_period_end)}</td>
+                    <td style={{ padding: '11px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>{fmtDate(stub.settlement_date)}</td>
+                    <td style={{ padding: '11px 16px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{fmt(amount)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {/* Credit row if any */}
+          {credit < 0 && (
+            <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', background: '#f0fdf4' }}>
+              <span style={{ fontSize: 12, color: 'var(--success)', fontWeight: 600 }}>Credit / Overpayment</span>
+              <span style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--success)', fontWeight: 700 }}>{fmt(credit)}</span>
+            </div>
+          )}
+
+          {/* Footer */}
+          <div style={{ padding: '14px 24px', borderTop: '2px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)' }}>Total Due  </span>
+              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 20, color: 'var(--accent)' }}>{fmt(periodTotal)}</span>
+            </div>
+            <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: 13 }}>Close</button>
+            <button
+              className="btn btn-primary"
+              style={{ fontSize: 13 }}
+              disabled={submitting !== null || activeJobId !== null}
+              onClick={() => { onClose(); handleSubmitPeriod(period, taxType); }}>
+              {taxType === 'sui' ? '↓ Download SUI Report' : 'Pay to EFTPS'}
+            </button>
+          </div>
+        </div>
+      </ModalOverlay>
     );
   }
 
@@ -4062,7 +4035,7 @@ function PayLiabilitiesTab({ clientId, client }) {
         </div>
       </div>
 
-      {/* Live job status banner (polling) */}
+      {/* Live job status banner */}
       {activeJobId && (
         <div className="alert alert-info" style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
           <span className="spinner spinner-dark" style={{ width: 14, height: 14, flexShrink: 0 }} />
@@ -4101,84 +4074,28 @@ function PayLiabilitiesTab({ clientId, client }) {
         </div>
       )}
 
-      {/* Select All Due */}
-      {(() => {
-        const due941 = e941.filter(s => s._status === 'due-soon' || s._status === 'late');
-        const due940 = e940.filter(s => s._status === 'due-soon' || s._status === 'late');
-        const dueSUI = eSUI.filter(s => s._status === 'due-soon' || s._status === 'late');
-        const totalDue = due941.length + due940.length + dueSUI.length;
-        if (totalDue === 0) return null;
-        const allSel = due941.every(s => selected941.has(s.id))
-                    && due940.every(s => selected940.has(s.id))
-                    && dueSUI.every(s => selectedSUI.has(s.id));
-        return (
-          <div style={{ marginBottom: 10 }}>
-            <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}
-              onClick={() => {
-                setSelected941(prev => { const n = new Set(prev); if (allSel) due941.forEach(s => n.delete(s.id)); else due941.forEach(s => n.add(s.id)); return n; });
-                setSelected940(prev => { const n = new Set(prev); if (allSel) due940.forEach(s => n.delete(s.id)); else due940.forEach(s => n.add(s.id)); return n; });
-                setSelectedSUI(prev => { const n = new Set(prev); if (allSel) dueSUI.forEach(s => n.delete(s.id)); else dueSUI.forEach(s => n.add(s.id)); return n; });
-              }}>
-              {allSel ? 'Deselect All Due' : 'Select All Due'}
-            </button>
+      {/* Period sections */}
+      <LiabilitySection title="Federal 941"       taxType="941" periods={periods941} credit={credit941} />
+      <LiabilitySection title="Federal 940 (FUTA)" taxType="940" periods={periods940} credit={credit940} />
+      <LiabilitySection title="State SUI"          taxType="sui" periods={periodsSUI} credit={0} />
+
+      {periods941.length === 0 && periods940.length === 0 && periodsSUI.length === 0 && (
+        <div className="card">
+          <div className="empty-state" style={{ padding: '32px 20px' }}>
+            <div className="empty-state-icon">✓</div>
+            <h3>All caught up</h3>
+            <p>No pending liabilities.</p>
           </div>
-        );
-      })()}
-
-      {(() => {
-        const totalSelected = selected941.size + selected940.size + selectedSUI.size;
-        if (totalSelected < 2) return null;
-        const allSelectedIds = [...selected941, ...selected940, ...selectedSUI];
-        const clearAll = () => { setSelected941(new Set()); setSelected940(new Set()); setSelectedSUI(new Set()); };
-
-        async function bulkSetLiabStatus(dbStatus) {
-          try {
-            const ops = [];
-            selected941.forEach(id => ops.push(api.updatePaystubStatus(id, dbStatus, '941').catch(() => {})));
-            selected940.forEach(id => ops.push(api.updatePaystubStatus(id, dbStatus, '940').catch(() => {})));
-            selectedSUI.forEach(id => ops.push(api.updatePaystubStatus(id, dbStatus, 'sui').catch(() => {})));
-            await Promise.all(ops);
-            clearAll(); await reload();
-          } catch (e) { alert(e.message); }
-        }
-
-        const btnStyle = { background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600 };
-        return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--accent)', color: '#fff', padding: '8px 14px', borderRadius: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-            <span style={{ fontWeight: 700, fontSize: 13 }}>{totalSelected} check{totalSelected !== 1 ? 's' : ''} selected</span>
-            <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
-            <span style={{ fontSize: 12, opacity: 0.85 }}>Change status:</span>
-            <button style={btnStyle} onClick={() => bulkSetLiabStatus('pending')}>Due Soon / Late</button>
-            <button style={btnStyle} onClick={() => bulkSetLiabStatus('submitted')}>Sent</button>
-            <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
-            <button onClick={async () => {
-              try { await api.printSelectedChecks(clientId, allSelectedIds); } catch (e) { alert(e.message); }
-            }} style={btnStyle}>↓ Paycheck</button>
-            <button onClick={async () => {
-              try { await api.printSelectedPaystubs(clientId, allSelectedIds); } catch (e) { alert(e.message); }
-            }} style={btnStyle}>↓ Paystub</button>
-            <button onClick={clearAll}
-              style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 5, color: '#fff', padding: '3px 8px', fontSize: 12, cursor: 'pointer' }}>
-              Cancel
-            </button>
-          </div>
-        );
-      })()}
-
-      <LiabilityGroup title="Federal 941" enriched={e941} taxType="941" total={total941} credit={credit941} selected={selected941} setSelected={setSelected941} />
-      <LiabilityGroup title="Federal 940 (FUTA)" enriched={e940} taxType="940" total={total940} credit={credit940} selected={selected940} setSelected={setSelected940} />
-      <LiabilityGroup title="State SUI" enriched={eSUI} taxType="sui" total={totalSUI} credit={0} selected={selectedSUI} setSelected={setSelectedSUI} />
-
-      {pending941.length === 0 && pending940.length === 0 && pendingSUI.length === 0 && (
-        <div className="card"><div className="empty-state" style={{ padding: '32px 20px' }}><div className="empty-state-icon">✓</div><h3>All caught up</h3><p>No pending liabilities.</p></div></div>
+        </div>
       )}
 
-      {/* Sent Checks — always visible collapsible section */}
+      {/* Sent history — unchanged */}
       {(() => {
         const sent941 = paystubs.filter(s => s.status === 'submitted');
         const sent940 = paystubs.filter(s => s.status_940 === 'submitted' && s.futa_tax > 0);
         const sentSUI = paystubs.filter(s => s.suta_tax > 0 && (s.status_sui || 'pending') === 'submitted');
         const totalSent = sent941.length + sent940.length + sentSUI.length;
+        if (totalSent === 0) return null;
 
         function enrichSent(stubs, taxType, schedule) {
           return stubs.map(s => {
@@ -4214,26 +4131,14 @@ function PayLiabilitiesTab({ clientId, client }) {
                           const amount = taxType === '941' ? (stub.total_deposit || 0) : taxType === '940' ? (stub.futa_tax || 0) : (stub.suta_tax || 0);
                           return (
                             <tr key={stub.id}
-                              style={{ background: idx % 2 === 0 ? 'var(--bg-primary, #fff)' : '#f8fafc', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
-                              onClick={e => { if (e.target.tagName !== 'BUTTON') setLiabilityModal({ stub, taxType, due: stub._due, sendBy: stub._sendBy }); }}>
-                              <td style={{ padding: '8px 8px' }}>
-                                <span style={{ fontWeight: 600 }}>{stub.employee_name || '—'}</span>
-                                {stub.check_number && <span style={{ marginLeft: 5, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--accent)' }}>#{stub.check_number}</span>}
-                              </td>
-                              <td style={{ padding: '8px 8px', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', fontSize: 10 }}>{fmtDate(stub.pay_period_start)} – {fmtDate(stub.pay_period_end)}</td>
-                              <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--text-muted)' }}>{fmtDate(stub._sendBy)}</td>
-                              <td style={{ padding: '8px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--text-muted)' }}>{fmtDate(stub._due)}</td>
-                              <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--success)', fontSize: 12 }}>{fmt(amount)}</td>
-                              <td style={{ padding: '6px 8px', textAlign: 'right' }}>
-                                <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, padding: '1px 6px', height: 22 }}
-                                  onClick={async e => {
-                                    e.stopPropagation();
-                                    if (!window.confirm('Mark this payment as pending again?')) return;
-                                    try { await api.updatePaystubStatus(stub.id, 'pending', taxType); await reload(); } catch (ex) { alert(ex.message); }
-                                  }}>
-                                  Undo
-                                </button>
-                              </td>
+                              style={{ background: idx % 2 === 0 ? '#fff' : '#f8fafc', borderBottom: '1px solid var(--border-light)', cursor: 'pointer' }}
+                              onClick={() => setPeriodModal({ period: { due: stub._due, sendBy: stub._sendBy, status: 'completed', stubs: [stub], total: amount }, taxType })}>
+                              <td style={{ padding: '8px 12px', fontWeight: 600, fontSize: 12 }}>{stub.employee_name || '—'}</td>
+                              <td style={{ padding: '8px 6px', fontSize: 11, color: 'var(--text-muted)' }}>{fmtPeriod(stub.pay_period_start, stub.pay_period_end)}</td>
+                              <td style={{ padding: '8px 6px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{fmtShort(stub._sendBy)}</td>
+                              <td style={{ padding: '8px 6px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{fmtShort(stub._due)}</td>
+                              <td style={{ padding: '8px 6px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 12 }}>{fmt(amount)}</td>
+                              <td style={{ padding: '8px 8px', textAlign: 'right' }}><LiabStatusBadge status="completed" /></td>
                             </tr>
                           );
                         })}
@@ -4247,63 +4152,23 @@ function PayLiabilitiesTab({ clientId, client }) {
         }
 
         return (
-          <div style={{ marginTop: 16 }}>
-            <button onClick={() => setSentOpen(p => !p)}
-              style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', padding: '6px 0', fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>
-              <span style={{ fontSize: 11, display: 'inline-block', transform: sentOpen ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
-              Sent Checks {totalSent > 0 ? `(${totalSent})` : ''}
-            </button>
-            {sentOpen && (
-              <div style={{ marginTop: 6 }}>
-                {totalSent === 0 ? (
-                  <div style={{ padding: '12px 4px', color: 'var(--text-muted)', fontSize: 13 }}>No sent checks yet.</div>
-                ) : (
-                  <>
-                    <SentTypeGroup title="Federal 941" enriched={se941} taxType="941" />
-                    <SentTypeGroup title="Federal 940 (FUTA)" enriched={se940} taxType="940" />
-                    <SentTypeGroup title="State SUI" enriched={seSUI} taxType="sui" />
-                  </>
-                )}
-              </div>
-            )}
+          <div className="card" style={{ marginTop: 16, padding: '14px 20px' }}>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 10, color: 'var(--text-muted)' }}>Sent / Submitted</div>
+            <SentTypeGroup title="Federal 941"        enriched={se941} taxType="941" />
+            <SentTypeGroup title="Federal 940 (FUTA)" enriched={se940} taxType="940" />
+            <SentTypeGroup title="State SUI"           enriched={seSUI} taxType="sui" />
           </div>
         );
       })()}
 
-      {liabilityModal && (
-        <LiabilityDetailModal stub={liabilityModal.stub} taxType={liabilityModal.taxType}
-          due={liabilityModal.due} sendBy={liabilityModal.sendBy} todayStr={todayStr}
-          clientId={clientId}
-          onClose={() => setLiabilityModal(null)}
-          onStubChange={(id, patch) => {
-            setPaystubs(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
-          }}
-          onDelete={async () => {
-            try { await api.deletePaystub(liabilityModal.stub.id); setLiabilityModal(null); await reload(); } catch (e) { alert(e.message); }
-          }}
-          onPay={async (stub) => {
-            try {
-              await api.downloadSuiReport(clientId, [stub.id]);
-              setLiabilityModal(null);
-            } catch (e) { alert(e.message); }
-          }} />
-      )}
-
-      {/* Liability status dropdown — fixed position so it's never clipped by overflow:hidden */}
-      {statusDropdown && (
-        <div onClick={e => e.stopPropagation()}
-          style={{ position: 'fixed', top: statusDropdown.top, right: statusDropdown.right, zIndex: 9999, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 20px rgba(0,0,0,0.15)', minWidth: 150, padding: '4px 0' }}>
-          {['upcoming', 'due-soon', 'late', 'completed'].map(s => {
-            const isCur = statusDropdown.stub._status === s;
-            return (
-              <button key={s} onClick={() => handleStatusChange(statusDropdown.stub, s)}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%', padding: '8px 14px', background: isCur ? 'var(--accent-light)' : 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
-                <LiabStatusBadge status={s} />
-                {isCur && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>✓</span>}
-              </button>
-            );
-          })}
-        </div>
+      {/* Period detail modal */}
+      {periodModal && (
+        <PeriodDetailModal
+          period={periodModal.period}
+          taxType={periodModal.taxType}
+          credit={periodModal.taxType === '941' ? credit941 : periodModal.taxType === '940' ? credit940 : 0}
+          onClose={() => setPeriodModal(null)}
+        />
       )}
     </div>
   );
