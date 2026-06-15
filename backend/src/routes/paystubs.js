@@ -692,8 +692,11 @@ router.put('/:id', (req, res) => {
 
   const items = Array.isArray(lineItems) && lineItems.length > 0 ? lineItems : null;
 
+  // Taxable items — tips/bonus/commission are part of gross and must trigger recalculation
+  const taxableItemChanged = reportedTipsIn !== undefined || bonusIn !== undefined || commissionIn !== undefined;
+
   // Detect whether tax-affecting fields are actually being changed
-  const taxFieldsChanged = items !== null || workState !== undefined || ytdGross !== undefined ||
+  const taxFieldsChanged = items !== null || taxableItemChanged || workState !== undefined || ytdGross !== undefined ||
     payFrequency !== undefined || filingStatus !== undefined || step2Checkbox !== undefined ||
     step3Children !== undefined || step3Other !== undefined ||
     step4a !== undefined || step4b !== undefined || step4c !== undefined ||
@@ -704,9 +707,16 @@ router.put('/:id', (req, res) => {
   const { quarter, year } = getTaxPeriod(payPeriodEnd || stub.pay_period_end);
 
   if (taxFieldsChanged) {
+    // If only taxable items changed (no lineItems), adjust gross by the delta from saved values
     const computedGross = items
       ? items.reduce((s, li) => s + parseFloat(li.amount || 0), 0)
-      : stub.gross_wages;
+      : (() => {
+          let g = stub.gross_wages;
+          if (reportedTipsIn !== undefined) g += parseFloat(reportedTipsIn || 0) - (stub.reported_tips || 0);
+          if (bonusIn        !== undefined) g += parseFloat(bonusIn        || 0) - (stub.bonus        || 0);
+          if (commissionIn   !== undefined) g += parseFloat(commissionIn   || 0) - (stub.commission   || 0);
+          return Math.max(0, Math.round(g * 100) / 100);
+        })();
 
     const effectiveWorkState = ((workState || stub.work_state || client.state || 'TX')).toUpperCase();
     const ytdBefore = parseFloat(ytdGross ?? stub.ytd_wages_before ?? 0);

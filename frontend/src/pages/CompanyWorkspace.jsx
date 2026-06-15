@@ -2100,6 +2100,11 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
     });
     const [otherOpen, setOtherOpen] = useState(false);
     const [editSaving, setEditSaving] = useState(false);
+    // Track whether user has manually overridden each tax field
+    const [fitManual,  setFitManual]  = useState(false);
+    const [ssManual,   setSsManual]   = useState(false);
+    const [medManual,  setMedManual]  = useState(false);
+
     const itemDirty = !isVoided && (
       parseFloat(itemForm.reportedTips  || 0) !== (displayedTips       || 0) ||
       parseFloat(itemForm.bonus         || 0) !== (stub.bonus          || 0) ||
@@ -2113,9 +2118,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       dateForm.end     !== (stub.pay_period_end   || '') ||
       dateForm.payDate !== (stub.settlement_date  || '') ||
       parseFloat(grossOverride) !== initialGross ||
-      parseFloat(fitOverride)   !== initialFit   ||
-      parseFloat(ssOverride)    !== initialSS    ||
-      parseFloat(medOverride)   !== initialMed   ||
+      (fitManual  && parseFloat(fitOverride)  !== initialFit)  ||
+      (ssManual   && parseFloat(ssOverride)   !== initialSS)   ||
+      (medManual  && parseFloat(medOverride)  !== initialMed)  ||
       itemDirty
     );
     async function saveModalEdits() {
@@ -2125,14 +2130,14 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
         if (parseFloat(grossOverride) !== initialGross) {
           payload.lineItems = [{ payType: 'salary', amount: parseFloat(grossOverride) }];
         }
-        if (parseFloat(fitOverride) !== initialFit) {
+        // Only send tax overrides when the user explicitly typed new values.
+        // Auto-estimated values (from liveGross changing via tips/bonus) should let
+        // the backend recalculate from scratch instead of being pinned to estimates.
+        if (fitManual && parseFloat(fitOverride) !== initialFit) {
           payload.fitWithholdingOverride = parseFloat(fitOverride || 0);
-          // Do NOT inject a lineItems when only FIT changed — backend will recalculate
-          // taxes using the existing stub.gross_wages (avoiding corruption of hourly OT breakdown).
-          // Only send lineItems if gross also changed.
         }
-        if (parseFloat(ssOverride)  !== initialSS)  payload.ssWithholdingOverride  = parseFloat(ssOverride  || 0);
-        if (parseFloat(medOverride) !== initialMed)  payload.medicareWithholdingOverride = parseFloat(medOverride || 0);
+        if (ssManual  && parseFloat(ssOverride)  !== initialSS)  payload.ssWithholdingOverride  = parseFloat(ssOverride  || 0);
+        if (medManual && parseFloat(medOverride) !== initialMed)  payload.medicareWithholdingOverride = parseFloat(medOverride || 0);
         if (itemDirty) {
           payload.reportedTips  = parseFloat(itemForm.reportedTips  || 0);
           payload.bonus         = parseFloat(itemForm.bonus         || 0);
@@ -2180,8 +2185,29 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       optionalEarnings.filter(x => addedItems.has(x.key)).reduce((s, x) => s + parseFloat(itemForm[x.key] || 0), 0)
     );
 
-    // Live net pay — updates as user edits FIT or gross, so "Check Amount" is never stale.
-    // SS/Medicare stay pinned to saved values (backend recalculates on save).
+    // When gross changes (e.g. via tips/bonus/commission), auto-update SS/Medicare
+    // and ask the server for a new FIT estimate — unless the user has manually overridden them.
+    useEffect(() => {
+      if (isVoided) return;
+      if (!ssManual)  setSsOverride(String(r2(liveGross * 0.062)));
+      if (!medManual) setMedOverride(String(r2(liveGross * 0.0145)));
+      if (!fitManual && liveGross > 0) {
+        api.calculate({
+          grossWages:    liveGross,
+          payFrequency:  stub.pay_frequency   || 'biweekly',
+          filingStatus:  stub.filing_status   || 'single',
+          step2Checkbox: !!stub.step2_checkbox,
+          step3Children: stub.step3_children  || 0,
+          step3Other:    stub.step3_other     || 0,
+          step4a: 0, step4b: 0, step4c: 0,
+          workState: stub.work_state || 'TX',
+          ytdGross:  stub.ytd_wages_before    || 0,
+        }).then(res => {
+          if (!fitManual) setFitOverride(String(r2(res.fitWithholding || 0)));
+        }).catch(() => {});
+      }
+    }, [liveGross]);
+
     const liveNetPay = r2(
       liveGross
       - parseFloat(fitOverride || 0)
@@ -2195,11 +2221,15 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
     );
 
     const deductionRows = [
-      { label: 'Federal Income Tax', amount: stub.fit_withholding   || 0, ytd: ytd.fit,     editValue: canEdit ? fitOverride : undefined, onEditChange: canEdit ? setFitOverride : undefined },
+      { label: 'Federal Income Tax', amount: stub.fit_withholding   || 0, ytd: ytd.fit,
+        editValue: canEdit ? fitOverride : undefined,
+        onEditChange: canEdit ? (v => { setFitManual(true); setFitOverride(v); }) : undefined },
       { label: 'Social Security', amount: stub.employee_ss       || 0, ytd: ytd.eeSS,
-        editValue: canEdit ? ssOverride  : undefined, onEditChange: canEdit ? setSsOverride  : undefined },
+        editValue: canEdit ? ssOverride  : undefined,
+        onEditChange: canEdit ? (v => { setSsManual(true);  setSsOverride(v);  }) : undefined },
       { label: 'Medicare',        amount: stub.employee_medicare || 0, ytd: ytd.eeMed,
-        editValue: canEdit ? medOverride : undefined, onEditChange: canEdit ? setMedOverride : undefined },
+        editValue: canEdit ? medOverride : undefined,
+        onEditChange: canEdit ? (v => { setMedManual(true); setMedOverride(v); }) : undefined },
       (stub.additional_medicare || 0) > 0 && { label: 'Addl Medicare', amount: stub.additional_medicare, ytd: 0 },
       { label: 'State Income Tax',   amount: stub.state_income_tax  || 0, ytd: ytd.stateTax },
       ...optionalDeductions
