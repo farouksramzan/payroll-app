@@ -1191,6 +1191,15 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
   useEffect(() => {
     try { localStorage.setItem(`pendingRows_${clientId}`, JSON.stringify(pendingRows)); } catch {}
   }, [pendingRows, clientId]);
+  const [skippedPending, setSkippedPending] = useState(() => {
+    try { const s = localStorage.getItem(`skippedPending_${clientId}`); return s ? new Set(JSON.parse(s)) : new Set(); } catch { return new Set(); }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(`skippedPending_${clientId}`, JSON.stringify([...skippedPending])); } catch {}
+  }, [skippedPending, clientId]);
+  function skipPending(periodEnd, empId) {
+    setSkippedPending(prev => new Set([...prev, `${periodEnd}_${empId}`]));
+  }
   const [rateUpdatePrompt, setRateUpdatePrompt]   = useState(null); // { empId, newRate, periodEnd }
   const [selectedLateStubs, setSelectedLateStubs]     = useState(new Set());
   const [selectedHistoryStubs, setSelectedHistoryStubs] = useState(new Set());
@@ -1370,7 +1379,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
 
   pendingPeriods.forEach(period => {
     empsInGroup.forEach(emp => {
-      mainRows.push({ type: 'pending', period, emp, key: `p-${period.end}-${emp.id}` });
+      if (!skippedPending.has(`${period.end}_${emp.id}`)) {
+        mainRows.push({ type: 'pending', period, emp, key: `p-${period.end}-${emp.id}` });
+      }
     });
   });
   history.forEach(period => {
@@ -2018,6 +2029,15 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
 
             {/* Save date overrides footer */}
             <div style={{ position: 'sticky', bottom: 0, background: '#fff', borderTop: '2px solid var(--border)', padding: '12px 24px', display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'center', boxShadow: '0 -2px 10px rgba(0,0,0,0.07)', zIndex: 10 }}>
+              <button
+                onClick={() => {
+                  if (!window.confirm(`Remove ${emp.fullName} from this pay run? They can be added back by refreshing.`)) return;
+                  skipPending(period.end, emp.id);
+                  onClose();
+                }}
+                style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', marginRight: 'auto' }}>
+                🗑 Remove
+              </button>
               <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: 13 }}>Close</button>
               <button
                 disabled={!pendingDirty}
