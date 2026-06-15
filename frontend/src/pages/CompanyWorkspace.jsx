@@ -2185,10 +2185,14 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       optionalEarnings.filter(x => addedItems.has(x.key)).reduce((s, x) => s + parseFloat(itemForm[x.key] || 0), 0)
     );
 
-    // When gross changes (e.g. via tips/bonus/commission), auto-update SS/Medicare
-    // and ask the server for a new FIT estimate — unless the user has manually overridden them.
+    // Auto-update SS/Medicare/FIT estimates when gross changes due to tip/bonus/commission edits.
+    // IMPORTANT: skip the very first render — the saved values from the DB are authoritative on open.
+    // Only recalculate when liveGross actually changes after the modal is mounted.
+    const prevLiveGross = useRef(liveGross); // initialised to mount-time value
     useEffect(() => {
-      if (isVoided) return;
+      const prev = prevLiveGross.current;
+      prevLiveGross.current = liveGross;
+      if (isVoided || liveGross === prev) return; // nothing changed yet
       if (!ssManual)  setSsOverride(String(r2(liveGross * 0.062)));
       if (!medManual) setMedOverride(String(r2(liveGross * 0.0145)));
       if (!fitManual && liveGross > 0) {
