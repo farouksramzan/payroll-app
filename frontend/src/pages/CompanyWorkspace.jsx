@@ -2700,7 +2700,17 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                   })()
                 }</td>
                 <td style={{ padding: '14px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, color: '#16a34a', fontSize: 16 }}>
-                  {stub.net_pay != null ? fmt(stub.net_pay) : '—'}
+                  {stub.gross_wages != null ? fmt(r2(
+                    (stub.gross_wages        || 0)
+                    - (stub.fit_withholding   || 0)
+                    - (stub.employee_ss       || 0)
+                    - (stub.employee_medicare || 0)
+                    - (stub.additional_medicare || 0)
+                    - (stub.state_income_tax  || 0)
+                    - (stub.deduction         || 0)
+                    - (stub.garnishment       || 0)
+                    + (stub.reimbursement     || 0)
+                  )) : '—'}
                 </td>
                 <td style={{ padding: '8px 10px', textAlign: 'right' }}>
                   {!isVoided ? (

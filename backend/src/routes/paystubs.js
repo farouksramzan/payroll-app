@@ -770,6 +770,13 @@ router.put('/:id', (req, res) => {
       (parseInt(step3Children ?? stub.step3_children ?? 0, 10) * 2200) +
       (parseInt(step3Other    ?? stub.step3_other    ?? 0, 10) * 500);
 
+    // Net pay = gross - taxes - deductions - garnishments + reimbursements
+    // (total_deposit is unchanged — it covers only IRS taxes)
+    const effectiveDeduction     = deductionIn     !== undefined ? parseFloat(deductionIn     || 0) : (stub.deduction     || 0);
+    const effectiveGarnishment   = garnishmentIn   !== undefined ? parseFloat(garnishmentIn   || 0) : (stub.garnishment   || 0);
+    const effectiveReimbursement = reimbursementIn !== undefined ? parseFloat(reimbursementIn || 0) : (stub.reimbursement || 0);
+    taxes.netPay = Math.round((taxes.netPay - effectiveDeduction - effectiveGarnishment + effectiveReimbursement) * 100) / 100;
+
     db.prepare(`
       UPDATE paystubs SET
         pay_period_start = ?, pay_period_end = ?, settlement_date = ?, settlement_due_date = ?,
@@ -1118,6 +1125,13 @@ router.post('/payroll-run', (req, res) => {
         ytdGross:  ytdBefore,
         sutaRate:  client.suta_rate || null,
       });
+
+      // Net pay = gross - taxes - deductions - garnishments + reimbursements
+      taxes.netPay = Math.round((taxes.netPay
+        - parseFloat(empData.deduction    || 0)
+        - parseFloat(empData.garnishment  || 0)
+        + parseFloat(empData.reimbursement || 0)
+      ) * 100) / 100;
 
       // Atomically get + increment check number inside the same transaction
       const checkNum = db.prepare('SELECT next_check_number FROM clients WHERE id = ?').get(clientId).next_check_number || 1001;
