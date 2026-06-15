@@ -3894,7 +3894,7 @@ function PayLiabilitiesTab({ clientId, client }) {
     };
 
     return (
-      <div style={{ background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, overflow: 'hidden', marginBottom: 16 }}>
+      <div style={{ background: '#fff', border: '1.5px solid #9faab6', borderRadius: 4, overflow: 'hidden', marginBottom: 16 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
           <colgroup>
             <col style={{ width: 130 }} />
@@ -3922,7 +3922,7 @@ function PayLiabilitiesTab({ clientId, client }) {
               return (
                 <React.Fragment key={sec.taxType}>
                   {secIdx > 0 && (
-                    <tr><td colSpan={6} style={{ height: 0, padding: 0, borderTop: '2px solid #e5e7eb' }} /></tr>
+                    <tr><td colSpan={6} style={{ height: 0, padding: 0, borderTop: '2px solid #9faab6' }} /></tr>
                   )}
                   <tr style={{ background: '#f8f9fa' }}>
                     <td colSpan={6} style={{ padding: '9px 16px', borderLeft: '3px solid #6b7280', fontWeight: 700, fontSize: 13, color: '#374151' }}>
@@ -4257,7 +4257,7 @@ function PayLiabilitiesTab({ clientId, client }) {
             borderBottom: '1px solid #d1d5db',
           };
           return (
-            <div style={{ background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, overflow: 'hidden', marginTop: 20 }}>
+            <div style={{ background: '#fff', border: '1.5px solid #9faab6', borderRadius: 4, overflow: 'hidden', marginTop: 20 }}>
               {/* Collapsible header */}
               <button
                 onClick={() => setOpen(o => !o)}

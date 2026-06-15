@@ -18,13 +18,13 @@
   --text-primary:  #0f172a;
   --text-secondary:#475569;
   --text-muted:    #94a3b8;
-  --border:        #e2e8f0;
-  --border-light:  #f1f5f9;
-  --shadow:        0 1px 4px rgba(0,0,0,0.07);
-  --shadow-md:     0 3px 10px rgba(0,0,0,0.10);
-  --shadow-lg:     0 8px 24px rgba(0,0,0,0.13);
-  --radius:        8px;
-  --radius-lg:     12px;
+  --border:        #b8c4d0;
+  --border-light:  #d4dce6;
+  --shadow:        0 1px 3px rgba(0,0,0,0.10);
+  --shadow-md:     0 3px 10px rgba(0,0,0,0.13);
+  --shadow-lg:     0 8px 24px rgba(0,0,0,0.16);
+  --radius:        3px;
+  --radius-lg:     5px;
   --nav-h:         56px;
 }
 
@@ -200,7 +200,7 @@ html, body, #root {
 
 .workspace-header {
   background: var(--bg);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 2px solid var(--border);
   padding: 0 32px;
   flex-shrink: 0;
 }
@@ -297,7 +297,7 @@ html, body, #root {
 /* ── Cards ── */
 .card {
   background: var(--bg);
-  border: 1px solid var(--border);
+  border: 1.5px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 20px 24px;
   box-shadow: var(--shadow);
@@ -459,11 +459,12 @@ html, body, #root {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 10px;
-  border-radius: 20px;
-  font-size: 13px;
-  font-weight: 600;
+  padding: 3px 9px;
+  border-radius: 3px;
+  font-size: 12px;
+  font-weight: 700;
   white-space: nowrap;
+  letter-spacing: 0.02em;
 }
 .badge-success  { background: var(--success-light);  color: var(--success); }
 .badge-warning  { background: var(--warning-light);  color: var(--warning); }
@@ -562,7 +563,7 @@ thead th {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 2px solid var(--border);
   white-space: nowrap;
   background: var(--bg-secondary);
 }
