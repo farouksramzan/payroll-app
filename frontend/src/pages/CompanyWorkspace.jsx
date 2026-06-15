@@ -2068,7 +2068,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
 
     // Editable date / gross / other payroll items state (hooks must be at top of history branch)
     const lineItemsList = stub.lineItems || [];
-    const compFromItems = lineItemsList.filter(li => li.pay_type === 'regular' && stub.regular_hours == null).reduce((s, li) => s + (li.amount || 0), 0);
+    const compFromItems = lineItemsList.filter(li => (li.pay_type === 'regular' || li.pay_type === 'salary') && stub.regular_hours == null).reduce((s, li) => s + (li.amount || 0), 0);
     const displayedTips = stub.reported_tips || lineItemsList.filter(li => li.pay_type === 'tips').reduce((s, li) => s + (li.amount || 0), 0);
     // initialGross = base compensation ONLY — never includes tips/bonus/commission/reimbursement
     // (those are shown as separate line items and added to liveGross individually).
@@ -2136,7 +2136,22 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       try {
         const payload = { payPeriodStart: dateForm.start, payPeriodEnd: dateForm.end, settlementDate: dateForm.payDate };
         if (parseFloat(grossOverride) !== initialGross) {
-          payload.lineItems = [{ payType: 'salary', amount: parseFloat(grossOverride) }];
+          // Include ALL current taxable items so computedGross stays correct on the backend.
+          // Tips/bonus/commission stay in their own line items alongside the new base pay.
+          const baseType = stub.regular_hours != null ? 'regular' : 'salary';
+          const tipAmt   = parseFloat(itemForm.reportedTips || 0);
+          const bonusAmt = parseFloat(itemForm.bonus        || 0);
+          const commAmt  = parseFloat(itemForm.commission   || 0);
+          payload.lineItems = [
+            { payType: baseType, amount: parseFloat(grossOverride || 0) },
+            ...(tipAmt   > 0 ? [{ payType: 'tips',       amount: tipAmt   }] : []),
+            ...(bonusAmt > 0 ? [{ payType: 'bonus',      amount: bonusAmt }] : []),
+            ...(commAmt  > 0 ? [{ payType: 'commission', amount: commAmt  }] : []),
+          ];
+          // Also sync separate DB columns so reported_tips / bonus / commission stay consistent
+          if (!Object.prototype.hasOwnProperty.call(payload, 'reportedTips')) payload.reportedTips = tipAmt;
+          if (!Object.prototype.hasOwnProperty.call(payload, 'bonus'))        payload.bonus        = bonusAmt;
+          if (!Object.prototype.hasOwnProperty.call(payload, 'commission'))   payload.commission   = commAmt;
         }
         // Only send tax overrides when the user explicitly typed new values.
         // Auto-estimated values (from liveGross changing via tips/bonus) should let

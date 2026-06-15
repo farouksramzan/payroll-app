@@ -831,6 +831,15 @@ router.put('/:id', (req, res) => {
           parseFloat(li.amount || 0),
         );
       }
+      // Keep regular_pay in sync with the base compensation line item
+      const baseItem = items.find(li => {
+        const t = li.payType || li.pay_type || '';
+        return t === 'regular' || t === 'salary';
+      });
+      if (baseItem) {
+        db.prepare('UPDATE paystubs SET regular_pay = ? WHERE id = ?')
+          .run(parseFloat(baseItem.amount || 0), stub.id);
+      }
     }
   } else {
     // Only metadata changed — update dates, notes, status, and extra pay columns without touching tax values
