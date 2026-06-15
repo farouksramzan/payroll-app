@@ -1243,13 +1243,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
   }, [clientId, refreshTick]);
 
   async function reloadStubs() {
-    // Paystub refresh must never be blocked by an employee-fetch failure,
-    // so fire them independently and only swallow the employee error.
     try {
       const stubs = await api.getPaystubs(clientId);
       setPaystubs(stubs);
     } catch {}
-    api.getEmployees(clientId).then(setEmployees).catch(() => {});
+    // employees is a prop owned by the parent — ask it to refresh
+    if (onRefresh) onRefresh();
   }
 
   const activeEmps    = employees.filter(e => e.isActive);
