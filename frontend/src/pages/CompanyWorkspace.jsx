@@ -3867,42 +3867,46 @@ function PayLiabilitiesTab({ clientId, client }) {
     finally { setSubmitting(null); }
   }
 
+  async function togglePeriodStatus(period, taxType, newDbStatus) {
+    try {
+      await Promise.all(period.stubs.map(s => api.updatePaystubStatus(s.id, newDbStatus, taxType)));
+      await reload();
+    } catch (e) { alert(e.message); }
+  }
+
   if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><div className="spinner spinner-dark" style={{ width: 28, height: 28 }} /></div>;
 
-  function LiabilitySection({ title, taxType, periods, credit }) {
-    if (periods.length === 0) return null;
-    const grandTotal = periods.reduce((s, p) => s + p.total, 0) + credit;
-    const lateCount  = periods.filter(p => p.status === 'late').length;
-    const TH = { padding: '7px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' };
+  function LiabilitySection({ sections, togglePeriodStatus }) {
+    // sections: array of { title, taxType, periods, credit }
+    const hasAny = sections.some(sec => sec.periods.length > 0);
+    if (!hasAny) return null;
+
+    const TH = {
+      padding: '8px 14px',
+      fontSize: 11,
+      fontWeight: 700,
+      color: '#6b7280',
+      textTransform: 'uppercase',
+      letterSpacing: '0.05em',
+      textAlign: 'left',
+      background: '#f8f9fa',
+      borderBottom: '1px solid #d1d5db',
+    };
 
     return (
-      <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 16 }}>
-        {/* Section header */}
-        <div style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12, background: lateCount > 0 ? '#fff5f5' : 'var(--accent-light)', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontWeight: 700, fontSize: 14 }}>{title}</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-              {periods.length} deposit period{periods.length !== 1 ? 's' : ''} pending
-              {lateCount > 0 && <span style={{ color: '#dc2626', fontWeight: 700, marginLeft: 8 }}>· ⚠ {lateCount} late</span>}
-              {credit < 0 && <span style={{ color: 'var(--success)', fontWeight: 600, marginLeft: 8 }}>· Credit: {fmt(credit)}</span>}
-            </div>
-          </div>
-          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 20, color: grandTotal > 0 ? 'var(--accent)' : 'var(--success)' }}>
-            {fmt(grandTotal)}
-          </div>
-        </div>
-
-        {/* Period rows */}
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+      <div style={{ background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, overflow: 'hidden', marginBottom: 16 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
           <colgroup>
-            <col />
-            <col style={{ width: 110 }} />
-            <col style={{ width: 70 }} />
             <col style={{ width: 130 }} />
+            <col />
             <col style={{ width: 150 }} />
+            <col style={{ width: 60 }} />
+            <col style={{ width: 130 }} />
+            <col style={{ width: 230 }} />
           </colgroup>
           <thead>
-            <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
+            <tr>
+              <th style={TH}>Tax</th>
               <th style={TH}>Pay Dates</th>
               <th style={TH}>IRS Due</th>
               <th style={TH}>Checks</th>
@@ -3911,46 +3915,82 @@ function PayLiabilitiesTab({ clientId, client }) {
             </tr>
           </thead>
           <tbody>
-            {periods.map(period => {
-              const isLate    = period.status === 'late';
-              const isDueSoon = period.status === 'due-soon';
-              const rowBg     = isLate ? '#fff5f5' : isDueSoon ? '#fffbeb' : '#fff';
-              const payDates  = [...new Set(period.stubs.map(s => s.settlement_date || s.pay_period_end).filter(Boolean))].sort();
-              const dateLabel = payDates.length === 0 ? '—'
-                              : payDates.length === 1 ? fmtDate(payDates[0])
-                              : `${fmtDate(payDates[0])} – ${fmtDate(payDates[payDates.length - 1])}`;
+            {sections.map((sec, secIdx) => {
+              if (sec.periods.length === 0) return null;
+              const sectionTotal = sec.periods.reduce((s, p) => s + p.total, 0) + sec.credit;
+              const lateCount    = sec.periods.filter(p => p.status === 'late').length;
               return (
-                <tr key={period.due || 'unknown'}
-                  style={{ background: rowBg, borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
-                  onClick={() => setPeriodModal({ period, taxType })}>
-                  <td style={{ padding: '13px 16px' }}>
-                    {isLate && (
-                      <span style={{ display: 'inline-block', background: '#dc2626', color: '#fff', borderRadius: 4, fontSize: 10, fontWeight: 800, padding: '2px 7px', marginRight: 8, letterSpacing: '0.04em' }}>LATE</span>
-                    )}
-                    {isDueSoon && !isLate && (
-                      <span style={{ display: 'inline-block', background: '#d97706', color: '#fff', borderRadius: 4, fontSize: 10, fontWeight: 800, padding: '2px 7px', marginRight: 8 }}>DUE SOON</span>
-                    )}
-                    <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{dateLabel}</span>
-                  </td>
-                  <td style={{ padding: '13px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 700, color: isLate ? '#dc2626' : isDueSoon ? '#d97706' : '#222' }}>
-                    {fmtDate(period.due)}
-                  </td>
-                  <td style={{ padding: '13px 8px', fontSize: 12, color: 'var(--text-muted)' }}>
-                    {period.stubs.length}
-                  </td>
-                  <td style={{ padding: '13px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 15, color: '#111' }}>
-                    {fmt(period.total)}
-                  </td>
-                  <td style={{ padding: '8px 12px', textAlign: 'right' }}>
-                    <button
-                      className="btn btn-primary btn-sm"
-                      style={{ fontSize: 12, whiteSpace: 'nowrap' }}
-                      disabled={submitting !== null || activeJobId !== null}
-                      onClick={e => { e.stopPropagation(); handleSubmitPeriod(period, taxType); }}>
-                      {taxType === 'sui' ? '↓ SUI Report' : activeJobId && activeJobTaxType === taxType ? 'Sent…' : 'Pay to EFTPS'}
-                    </button>
-                  </td>
-                </tr>
+                <React.Fragment key={sec.taxType}>
+                  {secIdx > 0 && (
+                    <tr><td colSpan={6} style={{ height: 0, padding: 0, borderTop: '2px solid #e5e7eb' }} /></tr>
+                  )}
+                  <tr style={{ background: '#f8f9fa' }}>
+                    <td colSpan={6} style={{ padding: '9px 16px', borderLeft: '3px solid #6b7280', fontWeight: 700, fontSize: 13, color: '#374151' }}>
+                      {sec.title}
+                      {lateCount > 0 && <span style={{ color: '#dc2626', fontWeight: 600, marginLeft: 12, fontSize: 12 }}>{lateCount} overdue</span>}
+                    </td>
+                  </tr>
+
+                  {sec.periods.map(period => {
+                    const isLate    = period.status === 'late';
+                    const isDueSoon = period.status === 'due-soon';
+                    const payDates  = [...new Set(period.stubs.map(s => s.settlement_date || s.pay_period_end).filter(Boolean))].sort();
+                    const dateLabel = payDates.length === 0 ? '—'
+                                    : payDates.length === 1 ? fmtDate(payDates[0])
+                                    : `${fmtDate(payDates[0])} – ${fmtDate(payDates[payDates.length - 1])}`;
+                    return (
+                      <tr key={period.due || 'unknown'}
+                        style={{ background: '#fff', borderTop: '1px solid #e5e7eb', cursor: 'pointer' }}
+                        onMouseEnter={e => { e.currentTarget.style.background = '#fafafa'; }}
+                        onMouseLeave={e => { e.currentTarget.style.background = '#fff'; }}
+                        onClick={() => setPeriodModal({ period, taxType: sec.taxType })}>
+                        <td style={{ padding: '14px 16px', color: '#9ca3af', fontSize: 13 }} />
+                        <td style={{ padding: '14px 14px', color: '#374151', fontSize: 14 }}>{dateLabel}</td>
+                        <td style={{ padding: '14px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600,
+                          color: isLate ? '#dc2626' : isDueSoon ? '#d97706' : '#374151' }}>
+                          {fmtDate(period.due)}
+                          {isLate    && <span style={{ marginLeft: 6, fontFamily: 'inherit', fontWeight: 600, fontSize: 12 }}>(Late)</span>}
+                          {isDueSoon && !isLate && <span style={{ marginLeft: 6, fontFamily: 'inherit', fontWeight: 500, fontSize: 12 }}>(Due Soon)</span>}
+                        </td>
+                        <td style={{ padding: '14px 14px', fontSize: 14, color: '#6b7280' }}>{period.stubs.length}</td>
+                        <td style={{ padding: '14px 14px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 15, color: '#111' }}>
+                          {fmt(period.total)}
+                        </td>
+                        <td style={{ padding: '8px 14px', textAlign: 'right' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end' }}>
+                            <button
+                              onClick={e => { e.stopPropagation(); togglePeriodStatus(period, sec.taxType, 'submitted'); }}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#16a34a', fontSize: 13, textDecoration: 'underline', padding: '2px 0', whiteSpace: 'nowrap' }}>
+                              Mark Sent
+                            </button>
+                            <button
+                              className="btn btn-primary btn-sm"
+                              style={{ fontSize: 13, whiteSpace: 'nowrap' }}
+                              disabled={submitting !== null || activeJobId !== null}
+                              onClick={e => { e.stopPropagation(); handleSubmitPeriod(period, sec.taxType); }}>
+                              {sec.taxType === 'sui' ? '↓ SUI Report' : activeJobId && activeJobTaxType === sec.taxType ? 'Sent…' : 'Pay to EFTPS'}
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+
+                  {/* Subtotal row */}
+                  <tr style={{ background: '#f8f9fa', borderTop: '1px solid #e5e7eb' }}>
+                    <td colSpan={4} style={{ padding: '10px 14px' }}>
+                      {sec.credit < 0 && (
+                        <span style={{ fontSize: 13, color: '#16a34a' }}>
+                          (Credit: {fmt(sec.credit)} applied)
+                        </span>
+                      )}
+                    </td>
+                    <td style={{ padding: '10px 14px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 15, color: '#111' }}>
+                      {fmt(sectionTotal)}
+                    </td>
+                    <td />
+                  </tr>
+                </React.Fragment>
               );
             })}
           </tbody>
@@ -3986,7 +4026,9 @@ function PayLiabilitiesTab({ clientId, client }) {
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <span style={{ fontWeight: 800, fontSize: 18 }}>{title}</span>
-                <LiabStatusBadge status={period.status} />
+                <span style={{ color: isLate ? '#dc2626' : isDueSoon ? '#d97706' : isSent ? '#16a34a' : '#666', fontSize: 13, fontWeight: 600 }}>
+                  {isLate ? 'Late' : isDueSoon ? 'Due Soon' : isSent ? '✓ Sent' : 'Upcoming'}
+                </span>
               </div>
               <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 6 }}>
                 IRS Deposit Due:{' '}
@@ -4145,10 +4187,15 @@ function PayLiabilitiesTab({ clientId, client }) {
         </div>
       )}
 
-      {/* Period sections */}
-      <LiabilitySection title="Federal 941"       taxType="941" periods={periods941} credit={credit941} />
-      <LiabilitySection title="Federal 940 (FUTA)" taxType="940" periods={periods940} credit={credit940} />
-      <LiabilitySection title="State SUI"          taxType="sui" periods={periodsSUI} credit={0} />
+      {/* Pending liabilities — single unified card */}
+      <LiabilitySection
+        sections={[
+          { title: 'Federal 941',        taxType: '941', periods: periods941, credit: credit941 },
+          { title: 'Federal 940 (FUTA)', taxType: '940', periods: periods940, credit: credit940 },
+          { title: 'State SUI',          taxType: 'sui', periods: periodsSUI,  credit: 0 },
+        ]}
+        togglePeriodStatus={togglePeriodStatus}
+      />
 
       {periods941.length === 0 && periods940.length === 0 && periodsSUI.length === 0 && (
         <div className="card">
@@ -4160,14 +4207,13 @@ function PayLiabilitiesTab({ clientId, client }) {
         </div>
       )}
 
-      {/* Sent / Submitted history — period-based, same format as pending */}
+      {/* Sent / Submitted history — single collapsible flat table */}
       {(() => {
         const sent941 = paystubs.filter(s => ISSUED.has(s.check_status) && s.status === 'submitted');
         const sent940 = paystubs.filter(s => ISSUED.has(s.check_status) && s.status_940 === 'submitted' && s.futa_tax > 0);
         const sentSUI = paystubs.filter(s => ISSUED.has(s.check_status) && s.suta_tax > 0 && (s.status_sui || 'pending') === 'submitted');
         if (sent941.length + sent940.length + sentSUI.length === 0) return null;
 
-        // Group sent stubs into periods, forcing status = 'completed' (Sent badge)
         function buildSentPeriods(stubs, taxType, schedule) {
           const map = {};
           stubs.forEach(s => {
@@ -4181,48 +4227,63 @@ function PayLiabilitiesTab({ clientId, client }) {
                       : (s.suta_tax || 0);
             map[key].total += amt;
           });
-          return Object.values(map).sort((a, b) => (b.due || '').localeCompare(a.due || '')); // newest first
+          return Object.values(map).sort((a, b) => (b.due || '').localeCompare(a.due || ''));
         }
 
         const sp941 = buildSentPeriods(sent941, '941', sched941);
         const sp940 = buildSentPeriods(sent940, '940', sched940);
         const spSUI = buildSentPeriods(sentSUI, 'sui', schedSUI);
 
-        const TH = { padding: '7px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' };
+        // Flatten all sent periods into one list with taxType label
+        const allSent = [
+          ...sp941.map(p => ({ ...p, taxType: '941', taxLabel: 'Federal 941' })),
+          ...sp940.map(p => ({ ...p, taxType: '940', taxLabel: 'Federal 940' })),
+          ...spSUI.map(p => ({ ...p, taxType: 'sui', taxLabel: 'State SUI'   })),
+        ].sort((a, b) => (b.due || '').localeCompare(a.due || ''));
 
-        function SentSection({ title, taxType, periods }) {
-          const [open, setOpen] = useState(true);
-          if (periods.length === 0) return null;
-          const grandTotal = periods.reduce((s, p) => s + p.total, 0);
+        const totalSent = allSent.reduce((s, p) => s + p.total, 0);
+
+        function SentHistory() {
+          const [open, setOpen] = useState(false);
+          const TH = {
+            padding: '8px 14px',
+            fontSize: 11,
+            fontWeight: 700,
+            color: '#6b7280',
+            textTransform: 'uppercase',
+            letterSpacing: '0.05em',
+            textAlign: 'left',
+            background: '#f8f9fa',
+            borderBottom: '1px solid #d1d5db',
+          };
           return (
-            <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 12 }}>
-              {/* Section header */}
+            <div style={{ background: '#fff', border: '1px solid #d1d5db', borderRadius: 8, overflow: 'hidden', marginTop: 20 }}>
+              {/* Collapsible header */}
               <button
-                onClick={() => setOpen(p => !p)}
-                style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', width: '100%', background: '#f0fdf4', borderBottom: open ? '1px solid var(--border)' : 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)', transform: open ? 'rotate(90deg)' : 'rotate(0)', display: 'inline-block', transition: 'transform 0.15s' }}>▶</span>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>{title}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                    {periods.length} deposit period{periods.length !== 1 ? 's' : ''} sent
-                  </div>
-                </div>
-                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 18, color: 'var(--success)' }}>
-                  {fmt(grandTotal)}
-                </div>
+                onClick={() => setOpen(o => !o)}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 18px', width: '100%', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', borderBottom: open ? '1px solid #d1d5db' : 'none' }}>
+                <span style={{ fontSize: 11, color: '#9ca3af', transform: open ? 'rotate(90deg)' : 'rotate(0)', display: 'inline-block', transition: 'transform 0.15s' }}>▶</span>
+                <span style={{ fontWeight: 700, fontSize: 14, color: '#374151', flex: 1 }}>
+                  Sent / Submitted ({allSent.length})
+                </span>
+                <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 15, color: '#16a34a' }}>
+                  {fmt(totalSent)}
+                </span>
               </button>
 
               {open && (
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
                   <colgroup>
-                    <col />
-                    <col style={{ width: 110 }} />
-                    <col style={{ width: 70 }} />
                     <col style={{ width: 130 }} />
+                    <col />
+                    <col style={{ width: 120 }} />
+                    <col style={{ width: 60 }} />
+                    <col style={{ width: 140 }} />
                     <col style={{ width: 80 }} />
                   </colgroup>
                   <thead>
-                    <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
+                    <tr>
+                      <th style={TH}>Tax</th>
                       <th style={TH}>Pay Dates</th>
                       <th style={TH}>IRS Due</th>
                       <th style={TH}>Checks</th>
@@ -4231,32 +4292,30 @@ function PayLiabilitiesTab({ clientId, client }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {periods.map(period => {
-                      const payDates = [...new Set(period.stubs.map(s => s.settlement_date || s.pay_period_end).filter(Boolean))].sort();
+                    {allSent.map((period, idx) => {
+                      const payDates  = [...new Set(period.stubs.map(s => s.settlement_date || s.pay_period_end).filter(Boolean))].sort();
                       const dateLabel = payDates.length === 0 ? '—'
                                       : payDates.length === 1 ? fmtDate(payDates[0])
                                       : `${fmtDate(payDates[0])} – ${fmtDate(payDates[payDates.length - 1])}`;
                       return (
-                        <tr key={period.due || 'unknown'}
-                          style={{ background: '#f0fdf4', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
-                          onMouseEnter={e => { e.currentTarget.style.background = '#dcfce7'; }}
-                          onMouseLeave={e => { e.currentTarget.style.background = '#f0fdf4'; }}
-                          onClick={() => setPeriodModal({ period, taxType })}>
-                          <td style={{ padding: '13px 16px' }}>
-                            <span style={{ display: 'inline-block', background: '#16a34a', color: '#fff', borderRadius: 4, fontSize: 10, fontWeight: 800, padding: '2px 7px', marginRight: 8, letterSpacing: '0.04em' }}>SENT</span>
-                            <span style={{ color: 'var(--text-secondary)', fontSize: 13 }}>{dateLabel}</span>
-                          </td>
-                          <td style={{ padding: '13px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 700, color: 'var(--text-secondary)' }}>
-                            {fmtDate(period.due)}
-                          </td>
-                          <td style={{ padding: '13px 8px', fontSize: 12, color: 'var(--text-muted)' }}>
-                            {period.stubs.length}
-                          </td>
-                          <td style={{ padding: '13px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 15, color: 'var(--success)' }}>
+                        <tr key={`${period.taxType}-${period.due || idx}`}
+                          style={{ background: '#fff', borderTop: '1px solid #e5e7eb', cursor: 'pointer' }}
+                          onMouseEnter={e => { e.currentTarget.style.background = '#fafafa'; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = '#fff'; }}
+                          onClick={() => setPeriodModal({ period, taxType: period.taxType })}>
+                          <td style={{ padding: '14px 14px', fontSize: 13, color: '#6b7280', fontWeight: 500 }}>{period.taxLabel}</td>
+                          <td style={{ padding: '14px 14px', color: '#374151' }}>{dateLabel}</td>
+                          <td style={{ padding: '14px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, color: '#6b7280' }}>{fmtDate(period.due)}</td>
+                          <td style={{ padding: '14px 14px', fontSize: 14, color: '#6b7280' }}>{period.stubs.length}</td>
+                          <td style={{ padding: '14px 14px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 15, color: '#16a34a' }}>
                             {fmt(period.total)}
                           </td>
-                          <td style={{ padding: '8px 12px', textAlign: 'right' }}>
-                            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>View →</span>
+                          <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                            <button
+                              onClick={e => { e.stopPropagation(); togglePeriodStatus(period, period.taxType, 'pending'); }}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 13, textDecoration: 'underline', padding: '2px 0' }}>
+                              Undo
+                            </button>
                           </td>
                         </tr>
                       );
@@ -4268,14 +4327,7 @@ function PayLiabilitiesTab({ clientId, client }) {
           );
         }
 
-        return (
-          <div style={{ marginTop: 20 }}>
-            <div style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>Sent / Submitted</div>
-            <SentSection title="Federal 941"        taxType="941" periods={sp941} />
-            <SentSection title="Federal 940 (FUTA)" taxType="940" periods={sp940} />
-            <SentSection title="State SUI"           taxType="sui" periods={spSUI} />
-          </div>
-        );
+        return <SentHistory />;
       })()}
 
       {/* Period detail modal */}
