@@ -2070,7 +2070,15 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
     const lineItemsList = stub.lineItems || [];
     const compFromItems = lineItemsList.filter(li => li.pay_type === 'regular' && stub.regular_hours == null).reduce((s, li) => s + (li.amount || 0), 0);
     const displayedTips = stub.reported_tips || lineItemsList.filter(li => li.pay_type === 'tips').reduce((s, li) => s + (li.amount || 0), 0);
-    const initialGross  = r2(compFromItems > 0 ? compFromItems : stub.regular_pay != null ? stub.regular_pay : (stub.gross_wages || 0));
+    // initialGross = base compensation ONLY — never includes tips/bonus/commission/reimbursement
+    // (those are shown as separate line items and added to liveGross individually).
+    // When stub.gross_wages is the only source, subtract the separately-stored items so
+    // compensation + tips + bonus + commission = gross_wages (no double-counting).
+    const initialGross  = r2(
+      compFromItems > 0 ? compFromItems
+      : stub.regular_pay != null ? stub.regular_pay
+      : Math.max(0, (stub.gross_wages || 0) - (displayedTips || 0) - (stub.bonus || 0) - (stub.commission || 0))
+    );
     const initialFit    = r2(stub.fit_withholding    || 0);
     const initialSS     = r2(stub.employee_ss        || 0);
     const initialMed    = r2(stub.employee_medicare  || 0);
@@ -2182,7 +2190,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
     const liveGross = r2(
       parseFloat(grossOverride || 0) +
       (stub.overtime_pay || 0) +
-      optionalEarnings.filter(x => addedItems.has(x.key)).reduce((s, x) => s + parseFloat(itemForm[x.key] || 0), 0)
+      optionalEarnings.filter(x => addedItems.has(x.key) && x.key !== 'reimbursement').reduce((s, x) => s + parseFloat(itemForm[x.key] || 0), 0)
     );
 
     // Auto-update SS/Medicare/FIT estimates when gross changes due to tip/bonus/commission edits.
