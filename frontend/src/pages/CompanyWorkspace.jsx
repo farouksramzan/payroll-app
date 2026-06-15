@@ -2017,14 +2017,25 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
             )}
 
             {/* Save date overrides footer */}
-            <div style={{ padding: '10px 24px 18px', display: 'flex', justifyContent: 'flex-end', gap: 8, borderTop: '1px solid var(--border)', marginTop: 10 }}>
-              <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: 12 }}>Close</button>
-              {pendingDirty && (
-                <button className="btn btn-primary" style={{ fontSize: 12 }}
-                  onClick={() => { setPeriodOverrides(prev => ({ ...prev, [period.end]: { start: dateForm.start, end: dateForm.end, payDate: dateForm.payDate } })); onClose(); }}>
-                  Save Dates
-                </button>
-              )}
+            <div style={{ position: 'sticky', bottom: 0, background: '#fff', borderTop: '2px solid var(--border)', padding: '12px 24px', display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'center', boxShadow: '0 -2px 10px rgba(0,0,0,0.07)', zIndex: 10 }}>
+              <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: 13 }}>Close</button>
+              <button
+                disabled={!pendingDirty}
+                onClick={() => { setPeriodOverrides(prev => ({ ...prev, [period.end]: { start: dateForm.start, end: dateForm.end, payDate: dateForm.payDate } })); onClose(); }}
+                style={{
+                  background: pendingDirty ? '#16a34a' : '#94a3b8',
+                  color: '#fff',
+                  border: 'none', borderRadius: 7,
+                  padding: '9px 24px',
+                  fontSize: 15, fontWeight: 700,
+                  cursor: pendingDirty ? 'pointer' : 'default',
+                  transition: 'background 0.15s',
+                  minWidth: 130,
+                  opacity: pendingDirty ? 1 : 0.45,
+                }}
+              >
+                💾 Save Changes
+              </button>
             </div>
           </div>
         </ModalOverlay>
