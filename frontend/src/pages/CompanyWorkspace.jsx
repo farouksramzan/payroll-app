@@ -2068,16 +2068,19 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
 
     // Editable date / gross / other payroll items state (hooks must be at top of history branch)
     const lineItemsList = stub.lineItems || [];
-    const compFromItems = lineItemsList.filter(li => (li.pay_type === 'regular' || li.pay_type === 'salary') && stub.regular_hours == null).reduce((s, li) => s + (li.amount || 0), 0);
     const displayedTips = stub.reported_tips || lineItemsList.filter(li => li.pay_type === 'tips').reduce((s, li) => s + (li.amount || 0), 0);
-    // initialGross = base compensation ONLY — never includes tips/bonus/commission/reimbursement
-    // (those are shown as separate line items and added to liveGross individually).
-    // When stub.gross_wages is the only source, subtract the separately-stored items so
-    // compensation + tips + bonus + commission = gross_wages (no double-counting).
+    // initialGross = base compensation derived ALWAYS from stub.gross_wages so that
+    // liveGross = initialGross + OT + tips + bonus + commission = stub.gross_wages exactly.
+    // This is the only formula that guarantees the modal's Check Amount matches the
+    // inline net pay cell (both computed from the same gross_wages).
     const initialGross  = r2(
-      compFromItems > 0 ? compFromItems
-      : stub.regular_pay != null ? stub.regular_pay
-      : Math.max(0, (stub.gross_wages || 0) - (displayedTips || 0) - (stub.bonus || 0) - (stub.commission || 0))
+      Math.max(0,
+        (stub.gross_wages    || 0)
+        - (stub.overtime_pay || 0)
+        - (displayedTips     || 0)
+        - (stub.bonus        || 0)
+        - (stub.commission   || 0)
+      )
     );
     const initialFit    = r2(stub.fit_withholding    || 0);
     const initialSS     = r2(stub.employee_ss        || 0);
@@ -2181,7 +2184,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
 
     const mainPayRow = stub.regular_hours != null && stub.regular_pay != null
       ? { label: `Hourly  (${stub.regular_hours} hrs)`, amount: stub.regular_pay, editValue: canEdit ? grossOverride : undefined, onEditChange: canEdit ? setGrossOverride : undefined }
-      : { label: 'Compensation', amount: compFromItems > 0 ? compFromItems : (stub.gross_wages || 0), editValue: canEdit ? grossOverride : undefined, onEditChange: canEdit ? setGrossOverride : undefined };
+      : { label: 'Compensation', amount: initialGross, editValue: canEdit ? grossOverride : undefined, onEditChange: canEdit ? setGrossOverride : undefined };
 
     const optionalEarnings = [
       { key: 'reportedTips',  label: 'Reported Tips'  },
