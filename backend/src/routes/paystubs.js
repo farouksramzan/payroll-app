@@ -446,16 +446,18 @@ function renderMICRCheck(doc, stub, client, routingNumber, accountNumber, db) {
   const empName = stub.employee_name || (stub.first_name ? `${stub.first_name} ${stub.last_name}` : '—');
 
   // ── Top 2/3: Paystub section (y 0–528) ──────────────────────────────────────
-  doc.rect(ML, 30, TW, 56).fill(ACCENT);
-  doc.fillColor('#fff').font('Helvetica-Bold').fontSize(13)
-    .text(client.business_name, ML + 10, 40, { width: TW / 2 });
+  // No dark fill — print-friendly plain header
   const companyAddrLine = [client.business_address, [client.business_city, client.state, client.business_zip].filter(Boolean).join(', ')].filter(Boolean).join(', ');
-  doc.font('Helvetica').fontSize(7.5).text(companyAddrLine || `EIN: ${client.ein}`, ML + 10, 56);
-  if (companyAddrLine) doc.font('Helvetica').fontSize(7.5).text(`EIN: ${client.ein}`, ML + 10, 66);
-  doc.font('Helvetica-Bold').fontSize(9)
-    .text('PAY STUB — DETACH AND RETAIN', ML + 10, companyAddrLine ? 57 : 63, { align: 'right', width: TW - 10 });
+  doc.font('Helvetica-Bold').fontSize(13).fillColor(DARK)
+    .text(client.business_name, ML, 20, { width: TW / 2 });
+  doc.font('Helvetica').fontSize(8).fillColor(GRAY)
+    .text(companyAddrLine || '', ML, 35, { width: TW / 2 });
+  if (companyAddrLine) doc.font('Helvetica').fontSize(8).fillColor(GRAY).text(`EIN: ${client.ein}`, ML, 45);
+  doc.font('Helvetica').fontSize(8).fillColor(GRAY)
+    .text('PAY STUB — DETACH AND RETAIN', ML, 28, { width: TW, align: 'right' });
+  doc.rect(ML, 56, TW, 0.75).fill(BORDER);
 
-  let y = 96;
+  let y = 68;
   function kv2(label, val, x, yy, w = 130) {
     doc.font('Helvetica').fontSize(7).fillColor(GRAY).text(label.toUpperCase(), x, yy, { width: w });
     doc.font('Helvetica-Bold').fontSize(8.5).fillColor(DARK).text(val || '—', x, yy + 9, { width: w });
