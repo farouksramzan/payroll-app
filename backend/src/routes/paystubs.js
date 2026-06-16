@@ -336,6 +336,108 @@ function renderClassicCheck(doc, stub, client, db) {
   doc.rect(CX - 4, CY - 8, CW + 8, PH - CY - ML + 8 - 10).stroke(BORDER);
 }
 
+// ── Shared MICR check-section renderer ─────────────────────────────────────────
+// checkTop = y where the 3.5" check section begins (252 pts tall)
+// micrY    = absolute page y for the MICR line (standard: PH - 45 for bottom-stub layout)
+function drawCheckSection(doc, stub, client, routingNumber, accountNumber, checkTop, micrY) {
+  const PH = 792;
+  const CX = 36, CW = 540;
+  const CH = 252; // 3.5 inches
+  const DARK = '#0f172a', GRAY = '#64748b', BORDER = '#cbd5e1';
+  const payDate = stub.settlement_date || stub.pay_period_end || new Date().toISOString().slice(0, 10);
+  const empName = stub.employee_name || (stub.first_name ? `${stub.first_name} ${stub.last_name}` : '—');
+  const netPay  = r2(
+    (stub.gross_wages || 0)
+    - (stub.fit_withholding || 0)  - (stub.employee_ss || 0)
+    - (stub.employee_medicare || 0) - (stub.additional_medicare || 0)
+    - (stub.state_income_tax || 0)  - (stub.deduction || 0)
+    - (stub.garnishment || 0)       + (stub.reimbursement || 0)
+  );
+
+  const T = checkTop; // alias
+
+  // ── Company block (upper-left) ──────────────────────────────────────────────
+  doc.font('Helvetica-Bold').fontSize(11).fillColor(DARK)
+    .text(client.business_name || '', CX, T + 12, { width: CW * 0.55 });
+  let cy = T + 26;
+  if (client.business_address) {
+    doc.font('Helvetica').fontSize(8).fillColor(GRAY).text(client.business_address, CX, cy, { width: CW * 0.55 });
+    cy += 11;
+  }
+  const compCity = [client.business_city, client.state, client.business_zip].filter(Boolean).join(', ');
+  if (compCity) { doc.font('Helvetica').fontSize(8).fillColor(GRAY).text(compCity, CX, cy, { width: CW * 0.55 }); }
+
+  // ── Check # + Date (upper-right) ────────────────────────────────────────────
+  doc.font('Helvetica-Bold').fontSize(11).fillColor(DARK)
+    .text(stub.check_number ? `No. ${stub.check_number}` : '', CX, T + 12, { width: CW, align: 'right' });
+  doc.font('Helvetica').fontSize(8.5).fillColor(GRAY)
+    .text('Date:', CX + CW - 140, T + 30, { width: 36 });
+  doc.font('Helvetica-Bold').fontSize(8.5).fillColor(DARK)
+    .text(payDate, CX + CW - 104, T + 30, { width: 104, align: 'right' });
+
+  // ── Horizontal rule ─────────────────────────────────────────────────────────
+  doc.rect(CX, T + 48, CW, 0.75).fill('#aab');
+
+  // ── PAY TO THE ORDER OF ─────────────────────────────────────────────────────
+  doc.font('Helvetica').fontSize(7.5).fillColor(GRAY)
+    .text('PAY TO THE ORDER OF', CX, T + 56);
+  // Payee name box
+  doc.rect(CX, T + 68, CW - 128, 24).stroke(BORDER);
+  doc.font('Helvetica-Bold').fontSize(11).fillColor(DARK)
+    .text(empName, CX + 5, T + 73, { width: CW - 138 });
+  // Amount box
+  doc.rect(CX + CW - 122, T + 56, 122, 36).stroke(BORDER);
+  doc.font('Helvetica').fontSize(7.5).fillColor(GRAY)
+    .text('$ AMOUNT', CX + CW - 120, T + 59);
+  doc.font('Helvetica-Bold').fontSize(13).fillColor(DARK)
+    .text(`$${Number(netPay).toFixed(2)}`, CX + CW - 118, T + 71, { width: 114, align: 'right' });
+
+  // ── Amount in words ─────────────────────────────────────────────────────────
+  doc.rect(CX, T + 100, CW, 20).stroke(BORDER);
+  doc.font('Helvetica').fontSize(8.5).fillColor(DARK)
+    .text(numberToWords(netPay) + ' ****', CX + 5, T + 106, { width: CW - 10 });
+
+  // ── Bank info (small, between words and memo) ────────────────────────────────
+  const bankLine = routingNumber ? `Routing: ${routingNumber}${accountNumber ? `   Account: ${'*'.repeat(Math.max(0, accountNumber.length - 4))}${accountNumber.slice(-4)}` : ''}` : '';
+  if (bankLine) {
+    doc.font('Helvetica').fontSize(7).fillColor(GRAY)
+      .text(bankLine, CX, T + 124, { width: CW });
+  }
+
+  // ── Memo + Signature ────────────────────────────────────────────────────────
+  const memo = `Pay period: ${stub.pay_period_start} – ${stub.pay_period_end}`;
+  doc.font('Helvetica').fontSize(8).fillColor(GRAY).text('MEMO:', CX, T + 137);
+  doc.font('Helvetica').fontSize(8).fillColor(DARK).text(memo, CX + 42, T + 137);
+  doc.rect(CX + CW - 190, T + 160, 190, 0.75).fill(DARK);
+  doc.font('Helvetica').fontSize(7).fillColor(GRAY)
+    .text('Authorized Signature', CX + CW - 190, T + 165, { width: 190, align: 'center' });
+
+  // ── MICR band ───────────────────────────────────────────────────────────────
+  // Per ANSI X9.27: MICR characters must occupy the 5/8" clear band at the
+  // document bottom. We position at micrY (caller provides absolute page coord).
+  // Use ASCII transit (:) and on-us (|) delimiters — Courier-Bold renders these
+  // reliably. Replace with GnuMICR/E-13B font path below when available.
+  const paddedCheck = String(stub.check_number || '').padStart(6, '0');
+  const rn = (routingNumber || '').padEnd(9, '_');
+  const an = accountNumber  || '_'.repeat(12);
+  // Format: :routing:  account  |checknum|
+  const micrLine = `:${rn}:   ${an}   |${paddedCheck}|`;
+
+  // Clear band background (white — critical for MICR toner readability)
+  doc.rect(0, micrY - 6, 612, 32).fill('#ffffff');
+  // Label
+  doc.font('Helvetica').fontSize(6).fillColor(GRAY)
+    .text('MICR — DO NOT WRITE OR MARK IN THIS AREA', 0, micrY - 6, { width: 612, align: 'center' });
+  // MICR line in Courier-Bold at 12pt with letter-spacing
+  doc.font('Courier-Bold').fontSize(12).fillColor('#000000')
+    .text(micrLine, CX, micrY + 2, { width: CW, align: 'center', characterSpacing: 1.2 });
+
+  // ── Outer border around check section ───────────────────────────────────────
+  doc.rect(CX - 2, T, CW + 4, CH).stroke(BORDER);
+}
+
+function r2(n) { return Math.round((n || 0) * 100) / 100; }
+
 function renderMICRCheck(doc, stub, client, routingNumber, accountNumber, db) {
   const PW = 612, PH = 792, ML = 36, MR = 36, TW = PW - ML - MR;
   const ACCENT = '#1a2e5a', DARK = '#0f172a', GRAY = '#64748b', BORDER = '#e2e8f0';
@@ -423,63 +525,8 @@ function renderMICRCheck(doc, stub, client, routingNumber, accountNumber, db) {
   doc.font('Helvetica-Bold').fontSize(11).fillColor(ACCENT).text('NET PAY', ML + 4, y).text(`$${Number(stub.net_pay).toFixed(2)}`, ML + 4, y, { width: TW - 8, align: 'right' }); y += 20;
 
   // ── Bottom 1/3: Check section (y 528–792) ────────────────────────────────────
-  const CY = 528, CH = 264, CX = 36, CW = 540;
-  const payDate = stub.settlement_date || stub.pay_period_end || new Date().toISOString().slice(0, 10);
-
-  // Top border of check
-  doc.rect(CX - 4, CY, CW + 8, 1).fill(BORDER);
-
-  // Company block (upper-left)
-  doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text(client.business_name, CX, CY + 10, { width: CW / 2 });
-  const companyCity2 = [client.business_city, client.state, client.business_zip].filter(Boolean).join(', ');
-  let companyYOffset = CY + 22;
-  if (client.business_address) { doc.font('Helvetica').fontSize(7.5).fillColor(GRAY).text(client.business_address, CX, companyYOffset, { width: CW / 2 }); companyYOffset += 10; }
-  if (companyCity2) { doc.font('Helvetica').fontSize(7.5).fillColor(GRAY).text(companyCity2, CX, companyYOffset, { width: CW / 2 }); }
-
-  // Check number (upper-right)
-  doc.font('Helvetica-Bold').fontSize(11).fillColor(DARK)
-    .text(stub.check_number ? `#${stub.check_number}` : '', CX + CW - 80, CY + 10, { width: 80, align: 'right' });
-
-  // Date (right side, below check#)
-  doc.font('Helvetica').fontSize(8).fillColor(GRAY)
-    .text(`DATE: ${payDate}`, CX + CW - 150, CY + 28, { width: 150, align: 'right' });
-
-  // PAY TO THE ORDER OF line (y = CY+58)
-  doc.font('Helvetica').fontSize(8).fillColor(GRAY).text('PAY TO THE ORDER OF', CX, CY + 58);
-  doc.font('Helvetica-Bold').fontSize(11).fillColor(DARK).text(empName, CX, CY + 68, { width: CW - 130 });
-  // Horizontal line under name
-  doc.rect(CX, CY + 84, CW - 130, 1).fill(BORDER);
-  // Amount box (right side)
-  doc.rect(CX + CW - 120, CY + 60, 120, 28).stroke(BORDER);
-  doc.font('Helvetica-Bold').fontSize(12).fillColor(DARK)
-    .text(`$${Number(stub.net_pay).toFixed(2)}`, CX + CW - 118, CY + 67, { width: 114, align: 'right' });
-
-  // Amount in words (y = CY+100)
-  doc.rect(CX, CY + 100, CW, 20).stroke(BORDER);
-  doc.font('Helvetica').fontSize(9).fillColor(DARK)
-    .text(numberToWords(stub.net_pay) + '****', CX + 4, CY + 106, { width: CW - 8 });
-
-  // Memo line (y = CY+130)
-  const memo = `Pay period: ${stub.pay_period_start} to ${stub.pay_period_end}`;
-  doc.font('Helvetica').fontSize(8).fillColor(GRAY).text('MEMO:', CX, CY + 130);
-  doc.fillColor(DARK).text(memo, CX + 38, CY + 130);
-
-  // Signature line (y = CY+155)
-  doc.rect(CX + CW - 180, CY + 155, 180, 1).fill(DARK);
-  doc.font('Helvetica').fontSize(7).fillColor(GRAY)
-    .text('Authorized Signature', CX + CW - 180, CY + 159, { width: 180, align: 'center' });
-
-  // MICR line (y = CY+CH-28 = 764)
-  const paddedCheck = String(stub.check_number || '').padStart(4, '0');
-  const micrLine = routingNumber && accountNumber
-    ? `⑆${routingNumber}⑆${accountNumber}⑈${paddedCheck}⑈`
-    : `⑆         ⑆              ⑈${paddedCheck}⑈`;
-  doc.font('Helvetica').fontSize(6).fillColor(GRAY).text('MICR LINE', CX, CY + CH - 42, { width: CW, align: 'center' });
-  doc.font('Courier-Bold').fontSize(14).fillColor('#000')
-    .text(micrLine, CX, CY + CH - 28, { width: CW, align: 'center' });
-
-  // Outer border
-  doc.rect(CX - 4, CY, CW + 8, CH).stroke(BORDER);
+  // checkTop=528, micrY=747 (0.625" = 45 pts from page bottom per ANSI X9.27)
+  drawCheckSection(doc, stub, client, routingNumber, accountNumber, 528, 747);
 }
 
 function renderTopCheck(doc, stub, client, routingNumber, accountNumber, db) {
@@ -489,61 +536,9 @@ function renderTopCheck(doc, stub, client, routingNumber, accountNumber, db) {
   doc.addPage();
   const empName = stub.employee_name || (stub.first_name ? `${stub.first_name} ${stub.last_name}` : '—');
 
-  // ── Top 1/3: Check section (y 0–264) ─────────────────────────────────────────
-  const CY = 0, CH = 264, CX = 36, CW = 540;
-  const payDate = stub.settlement_date || stub.pay_period_end || new Date().toISOString().slice(0, 10);
-
-  // Company block (upper-left)
-  doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text(client.business_name, CX, CY + 10, { width: CW / 2 });
-  const companyCity2 = [client.business_city, client.state, client.business_zip].filter(Boolean).join(', ');
-  let companyYOffset = CY + 22;
-  if (client.business_address) { doc.font('Helvetica').fontSize(7.5).fillColor(GRAY).text(client.business_address, CX, companyYOffset, { width: CW / 2 }); companyYOffset += 10; }
-  if (companyCity2) { doc.font('Helvetica').fontSize(7.5).fillColor(GRAY).text(companyCity2, CX, companyYOffset, { width: CW / 2 }); }
-
-  // Check number (upper-right)
-  doc.font('Helvetica-Bold').fontSize(11).fillColor(DARK)
-    .text(stub.check_number ? `#${stub.check_number}` : '', CX + CW - 80, CY + 10, { width: 80, align: 'right' });
-
-  // Date (right side, below check#)
-  doc.font('Helvetica').fontSize(8).fillColor(GRAY)
-    .text(`DATE: ${payDate}`, CX + CW - 150, CY + 28, { width: 150, align: 'right' });
-
-  // PAY TO THE ORDER OF line (y = CY+58)
-  doc.font('Helvetica').fontSize(8).fillColor(GRAY).text('PAY TO THE ORDER OF', CX, CY + 58);
-  doc.font('Helvetica-Bold').fontSize(11).fillColor(DARK).text(empName, CX, CY + 68, { width: CW - 130 });
-  // Horizontal line under name
-  doc.rect(CX, CY + 84, CW - 130, 1).fill(BORDER);
-  // Amount box (right side)
-  doc.rect(CX + CW - 120, CY + 60, 120, 28).stroke(BORDER);
-  doc.font('Helvetica-Bold').fontSize(12).fillColor(DARK)
-    .text(`$${Number(stub.net_pay).toFixed(2)}`, CX + CW - 118, CY + 67, { width: 114, align: 'right' });
-
-  // Amount in words (y = CY+100)
-  doc.rect(CX, CY + 100, CW, 20).stroke(BORDER);
-  doc.font('Helvetica').fontSize(9).fillColor(DARK)
-    .text(numberToWords(stub.net_pay) + '****', CX + 4, CY + 106, { width: CW - 8 });
-
-  // Memo line (y = CY+130)
-  const memo = `Pay period: ${stub.pay_period_start} to ${stub.pay_period_end}`;
-  doc.font('Helvetica').fontSize(8).fillColor(GRAY).text('MEMO:', CX, CY + 130);
-  doc.fillColor(DARK).text(memo, CX + 38, CY + 130);
-
-  // Signature line (y = CY+155)
-  doc.rect(CX + CW - 180, CY + 155, 180, 1).fill(DARK);
-  doc.font('Helvetica').fontSize(7).fillColor(GRAY)
-    .text('Authorized Signature', CX + CW - 180, CY + 159, { width: 180, align: 'center' });
-
-  // MICR line at bottom of check section (y = 236)
-  const paddedCheck = String(stub.check_number || '').padStart(4, '0');
-  const micrLine = routingNumber && accountNumber
-    ? `⑆${routingNumber}⑆${accountNumber}⑈${paddedCheck}⑈`
-    : `⑆         ⑆              ⑈${paddedCheck}⑈`;
-  doc.font('Helvetica').fontSize(6).fillColor(GRAY).text('MICR LINE', CX, 222, { width: CW, align: 'center' });
-  doc.font('Courier-Bold').fontSize(14).fillColor('#000')
-    .text(micrLine, CX, 236, { width: CW, align: 'center' });
-
-  // Outer border
-  doc.rect(CX - 4, CY, CW + 8, CH).stroke(BORDER);
+  // ── Top 1/3: Check section (y 0–252) ─────────────────────────────────────────
+  // checkTop=0, micrY=219 (0.625" = 45 pts from bottom of 3.5" check section)
+  drawCheckSection(doc, stub, client, routingNumber, accountNumber, 0, 219);
 
   // ── Bottom 2/3: Paystub section (y 264–792) ──────────────────────────────────
   const STUB_TOP = 264;
