@@ -2903,7 +2903,17 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
 
             {/* Download PDFs — history checks only */}
             {selectedHistoryStubs.size > 0 && <>
-              <button disabled={bulkBusy} onClick={async () => { setBulkBusy(true); try { await api.printSelectedChecks(clientId, [...selectedHistoryStubs], localStorage.getItem('checkDesign') || 'classic'); } catch (e) { alert(e.message); } finally { setBulkBusy(false); } }} style={btn}>↓ Paycheck PDF</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+                <button disabled={bulkBusy} onClick={async () => { setBulkBusy(true); try { await api.printSelectedChecks(clientId, [...selectedHistoryStubs], localStorage.getItem('checkDesign') || 'classic'); } catch (e) { alert(e.message); } finally { setBulkBusy(false); } }} style={{ ...btn, borderRadius: '6px 0 0 6px', borderRight: 'none' }}>↓ Paycheck PDF</button>
+                <select
+                  defaultValue={localStorage.getItem('checkDesign') || 'classic'}
+                  onChange={e => localStorage.setItem('checkDesign', e.target.value)}
+                  style={{ fontSize: 11, border: '1px solid rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.15)', color: '#fff', borderRadius: '0 6px 6px 0', padding: '4px 6px', cursor: 'pointer', height: 28 }}>
+                  <option value="classic" style={{ color: '#000' }}>Classic</option>
+                  <option value="micr" style={{ color: '#000' }}>MICR (Check Printer)</option>
+                  <option value="top" style={{ color: '#000' }}>Top Check</option>
+                </select>
+              </div>
               <button disabled={bulkBusy} onClick={async () => { setBulkBusy(true); try { await api.printSelectedPaystubs(clientId, [...selectedHistoryStubs]); } catch (e) { alert(e.message); } finally { setBulkBusy(false); } }} style={btn}>↓ Paystub PDF</button>
               <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
             </>}
@@ -3093,12 +3103,22 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
               {printModal.ids.length} check{printModal.ids.length !== 1 ? 's' : ''} processed and marked as printed.
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
-              <button className="btn btn-primary" onClick={async () => {
-                try { await api.printSelectedChecks(clientId, printModal.ids, localStorage.getItem('checkDesign') || 'classic'); } catch (e) { alert(e.message); }
-                setPrintModal(null);
-              }}>
-                ↓ Download Paycheck
-              </button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+                <button className="btn btn-primary" style={{ borderRadius: '6px 0 0 6px', borderRight: 'none' }} onClick={async () => {
+                  try { await api.printSelectedChecks(clientId, printModal.ids, localStorage.getItem('checkDesign') || 'classic'); } catch (e) { alert(e.message); }
+                  setPrintModal(null);
+                }}>
+                  ↓ Download Paycheck
+                </button>
+                <select
+                  defaultValue={localStorage.getItem('checkDesign') || 'classic'}
+                  onChange={e => localStorage.setItem('checkDesign', e.target.value)}
+                  style={{ fontSize: 11, border: '1px solid var(--border)', borderRadius: '0 6px 6px 0', padding: '4px 6px', cursor: 'pointer', height: 32 }}>
+                  <option value="classic">Classic</option>
+                  <option value="micr">MICR (Check Printer)</option>
+                  <option value="top">Top Check</option>
+                </select>
+              </div>
               <button className="btn btn-secondary" onClick={async () => {
                 try { await api.printSelectedPaystubs(clientId, printModal.ids); } catch (e) { alert(e.message); }
                 setPrintModal(null);
@@ -3772,9 +3792,19 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
               if (onDelete) onDelete();
             }}>Delete</button>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={async () => {
-              try { await api.printSelectedChecks(clientId, [stub.id], localStorage.getItem('checkDesign') || 'classic'); } catch (e) { alert(e.message); }
-            }}>↓ Paycheck</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+              <button className="btn btn-ghost" style={{ fontSize: 12, borderRadius: '6px 0 0 6px', borderRight: 'none' }} onClick={async () => {
+                try { await api.printSelectedChecks(clientId, [stub.id], localStorage.getItem('checkDesign') || 'classic'); } catch (e) { alert(e.message); }
+              }}>↓ Paycheck</button>
+              <select
+                defaultValue={localStorage.getItem('checkDesign') || 'classic'}
+                onChange={e => localStorage.setItem('checkDesign', e.target.value)}
+                style={{ fontSize: 11, border: '1px solid var(--border)', borderRadius: '0 6px 6px 0', padding: '4px 6px', cursor: 'pointer', height: 28 }}>
+                <option value="classic">Classic</option>
+                <option value="micr">MICR (Check Printer)</option>
+                <option value="top">Top Check</option>
+              </select>
+            </div>
             <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={async () => {
               try { await api.printSelectedPaystubs(clientId, [stub.id]); } catch (e) { alert(e.message); }
             }}>↓ Paystub</button>
