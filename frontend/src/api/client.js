@@ -78,18 +78,18 @@ const api = {
   batchSubmitPaystubs: (data) => request('/paystubs/batch-submit', { method: 'POST', body: JSON.stringify(data) }),
   batchResetTax: (clientIds, taxTypes) => request('/paystubs/batch-reset-tax', { method: 'POST', body: JSON.stringify({ clientIds, taxTypes }) }),
   getBridgeJobStatus: (jobId) => request(`/bridge/job-status/${jobId}`),
-  printSelectedChecks: async (clientId, paystubIds) => {
+  printSelectedChecks: async (clientId, paystubIds, design = 'classic') => {
     const token = localStorage.getItem('token');
     const res = await fetch('/api/paystubs/print-selected', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ clientId, paystubIds }),
+      body: JSON.stringify({ clientId, paystubIds, design }),
     });
     if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'PDF failed'); }
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url; a.download = 'selected-checks.pdf'; a.click();
+    a.href = url; a.download = `checks-${design}.pdf`; a.click();
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   },
   printSelectedPaystubs: async (clientId, paystubIds) => {

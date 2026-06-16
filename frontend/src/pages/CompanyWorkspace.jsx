@@ -2064,6 +2064,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
     // ── History (printed/deposited) row ──────────────────────────────────────────
     const { stub } = rowData;
     const isVoided = stub.check_status === 'voided';
+    const [checkDesign, setCheckDesign] = useState(() => localStorage.getItem('checkDesign') || 'classic');
     const ytd = calcEmpYTD(stub.employee_id, stub.pay_period_end);
 
     // Editable date / gross / other payroll items state (hooks must be at top of history branch)
@@ -2406,9 +2407,23 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
               if (isDirty && !window.confirm('You have unsaved changes. Close without saving?')) return;
               onClose();
             }} style={{ fontSize: 13 }}>Close</button>
-            <button className="btn btn-ghost" style={{ fontSize: 13 }} onClick={async () => {
-              try { await api.printSelectedChecks(clientId, [stub.id]); } catch (e) { alert(e.message); }
-            }}>↓ Paycheck</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+              <button className="btn btn-ghost" style={{ fontSize: 13, borderRadius: '6px 0 0 6px', borderRight: 'none' }}
+                onClick={async () => {
+                  try { await api.printSelectedChecks(clientId, [stub.id], checkDesign); } catch (e) { alert(e.message); }
+                }}>
+                ↓ Paycheck
+              </button>
+              <select
+                value={checkDesign}
+                onChange={e => { setCheckDesign(e.target.value); localStorage.setItem('checkDesign', e.target.value); }}
+                style={{ fontSize: 12, border: '1px solid var(--border)', borderRadius: '0 6px 6px 0', padding: '6px 4px', background: 'var(--bg-primary)', cursor: 'pointer', color: 'var(--text-secondary)' }}
+              >
+                <option value="classic">Classic</option>
+                <option value="micr">MICR (Check Printer)</option>
+                <option value="top">Top Check</option>
+              </select>
+            </div>
             <button className="btn btn-ghost" style={{ fontSize: 13 }} onClick={async () => {
               try { await api.printSelectedPaystubs(clientId, [stub.id]); } catch (e) { alert(e.message); }
             }}>↓ Paystub</button>
@@ -2888,7 +2903,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
 
             {/* Download PDFs — history checks only */}
             {selectedHistoryStubs.size > 0 && <>
-              <button disabled={bulkBusy} onClick={async () => { setBulkBusy(true); try { await api.printSelectedChecks(clientId, [...selectedHistoryStubs]); } catch (e) { alert(e.message); } finally { setBulkBusy(false); } }} style={btn}>↓ Paycheck PDF</button>
+              <button disabled={bulkBusy} onClick={async () => { setBulkBusy(true); try { await api.printSelectedChecks(clientId, [...selectedHistoryStubs], localStorage.getItem('checkDesign') || 'classic'); } catch (e) { alert(e.message); } finally { setBulkBusy(false); } }} style={btn}>↓ Paycheck PDF</button>
               <button disabled={bulkBusy} onClick={async () => { setBulkBusy(true); try { await api.printSelectedPaystubs(clientId, [...selectedHistoryStubs]); } catch (e) { alert(e.message); } finally { setBulkBusy(false); } }} style={btn}>↓ Paystub PDF</button>
               <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
             </>}
@@ -3079,7 +3094,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
               <button className="btn btn-primary" onClick={async () => {
-                try { await api.printSelectedChecks(clientId, printModal.ids); } catch (e) { alert(e.message); }
+                try { await api.printSelectedChecks(clientId, printModal.ids, localStorage.getItem('checkDesign') || 'classic'); } catch (e) { alert(e.message); }
                 setPrintModal(null);
               }}>
                 ↓ Download Paycheck
@@ -3758,7 +3773,7 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
             }}>Delete</button>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={async () => {
-              try { await api.printSelectedChecks(clientId, [stub.id]); } catch (e) { alert(e.message); }
+              try { await api.printSelectedChecks(clientId, [stub.id], localStorage.getItem('checkDesign') || 'classic'); } catch (e) { alert(e.message); }
             }}>↓ Paycheck</button>
             <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={async () => {
               try { await api.printSelectedPaystubs(clientId, [stub.id]); } catch (e) { alert(e.message); }
