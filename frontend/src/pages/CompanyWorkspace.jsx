@@ -948,6 +948,17 @@ function EmployeesTab({ clientId, employees, onRefresh }) {
   );
 }
 
+// Defined outside CompanyTab so it's a stable reference and never causes remounts
+function FormField({ label, hint, children }) {
+  return (
+    <div className="form-group">
+      <label className="form-label">{label}</label>
+      {children}
+      {hint && <p className="form-hint">{hint}</p>}
+    </div>
+  );
+}
+
 // ── Company Tab ───────────────────────────────────────────────────────────────
 function CompanyTab({ client, onSaved }) {
   const [form, setForm]     = useState(null);
@@ -1007,13 +1018,7 @@ if (!payload.twcPassword) delete payload.twcPassword;
 
   if (!form) return <div style={{ padding: 40, textAlign: 'center' }}><div className="spinner spinner-dark" style={{ width: 28, height: 28 }} /></div>;
 
-  const F = ({ label, hint, children }) => (
-    <div className="form-group">
-      <label className="form-label">{label}</label>
-      {children}
-      {hint && <p className="form-hint">{hint}</p>}
-    </div>
-  );
+  const F = FormField;
 
   return (
     <div style={{ maxWidth: 760 }}>
