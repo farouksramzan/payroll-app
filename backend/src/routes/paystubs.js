@@ -622,8 +622,8 @@ function drawRecordOfPayment(doc, stub, client, db, startY, copyLabel) {
 
 function renderMICRCheck(doc, stub, client, routingNumber, accountNumber, db) {
   doc.addPage();
-  // Top 1/3: Check section (y 0–264), micrY=208 (½" up from original 244, above crease)
-  drawCheckSection(doc, stub, client, routingNumber, accountNumber, 0, 208);
+  // Top 1/3: Check section (y 0–264), micrY=238 (clear-band bottom at y=262, just above crease at 264)
+  drawCheckSection(doc, stub, client, routingNumber, accountNumber, 0, 238);
   // Middle 1/3: Employee Copy (y 264–528)
   drawRecordOfPayment(doc, stub, client, db, 264, 'Employee Copy');
   // Bottom 1/3: Employer Copy (y 528–792)
