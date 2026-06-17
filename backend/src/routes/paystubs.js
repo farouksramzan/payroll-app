@@ -2,6 +2,7 @@
 
 const express      = require('express');
 const PDFDocument  = require('pdfkit');
+const path         = require('path');
 const { getDb }    = require('../database/db');
 const { requireAuth } = require('../middleware/auth');
 const { decrypt, encrypt }  = require('../services/cryptoService');
@@ -10,6 +11,10 @@ const { submitToEFTPS } = require('../services/eftpsAutomation');
 const bridgeManager = require('../ws/bridge');
 const moov = require('../services/moovService');
 const { calcSettlementDueDate, calcIrsDepositDue } = require('../services/federalHolidays');
+
+// GnuMICR E-13B font path — embed for proper MICR line rendering on check printers
+const MICR_FONT = path.join(__dirname, '../assets/fonts/micr.ttf');
+// GnuMICR character mapping: A=transit(⑆)  C=on-us(⑈)  B=amount(⑇)  D=dash(⑉)
 
 const router = express.Router();
 router.use(requireAuth);
@@ -433,18 +438,19 @@ function drawCheckSection(doc, stub, client, routingNumber, accountNumber, check
     .text('SECURITY FEATURES INCLUDED. DETAILS ON BACK', CX, T + 172, { width: CW, align: 'center' });
 
   // ── MICR clear band ──────────────────────────────────────────────────────────
-  // ANSI X9.27: MICR characters in the 5/8" clear band at document bottom.
-  // Format: |checkno| :routing:account|
-  // ASCII substitutes: | = on-us (⑈), : = transit (⑆)
+  // ANSI X9.27: 5/8" clear band at document bottom. Uses GnuMICR E-13B font.
+  // GnuMICR mapping: A = transit ⑆   C = on-us ⑈   B = amount ⑇   D = dash ⑉
+  // Standard format: C{checkno}C  A{routing}A{account}C
   const paddedCheck = String(stub.check_number || '').padStart(4, '0');
   const rn = routingNumber || '';
   const an = accountNumber || '';
-  const micrLine = `|${paddedCheck}|  :${rn}:${an}|`;
+  const micrLine = `C${paddedCheck}C  A${rn}A${an}C`;
 
   doc.rect(0, micrY - 8, 612, 36).fill('#ffffff');
   doc.font('Helvetica').fontSize(6).fillColor(GRAY)
     .text('MICR — DO NOT WRITE OR MARK IN THIS AREA', 0, micrY - 8, { width: 612, align: 'center' });
-  doc.font('Courier-Bold').fontSize(13).fillColor(BLACK)
+  doc.registerFont('GnuMICR', MICR_FONT);
+  doc.font('GnuMICR').fontSize(13).fillColor(BLACK)
     .text(micrLine, CX, micrY + 4, { width: CW, align: 'center', characterSpacing: 2 });
 }
 
