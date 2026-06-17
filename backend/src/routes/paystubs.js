@@ -345,6 +345,30 @@ function renderClassicCheck(doc, stub, client, db) {
 // Mirrors the Khayam Enterprises check layout.
 // checkTop = y where the 3.5" check section begins (252 pts tall)
 // micrY    = absolute page y for the MICR clear band (ANSI X9.27: 0.625" from bottom)
+// Compute the fractional ABA routing number printed in the upper-center of a check.
+// Format: PP-BBBB/FFFF  where FFFF = first 4 digits (Federal Reserve routing symbol),
+// BBBB = digits 5-8 with leading zeros stripped, PP = ABA city/state prefix
+// derived from the Federal Reserve district (first 2 routing digits).
+function buildFractional(routingNumber) {
+  if (!routingNumber) return '';
+  const rn = String(routingNumber).replace(/\D/g, '');
+  if (rn.length !== 9) return '';
+
+  const fedSymbol = rn.substring(0, 4);                    // e.g. "1130"
+  const bankNum   = parseInt(rn.substring(4, 8), 10);      // e.g. 2 (from "0002")
+
+  // ABA city/state prefix mapped from Federal Reserve district (first 2 routing digits).
+  // Districts 01-10 map 1:1; 11 (Dallas/TX) → 35; 12 (SF) stays 12.
+  const districtPrefix = {
+    '01': '01', '02': '02', '03': '03', '04': '04',
+    '05': '05', '06': '06', '07': '07', '08': '08',
+    '09': '09', '10': '10', '11': '35', '12': '12',
+  };
+  const prefix = districtPrefix[rn.substring(0, 2)] || rn.substring(0, 2);
+
+  return `${prefix}-${bankNum}/${fedSymbol}`;
+}
+
 function drawCheckSection(doc, stub, client, routingNumber, accountNumber, checkTop, micrY) {
   const CX = 36, CW = 540;
   const CH = 252; // 3.5 inches
@@ -383,6 +407,14 @@ function drawCheckSection(doc, stub, client, routingNumber, accountNumber, check
   // ── Check No. (upper-right) ──────────────────────────────────────────────────
   doc.font('Helvetica-Bold').fontSize(10).fillColor(BLACK)
     .text(`Check No.  ${stub.check_number || ''}`, CX, T + 14, { width: CW, align: 'right' });
+
+  // ── Fractional routing number (upper-center, matching Khayam layout) ─────────
+  // Format: PP-BBBB/FFFF  (e.g. 35-2/1130 for Texas routing 113000023)
+  const frac = buildFractional(routingNumber);
+  if (frac) {
+    doc.font('Helvetica').fontSize(9).fillColor(BLACK)
+      .text(frac, CX + 180, T + 20, { width: 180, align: 'center' });
+  }
 
   // ── Date (right, aligned with address bottom) ────────────────────────────────
   doc.font('Helvetica').fontSize(9).fillColor(BLACK)
