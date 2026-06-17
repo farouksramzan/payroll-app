@@ -424,15 +424,15 @@ function drawCheckSection(doc, stub, client, routingNumber, accountNumber, check
       .text(client.bank_name.toUpperCase(), CX, ruleY + 76, { width: CW * 0.55 });
   }
 
-  // ── Signature line (right, pushed down near bottom) ──────────────────────────
-  doc.rect(CX + CW - 200, T + 185, 200, 0.5).fill(BLACK);
-  doc.font('Helvetica').fontSize(7).fillColor(GRAY)
-    .text('Authorized Signature', CX + CW - 200, T + 189, { width: 200, align: 'center' });
-
-  // ── Memo (pushed down near bottom) ──────────────────────────────────────────
+  // ── Memo (above signature, clear of MICR band) ──────────────────────────────
   const memo = `Pay Period: ${stub.pay_period_start} - ${stub.pay_period_end}`;
   doc.font('Helvetica').fontSize(8.5).fillColor(BLACK)
-    .text(`Memo  ${memo}`, CX, T + 206);
+    .text(`Memo  ${memo}`, CX, T + 175);
+
+  // ── Signature line (⅛" lower for more writing room) ─────────────────────────
+  doc.rect(CX + CW - 200, T + 194, 200, 0.5).fill(BLACK);
+  doc.font('Helvetica').fontSize(7).fillColor(GRAY)
+    .text('Authorized Signature', CX + CW - 200, T + 198, { width: 200, align: 'center' });
 
   // (Security features text removed — printed on pre-printed check paper)
 
@@ -622,8 +622,8 @@ function drawRecordOfPayment(doc, stub, client, db, startY, copyLabel) {
 
 function renderMICRCheck(doc, stub, client, routingNumber, accountNumber, db) {
   doc.addPage();
-  // Top 1/3: Check section (y 0–264), micrY=244 (pushed to very bottom of check area)
-  drawCheckSection(doc, stub, client, routingNumber, accountNumber, 0, 244);
+  // Top 1/3: Check section (y 0–264), micrY=208 (½" up from original 244, above crease)
+  drawCheckSection(doc, stub, client, routingNumber, accountNumber, 0, 208);
   // Middle 1/3: Employee Copy (y 264–528)
   drawRecordOfPayment(doc, stub, client, db, 264, 'Employee Copy');
   // Bottom 1/3: Employer Copy (y 528–792)
