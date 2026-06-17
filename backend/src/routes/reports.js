@@ -320,13 +320,16 @@ router.get('/twc-icesa', (req, res) => {
       + stFips                                 // pos 171-172  FIPS '48' ← QuickFile reads state here
       + acct9;                                 // pos 173-181  account (9) ← QuickFile reads account here
 
+    // ── B Record: Basic Employer Info — required by QuickFile before E ────────
+    // QuickFile 5.x requires record order: A → B → E → S → F.
+    // B record uses the same employer prefix block (pos 1-181) as E, padded to 275.
+    lines.push(P275(employerPrefix('B')));
+
     // ── E Record: Employer Record ──────────────────────────────────────────────
     // After the 181-char employer prefix:
     //   pos 182-187 : NAICS code (6, blanks if unknown)
     //   pos 188-189 : TWC reporting period (2) ← last month of quarter: Q2='06'
     //   pos 190     : has-workers indicator '1'
-    // No B record — TWC QuickFile does not require it and it causes F-record
-    // ordering errors by confusing the parser.
     lines.push(P275(
       employerPrefix('E')
       + L(client.naics_code || '', 6)          // pos 182-187  NAICS code or blanks
@@ -335,27 +338,21 @@ router.get('/twc-icesa', (req, res) => {
     ));
 
     // ── S Records: one per employee ───────────────────────────────────────────
-    // Per TWC ICESA spec (confirmed by QuickFile validation):
+    // Layout confirmed from original sample file byte-by-byte:
     //   pos 44-45   : FIPS state code '48'
-    //   pos 46-49   : blanks (4)
-    //   pos 50-63   : quarterly gross wages (14 chars, cents, no decimal)
-    //   pos 64-77   : quarterly UI total wages (14 chars, cents) ← QuickFile validates here
-    //   pos 78-91   : quarterly UI excess wages (14 chars, cents) = gross - taxable
-    //   pos 92-105  : quarterly UI taxable wages (14 chars, cents)
-    //   pos 106-120 : SDI taxable wages (15 zeros — TX has no SDI)
-    //   pos 121-129 : tip wages (9 zeros)
-    //   pos 130-131 : weeks worked (blanks)
-    //   pos 132-134 : hours worked (blanks)
-    //   pos 135-142 : blanks (8)
-    //   pos 143-146 : 'UTAX' ← QuickFile expects here
-    //   pos 147-155 : TWC account number (9) ← QuickFile cross-references here
-    //   pos 156-181 : blanks (26)
-    //   pos 182-185 : reporting year (4) ← QuickFile reads S year here (mirrors E record offset)
-    //   pos 186-187 : blanks (2)
-    //   pos 188-189 : reporting period code (2) ← QuickFile reads S period here (mirrors E record offset)
-    //   pos 190-220 : blanks (31)
-    //   pos 221-222 : reporting period code (2) (spec fallback)
-    //   pos 223-226 : reporting year (4) (spec fallback)
+    //   pos 46-49   : reporting year (4) ← QuickFile reads S year here
+    //   pos 50-51   : reporting period code (2) ← QuickFile reads S period here: '06' for Q2
+    //   pos 52-63   : quarterly gross wages (12 chars, cents, no decimal)
+    //   pos 64-75   : quarterly UI total wages (12 chars, cents) ← QuickFile validates here
+    //   pos 76-87   : quarterly UI excess wages (12 chars, cents) = gross - taxable
+    //   pos 88-99   : quarterly UI taxable wages (12 chars, cents)
+    //   pos 100-114 : SDI taxable wages (15 zeros — TX has no SDI)
+    //   pos 115-123 : tip wages (9 zeros)
+    //   pos 124-125 : weeks worked (blanks)
+    //   pos 126-128 : hours worked (blanks)
+    //   pos 129-142 : blanks (14) — padding to keep UTAX at confirmed pos 143
+    //   pos 143-146 : 'UTAX' ← confirmed by QuickFile round 7
+    //   pos 147-155 : TWC account number (9) ← confirmed by QuickFile round 7
     for (const emp of employees) {
       const excessWages = round2(Math.max(0, emp.wages - emp.taxable));
       lines.push(P275(
@@ -364,26 +361,20 @@ router.get('/twc-icesa', (req, res) => {
         + L(emp.lastName,  20)                 // pos 11-30
         + L(emp.firstName, 12)                 // pos 31-42
         + ' '                                  // pos 43     middle initial
-        + stFips                               // pos 44-45  FIPS '48' ← state must be here
-        + L('', 4)                             // pos 46-49  blanks
-        + R(emp.wages,   14)                   // pos 50-63  gross wages (14)
-        + R(emp.wages,   14)                   // pos 64-77  UI total wages (14) ← QuickFile reads here
-        + R(excessWages, 14)                   // pos 78-91  UI excess wages (14)
-        + R(emp.taxable, 14)                   // pos 92-105 UI taxable wages (14)
-        + '000000000000000'                    // pos 106-120 SDI taxable (15 zeros, TX has no SDI)
-        + '000000000'                          // pos 121-129 tip wages (9 zeros)
-        + L('', 2)                             // pos 130-131 weeks worked
-        + L('', 3)                             // pos 132-134 hours worked
-        + L('', 8)                             // pos 135-142 blanks
+        + stFips                               // pos 44-45  FIPS '48'
+        + yr                                   // pos 46-49  year ← QuickFile reads here
+        + periodCode                           // pos 50-51  period ← QuickFile reads here
+        + R(emp.wages,   12)                   // pos 52-63  gross wages (12)
+        + R(emp.wages,   12)                   // pos 64-75  UI total wages (12) ← QuickFile validates
+        + R(excessWages, 12)                   // pos 76-87  UI excess wages (12)
+        + R(emp.taxable, 12)                   // pos 88-99  UI taxable wages (12)
+        + '000000000000000'                    // pos 100-114 SDI taxable (15 zeros, TX has no SDI)
+        + '000000000'                          // pos 115-123 tip wages (9 zeros)
+        + L('', 2)                             // pos 124-125 weeks worked
+        + L('', 3)                             // pos 126-128 hours worked
+        + L('', 14)                            // pos 129-142 blanks (14, pads to keep UTAX at 143)
         + 'UTAX'                               // pos 143-146 taxing entity code
-        + acct9                                // pos 147-155 TWC account ← QuickFile cross-ref
-        + L('', 26)                            // pos 156-181 blanks
-        + yr                                   // pos 182-185 year ← QuickFile reads S year here (same offset as E)
-        + L('', 2)                             // pos 186-187 blanks
-        + periodCode                           // pos 188-189 period ← QuickFile reads S period here (same offset as E)
-        + L('', 31)                            // pos 190-220 blanks
-        + periodCode                           // pos 221-222 period code (spec fallback)
-        + yr                                   // pos 223-226 year (spec fallback)
+        + acct9                                // pos 147-155 TWC account
       ));
     }
 
