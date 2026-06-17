@@ -431,7 +431,7 @@ function drawCheckSection(doc, stub, client, routingNumber, accountNumber, check
 
   // ── Signature line (⅛" lower for more writing room) ─────────────────────────
   doc.rect(CX + CW - 200, T + 194, 200, 0.5).fill(BLACK);
-  doc.font('Helvetica').fontSize(7).fillColor(GRAY)
+  doc.font('Helvetica').fontSize(6).fillColor(GRAY)
     .text('Authorized Signature', CX + CW - 200, T + 198, { width: 200, align: 'center' });
 
   // (Security features text removed — printed on pre-printed check paper)
