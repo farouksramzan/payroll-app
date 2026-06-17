@@ -155,6 +155,189 @@ router.get('/940', (req, res) => {
   }
 });
 
+// ── GET /api/reports/twc-icesa?clientId=X&year=2026&quarter=1 ────────────────
+// Generates an ICESA-format fixed-width text file accepted by TWC QuickFile 5.x.
+// Records: A (Transmitter) → B (Employer) → S×N (Employees) → E (Totals) → F (Final)
+// Each record is exactly 512 characters, CRLF-terminated.
+router.get('/twc-icesa', (req, res) => {
+  try {
+    const { clientId, year, quarter } = req.query;
+    if (!clientId || !year || !quarter) return res.status(400).json({ error: 'clientId, year, quarter required' });
+    const db = getDb();
+    const client = assertClient(db, clientId, req.user.id);
+
+    const { start, end } = quarterRange(parseInt(year), parseInt(quarter));
+    const qRateField = `sui_rate_q${parseInt(quarter)}`;
+    const sutaRate = client[qRateField] != null ? client[qRateField] : (client.suta_rate || 0.027);
+
+    const subs = db.prepare(`
+      SELECT p.*, p.employee_id AS emp_id, e.first_name, e.last_name
+      FROM paystubs p LEFT JOIN employees e ON p.employee_id = e.id
+      WHERE p.client_id = ? AND p.pay_period_end >= ? AND p.pay_period_end <= ?
+        AND p.check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
+      ORDER BY p.employee_id, p.pay_period_end
+    `).all(clientId, start, end);
+
+    const ytdSubs = db.prepare(`
+      SELECT p.gross_wages, p.employee_id FROM paystubs p
+      WHERE p.client_id = ? AND p.pay_period_end >= ? AND p.pay_period_end < ?
+        AND p.check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
+    `).all(clientId, `${year}-01-01`, start);
+
+    const ytdByEmp = {};
+    for (const s of ytdSubs) {
+      const k = s.employee_id || 'agg';
+      ytdByEmp[k] = (ytdByEmp[k] || 0) + s.gross_wages;
+    }
+
+    const byEmployee = {};
+    const empCache = {};
+    for (const s of subs) {
+      const key = s.emp_id || 'agg';
+      if (!byEmployee[key]) {
+        if (s.emp_id && !empCache[s.emp_id]) {
+          const emp = db.prepare('SELECT ssn_encrypted, first_name, last_name FROM employees WHERE id = ?').get(s.emp_id);
+          let ssn = '';
+          if (emp?.ssn_encrypted) {
+            try { ssn = decrypt(emp.ssn_encrypted).replace(/\D/g, ''); } catch (_) {}
+          }
+          empCache[s.emp_id] = { ssn, firstName: emp?.first_name || '', lastName: emp?.last_name || '' };
+        }
+        const c = empCache[s.emp_id] || {};
+        byEmployee[key] = {
+          ssn: c.ssn || '',
+          firstName: (c.firstName || s.first_name || '').toUpperCase(),
+          lastName:  (c.lastName  || s.last_name  || '').toUpperCase(),
+          wages: 0, taxable: 0,
+        };
+      }
+      const ytd  = (ytdByEmp[key] || 0) + byEmployee[key].wages;
+      const suta = calculateSUTA(s.gross_wages, ytd, sutaRate);
+      byEmployee[key].wages   += s.gross_wages;
+      byEmployee[key].taxable += suta.taxableWages;
+    }
+
+    // Employee count on the 12th of each quarter month
+    const Q_MONTHS = { 1:[1,2,3], 2:[4,5,6], 3:[7,8,9], 4:[10,11,12] };
+    const qMonths = Q_MONTHS[parseInt(quarter)] || [1,2,3];
+    const emp12th = qMonths.map(mo => {
+      const d = `${year}-${String(mo).padStart(2,'0')}-12`;
+      const r = db.prepare(`SELECT COUNT(DISTINCT employee_id) AS cnt FROM paystubs
+        WHERE client_id=? AND pay_period_start<=? AND pay_period_end>=?
+          AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')
+      `).get(clientId, d, d);
+      return r?.cnt || 0;
+    });
+
+    const employees   = Object.values(byEmployee);
+    const totalWages  = round2(employees.reduce((s, e) => s + e.wages,   0));
+    const totalTaxable= round2(employees.reduce((s, e) => s + e.taxable, 0));
+    const totalTax    = round2(totalTaxable * sutaRate);
+
+    // ── ICESA record helpers ──────────────────────────────────────────────────
+    // L(str, len)  — left-justify, space-pad, truncate to len
+    const L = (v, n) => String(v || '').padEnd(n).substring(0, n);
+    // R(dollars, len) — convert dollar amount to cents integer, right-justify, zero-pad
+    const R = (v, n) => String(Math.round((v || 0) * 100)).padStart(n, '0').substring(0, n);
+    // I(int, len)  — integer right-justify, zero-pad
+    const I = (v, n) => String(Math.round(v || 0)).padStart(n, '0').substring(0, n);
+    // pad record to exactly 512 chars
+    const pad512 = s => s.padEnd(512).substring(0, 512);
+
+    const ein   = (client.ein || '').replace(/\D/g, '').padEnd(9).substring(0, 9);
+    const state = (client.state || 'TX').substring(0, 2).toUpperCase();
+    const zip   = (client.business_zip || '').replace(/\D/g, '').padEnd(5).substring(0, 5);
+    const yr    = String(parseInt(year));
+    const qStr  = String(parseInt(quarter)).padStart(2, '0');
+    // TWC account number — strip dashes, left-justify in 10-char field
+    const acct  = (client.sui_account_number || '').replace(/-/g, '').padEnd(10).substring(0, 10);
+
+    const lines = [];
+
+    // ── A Record: Transmitter ─────────────────────────────────────────────────
+    lines.push(pad512(
+      'A'                                   // pos 1    record id
+      + yr                                  // pos 2-5  year
+      + ein                                 // pos 6-14 EIN
+      + L('', 9)                            // pos 15-23 blanks
+      + L(client.business_name, 50)         // pos 24-73 name
+      + L(client.business_address, 40)      // pos 74-113 street
+      + L(client.business_city, 25)         // pos 114-138 city
+      + L(state, 2)                         // pos 139-140 state
+      + L(zip, 5)                           // pos 141-145 ZIP
+      + L('', 4)                            // pos 146-149 blanks
+      + L('', 4)                            // pos 150-153 ZIP+4
+      + L('', 5)                            // pos 154-158 blanks
+      + L('', 10)                           // pos 159-168 contact name
+      + L('', 10)                           // pos 169-178 contact phone
+    ));
+
+    // ── B Record: Employer ────────────────────────────────────────────────────
+    lines.push(pad512(
+      'B'                                   // pos 1
+      + yr                                  // pos 2-5
+      + ein                                 // pos 6-14
+      + L('', 9)                            // pos 15-23
+      + L(client.business_name, 50)         // pos 24-73
+      + L(client.business_address, 40)      // pos 74-113
+      + L(client.business_city, 25)         // pos 114-138
+      + L(state, 2)                         // pos 139-140
+      + L(zip, 5)                           // pos 141-145
+      + L('', 4)                            // pos 146-149
+      + L('', 4)                            // pos 150-153 ZIP+4
+      + acct                                // pos 154-163 state UI account
+      + I(emp12th[0], 3)                    // pos 164-166 month-1 emp count
+      + I(emp12th[1], 3)                    // pos 167-169 month-2 emp count
+      + I(emp12th[2], 3)                    // pos 170-172 month-3 emp count
+      + R(totalWages, 12)                   // pos 173-184 total wages (cents)
+      + R(totalTaxable, 12)                 // pos 185-196 taxable wages (cents)
+      + ' '                                 // pos 197
+      + R(totalTax, 10)                     // pos 198-207 UI tax due (cents)
+    ));
+
+    // ── S Records: one per employee ───────────────────────────────────────────
+    for (const emp of employees) {
+      lines.push(pad512(
+        'S'                                 // pos 1
+        + emp.ssn.padStart(9, '0').substring(0, 9) // pos 2-10 SSN (no dashes)
+        + L(emp.lastName,  20)              // pos 11-30 last name
+        + L(emp.firstName, 12)              // pos 31-42 first name
+        + ' '                               // pos 43    middle initial
+        + L(state, 2)                       // pos 44-45 state
+        + yr                                // pos 46-49 year
+        + qStr                              // pos 50-51 quarter
+        + R(emp.wages,   12)               // pos 52-63 total wages (cents)
+        + R(emp.taxable, 12)               // pos 64-75 taxable wages (cents)
+      ));
+    }
+
+    // ── E Record: Employer totals ─────────────────────────────────────────────
+    lines.push(pad512(
+      'E'
+      + ein
+      + I(employees.length, 10)             // number of S records
+      + R(totalWages,   12)
+      + R(totalTaxable, 12)
+    ));
+
+    // ── F Record: File totals ─────────────────────────────────────────────────
+    lines.push(pad512(
+      'F'
+      + I(1, 10)                            // number of B records
+      + I(employees.length, 10)             // total S records
+    ));
+
+    const bizSlug = (client.business_name || 'report').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
+    const filename = `TWC_Q${quarter}_${year}_${bizSlug}.txt`;
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(lines.join('\r\n') + '\r\n'); // CRLF line endings (Windows / QuickFile)
+  } catch (err) {
+    console.error('twc-icesa error:', err);
+    res.status(500).json({ error: 'Failed to generate ICESA file', detail: err.message });
+  }
+});
+
 // ── GET /api/reports/twc?clientId=X&year=2026&quarter=1 ──────────────────────
 router.get('/twc', (req, res) => {
   try {

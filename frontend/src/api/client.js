@@ -153,6 +153,19 @@ const api = {
   get941: (clientId, year, quarter) => request(`/reports/941?clientId=${clientId}&year=${year}&quarter=${quarter}`),
   get940: (clientId, year) => request(`/reports/940?clientId=${clientId}&year=${year}`),
   getTWC: (clientId, year, quarter) => request(`/reports/twc?clientId=${clientId}&year=${year}&quarter=${quarter}`),
+  downloadTWCIcesa: async (clientId, year, quarter) => {
+    const token = localStorage.getItem('token');
+    const qs = new URLSearchParams({ clientId, year, quarter });
+    const res = await fetch(`/api/reports/twc-icesa?${qs}`, { headers: { Authorization: `Bearer ${token}` } });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'ICESA generation failed'); }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const cd = res.headers.get('Content-Disposition') || '';
+    const match = cd.match(/filename="([^"]+)"/);
+    a.href = url; a.download = match ? match[1] : `TWC_Q${quarter}_${year}.txt`; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  },
   getW2: (clientId, year) => request(`/reports/w2?clientId=${clientId}&year=${year}`),
   getW3: (clientId, year) => request(`/reports/w3?clientId=${clientId}&year=${year}`),
   downloadReportPdf: async (form, clientId, year, quarter) => {

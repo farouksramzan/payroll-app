@@ -1407,8 +1407,28 @@ export default function Reports() {
 
             {data && (
               <>
-                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 16, marginBottom: 16 }} className="no-print">
+                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 16 }} className="no-print">
                   {pdfError && <span style={{ fontSize: 12, color: 'var(--error)' }}>{pdfError}</span>}
+                  {data.reportType === 'TWC' && (
+                    <button
+                      className="btn btn-secondary"
+                      disabled={pdfLoading}
+                      title="Download ICESA-format file for import into TWC QuickFile"
+                      onClick={async () => {
+                        setPdfError('');
+                        setPdfLoading(true);
+                        try {
+                          await api.downloadTWCIcesa(clientId, year, quarter);
+                        } catch (e) {
+                          setPdfError(e.message);
+                        } finally {
+                          setPdfLoading(false);
+                        }
+                      }}
+                    >
+                      {pdfLoading ? 'Generating…' : '↓ QuickFile (ICESA)'}
+                    </button>
+                  )}
                   <button
                     className="btn btn-secondary"
                     disabled={pdfLoading}

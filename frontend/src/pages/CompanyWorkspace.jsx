@@ -1083,20 +1083,21 @@ if (!payload.twcPassword) delete payload.twcPassword;
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
-        <p className="form-section-title" style={{ marginTop: 0 }}>TWC (Texas SUI) Credentials</p>
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
-          UTS portal login at apps.twc.texas.gov — used to automate quarterly SUI filing and payment.
-        </div>
-        <F label="TWC Account Number" hint="Your TWC unemployment tax account number (e.g. 10-818766-2). Printed on SUI report.">
-          <input className="form-input mono" value={form.suiAccountNumber} onChange={set('suiAccountNumber')} placeholder="##-######-#" />
-        </F>
-        <div className="form-grid">
-          <F label="TWC Username"><input className="form-input mono" value={form.twcUsername} onChange={set('twcUsername')} placeholder="UTS username" autoComplete="off" /></F>
-          <F label="TWC Password" hint="Stored encrypted. Leave blank to keep current."><input className="form-input mono" type="password" value={form.twcPassword} onChange={set('twcPassword')} placeholder="(leave blank to keep)" autoComplete="new-password" /></F>
-        </div>
-        {client.hasTwcPassword && !form.twcPassword && (
-          <div style={{ fontSize: 11, color: '#16a34a', marginTop: 4 }}>✓ Password saved</div>
-        )}
+        {(() => {
+          const st = form.state || 'TX';
+          const agencyName = SUI_AGENCIES[st] || `${st} Dept. of Labor`;
+          return (
+            <>
+              <p className="form-section-title" style={{ marginTop: 0 }}>{agencyName} — SUI</p>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
+                State unemployment insurance account number. Used on quarterly wage reports and QuickFile uploads.
+              </div>
+              <F label="SUI Account Number" hint="Your state UI employer account number. Printed on quarterly SUI report.">
+                <input className="form-input mono" value={form.suiAccountNumber} onChange={set('suiAccountNumber')} placeholder="e.g. 10-818766-2" />
+              </F>
+            </>
+          );
+        })()}
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
