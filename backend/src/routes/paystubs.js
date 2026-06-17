@@ -361,11 +361,6 @@ function drawCheckSection(doc, stub, client, routingNumber, accountNumber, check
     - (stub.garnishment || 0) + (stub.reimbursement || 0)
   );
 
-  // ── Security banner ──────────────────────────────────────────────────────────
-  doc.font('Helvetica').fontSize(6).fillColor(GRAY)
-    .text('FOR SECURITY PURPOSES, THE FACE OF THIS DOCUMENT CONTAINS A COLORED BACKGROUND AND MICROPRINTING IN THE BORDER',
-      CX, T + 3, { width: CW, align: 'center' });
-
   // ── Company block (upper-left) ──────────────────────────────────────────────
   doc.font('Helvetica-Bold').fontSize(11).fillColor(BLACK)
     .text((client.business_name || '').toUpperCase(), CX, T + 14, { width: CW * 0.6 });
@@ -389,10 +384,7 @@ function drawCheckSection(doc, stub, client, routingNumber, accountNumber, check
   doc.font('Helvetica-Bold').fontSize(10).fillColor(BLACK)
     .text(`Check No.  ${stub.check_number || ''}`, CX, T + 14, { width: CW, align: 'right' });
 
-  // ── Horizontal rule ──────────────────────────────────────────────────────────
-  doc.rect(CX, ruleY, CW * 0.72, 0.5).fill(BLACK);
-
-  // ── Date (right, aligned with rule) ─────────────────────────────────────────
+  // ── Date (right, aligned with address bottom) ────────────────────────────────
   doc.font('Helvetica').fontSize(9).fillColor(BLACK)
     .text('Date', CX + CW - 120, ruleY + 4, { width: 40 });
   doc.rect(CX + CW - 78, ruleY + 1, 78, 14).stroke(BLACK);
