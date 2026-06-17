@@ -417,25 +417,30 @@ function drawCheckSection(doc, stub, client, routingNumber, accountNumber, check
   const words = numberToWords(netPay);
   doc.font('Helvetica').fontSize(8.5).fillColor(BLACK)
     .text(words, CX + 4, T + 99, { width: CW - 62, lineBreak: false });
-  // Fill rest with asterisks
   doc.font('Helvetica').fontSize(8.5).fillColor(BLACK)
     .text('*'.repeat(60), CX + 4, T + 99, { width: CW - 62, align: 'right', lineBreak: false });
   doc.font('Helvetica-Bold').fontSize(9).fillColor(BLACK)
     .text('Dollars', CX + CW - 50, T + 99, { width: 50, align: 'right' });
 
-  // ── Signature line (right) ───────────────────────────────────────────────────
-  doc.rect(CX + CW - 200, T + 138, 200, 0.5).fill(BLACK);
-  doc.font('Helvetica').fontSize(7).fillColor(GRAY)
-    .text('Authorized Signature', CX + CW - 200, T + 142, { width: 200, align: 'center' });
+  // ── Bank name (bold, left — matches "BANK OF AMERICA" position in Khayam) ───
+  if (client.bank_name) {
+    doc.font('Helvetica-Bold').fontSize(12).fillColor(BLACK)
+      .text(client.bank_name.toUpperCase(), CX, T + 122, { width: CW * 0.55 });
+  }
 
-  // ── Memo ────────────────────────────────────────────────────────────────────
+  // ── Signature line (right, pushed down near bottom) ──────────────────────────
+  doc.rect(CX + CW - 200, T + 185, 200, 0.5).fill(BLACK);
+  doc.font('Helvetica').fontSize(7).fillColor(GRAY)
+    .text('Authorized Signature', CX + CW - 200, T + 189, { width: 200, align: 'center' });
+
+  // ── Memo (pushed down near bottom) ──────────────────────────────────────────
   const memo = `Pay Period: ${stub.pay_period_start} - ${stub.pay_period_end}`;
   doc.font('Helvetica').fontSize(8.5).fillColor(BLACK)
-    .text(`Memo  ${memo}`, CX, T + 155);
+    .text(`Memo  ${memo}`, CX, T + 206);
 
   // ── Security features footer ─────────────────────────────────────────────────
   doc.font('Helvetica').fontSize(6.5).fillColor(GRAY)
-    .text('SECURITY FEATURES INCLUDED. DETAILS ON BACK', CX, T + 172, { width: CW, align: 'center' });
+    .text('SECURITY FEATURES INCLUDED. DETAILS ON BACK', CX, T + 220, { width: CW, align: 'center' });
 
   // ── MICR clear band ──────────────────────────────────────────────────────────
   // ANSI X9.27: 5/8" clear band at document bottom. Uses GnuMICR E-13B font.
@@ -625,8 +630,8 @@ function drawRecordOfPayment(doc, stub, client, db, startY, copyLabel) {
 
 function renderMICRCheck(doc, stub, client, routingNumber, accountNumber, db) {
   doc.addPage();
-  // Top 1/3: Check section (y 0–264), micrY=219 (0.625" from bottom of check section)
-  drawCheckSection(doc, stub, client, routingNumber, accountNumber, 0, 219);
+  // Top 1/3: Check section (y 0–264), micrY=244 (pushed to very bottom of check area)
+  drawCheckSection(doc, stub, client, routingNumber, accountNumber, 0, 244);
   // Middle 1/3: Employee Copy (y 264–528)
   drawRecordOfPayment(doc, stub, client, db, 264, 'Employee Copy');
   // Bottom 1/3: Employer Copy (y 528–792)

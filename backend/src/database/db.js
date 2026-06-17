@@ -348,6 +348,11 @@ function migrate() {
     { name: 'eftps_enrolled', def: 'INTEGER DEFAULT 0' },
   ]);
 
+  // Bank name for check printing (e.g. "BANK OF AMERICA")
+  addCols('clients', [
+    { name: 'bank_name', def: 'TEXT' },
+  ]);
+
   // paystub_credits — negative entries for voided checks
   db.exec(`
     CREATE TABLE IF NOT EXISTS paystub_credits (

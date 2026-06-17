@@ -981,6 +981,7 @@ function CompanyTab({ client, onSaved }) {
       bankRoutingNumber: client.bankRoutingNumber || '',
       bankAccountType: client.bankAccountType || 'checking',
       bankAccountNumber: '',
+      bankName: client.bankName || '',
       twcUsername: client.twcUsername || '', twcPassword: '',
       contactName: client.contactName || '',
       contactEmail: client.contactEmail || '',
@@ -1100,6 +1101,7 @@ if (!payload.twcPassword) delete payload.twcPassword;
 
       <div className="card" style={{ marginBottom: 16 }}>
         <p className="form-section-title" style={{ marginTop: 0 }}>Bank Account</p>
+        <F label="Bank Name" hint="Printed on checks (e.g. BANK OF AMERICA)"><input className="form-input" value={form.bankName || ''} onChange={set('bankName')} placeholder="e.g. BANK OF AMERICA" /></F>
         <div className="form-grid">
           <F label="Account Number"><input className="form-input mono" type="password" value={form.bankAccountNumber} onChange={set('bankAccountNumber')} placeholder="(leave blank to keep)" /></F>
           <F label="Routing Number"><input className="form-input mono" value={form.bankRoutingNumber} onChange={set('bankRoutingNumber')} maxLength={9} /></F>
