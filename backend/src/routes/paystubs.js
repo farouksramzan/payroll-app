@@ -438,9 +438,7 @@ function drawCheckSection(doc, stub, client, routingNumber, accountNumber, check
   doc.font('Helvetica').fontSize(8.5).fillColor(BLACK)
     .text(`Memo  ${memo}`, CX, T + 206);
 
-  // ── Security features footer ─────────────────────────────────────────────────
-  doc.font('Helvetica').fontSize(6.5).fillColor(GRAY)
-    .text('SECURITY FEATURES INCLUDED. DETAILS ON BACK', CX, T + 220, { width: CW, align: 'center' });
+  // (Security features text removed — printed on pre-printed check paper)
 
   // ── MICR clear band ──────────────────────────────────────────────────────────
   // ANSI X9.27: 5/8" clear band at document bottom. Uses GnuMICR E-13B font.
@@ -451,9 +449,7 @@ function drawCheckSection(doc, stub, client, routingNumber, accountNumber, check
   const an = accountNumber || '';
   const micrLine = `C${paddedCheck}C  A${rn}A${an}C`;
 
-  doc.rect(0, micrY - 8, 612, 36).fill('#ffffff');
-  doc.font('Helvetica').fontSize(6).fillColor(GRAY)
-    .text('MICR — DO NOT WRITE OR MARK IN THIS AREA', 0, micrY - 8, { width: 612, align: 'center' });
+  doc.rect(0, micrY - 4, 612, 28).fill('#ffffff');
   doc.registerFont('GnuMICR', MICR_FONT);
   doc.font('GnuMICR').fontSize(13).fillColor(BLACK)
     .text(micrLine, CX, micrY + 4, { width: CW, align: 'center', characterSpacing: 2 });
