@@ -241,88 +241,106 @@ router.get('/twc-icesa', (req, res) => {
     const totalTax     = round2(totalTaxable * sutaRate);
 
     // ── ICESA record helpers ──────────────────────────────────────────────────
-    const L   = (v, n) => String(v || '').padEnd(n).substring(0, n);          // left-justify, space-pad
-    const R   = (v, n) => String(Math.round((v || 0) * 100)).padStart(n, '0').substring(0, n); // dollars→cents, right-zero-pad
-    const I   = (v, n) => String(Math.round(v || 0)).padStart(n, '0').substring(0, n);          // integer, right-zero-pad
-    const P275 = s => s.padEnd(275).substring(0, 275);                        // pad/trim to exactly 275 chars
+    const L    = (v, n) => String(v || '').padEnd(n).substring(0, n);          // left-justify, space-pad
+    const R    = (v, n) => String(Math.round((v || 0) * 100)).padStart(n, '0').substring(0, n); // dollars→cents, right-zero-pad
+    const I    = (v, n) => String(Math.round(v || 0)).padStart(n, '0').substring(0, n);          // integer, right-zero-pad
+    const P275 = s => s.padEnd(275).substring(0, 275);                         // pad/trim to exactly 275 chars
 
-    const ein   = (client.ein || '').replace(/\D/g, '').padEnd(9).substring(0, 9);
-    const stAbbr = (client.state || 'TX').substring(0, 2).toUpperCase();      // state abbreviation (for A record)
-    const stFips = '48';                                                        // Texas FIPS code (required in E/S records)
-    const zip   = (client.business_zip || '').replace(/\D/g, '').padEnd(5).substring(0, 5);
-    const yr    = String(parseInt(year));                                       // 4-digit year string
-    const qStr  = String(parseInt(quarter)).padStart(2, '0');                  // zero-padded quarter "01"–"04"
-    // TWC account number: strip dashes, left-justify in 10-char field (e.g. "10-818766-2" → "108187662 ")
-    const acct  = (client.sui_account_number || '').replace(/-/g, '').padEnd(10).substring(0, 10);
+    const ein    = (client.ein || '').replace(/\D/g, '').padEnd(9).substring(0, 9);
+    const stAbbr = (client.state || 'TX').substring(0, 2).toUpperCase();       // abbreviation for A record
+    const stFips = '48';                                                         // Texas FIPS code (B, E, S records)
+    const zip    = (client.business_zip || '').replace(/\D/g, '').padEnd(5).substring(0, 5);
+    const yr     = String(parseInt(year));                                       // 4-digit year string
+    const qStr   = String(parseInt(quarter)).padStart(2, '0');                  // "01"–"04"
+    const period = yr + qStr;                                                    // YYYYQQ e.g. "202602" ← 6-char period field
+    // TWC account: strip dashes, left-justify in 10-char field
+    const acct   = (client.sui_account_number || '').replace(/-/g, '').padEnd(10).substring(0, 10);
 
     const lines = [];
 
     // ── A Record: Transmitter ─────────────────────────────────────────────────
-    // pos 154-157: 'UTAX' — required filing-type indicator for unemployment tax
+    // 'UTAX' at pos 150-153 (immediately after ZIP+4 — no blank gap between them)
     lines.push(P275(
-      'A'                                    // pos 1      record id
-      + yr                                   // pos 2-5    tax year
-      + ein                                  // pos 6-14   EIN
-      + L('', 9)                             // pos 15-23  blanks
-      + L(client.business_name, 50)          // pos 24-73  transmitter name
-      + L(client.business_address, 40)       // pos 74-113 street
-      + L(client.business_city, 25)          // pos 114-138 city
-      + L(stAbbr, 2)                         // pos 139-140 state abbreviation
-      + L(zip, 5)                            // pos 141-145 ZIP
-      + L('', 4)                             // pos 146-149 ZIP+4 (or blanks)
-      + L('', 4)                             // pos 150-153 blanks
-      + 'UTAX'                               // pos 154-157 filing type ← required
-      + L('', 10)                            // pos 158-167 contact name
-      + L('', 10)                            // pos 168-177 contact phone
+      'A'                                      // pos 1      record id
+      + yr                                     // pos 2-5    tax year
+      + ein                                    // pos 6-14   EIN
+      + L('', 9)                               // pos 15-23  blanks
+      + L(client.business_name, 50)            // pos 24-73  transmitter name
+      + L(client.business_address, 40)         // pos 74-113 street
+      + L(client.business_city, 25)            // pos 114-138 city
+      + L(stAbbr, 2)                           // pos 139-140 state abbreviation (TX)
+      + L(zip, 5)                              // pos 141-145 ZIP
+      + L('', 4)                               // pos 146-149 ZIP+4 (or blanks)
+      + 'UTAX'                                 // pos 150-153 filing type ← REQUIRED (no blank before it)
+      + L('', 10)                              // pos 154-163 contact name
+      + L('', 10)                              // pos 164-173 contact phone
     ));
 
-    // ── E Record: Employer (MUST come before S records) ───────────────────────
-    // Contains employer identity, reporting period, employee counts, and wage totals.
-    // State field must be FIPS numeric code '48' for Texas.
+    // ── B Record: Employer Basic Info ─────────────────────────────────────────
+    // TWC QuickFile requires B before E. Street is 44 chars so state lands at 143-144.
+    // Account at pos 159-168 (confirmed correct by QuickFile in previous attempt).
+    const employerBlock = (recordType) => P275(
+      recordType
+      + yr                                     // pos 2-5    tax year
+      + ein                                    // pos 6-14   EIN
+      + L('', 9)                               // pos 15-23  blanks
+      + L(client.business_name, 50)            // pos 24-73  employer name
+      + L(client.business_address, 44)         // pos 74-117 street (44 chars — shifts state to 143)
+      + L(client.business_city, 25)            // pos 118-142 city
+      + stFips                                 // pos 143-144 FIPS state code '48' (TX required)
+      + L(zip, 5)                              // pos 145-149 ZIP
+      + L('', 4)                               // pos 150-153 ZIP+4 (or blanks)
+      + L('', 5)                               // pos 154-158 blanks
+      + acct                                   // pos 159-168 TWC UI account number
+    );
+    lines.push(employerBlock('B'));
+
+    // ── E Record: Employer Wage Data (comes after B, before S) ───────────────
+    // Same employer identity block as B, plus reporting period + wage totals.
+    // Period field: YYYYQQ (6 chars) e.g. "202602" for Q2 2026.
     lines.push(P275(
-      'E'                                    // pos 1
-      + yr                                   // pos 2-5    tax year
-      + ein                                  // pos 6-14   EIN
-      + L('', 9)                             // pos 15-23  blanks
-      + L(client.business_name, 50)          // pos 24-73  employer name
-      + L(client.business_address, 40)       // pos 74-113 street
-      + L(client.business_city, 25)          // pos 114-138 city
-      + stFips                               // pos 139-140 FIPS state code '48' (TX)
-      + L(zip, 5)                            // pos 141-145 ZIP
-      + L('', 4)                             // pos 146-149 ZIP+4 (or blanks)
-      + L('', 9)                             // pos 150-158 blanks
-      + acct                                 // pos 159-168 TWC UI account number
-      + qStr                                 // pos 169-170 quarter ('01'–'04')
-      + yr                                   // pos 171-174 reporting year
-      + I(emp12th[0], 3)                     // pos 175-177 month-1 employee count
-      + I(emp12th[1], 3)                     // pos 178-180 month-2 employee count
-      + I(emp12th[2], 3)                     // pos 181-183 month-3 employee count
-      + R(totalWages,   12)                  // pos 184-195 total wages (cents)
-      + R(totalTaxable, 12)                  // pos 196-207 taxable wages (cents)
-      + R(totalTax,     10)                  // pos 208-217 UI tax due (cents)
+      'E'
+      + yr                                     // pos 2-5    tax year
+      + ein                                    // pos 6-14   EIN
+      + L('', 9)                               // pos 15-23  blanks
+      + L(client.business_name, 50)            // pos 24-73  employer name
+      + L(client.business_address, 44)         // pos 74-117 street (44 chars)
+      + L(client.business_city, 25)            // pos 118-142 city
+      + stFips                                 // pos 143-144 FIPS '48' (TX)
+      + L(zip, 5)                              // pos 145-149 ZIP
+      + L('', 4)                               // pos 150-153 ZIP+4
+      + L('', 5)                               // pos 154-158 blanks
+      + acct                                   // pos 159-168 TWC account
+      + period                                 // pos 169-174 YYYYQQ reporting period
+      + I(emp12th[0], 3)                       // pos 175-177 month-1 employee count
+      + I(emp12th[1], 3)                       // pos 178-180 month-2 employee count
+      + I(emp12th[2], 3)                       // pos 181-183 month-3 employee count
+      + R(totalWages,   12)                    // pos 184-195 total wages (cents)
+      + R(totalTaxable, 12)                    // pos 196-207 taxable wages (cents)
+      + R(totalTax,     10)                    // pos 208-217 UI tax due (cents)
     ));
 
     // ── S Records: one per employee ───────────────────────────────────────────
     for (const emp of employees) {
       lines.push(P275(
-        'S'                                  // pos 1
-        + emp.ssn.padStart(9, '0').substring(0, 9) // pos 2-10  SSN (9 digits, no dashes)
-        + L(emp.lastName,  20)               // pos 11-30  last name
-        + L(emp.firstName, 12)               // pos 31-42  first name
-        + ' '                                // pos 43     middle initial (blank)
-        + stFips                             // pos 44-45  FIPS state code '48'
-        + yr                                 // pos 46-49  year
-        + qStr                               // pos 50-51  quarter
-        + R(emp.wages,   12)                 // pos 52-63  total wages (cents)
-        + R(emp.taxable, 12)                 // pos 64-75  taxable wages (cents)
+        'S'                                    // pos 1
+        + emp.ssn.padStart(9, '0').substring(0, 9) // pos 2-10  SSN (no dashes)
+        + L(emp.lastName,  20)                 // pos 11-30  last name
+        + L(emp.firstName, 12)                 // pos 31-42  first name
+        + ' '                                  // pos 43     middle initial (blank)
+        + stFips                               // pos 44-45  FIPS '48'
+        + yr                                   // pos 46-49  year
+        + qStr                                 // pos 50-51  quarter
+        + R(emp.wages,   12)                   // pos 52-63  total wages (cents)
+        + R(emp.taxable, 12)                   // pos 64-75  taxable wages (cents)
       ));
     }
 
     // ── F Record: Final — must be the very last record ────────────────────────
     lines.push(P275(
       'F'
-      + I(1, 10)                             // pos 2-11  number of E (employer) records
-      + I(employees.length, 10)              // pos 12-21 total S (employee) records
+      + I(1, 10)                               // pos 2-11  number of B/E employer records
+      + I(employees.length, 10)                // pos 12-21 total S employee records
     ));
 
     const bizSlug = (client.business_name || 'report').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
