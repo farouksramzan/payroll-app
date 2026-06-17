@@ -315,38 +315,58 @@ router.get('/twc-icesa', (req, res) => {
     lines.push(P275(employerPrefix('B')));
 
     // ── E Record: Employer Wage Data ──────────────────────────────────────────
-    // Continues employer prefix with period, monthly counts, and wage totals.
-    //   pos 182-187  reporting period YYYYQQ (6)
-    //   pos 188-190  month-1 employee count (3)
-    //   pos 191-193  month-2 employee count (3)
-    //   pos 194-196  month-3 employee count (3)
-    //   pos 197-208  total wages in cents (12)
-    //   pos 209-220  taxable wages in cents (12)
-    //   pos 221-230  UI tax due in cents (10)
+    // Continues employer prefix with year, 2 filler blanks, quarter, then counts
+    // and wage totals.  QuickFile reads:
+    //   year    from pos 182-185 (4 chars)
+    //   quarter from pos 188-189 (2 chars) — 2 filler blanks sit at 186-187
+    //   month-1 count at pos 190-192 (3 chars)
+    //   month-2 count at pos 193-195 (3 chars)
+    //   month-3 count at pos 196-198 (3 chars)
+    //   total wages    at pos 199-210 (12 chars, cents)
+    //   taxable wages  at pos 211-222 (12 chars, cents)
+    //   UI tax due     at pos 223-232 (10 chars, cents)
     lines.push(P275(
       employerPrefix('E')
-      + period                                 // pos 182-187
-      + I(emp12th[0], 3)                       // pos 188-190
-      + I(emp12th[1], 3)                       // pos 191-193
-      + I(emp12th[2], 3)                       // pos 194-196
-      + R(totalWages,   12)                    // pos 197-208
-      + R(totalTaxable, 12)                    // pos 209-220
-      + R(totalTax,     10)                    // pos 221-230
+      + yr                                     // pos 182-185  year (4)
+      + L('', 2)                               // pos 186-187  filler blanks
+      + qStr                                   // pos 188-189  quarter (2) ← QuickFile reads here
+      + I(emp12th[0], 3)                       // pos 190-192
+      + I(emp12th[1], 3)                       // pos 193-195
+      + I(emp12th[2], 3)                       // pos 196-198
+      + R(totalWages,   12)                    // pos 199-210
+      + R(totalTaxable, 12)                    // pos 211-222
+      + R(totalTax,     10)                    // pos 223-232
     ));
 
     // ── S Records: one per employee ───────────────────────────────────────────
+    // QuickFile reads wages from pos 64 and expects the employer account number
+    // to appear in each S record.  Layout (all 1-indexed):
+    //   pos 1       record type 'S'
+    //   pos 2-10    SSN (9, no dashes)
+    //   pos 11-30   last name (20)
+    //   pos 31-42   first name (12)
+    //   pos 43      middle initial (1 blank)
+    //   pos 44-52   TWC account (9) ← cross-ref to E record; QuickFile validates here
+    //   pos 53-54   FIPS state code (2)
+    //   pos 55-58   year (4)
+    //   pos 59-60   quarter (2)
+    //   pos 61-63   filler blanks (3)
+    //   pos 64-75   total wages in cents (12) ← QuickFile reads wages here
+    //   pos 76-87   taxable wages in cents (12)
     for (const emp of employees) {
       lines.push(P275(
         'S'                                    // pos 1
-        + emp.ssn.padStart(9, '0').substring(0, 9) // pos 2-10  SSN (no dashes)
-        + L(emp.lastName,  20)                 // pos 11-30  last name
-        + L(emp.firstName, 12)                 // pos 31-42  first name
-        + ' '                                  // pos 43     middle initial (blank)
-        + stFips                               // pos 44-45  FIPS '48'
-        + yr                                   // pos 46-49  year
-        + qStr                                 // pos 50-51  quarter
-        + R(emp.wages,   12)                   // pos 52-63  total wages (cents)
-        + R(emp.taxable, 12)                   // pos 64-75  taxable wages (cents)
+        + emp.ssn.padStart(9, '0').substring(0, 9) // pos 2-10  SSN
+        + L(emp.lastName,  20)                 // pos 11-30
+        + L(emp.firstName, 12)                 // pos 31-42
+        + ' '                                  // pos 43     middle initial
+        + acct9                                // pos 44-52  TWC account ← QuickFile cross-ref
+        + stFips                               // pos 53-54  FIPS '48'
+        + yr                                   // pos 55-58  year
+        + qStr                                 // pos 59-60  quarter
+        + L('', 3)                             // pos 61-63  filler blanks
+        + R(emp.wages,   12)                   // pos 64-75  total wages ← QuickFile reads here
+        + R(emp.taxable, 12)                   // pos 76-87  taxable wages
       ));
     }
 
