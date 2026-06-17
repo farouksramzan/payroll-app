@@ -441,7 +441,7 @@ function drawCheckSection(doc, stub, client, routingNumber, accountNumber, check
   // ANSI X9.27: 5/8" clear band at document bottom. Uses GnuMICR E-13B font.
   // GnuMICR mapping: A = transit ⑆   C = on-us ⑈   B = amount ⑇   D = dash ⑉
   // Standard format: C{checkno}C  A{routing}A{account}C
-  const paddedCheck = String(stub.check_number || '').padStart(4, '0');
+  const paddedCheck = String(stub.check_number || '').padStart(6, '0');
   const rn = routingNumber || '';
   const an = accountNumber || '';
   const micrLine = `C${paddedCheck}C  A${rn}A${an}C`;
