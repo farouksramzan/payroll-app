@@ -253,8 +253,8 @@ router.get('/twc-icesa', (req, res) => {
     const yr     = String(parseInt(year));                                       // 4-digit year string
     const qStr   = String(parseInt(quarter)).padStart(2, '0');                  // "01"–"04"
     const period = yr + qStr;                                                    // YYYYQQ e.g. "202602" ← 6-char period field
-    // TWC account: strip dashes, left-justify in 10-char field
-    const acct   = (client.sui_account_number || '').replace(/-/g, '').padEnd(10).substring(0, 10);
+    // TWC account: strip dashes, exactly 9 digits (QuickFile reads 9 chars from pos 173-181)
+    const acct9  = (client.sui_account_number || '').replace(/-/g, '').padEnd(9).substring(0, 9);
 
     const lines = [];
 
@@ -276,48 +276,62 @@ router.get('/twc-icesa', (req, res) => {
       + L('', 10)                              // pos 164-173 contact phone
     ));
 
-    // ── B Record: Employer Basic Info ─────────────────────────────────────────
-    // TWC QuickFile requires B before E. Street is 44 chars so state lands at 143-144.
-    // Account at pos 159-168 (confirmed correct by QuickFile in previous attempt).
-    const employerBlock = (recordType) => P275(
+    // ── Shared employer identity block (B and E records) ─────────────────────
+    // Layout engineered so QuickFile finds fields at the positions it expects:
+    //   pos 171-172 : FIPS state code '48'
+    //   pos 173-181 : TWC UI account number (9 digits, no dashes)
+    // Prefix breakdown (all 1-indexed):
+    //   1        record type
+    //   2-5      year (4)
+    //   6-14     EIN (9)
+    //   15-23    blanks (9)
+    //   24-73    name (50)
+    //   74-113   street (40)
+    //   114-138  city (25)
+    //   139-140  state abbreviation (2)
+    //   141-145  ZIP (5)
+    //   146-149  ZIP+4 / blanks (4)
+    //   150-159  blanks/phone (10)
+    //   160-170  blanks (11)
+    //   171-172  FIPS state code (2)   ← QuickFile reads state here
+    //   173-181  TWC account (9)       ← QuickFile reads account here
+    const employerPrefix = (recordType) =>
       recordType
-      + yr                                     // pos 2-5    tax year
-      + ein                                    // pos 6-14   EIN
-      + L('', 9)                               // pos 15-23  blanks
-      + L(client.business_name, 50)            // pos 24-73  employer name
-      + L(client.business_address, 44)         // pos 74-117 street (44 chars — shifts state to 143)
-      + L(client.business_city, 25)            // pos 118-142 city
-      + stFips                                 // pos 143-144 FIPS state code '48' (TX required)
-      + L(zip, 5)                              // pos 145-149 ZIP
-      + L('', 4)                               // pos 150-153 ZIP+4 (or blanks)
-      + L('', 5)                               // pos 154-158 blanks
-      + acct                                   // pos 159-168 TWC UI account number
-    );
-    lines.push(employerBlock('B'));
+      + yr                                     // pos 2-5
+      + ein                                    // pos 6-14
+      + L('', 9)                               // pos 15-23
+      + L(client.business_name, 50)            // pos 24-73
+      + L(client.business_address, 40)         // pos 74-113
+      + L(client.business_city, 25)            // pos 114-138
+      + L(stAbbr, 2)                           // pos 139-140  state abbr (TX)
+      + L(zip, 5)                              // pos 141-145
+      + L('', 4)                               // pos 146-149  ZIP+4 / blanks
+      + L('', 10)                              // pos 150-159  blanks
+      + L('', 11)                              // pos 160-170  blanks
+      + stFips                                 // pos 171-172  FIPS '48' ← QuickFile reads here
+      + acct9;                                 // pos 173-181  account (9 digits) ← QuickFile reads here
 
-    // ── E Record: Employer Wage Data (comes after B, before S) ───────────────
-    // Same employer identity block as B, plus reporting period + wage totals.
-    // Period field: YYYYQQ (6 chars) e.g. "202602" for Q2 2026.
+    // ── B Record: Employer Basic Info (required by QuickFile before E) ────────
+    lines.push(P275(employerPrefix('B')));
+
+    // ── E Record: Employer Wage Data ──────────────────────────────────────────
+    // Continues employer prefix with period, monthly counts, and wage totals.
+    //   pos 182-187  reporting period YYYYQQ (6)
+    //   pos 188-190  month-1 employee count (3)
+    //   pos 191-193  month-2 employee count (3)
+    //   pos 194-196  month-3 employee count (3)
+    //   pos 197-208  total wages in cents (12)
+    //   pos 209-220  taxable wages in cents (12)
+    //   pos 221-230  UI tax due in cents (10)
     lines.push(P275(
-      'E'
-      + yr                                     // pos 2-5    tax year
-      + ein                                    // pos 6-14   EIN
-      + L('', 9)                               // pos 15-23  blanks
-      + L(client.business_name, 50)            // pos 24-73  employer name
-      + L(client.business_address, 44)         // pos 74-117 street (44 chars)
-      + L(client.business_city, 25)            // pos 118-142 city
-      + stFips                                 // pos 143-144 FIPS '48' (TX)
-      + L(zip, 5)                              // pos 145-149 ZIP
-      + L('', 4)                               // pos 150-153 ZIP+4
-      + L('', 5)                               // pos 154-158 blanks
-      + acct                                   // pos 159-168 TWC account
-      + period                                 // pos 169-174 YYYYQQ reporting period
-      + I(emp12th[0], 3)                       // pos 175-177 month-1 employee count
-      + I(emp12th[1], 3)                       // pos 178-180 month-2 employee count
-      + I(emp12th[2], 3)                       // pos 181-183 month-3 employee count
-      + R(totalWages,   12)                    // pos 184-195 total wages (cents)
-      + R(totalTaxable, 12)                    // pos 196-207 taxable wages (cents)
-      + R(totalTax,     10)                    // pos 208-217 UI tax due (cents)
+      employerPrefix('E')
+      + period                                 // pos 182-187
+      + I(emp12th[0], 3)                       // pos 188-190
+      + I(emp12th[1], 3)                       // pos 191-193
+      + I(emp12th[2], 3)                       // pos 194-196
+      + R(totalWages,   12)                    // pos 197-208
+      + R(totalTaxable, 12)                    // pos 209-220
+      + R(totalTax,     10)                    // pos 221-230
     ));
 
     // ── S Records: one per employee ───────────────────────────────────────────
