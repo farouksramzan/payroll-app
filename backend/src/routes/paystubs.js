@@ -373,59 +373,63 @@ function drawCheckSection(doc, stub, client, routingNumber, accountNumber, check
   if (client.business_address) {
     doc.font('Helvetica').fontSize(8.5).fillColor(BLACK)
       .text(client.business_address.toUpperCase(), CX, addrY, { width: CW * 0.6 });
-    addrY += 12;
+    addrY += 13;
   }
   const compCity = [client.business_city, client.state, client.business_zip].filter(Boolean).join(' ');
   if (compCity) {
     doc.font('Helvetica').fontSize(8.5).fillColor(BLACK)
       .text(compCity.toUpperCase(), CX, addrY, { width: CW * 0.6 });
+    addrY += 13;
   }
+
+  // ruleY sits 10pt below the last address line so text is never clipped
+  const ruleY = addrY + 10;
 
   // ── Check No. (upper-right) ──────────────────────────────────────────────────
   doc.font('Helvetica-Bold').fontSize(10).fillColor(BLACK)
     .text(`Check No.  ${stub.check_number || ''}`, CX, T + 14, { width: CW, align: 'right' });
 
-  // ── Date (right, below check#) ───────────────────────────────────────────────
-  doc.font('Helvetica').fontSize(9).fillColor(BLACK)
-    .text('Date', CX + CW - 120, T + 48, { width: 40 });
-  doc.rect(CX + CW - 78, T + 45, 78, 14).stroke(BLACK);
-  doc.font('Helvetica').fontSize(8.5).fillColor(BLACK)
-    .text(payDate, CX + CW - 76, T + 49, { width: 74, align: 'center' });
-
   // ── Horizontal rule ──────────────────────────────────────────────────────────
-  doc.rect(CX, T + 44, CW * 0.72, 0.5).fill(BLACK);
+  doc.rect(CX, ruleY, CW * 0.72, 0.5).fill(BLACK);
+
+  // ── Date (right, aligned with rule) ─────────────────────────────────────────
+  doc.font('Helvetica').fontSize(9).fillColor(BLACK)
+    .text('Date', CX + CW - 120, ruleY + 4, { width: 40 });
+  doc.rect(CX + CW - 78, ruleY + 1, 78, 14).stroke(BLACK);
+  doc.font('Helvetica').fontSize(8.5).fillColor(BLACK)
+    .text(payDate, CX + CW - 76, ruleY + 5, { width: 74, align: 'center' });
 
   // ── Pay to the Order of ──────────────────────────────────────────────────────
-  doc.font('Helvetica').fontSize(8.5).fillColor(BLACK).text('Pay to the', CX, T + 62);
-  doc.font('Helvetica').fontSize(8.5).fillColor(BLACK).text('Order of', CX, T + 74);
+  doc.font('Helvetica').fontSize(8.5).fillColor(BLACK).text('Pay to the', CX, ruleY + 18);
+  doc.font('Helvetica').fontSize(8.5).fillColor(BLACK).text('Order of', CX, ruleY + 30);
 
-  // Payee name with underline
+  // Payee name with underline — aligned with "Order of" row, flows with ruleY
   const nameX = CX + 54, nameW = CW - 54 - 138;
   doc.font('Helvetica-Bold').fontSize(11).fillColor(BLACK)
-    .text(empName, nameX, T + 71, { width: nameW });
-  doc.rect(nameX, T + 86, nameW, 0.5).fill(BLACK);
+    .text(empName, nameX, ruleY + 28, { width: nameW });
+  doc.rect(nameX, ruleY + 43, nameW, 0.5).fill(BLACK);
 
-  // Amount box  $**AMOUNT*
+  // Amount box  $**AMOUNT* — right side, spans "Pay to the" / "Order of" rows
   const amtBoxX = CX + CW - 132, amtBoxW = 132;
-  doc.rect(amtBoxX, T + 62, amtBoxW, 28).stroke(BLACK);
+  doc.rect(amtBoxX, ruleY + 14, amtBoxW, 28).stroke(BLACK);
   const amtStr = `$**${Number(netPay).toFixed(2)}*`;
   doc.font('Helvetica-Bold').fontSize(12).fillColor(BLACK)
-    .text(amtStr, amtBoxX + 4, T + 70, { width: amtBoxW - 8, align: 'center' });
+    .text(amtStr, amtBoxX + 4, ruleY + 22, { width: amtBoxW - 8, align: 'center' });
 
   // ── Amount in words ──────────────────────────────────────────────────────────
-  doc.rect(CX, T + 94, CW - 54, 18).stroke(BLACK);
+  doc.rect(CX, ruleY + 50, CW - 54, 18).stroke(BLACK);
   const words = numberToWords(netPay);
   doc.font('Helvetica').fontSize(8.5).fillColor(BLACK)
-    .text(words, CX + 4, T + 99, { width: CW - 62, lineBreak: false });
+    .text(words, CX + 4, ruleY + 55, { width: CW - 62, lineBreak: false });
   doc.font('Helvetica').fontSize(8.5).fillColor(BLACK)
-    .text('*'.repeat(60), CX + 4, T + 99, { width: CW - 62, align: 'right', lineBreak: false });
+    .text('*'.repeat(60), CX + 4, ruleY + 55, { width: CW - 62, align: 'right', lineBreak: false });
   doc.font('Helvetica-Bold').fontSize(9).fillColor(BLACK)
-    .text('Dollars', CX + CW - 50, T + 99, { width: 50, align: 'right' });
+    .text('Dollars', CX + CW - 50, ruleY + 55, { width: 50, align: 'right' });
 
   // ── Bank name (bold, left — matches "BANK OF AMERICA" position in Khayam) ───
   if (client.bank_name) {
     doc.font('Helvetica-Bold').fontSize(12).fillColor(BLACK)
-      .text(client.bank_name.toUpperCase(), CX, T + 122, { width: CW * 0.55 });
+      .text(client.bank_name.toUpperCase(), CX, ruleY + 76, { width: CW * 0.55 });
   }
 
   // ── Signature line (right, pushed down near bottom) ──────────────────────────
