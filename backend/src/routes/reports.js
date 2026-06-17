@@ -320,15 +320,13 @@ router.get('/twc-icesa', (req, res) => {
       + stFips                                 // pos 171-172  FIPS '48' ← QuickFile reads state here
       + acct9;                                 // pos 173-181  account (9) ← QuickFile reads account here
 
-    // ── B Record: Employer Basic Info (required by QuickFile before E) ────────
-    lines.push(P275(employerPrefix('B')));
-
     // ── E Record: Employer Record ──────────────────────────────────────────────
     // After the 181-char employer prefix:
     //   pos 182-187 : NAICS code (6, blanks if unknown)
     //   pos 188-189 : TWC reporting period (2) ← last month of quarter: Q2='06'
     //   pos 190     : has-workers indicator '1'
-    // No wage totals in E record — those are derived by QuickFile from S records.
+    // No B record — TWC QuickFile does not require it and it causes F-record
+    // ordering errors by confusing the parser.
     lines.push(P275(
       employerPrefix('E')
       + L(client.naics_code || '', 6)          // pos 182-187  NAICS code or blanks
@@ -351,9 +349,13 @@ router.get('/twc-icesa', (req, res) => {
     //   pos 135-142 : blanks (8)
     //   pos 143-146 : 'UTAX' ← QuickFile expects here
     //   pos 147-155 : TWC account number (9) ← QuickFile cross-references here
-    //   pos 156-220 : blanks (65)
-    //   pos 221-222 : reporting period code (2) ← QuickFile matches against E record
-    //   pos 223-226 : reporting year (4) ← QuickFile matches against E record
+    //   pos 156-181 : blanks (26)
+    //   pos 182-185 : reporting year (4) ← QuickFile reads S year here (mirrors E record offset)
+    //   pos 186-187 : blanks (2)
+    //   pos 188-189 : reporting period code (2) ← QuickFile reads S period here (mirrors E record offset)
+    //   pos 190-220 : blanks (31)
+    //   pos 221-222 : reporting period code (2) (spec fallback)
+    //   pos 223-226 : reporting year (4) (spec fallback)
     for (const emp of employees) {
       const excessWages = round2(Math.max(0, emp.wages - emp.taxable));
       lines.push(P275(
@@ -375,9 +377,13 @@ router.get('/twc-icesa', (req, res) => {
         + L('', 8)                             // pos 135-142 blanks
         + 'UTAX'                               // pos 143-146 taxing entity code
         + acct9                                // pos 147-155 TWC account ← QuickFile cross-ref
-        + L('', 65)                            // pos 156-220 blanks
-        + periodCode                           // pos 221-222 period code ← matches E record
-        + yr                                   // pos 223-226 year ← matches E record
+        + L('', 26)                            // pos 156-181 blanks
+        + yr                                   // pos 182-185 year ← QuickFile reads S year here (same offset as E)
+        + L('', 2)                             // pos 186-187 blanks
+        + periodCode                           // pos 188-189 period ← QuickFile reads S period here (same offset as E)
+        + L('', 31)                            // pos 190-220 blanks
+        + periodCode                           // pos 221-222 period code (spec fallback)
+        + yr                                   // pos 223-226 year (spec fallback)
       ));
     }
 
