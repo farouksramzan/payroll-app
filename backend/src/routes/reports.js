@@ -357,6 +357,11 @@ router.get('/twc-icesa', (req, res) => {
     //   pos 217-220 : reporting year (4)              ← ICESA MMYYYY combined field, part 2
     // Skip employees with no SSN (unlinked paystub aggregates)
     const validEmployees = employees.filter(e => e.ssn && e.ssn.replace(/\D/g, '').length === 9);
+    // Recompute wage totals from valid employees ONLY — totalWages above includes unlinked paystubs
+    // that are excluded from S records, which would cause a T/F vs S-sum mismatch in QuickFile.
+    const icesaWages    = round2(validEmployees.reduce((s, e) => s + e.wages,   0));
+    const icesaTaxable  = round2(validEmployees.reduce((s, e) => s + e.taxable, 0));
+    const icesaTax      = round2(icesaTaxable * sutaRate);
     for (const emp of validEmployees) {
       const excessWages = round2(Math.max(0, emp.wages - emp.taxable));
       lines.push(P275(
@@ -393,12 +398,12 @@ router.get('/twc-icesa', (req, res) => {
       + I(validEmployees.length, 7)            // pos 2-8   employee count for this E record
       + 'UTAX'                                 // pos 9-12  taxing entity code
       + L('', 14)                              // pos 13-26 gross wages = blanks (per spec)
-      + R(totalWages, 14)                      // pos 27-40 UI total wages (14, cents)
+      + R(icesaWages, 14)                       // pos 27-40 UI total wages (14, cents)
       + L('', 14)                              // pos 41-54 excess wages = blanks (per spec)
-      + R(totalTaxable, 14)                    // pos 55-68 UI taxable wages (14, cents)
+      + R(icesaTaxable, 14)                    // pos 55-68 UI taxable wages (14, cents)
       + L('', 13)                              // pos 69-81 tip wages = blanks
       + tRateStr                               // pos 82-87 UI tax rate (e.g. '.02700')
-      + R(totalTax, 13)                        // pos 88-100 taxes due (13, cents)
+      + R(icesaTax, 13)                        // pos 88-100 taxes due (13, cents)
       + L('', 11)                              // pos 101-111 prior underpayment = blanks
       + L('', 11)                              // pos 112-122 interest = blanks
       + L('', 11)                              // pos 123-133 penalty = blanks
@@ -414,7 +419,7 @@ router.get('/twc-icesa', (req, res) => {
       + I(emp12th[0] || 0, 7)                  // pos 227-233 month 1 employment (12th-day count)
       + I(emp12th[1] || 0, 7)                  // pos 234-240 month 2 employment
       + I(emp12th[2] || 0, 7)                  // pos 241-247 month 3 employment
-      + L(client.county_code || '', 3)         // pos 248-250 county code (largest employment county)
+      + String(parseInt(client.county_code) || 0).padStart(3, '0').substring(0, 3) // pos 248-250 county code (odd 1-507)
       + I(0, 7)                                // pos 251-257 outside-county employees (zeros)
       + L('', 10)                              // pos 258-267 document control number = blanks
       + L('', 8)                               // pos 268-275 blanks
@@ -435,9 +440,9 @@ router.get('/twc-icesa', (req, res) => {
       + I(1, 10)                               // pos 12-21 total E employer records
       + 'UTAX'                                 // pos 22-25 taxing entity code
       + L('', 15)                              // pos 26-40 total gross wages = blanks
-      + R(totalWages, 15)                      // pos 41-55 total UI wages (15, cents)
+      + R(icesaWages, 15)                       // pos 41-55 total UI wages (15, cents)
       + L('', 15)                              // pos 56-70 total excess wages = blanks
-      + R(totalTaxable, 15)                    // pos 71-85 total taxable wages (15, cents)
+      + R(icesaTaxable, 15)                    // pos 71-85 total taxable wages (15, cents)
     ));
 
     const bizSlug = (client.business_name || 'report').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
