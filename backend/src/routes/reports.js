@@ -384,11 +384,60 @@ router.get('/twc-icesa', (req, res) => {
       ));
     }
 
+    // ── T Record: State Employer Total — required after all S records ─────────
+    // Per TWC ICESA spec: one T record per E record, summarizing all S records.
+    // Tax rate format: decimal point + 5 digits, e.g. 2.7% → '.02700'
+    const tRateStr = '.' + String(Math.round(sutaRate * 100000)).padStart(5, '0').substring(0, 5);
+    lines.push(P275(
+      'T'
+      + I(validEmployees.length, 7)            // pos 2-8   employee count for this E record
+      + 'UTAX'                                 // pos 9-12  taxing entity code
+      + L('', 14)                              // pos 13-26 gross wages = blanks (per spec)
+      + R(totalWages, 14)                      // pos 27-40 UI total wages (14, cents)
+      + L('', 14)                              // pos 41-54 excess wages = blanks (per spec)
+      + R(totalTaxable, 14)                    // pos 55-68 UI taxable wages (14, cents)
+      + L('', 13)                              // pos 69-81 tip wages = blanks
+      + tRateStr                               // pos 82-87 UI tax rate (e.g. '.02700')
+      + R(totalTax, 13)                        // pos 88-100 taxes due (13, cents)
+      + L('', 11)                              // pos 101-111 prior underpayment = blanks
+      + L('', 11)                              // pos 112-122 interest = blanks
+      + L('', 11)                              // pos 123-133 penalty = blanks
+      + L('', 11)                              // pos 134-144 credit = blanks
+      + L('', 4)                               // pos 145-148 employer assessment rate = blanks
+      + L('', 11)                              // pos 149-159 employer assessment amt = blanks
+      + L('', 4)                               // pos 160-163 employee assessment rate = blanks
+      + L('', 11)                              // pos 164-174 employee assessment amt = blanks
+      + L('', 11)                              // pos 175-185 total payment due = blanks
+      + L('', 13)                              // pos 186-198 allocation amount = blanks
+      + L('', 14)                              // pos 199-212 wages for state income tax = blanks
+      + L('', 14)                              // pos 213-226 state income tax withheld = blanks
+      + I(emp12th[0] || 0, 7)                  // pos 227-233 month 1 employment (12th-day count)
+      + I(emp12th[1] || 0, 7)                  // pos 234-240 month 2 employment
+      + I(emp12th[2] || 0, 7)                  // pos 241-247 month 3 employment
+      + L(client.county_code || '', 3)         // pos 248-250 county code (largest employment county)
+      + I(0, 7)                                // pos 251-257 outside-county employees (zeros)
+      + L('', 10)                              // pos 258-267 document control number = blanks
+      + L('', 8)                               // pos 268-275 blanks
+    ));
+
     // ── F Record: Final — must be the very last record ────────────────────────
+    // Per TWC ICESA spec:
+    //   pos 2-11  : total S records in file (10)
+    //   pos 12-21 : total E records in file (10)
+    //   pos 22-25 : 'UTAX' taxing entity code
+    //   pos 26-40 : total gross wages = blanks (per spec)
+    //   pos 41-55 : total UI total wages (15, cents)
+    //   pos 56-70 : total excess wages = blanks (per spec)
+    //   pos 71-85 : total UI taxable wages (15, cents)
     lines.push(P275(
       'F'
-      + I(1, 10)                               // pos 2-11  number of E employer records
-      + I(validEmployees.length, 10)           // pos 12-21 total S employee records
+      + I(validEmployees.length, 10)           // pos 2-11  total S employee records
+      + I(1, 10)                               // pos 12-21 total E employer records
+      + 'UTAX'                                 // pos 22-25 taxing entity code
+      + L('', 15)                              // pos 26-40 total gross wages = blanks
+      + R(totalWages, 15)                      // pos 41-55 total UI wages (15, cents)
+      + L('', 15)                              // pos 56-70 total excess wages = blanks
+      + R(totalTaxable, 15)                    // pos 71-85 total taxable wages (15, cents)
     ));
 
     const bizSlug = (client.business_name || 'report').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
