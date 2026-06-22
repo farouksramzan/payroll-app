@@ -352,8 +352,9 @@ router.get('/twc-icesa', (req, res) => {
     //   pos 135-142 : blanks (8)
     //   pos 143-146 : 'UTAX'                          (confirmed round 7)
     //   pos 147-155 : TWC account number (9)          (confirmed round 7)
-    //   pos 156-187 : blanks (32)
-    //   pos 188-189 : reporting period code (2)       (parallel to E record pos 188-189)
+    //   pos 156-214 : blanks (59)
+    //   pos 215-216 : ending month of quarter (2)     ← ICESA MMYYYY combined field, part 1
+    //   pos 217-220 : reporting year (4)              ← ICESA MMYYYY combined field, part 2
     // Skip employees with no SSN (unlinked paystub aggregates)
     const validEmployees = employees.filter(e => e.ssn && e.ssn.replace(/\D/g, '').length === 9);
     for (const emp of validEmployees) {
@@ -377,8 +378,9 @@ router.get('/twc-icesa', (req, res) => {
         + L('', 8)                             // pos 135-142 blanks
         + 'UTAX'                               // pos 143-146 taxing entity code
         + acct9                                // pos 147-155 TWC account
-        + L('', 32)                            // pos 156-187 blanks
-        + periodCode                           // pos 188-189 period ← parallel to E record's pos 188-189
+        + L('', 59)                            // pos 156-214 blanks
+        + periodCode                           // pos 215-216 MMYYYY part 1: ending month of quarter
+        + yr                                   // pos 217-220 MMYYYY part 2: year
       ));
     }
 
