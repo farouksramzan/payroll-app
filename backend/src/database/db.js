@@ -299,6 +299,11 @@ function migrate() {
     { name: 'business_zip',       def: 'TEXT' },
   ]);
 
+  // TWC/SUI county code for ICESA filing
+  addCols('clients', [
+    { name: 'county_code', def: 'TEXT' },
+  ]);
+
   // SUI independent status tracking
   addCols('paystubs', [
     { name: 'status_sui',            def: "TEXT DEFAULT 'pending'" },

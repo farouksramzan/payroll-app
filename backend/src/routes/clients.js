@@ -106,6 +106,7 @@ function sanitizeClient(client, includeSecrets = false) {
     notificationEmail:  client.notification_email  || null,
     notificationPhone:  client.notification_phone  || null,
     bankName:           client.bank_name           || null,
+    countyCode:         client.county_code         || null,
   };
   if (includeSecrets) {
     out.batchProviderPin = client.batch_provider_pin_encrypted ? decrypt(client.batch_provider_pin_encrypted) : null;
@@ -312,7 +313,7 @@ router.put('/:id', (req, res) => {
     payrollFrequency, nextPayrollDate,
     businessAddress, businessCity, businessZip,
     notificationEmail, notificationPhone,
-    twcUsername, twcPassword, bankName } = req.body;
+    twcUsername, twcPassword, bankName, countyCode } = req.body;
 
   if (ein && !/^\d{2}-?\d{7}$/.test(ein)) return res.status(400).json({ error: 'EIN must be in format XX-XXXXXXX' });
   if (batchProviderPin && !/^\d{4}$/.test(batchProviderPin)) return res.status(400).json({ error: 'Batch Provider PIN must be exactly 4 digits' });
@@ -348,6 +349,7 @@ router.put('/:id', (req, res) => {
       twc_username = ?,
       twc_password_encrypted = ?,
       bank_name = ?,
+      county_code = ?,
       updated_at = CURRENT_TIMESTAMP
     WHERE id = ? AND user_id = ?
   `).run(
@@ -380,6 +382,7 @@ router.put('/:id', (req, res) => {
     twcUsername !== undefined ? (twcUsername || null) : existing.twc_username,
     twcPassword ? encrypt(twcPassword) : existing.twc_password_encrypted,
     bankName !== undefined ? (bankName || null) : existing.bank_name,
+    countyCode !== undefined ? (countyCode || null) : existing.county_code,
     req.params.id,
     req.user.id,
   );

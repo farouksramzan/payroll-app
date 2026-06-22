@@ -16,6 +16,62 @@ const US_STATES = [
   ['DC','Washington D.C.'],
 ];
 
+// Texas counties: [county name, TWC 3-digit code]
+// TWC codes are the last 3 digits of the county FIPS (odd numbers 1-507)
+const TX_COUNTIES = [
+  ['Anderson','001'],['Andrews','003'],['Angelina','005'],['Aransas','007'],['Archer','009'],
+  ['Armstrong','011'],['Atascosa','013'],['Austin','015'],['Bailey','017'],['Bandera','019'],
+  ['Bastrop','021'],['Baylor','023'],['Bee','025'],['Bell','027'],['Bexar','029'],
+  ['Blanco','031'],['Borden','033'],['Bosque','035'],['Bowie','037'],['Brazoria','039'],
+  ['Brazos','041'],['Brewster','043'],['Briscoe','045'],['Brooks','047'],['Brown','049'],
+  ['Burleson','051'],['Burnet','053'],['Caldwell','055'],['Calhoun','057'],['Callahan','059'],
+  ['Cameron','061'],['Camp','063'],['Carson','065'],['Cass','067'],['Castro','069'],
+  ['Chambers','071'],['Cherokee','073'],['Childress','075'],['Clay','077'],['Cochran','079'],
+  ['Coke','081'],['Coleman','083'],['Collin','085'],['Collingsworth','087'],['Colorado','089'],
+  ['Comal','091'],['Comanche','093'],['Concho','095'],['Cooke','097'],['Coryell','099'],
+  ['Cottle','101'],['Crane','103'],['Crockett','105'],['Crosby','107'],['Culberson','109'],
+  ['Dallam','111'],['Dallas','113'],['Dawson','115'],['Deaf Smith','117'],['Delta','119'],
+  ['Denton','121'],['DeWitt','123'],['Dickens','125'],['Dimmit','127'],['Donley','129'],
+  ['Duval','131'],['Eastland','133'],['Ector','135'],['Edwards','137'],['Ellis','139'],
+  ['El Paso','141'],['Erath','143'],['Falls','145'],['Fannin','147'],['Fayette','149'],
+  ['Fisher','151'],['Floyd','153'],['Foard','155'],['Fort Bend','157'],['Franklin','159'],
+  ['Freestone','161'],['Frio','163'],['Gaines','165'],['Galveston','167'],['Garza','169'],
+  ['Gillespie','171'],['Glasscock','173'],['Goliad','175'],['Gonzales','177'],['Gray','179'],
+  ['Grayson','181'],['Gregg','183'],['Grimes','185'],['Guadalupe','187'],['Hale','189'],
+  ['Hall','191'],['Hamilton','193'],['Hansford','195'],['Hardeman','197'],['Hardin','199'],
+  ['Harris','201'],['Harrison','203'],['Hartley','205'],['Haskell','207'],['Hays','209'],
+  ['Hemphill','211'],['Henderson','213'],['Hidalgo','215'],['Hill','217'],['Hockley','219'],
+  ['Hood','221'],['Hopkins','223'],['Houston','225'],['Howard','227'],['Hudspeth','229'],
+  ['Hunt','231'],['Hutchinson','233'],['Irion','235'],['Jack','237'],['Jackson','239'],
+  ['Jasper','241'],['Jeff Davis','243'],['Jefferson','245'],['Jim Hogg','247'],['Jim Wells','249'],
+  ['Johnson','251'],['Jones','253'],['Karnes','255'],['Kaufman','257'],['Kendall','259'],
+  ['Kenedy','261'],['Kent','263'],['Kerr','265'],['Kimble','267'],['King','269'],
+  ['Kinney','271'],['Kleberg','273'],['Knox','275'],['Lamar','277'],['Lamb','279'],
+  ['Lampasas','281'],['La Salle','283'],['Lavaca','285'],['Lee','287'],['Leon','289'],
+  ['Liberty','291'],['Limestone','293'],['Lipscomb','295'],['Live Oak','297'],['Llano','299'],
+  ['Loving','301'],['Lubbock','303'],['Lynn','305'],['McCulloch','307'],['McLennan','309'],
+  ['McMullen','311'],['Madison','313'],['Marion','315'],['Martin','317'],['Mason','319'],
+  ['Matagorda','321'],['Maverick','323'],['Medina','325'],['Menard','327'],['Midland','329'],
+  ['Milam','331'],['Mills','333'],['Mitchell','335'],['Montague','337'],['Montgomery','339'],
+  ['Moore','341'],['Morris','343'],['Motley','345'],['Nacogdoches','347'],['Navarro','349'],
+  ['Newton','351'],['Nolan','353'],['Nueces','355'],['Ochiltree','357'],['Oldham','359'],
+  ['Orange','361'],['Palo Pinto','363'],['Panola','365'],['Parker','367'],['Parmer','369'],
+  ['Pecos','371'],['Polk','373'],['Potter','375'],['Presidio','377'],['Rains','379'],
+  ['Randall','381'],['Reagan','383'],['Real','385'],['Red River','387'],['Reeves','389'],
+  ['Refugio','391'],['Roberts','393'],['Robertson','395'],['Rockwall','397'],['Runnels','399'],
+  ['Rusk','401'],['Sabine','403'],['San Augustine','405'],['San Jacinto','407'],['San Patricio','409'],
+  ['San Saba','411'],['Schleicher','413'],['Scurry','415'],['Shackelford','417'],['Shelby','419'],
+  ['Sherman','421'],['Smith','423'],['Somervell','425'],['Starr','427'],['Stephens','429'],
+  ['Sterling','431'],['Stonewall','433'],['Sutton','435'],['Swisher','437'],['Tarrant','439'],
+  ['Taylor','441'],['Terrell','443'],['Terry','445'],['Throckmorton','447'],['Titus','449'],
+  ['Tom Green','451'],['Travis','453'],['Trinity','455'],['Tyler','457'],['Upshur','459'],
+  ['Upton','461'],['Uvalde','463'],['Val Verde','465'],['Van Zandt','467'],['Victoria','469'],
+  ['Walker','471'],['Waller','473'],['Ward','475'],['Washington','477'],['Webb','479'],
+  ['Wharton','481'],['Wheeler','483'],['Wichita','485'],['Wilbarger','487'],['Willacy','489'],
+  ['Williamson','491'],['Wilson','493'],['Winkler','495'],['Wise','497'],['Wood','499'],
+  ['Yoakum','501'],['Young','503'],['Zapata','505'],['Zavala','507'],
+];
+
 const EMPTY = {
   businessName: '', ein: '', state: 'TX',
   businessAddress: '', businessCity: '', businessZip: '',
@@ -23,6 +79,7 @@ const EMPTY = {
   bankAccountNumber: '', bankRoutingNumber: '', bankAccountType: 'checking',
   contactName: '', contactEmail: '', contactPhone: '',
   payrollFrequency: 'biweekly', nextPayrollDate: '', nextCheckNumber: '1001',
+  countyCode: '',
 };
 
 export default function ClientForm() {
@@ -56,6 +113,7 @@ export default function ClientForm() {
         payrollFrequency: c.payrollFrequency || 'biweekly',
         nextPayrollDate: c.nextPayrollDate || '',
         nextCheckNumber: c.nextCheckNumber != null ? String(c.nextCheckNumber) : '1001',
+        countyCode: c.countyCode || '',
       });
     }).catch((err) => setApiError(err.message)).finally(() => setLoading(false));
   }, [id, isEdit]);
@@ -85,6 +143,7 @@ export default function ClientForm() {
     try {
       const payload = { ...form, sutaRate: parseFloat(form.sutaRate || 2.7) / 100 };
       if (!payload.bankAccountNumber) delete payload.bankAccountNumber;
+      if (!payload.countyCode) payload.countyCode = null;
       if (isEdit) {
         await api.updateClient(id, payload);
         navigate(`/clients/${id}`);
@@ -179,6 +238,23 @@ export default function ClientForm() {
               </div>
             </div>
 
+
+            {form.state === 'TX' && (
+              <div className="form-group" style={{ maxWidth: 320 }}>
+                <label className="form-label">County</label>
+                <select
+                  className="form-select"
+                  value={form.countyCode}
+                  onChange={(e) => setForm((f) => ({ ...f, countyCode: e.target.value }))}
+                >
+                  <option value="">— Select county —</option>
+                  {TX_COUNTIES.map(([name, code]) => (
+                    <option key={code} value={code}>{name} ({code})</option>
+                  ))}
+                </select>
+                <p className="form-hint">Required for TWC QuickFile ICESA submission (county code auto-filled).</p>
+              </div>
+            )}
 
             <div className="form-group">
               <label className="form-label">SUI (State Unemployment) Rate (%)</label>
