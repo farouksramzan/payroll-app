@@ -338,22 +338,25 @@ router.get('/twc-icesa', (req, res) => {
     ));
 
     // ── S Records: one per employee ───────────────────────────────────────────
-    // Layout confirmed from original sample file byte-by-byte:
-    //   pos 44-45   : FIPS state code '48'
-    //   pos 46-49   : reporting year (4) ← QuickFile reads S year here
-    //   pos 50-51   : reporting period code (2) ← QuickFile reads S period here: '06' for Q2
-    //   pos 52-63   : quarterly gross wages (12 chars, cents, no decimal)
-    //   pos 64-75   : quarterly UI total wages (12 chars, cents) ← QuickFile validates here
-    //   pos 76-87   : quarterly UI excess wages (12 chars, cents) = gross - taxable
-    //   pos 88-99   : quarterly UI taxable wages (12 chars, cents)
-    //   pos 100-114 : SDI taxable wages (15 zeros — TX has no SDI)
-    //   pos 115-123 : tip wages (9 zeros)
-    //   pos 124-125 : weeks worked (blanks)
-    //   pos 126-128 : hours worked (blanks)
-    //   pos 129-142 : blanks (14) — padding to keep UTAX at confirmed pos 143
-    //   pos 143-146 : 'UTAX' ← confirmed by QuickFile round 7
-    //   pos 147-155 : TWC account number (9) ← confirmed by QuickFile round 7
-    for (const emp of employees) {
+    // Confirmed field positions (empirically verified across QuickFile test rounds):
+    //   pos 44-45   : FIPS state code '48'           (confirmed round 6)
+    //   pos 46-49   : reporting year (4)              (replaces 4 blanks — only free 4-char slot)
+    //   pos 50-63   : quarterly gross wages (14 chars, cents) ← 14-char confirmed by rounds 7/9
+    //   pos 64-77   : quarterly UI total wages (14 chars, cents) ← QuickFile reads 14-char from pos 64
+    //   pos 78-91   : quarterly UI excess wages (14 chars, cents)
+    //   pos 92-105  : quarterly UI taxable wages (14 chars, cents) ← QuickFile reads 14-char from pos 92
+    //   pos 106-120 : SDI taxable wages (15 zeros — TX has no SDI)
+    //   pos 121-129 : tip wages (9 zeros)
+    //   pos 130-131 : weeks worked (blanks)
+    //   pos 132-134 : hours worked (blanks)
+    //   pos 135-142 : blanks (8)
+    //   pos 143-146 : 'UTAX'                          (confirmed round 7)
+    //   pos 147-155 : TWC account number (9)          (confirmed round 7)
+    //   pos 156-187 : blanks (32)
+    //   pos 188-189 : reporting period code (2)       (parallel to E record pos 188-189)
+    // Skip employees with no SSN (unlinked paystub aggregates)
+    const validEmployees = employees.filter(e => e.ssn && e.ssn.replace(/\D/g, '').length === 9);
+    for (const emp of validEmployees) {
       const excessWages = round2(Math.max(0, emp.wages - emp.taxable));
       lines.push(P275(
         'S'                                    // pos 1
@@ -362,19 +365,20 @@ router.get('/twc-icesa', (req, res) => {
         + L(emp.firstName, 12)                 // pos 31-42
         + ' '                                  // pos 43     middle initial
         + stFips                               // pos 44-45  FIPS '48'
-        + yr                                   // pos 46-49  year ← QuickFile reads here
-        + periodCode                           // pos 50-51  period ← QuickFile reads here
-        + R(emp.wages,   12)                   // pos 52-63  gross wages (12)
-        + R(emp.wages,   12)                   // pos 64-75  UI total wages (12) ← QuickFile validates
-        + R(excessWages, 12)                   // pos 76-87  UI excess wages (12)
-        + R(emp.taxable, 12)                   // pos 88-99  UI taxable wages (12)
-        + '000000000000000'                    // pos 100-114 SDI taxable (15 zeros, TX has no SDI)
-        + '000000000'                          // pos 115-123 tip wages (9 zeros)
-        + L('', 2)                             // pos 124-125 weeks worked
-        + L('', 3)                             // pos 126-128 hours worked
-        + L('', 14)                            // pos 129-142 blanks (14, pads to keep UTAX at 143)
+        + yr                                   // pos 46-49  year ← only free 4-char slot before wages
+        + R(emp.wages,   14)                   // pos 50-63  gross wages (14)
+        + R(emp.wages,   14)                   // pos 64-77  UI total wages (14) ← QuickFile reads 14-char here
+        + R(excessWages, 14)                   // pos 78-91  UI excess wages (14)
+        + R(emp.taxable, 14)                   // pos 92-105 UI taxable wages (14) ← QuickFile reads 14-char here
+        + '000000000000000'                    // pos 106-120 SDI taxable (15 zeros, TX has no SDI)
+        + '000000000'                          // pos 121-129 tip wages (9 zeros)
+        + L('', 2)                             // pos 130-131 weeks worked
+        + L('', 3)                             // pos 132-134 hours worked
+        + L('', 8)                             // pos 135-142 blanks
         + 'UTAX'                               // pos 143-146 taxing entity code
         + acct9                                // pos 147-155 TWC account
+        + L('', 32)                            // pos 156-187 blanks
+        + periodCode                           // pos 188-189 period ← parallel to E record's pos 188-189
       ));
     }
 
@@ -382,7 +386,7 @@ router.get('/twc-icesa', (req, res) => {
     lines.push(P275(
       'F'
       + I(1, 10)                               // pos 2-11  number of E employer records
-      + I(employees.length, 10)                // pos 12-21 total S employee records
+      + I(validEmployees.length, 10)           // pos 12-21 total S employee records
     ));
 
     const bizSlug = (client.business_name || 'report').replace(/[^a-zA-Z0-9]/g, '_').substring(0, 20);
