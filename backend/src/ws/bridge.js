@@ -28,9 +28,7 @@ class BridgeManager extends EventEmitter {
     httpServer.on('upgrade', (req, socket, head) => {
       const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
       if (url.pathname !== BRIDGE_PATH) {
-        socket.write('HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n');
-        socket.destroy();
-        return;
+        return; // let other upgrade handlers (e.g. TWC bridge) handle it
       }
       this._wss.handleUpgrade(req, socket, head, (ws) => {
         this._wss.emit('connection', ws, req);
