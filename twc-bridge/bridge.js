@@ -7,8 +7,10 @@ const path      = require('path');
 const { execFile, spawn } = require('child_process');
 
 // ── Config ────────────────────────────────────────────────────────────────────
-const SERVER_URL    = process.env.RAILWAY_URL;      // e.g. wss://payroll-app-production-xxx.railway.app
+const SERVER_URL    = process.env.RAILWAY_URL;
 const SECRET        = process.env.BRIDGE_TWC_SECRET;
+const TWC_USERNAME  = process.env.TWC_USERNAME;
+const TWC_PASSWORD  = process.env.TWC_PASSWORD;
 const QUICKFILE_EXE = process.env.QUICKFILE_EXE || 'C:\\Program Files (x86)\\QuickFile\\QuickFile.exe';
 const AHK_EXE       = process.env.AHK_EXE       || 'C:\\Program Files\\AutoHotkey\\AutoHotkey.exe';
 const AHK_SCRIPT    = path.join(__dirname, 'submit.ahk');
@@ -18,6 +20,10 @@ const PING_MS       = 20_000;   // client-side ping interval
 
 if (!SERVER_URL || !SECRET) {
   console.error('[TWC Bridge] RAILWAY_URL and BRIDGE_TWC_SECRET must be set in .env');
+  process.exit(1);
+}
+if (!TWC_USERNAME || !TWC_PASSWORD) {
+  console.error('[TWC Bridge] TWC_USERNAME and TWC_PASSWORD must be set in .env');
   process.exit(1);
 }
 
@@ -164,7 +170,7 @@ function runQuickFile(icesaFilePath, jobId, submissionId) {
     console.log(`[TWC Bridge]   Result file: ${resultFile}`);
 
     // Pass file paths as command-line arguments to the AHK script
-    const proc = spawn(AHK_EXE, [AHK_SCRIPT, icesaFilePath, resultFile, QUICKFILE_EXE], {
+    const proc = spawn(AHK_EXE, [AHK_SCRIPT, icesaFilePath, resultFile, QUICKFILE_EXE, TWC_USERNAME, TWC_PASSWORD], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
