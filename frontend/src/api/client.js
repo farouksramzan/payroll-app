@@ -148,6 +148,13 @@ const api = {
 
   // ACH Bridge
   getBridgeStatus: () => request('/bridge/status'),
+  getTwcBridgeStatus: () => request('/twc-bridge/status'),
+
+  // TWC bridge submissions
+  createTwcSubmission: (clientId, quarter, year) =>
+    request('/twc-submissions', { method: 'POST', body: JSON.stringify({ clientId, quarter, year }) }),
+  getTwcSubmission: (id) => request(`/twc-submissions/${id}`),
+  listTwcSubmissions: (clientId) => request(`/twc-submissions?clientId=${clientId}`),
 
   // Reports
   get941: (clientId, year, quarter) => request(`/reports/941?clientId=${clientId}&year=${year}&quarter=${quarter}`),

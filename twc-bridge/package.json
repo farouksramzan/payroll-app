@@ -1,0 +1,13 @@
+{
+  "name": "twc-bridge",
+  "version": "1.0.0",
+  "description": "TWC QuickFile bridge — runs on Computer 2, auto-submits ICESA files via QuickFile",
+  "main": "bridge.js",
+  "scripts": {
+    "start": "node bridge.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "dotenv": "^16.4.5"
+  }
+}

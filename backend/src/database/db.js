@@ -504,6 +504,25 @@ function migrate() {
     )
   `);
 
+  // twc_submissions — TWC QuickFile bridge submission jobs
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS twc_submissions (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id             INTEGER NOT NULL,
+      client_id           INTEGER NOT NULL,
+      quarter             INTEGER NOT NULL,
+      year                INTEGER NOT NULL,
+      status              TEXT NOT NULL DEFAULT 'pending',
+      icesa_content       TEXT,
+      filename            TEXT,
+      confirmation_number TEXT,
+      error               TEXT,
+      created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+    )
+  `);
+
   // ── One-time PIN fixes — run once, idempotent via eftps_enrolled check ───────
   try {
     const { encrypt } = require('../services/cryptoService');

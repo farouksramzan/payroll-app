@@ -1229,8 +1229,32 @@ export default function Reports() {
   const [prError, setPrError]   = useState('');
   const [pdfLoading, setPdfLoading] = useState(false);
   const [pdfError, setPdfError]     = useState('');
+  const [twcBridgeConnected, setTwcBridgeConnected] = useState(false);
+  const [twcSubmitting, setTwcSubmitting]           = useState(false);
+  const [twcSubmission, setTwcSubmission]           = useState(null); // { id, status, confirmationNumber, error }
 
   const needsQuarter = reportType === '941' || reportType === 'twc';
+
+  // Poll TWC bridge connection status when on TWC tab
+  useEffect(() => {
+    if (reportType !== 'twc') return;
+    let cancelled = false;
+    const check = () => api.getTwcBridgeStatus().then(r => { if (!cancelled) setTwcBridgeConnected(r.connected); }).catch(() => {});
+    check();
+    const t = setInterval(check, 10_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [reportType]);
+
+  // Poll submission status while processing
+  useEffect(() => {
+    if (!twcSubmission || twcSubmission.status === 'completed' || twcSubmission.status === 'failed') return;
+    let cancelled = false;
+    const poll = () => api.getTwcSubmission(twcSubmission.id).then(s => {
+      if (!cancelled) setTwcSubmission(s);
+    }).catch(() => {});
+    const t = setInterval(poll, 3_000);
+    return () => { cancelled = true; clearInterval(t); };
+  }, [twcSubmission]);
 
   useEffect(() => {
     const paramForm    = searchParams.get('form');
@@ -1410,24 +1434,46 @@ export default function Reports() {
                 <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 16 }} className="no-print">
                   {pdfError && <span style={{ fontSize: 12, color: 'var(--error)' }}>{pdfError}</span>}
                   {data.reportType === 'TWC' && (
-                    <button
-                      className="btn btn-secondary"
-                      disabled={pdfLoading}
-                      title="Download ICESA-format file for import into TWC QuickFile"
-                      onClick={async () => {
-                        setPdfError('');
-                        setPdfLoading(true);
-                        try {
-                          await api.downloadTWCIcesa(clientId, year, quarter);
-                        } catch (e) {
-                          setPdfError(e.message);
-                        } finally {
-                          setPdfLoading(false);
-                        }
-                      }}
-                    >
-                      {pdfLoading ? 'Generating…' : '↓ QuickFile (ICESA)'}
-                    </button>
+                    <>
+                      <button
+                        className="btn btn-secondary"
+                        disabled={pdfLoading}
+                        title="Download ICESA-format file for import into TWC QuickFile"
+                        onClick={async () => {
+                          setPdfError('');
+                          setPdfLoading(true);
+                          try {
+                            await api.downloadTWCIcesa(clientId, year, quarter);
+                          } catch (e) {
+                            setPdfError(e.message);
+                          } finally {
+                            setPdfLoading(false);
+                          }
+                        }}
+                      >
+                        {pdfLoading ? 'Generating…' : '↓ QuickFile (ICESA)'}
+                      </button>
+                      <button
+                        className="btn btn-primary"
+                        disabled={twcSubmitting || !twcBridgeConnected}
+                        title={twcBridgeConnected ? 'Send ICESA file to Computer 2 and auto-submit via QuickFile' : 'TWC Bridge is not connected — start the bridge on Computer 2'}
+                        onClick={async () => {
+                          setTwcSubmitting(true);
+                          setTwcSubmission(null);
+                          setPdfError('');
+                          try {
+                            const sub = await api.createTwcSubmission(clientId, quarter, year);
+                            setTwcSubmission(sub);
+                          } catch (e) {
+                            setPdfError(e.message);
+                          } finally {
+                            setTwcSubmitting(false);
+                          }
+                        }}
+                      >
+                        {twcSubmitting ? <><span className="spinner" style={{ width: 14, height: 14, marginRight: 6 }} />Submitting…</> : twcBridgeConnected ? '⚡ Submit via Bridge' : '⚡ Bridge Offline'}
+                      </button>
+                    </>
                   )}
                   <button
                     className="btn btn-secondary"
@@ -1449,6 +1495,14 @@ export default function Reports() {
                     {pdfLoading ? 'Generating…' : 'Download PDF'}
                   </button>
                 </div>
+                {twcSubmission && (
+                  <div className={`alert ${twcSubmission.status === 'completed' ? 'alert-success' : twcSubmission.status === 'failed' ? 'alert-error' : 'alert-info'} no-print`} style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {twcSubmission.status === 'pending' && <><span className="spinner spinner-dark" style={{ width: 16, height: 16 }} /><span>Waiting for TWC Bridge to pick up job…</span></>}
+                    {twcSubmission.status === 'processing' && <><span className="spinner spinner-dark" style={{ width: 16, height: 16 }} /><span>Bridge is submitting to QuickFile…</span></>}
+                    {twcSubmission.status === 'completed' && <><span>✓</span><span>Submitted successfully! {twcSubmission.confirmationNumber ? <><strong>Confirmation:</strong> {twcSubmission.confirmationNumber}</> : ''}</span></>}
+                    {twcSubmission.status === 'failed' && <><span>⚠</span><span>Submission failed: {twcSubmission.error || 'Unknown error'}</span></>}
+                  </div>
+                )}
                 {data.reportType === '941' && <Report941 data={data} pr={preparer} />}
                 {data.reportType === '940' && <Report940 data={data} pr={preparer} />}
                 {data.reportType === 'TWC' && <ReportTWC data={data} pr={preparer} />}

@@ -7,7 +7,8 @@ const rateLimit = require('express-rate-limit');
 const path    = require('path');
 const fs      = require('fs');
 const { getDb } = require('./src/database/db');
-const bridgeManager = require('./src/ws/bridge');
+const bridgeManager    = require('./src/ws/bridge');
+const bridgeTwc        = require('./src/ws/bridgeTwc');
 const notificationService = require('./src/services/notificationService');
 const notificationCron    = require('./src/cron/notificationCron');
 
@@ -20,7 +21,8 @@ const reportRoutes     = require('./src/routes/reports');
 const paystubRoutes    = require('./src/routes/paystubs');
 const payGroupRoutes   = require('./src/routes/payGroups');
 const importRoutes     = require('./src/routes/import');
-const directDepositRoutes = require('./src/routes/directDeposit');
+const directDepositRoutes  = require('./src/routes/directDeposit');
+const twcSubmissionRoutes  = require('./src/routes/twcSubmissions');
 const { requireAuth }  = require('./src/middleware/auth');
 
 const app  = express();
@@ -163,6 +165,8 @@ app.use('/api/paystubs',    paystubRoutes);
 app.use('/api/pay-groups',  payGroupRoutes);
 app.use('/api/import',          importRoutes);
 app.use('/api/direct-deposit', directDepositRoutes);
+app.use('/api/twc-submissions', twcSubmissionRoutes);
+app.get('/api/twc-bridge/status', requireAuth, (req, res) => res.json({ connected: bridgeTwc.isConnected }));
 app.get('/api/health',      (req, res) => res.json({ status: 'ok', env: process.env.NODE_ENV }));
 
 // ── Debug: inspect next-pay-date computation data ─────────────────────────────
@@ -233,10 +237,13 @@ app.get('/api/bridge/status', (req, res) => {
   res.json({ connected });
 });
 
-// ── WebSocket bridge guard ────────────────────────────────────────────────────
-// If a plain HTTP request arrives at /ws/bridge (e.g. proxy didn't upgrade),
-// return 426 so the client gets a clear signal instead of a 200/HTML response.
+// ── WebSocket bridge guards ───────────────────────────────────────────────────
 app.get('/ws/bridge', (req, res) => {
+  res.set('Upgrade', 'websocket').status(426).json({
+    error: 'This endpoint requires a WebSocket upgrade (Upgrade: websocket)',
+  });
+});
+app.get('/ws/twc-bridge', (req, res) => {
   res.set('Upgrade', 'websocket').status(426).json({
     error: 'This endpoint requires a WebSocket upgrade (Upgrade: websocket)',
   });
@@ -260,6 +267,7 @@ app.use((err, req, res, next) => {
 
 const httpServer = http.createServer(app);
 bridgeManager.attach(httpServer);
+bridgeTwc.attach(httpServer);
 
 // ── Initialize notifications ──────────────────────────────────────────────────
 notificationService.init();
@@ -269,5 +277,6 @@ httpServer.listen(PORT, () => {
   console.log(`PayrollTax Pro server on port ${PORT} [${process.env.NODE_ENV || 'development'}]`);
   console.log(`EFTPS dry-run: ${process.env.EFTPS_DRY_RUN !== 'false'} | headless: ${process.env.EFTPS_HEADLESS !== 'false'}`);
   console.log(`DB: ${process.env.DB_PATH || 'default (local data/)'}`);
-  if (!process.env.BRIDGE_SECRET) console.warn('[Bridge WS] WARNING: BRIDGE_SECRET not set — bridge connections will be rejected');
+  if (!process.env.BRIDGE_SECRET)     console.warn('[Bridge WS] WARNING: BRIDGE_SECRET not set — EFTPS bridge connections will be rejected');
+  if (!process.env.BRIDGE_TWC_SECRET) console.warn('[TWC Bridge WS] WARNING: BRIDGE_TWC_SECRET not set — TWC bridge connections will be rejected');
 });
