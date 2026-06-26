@@ -280,8 +280,8 @@ router.post('/register-company', async (req, res) => {
   } while (db.prepare('SELECT id FROM clients WHERE join_code = ?').get(joinCode));
 
   const clientResult = db.prepare(`
-    INSERT INTO clients (user_id, business_name, ein, contact_name, contact_email, batch_provider_pin_encrypted, join_code)
-    VALUES (?, ?, ?, ?, ?, '', ?)
+    INSERT INTO clients (user_id, business_name, ein, contact_name, contact_email, batch_provider_pin_encrypted, join_code, self_registered, onboarding_done)
+    VALUES (?, ?, ?, ?, ?, '', ?, 1, 0)
   `).run(adminUser.id, businessName.trim(), ein.trim(), contactName?.trim() || null, emailLower, joinCode);
 
   const clientId = clientResult.lastInsertRowid;

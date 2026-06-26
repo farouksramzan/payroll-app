@@ -127,7 +127,7 @@ export default function Login() {
       });
       localStorage.setItem('token', data.token);
       setUser(data.user);
-      navigate(`/company/${data.user.clientId}`, { replace: true });
+      navigate('/onboarding', { replace: true });
     } catch (err) {
       setError(err.message);
     } finally {

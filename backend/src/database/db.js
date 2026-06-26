@@ -497,8 +497,12 @@ function migrate() {
   ]);
 
   // join_code — short code employees enter to self-register under a company
+  // self_registered — 1 if the company signed up via the self-service form
+  // onboarding_done — 1 once the company completes the onboarding wizard
   addCols('clients', [
-    { name: 'join_code', def: 'TEXT' },
+    { name: 'join_code',        def: 'TEXT' },
+    { name: 'self_registered',  def: 'INTEGER DEFAULT 0' },
+    { name: 'onboarding_done',  def: 'INTEGER DEFAULT 0' },
   ]);
 
   // Backfill join codes for existing clients that don't have one

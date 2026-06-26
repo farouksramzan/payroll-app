@@ -192,6 +192,7 @@ const api = {
   registerCompany: (data) => request('/auth/register-company', { method: 'POST', body: JSON.stringify(data) }),
   lookupCompanyByCode: (code) => request(`/auth/company-by-code/${encodeURIComponent(code)}`),
   claimEmployee: (data) => request('/auth/claim-employee', { method: 'POST', body: JSON.stringify(data) }),
+  completeOnboarding: (clientId) => request(`/clients/${clientId}/complete-onboarding`, { method: 'POST' }),
 
   // Invite system
   inviteClient: (clientId) => request('/auth/invite-client', { method: 'POST', body: JSON.stringify({ clientId }) }),

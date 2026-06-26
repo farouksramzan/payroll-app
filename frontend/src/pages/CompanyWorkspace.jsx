@@ -4762,6 +4762,12 @@ export default function CompanyWorkspace({ clientMode = false }) {
 
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: clientMode ? '100vh' : '100%', padding: 60 }}><div className="spinner spinner-dark" style={{ width: 36, height: 36 }} /></div>;
 
+  // Self-registered companies that haven't finished onboarding get redirected to the wizard
+  if (clientMode && client?.selfRegistered && !client?.onboardingDone) {
+    navigate('/onboarding', { replace: true });
+    return null;
+  }
+
   return (
     <div className="workspace" style={clientMode ? { height: '100vh', display: 'flex', flexDirection: 'column' } : {}}>
 

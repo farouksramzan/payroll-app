@@ -20,6 +20,7 @@ import PayrollRun from './pages/PayrollRun';
 import InviteAccept from './pages/InviteAccept';
 import ClientDashboard from './pages/ClientDashboard';
 import EmployeeDashboard from './pages/EmployeeDashboard';
+import Onboarding from './pages/Onboarding';
 
 // Redirect /client → /company/:id for client users
 function ClientRedirect() {
@@ -46,6 +47,13 @@ export default function App() {
         <Route path="/login"    element={<Login />} />
         <Route path="/register" element={<Register />} />
         <Route path="/invite/:token" element={<InviteAccept />} />
+
+        {/* Onboarding wizard — new self-registered companies */}
+        <Route path="/onboarding" element={
+          <ProtectedRoute roles={['client']}>
+            <Onboarding />
+          </ProtectedRoute>
+        } />
 
         {/* Client legacy redirect */}
         <Route path="/client" element={<ClientRedirect />} />

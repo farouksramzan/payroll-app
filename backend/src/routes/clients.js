@@ -121,6 +121,8 @@ function sanitizeClient(client, includeSecrets = false) {
     bankName:           client.bank_name           || null,
     countyCode:         client.county_code         || null,
     joinCode:           client.join_code           || null,
+    selfRegistered:     !!client.self_registered,
+    onboardingDone:     !!client.onboarding_done,
   };
   if (includeSecrets) {
     out.batchProviderPin = client.batch_provider_pin_encrypted ? decrypt(client.batch_provider_pin_encrypted) : null;
@@ -429,6 +431,16 @@ router.put('/:id/pin', (req, res) => {
     .run(encrypt(String(pin)), client.id);
   console.log(`[PIN] Updated PIN for "${client.business_name}" (EIN ${client.ein}) via direct endpoint`);
   res.json({ ok: true, message: `PIN updated for ${client.business_name}` });
+});
+
+// POST /api/clients/:id/complete-onboarding
+router.post('/:id/complete-onboarding', (req, res) => {
+  const db = getDb();
+  const access = canAccessClient(db, req.params.id, req.user);
+  if (!access) return res.status(404).json({ error: 'Client not found' });
+  db.prepare('UPDATE clients SET onboarding_done = 1 WHERE id = ?').run(access.id);
+  const updated = db.prepare('SELECT * FROM clients WHERE id = ?').get(access.id);
+  res.json(sanitizeClient(updated));
 });
 
 // DELETE /api/clients/:id

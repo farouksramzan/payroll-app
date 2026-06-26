@@ -107,7 +107,9 @@ function serializeClient(c) {
     phone:        c.contact_phone    || null,
     email:        c.contact_email    || null,
     contactName:  c.contact_name     || null,
-    joinCode:     c.join_code        || null,
+    joinCode:       c.join_code       || null,
+    selfRegistered: !!c.self_registered,
+    onboardingDone: !!c.onboarding_done,
   };
 }
 
