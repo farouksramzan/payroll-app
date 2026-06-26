@@ -1,5 +1,5 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from './contexts/AuthContext';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import Login from './pages/Login';
@@ -17,17 +17,47 @@ import Paystubs from './pages/Paystubs';
 import PaystubEdit from './pages/PaystubEdit';
 import EmployeeDetail from './pages/EmployeeDetail';
 import PayrollRun from './pages/PayrollRun';
+import InviteAccept from './pages/InviteAccept';
+import ClientDashboard from './pages/ClientDashboard';
+import EmployeeDashboard from './pages/EmployeeDashboard';
+
+// Route "/" redirects based on role
+function RootRedirect() {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role === 'client')   return <Navigate to="/client" replace />;
+  if (user.role === 'employee') return <Navigate to="/employee" replace />;
+  return null; // admin — render Outlet (Layout/Dashboard)
+}
 
 export default function App() {
   return (
     <AuthProvider>
       <Routes>
-        <Route path="/login" element={<Login />} />
+        {/* Public */}
+        <Route path="/login"    element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/invite/:token" element={<InviteAccept />} />
+
+        {/* Client portal */}
+        <Route path="/client" element={
+          <ProtectedRoute roles={['client', 'admin']}>
+            <ClientDashboard />
+          </ProtectedRoute>
+        } />
+
+        {/* Employee portal */}
+        <Route path="/employee" element={
+          <ProtectedRoute roles={['employee', 'admin']}>
+            <EmployeeDashboard />
+          </ProtectedRoute>
+        } />
+
+        {/* Admin accountant workspace */}
         <Route
           path="/"
           element={
-            <ProtectedRoute>
+            <ProtectedRoute roles={['admin']}>
               <Layout />
             </ProtectedRoute>
           }
@@ -48,6 +78,7 @@ export default function App() {
           <Route path="submissions" element={<SubmissionHistory />} />
           <Route path="reports" element={<Reports />} />
         </Route>
+
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AuthProvider>

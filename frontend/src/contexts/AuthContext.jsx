@@ -4,7 +4,7 @@ import api from '../api/client';
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const [user, setUser]     = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -26,10 +26,16 @@ export function AuthProvider({ children }) {
   function logout() {
     localStorage.removeItem('token');
     setUser(null);
+    window.location.href = '/login';
   }
 
+  // Helpers
+  const isAdmin    = user?.role === 'admin';
+  const isClient   = user?.role === 'client';
+  const isEmployee = user?.role === 'employee';
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, setUser, loading, login, logout, isAdmin, isClient, isEmployee }}>
       {children}
     </AuthContext.Provider>
   );

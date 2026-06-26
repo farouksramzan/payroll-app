@@ -39,7 +39,21 @@ export default function EmployeeDetail() {
   const [ytd,      setYtd]      = useState(null);
   const [paystubs, setPaystubs] = useState([]);
   const [loading,  setLoading]  = useState(true);
+  const [inviteUrl, setInviteUrl] = useState('');
+  const [inviting,  setInviting]  = useState(false);
   const currentYear = new Date().getFullYear();
+
+  async function handleInvite() {
+    setInviting(true);
+    try {
+      const data = await api.inviteEmployee(empId);
+      setInviteUrl(data.inviteUrl);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setInviting(false);
+    }
+  }
 
   useEffect(() => {
     Promise.all([
@@ -101,7 +115,7 @@ export default function EmployeeDetail() {
               ? <span className="badge badge-success">Active</span>
               : <span className="badge badge-neutral">Inactive</span>}
           </div>
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <button className="btn btn-secondary" onClick={() => navigate(-1)}>← Back</button>
             <button
               className="btn btn-primary"
@@ -112,11 +126,40 @@ export default function EmployeeDetail() {
               + New Paycheck
             </button>
             <Link to={`/clients/${clientId}/employees/${empId}/edit`} className="btn btn-secondary">Edit Employee</Link>
+            <button className="btn btn-secondary" onClick={handleInvite} disabled={inviting}>
+              {inviting ? '…' : '✉ Invite to Portal'}
+            </button>
           </div>
         </div>
       </div>
 
       <div className="page-body" style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+        {/* Invite link banner */}
+        {inviteUrl && (
+          <div className="card" style={{ borderLeft: '4px solid var(--accent)' }}>
+            <div className="card-body" style={{ padding: '12px 16px' }}>
+              <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 13 }}>Employee invite link (valid 7 days)</div>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                <input
+                  readOnly
+                  value={inviteUrl}
+                  style={{ flex: 1, minWidth: 200, fontSize: 12, padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 4, fontFamily: 'monospace' }}
+                  onFocus={e => e.target.select()}
+                />
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => { navigator.clipboard.writeText(inviteUrl); }}
+                >
+                  Copy
+                </button>
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                Send this link to the employee. They'll create a password and can then view their paystubs.
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Employee Info + YTD side by side */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>

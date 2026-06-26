@@ -4720,6 +4720,8 @@ export default function CompanyWorkspace() {
   const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshTick, setRefreshTick] = useState(0);
+  const [inviteUrl, setInviteUrl]   = useState('');
+  const [inviting, setInviting]     = useState(false);
   const [activeTab, setActiveTab] = useState(
     location.state?.tab || sessionStorage.getItem(WS_TAB_KEY) || 'employees'
   );
@@ -4743,6 +4745,18 @@ export default function CompanyWorkspace() {
     }
   }
 
+  async function handleInviteClient() {
+    setInviting(true);
+    try {
+      const data = await api.inviteClient(id);
+      setInviteUrl(data.inviteUrl);
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setInviting(false);
+    }
+  }
+
   if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 60 }}><div className="spinner spinner-dark" style={{ width: 36, height: 36 }} /></div>;
 
   return (
@@ -4754,6 +4768,14 @@ export default function CompanyWorkspace() {
           <span className="workspace-ein">EIN {client?.ein}</span>
           <div style={{ flex: 1 }} />
           <button
+            onClick={handleInviteClient}
+            disabled={inviting}
+            title="Generate invite link for client portal"
+            style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, cursor: inviting ? 'default' : 'pointer', padding: '3px 10px', color: 'var(--text-secondary)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
+          >
+            ✉ {inviting ? '…' : 'Invite Client'}
+          </button>
+          <button
             onClick={handleRefresh}
             disabled={refreshing}
             title="Refresh data"
@@ -4762,6 +4784,19 @@ export default function CompanyWorkspace() {
             <span style={{ display: 'inline-block', animation: refreshing ? 'spin 0.7s linear infinite' : 'none' }}>↻</span>
           </button>
         </div>
+        {inviteUrl && (
+          <div style={{ padding: '8px 16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Client invite link:</span>
+            <input
+              readOnly
+              value={inviteUrl}
+              onFocus={e => e.target.select()}
+              style={{ flex: 1, minWidth: 200, fontSize: 11, padding: '3px 8px', border: '1px solid var(--border)', borderRadius: 4, fontFamily: 'monospace', background: 'var(--bg-primary)' }}
+            />
+            <button className="btn btn-secondary btn-sm" onClick={() => navigator.clipboard.writeText(inviteUrl)} style={{ fontSize: 11 }}>Copy</button>
+            <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14 }} onClick={() => setInviteUrl('')}>×</button>
+          </div>
+        )}
         <div className="ws-tabs">
           {[['employees','Employees'],['company','Company'],['payroll','Payroll'],...(user?.username === 'admin' ? [['users','Users']] : [])].map(([k, label]) => (
             <button key={k} className={`ws-tab${activeTab === k ? ' active' : ''}`} onClick={() => setActiveTab(k)} data-tour-id={k === 'payroll' ? 'tour-payroll-tab-btn' : k === 'employees' ? 'tour-employees-tab-btn' : undefined}>

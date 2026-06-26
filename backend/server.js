@@ -23,6 +23,8 @@ const payGroupRoutes   = require('./src/routes/payGroups');
 const importRoutes     = require('./src/routes/import');
 const directDepositRoutes  = require('./src/routes/directDeposit');
 const twcSubmissionRoutes  = require('./src/routes/twcSubmissions');
+const clientPortalRoutes   = require('./src/routes/clientPortal');
+const employeePortalRoutes = require('./src/routes/employeePortal');
 const { requireAuth }  = require('./src/middleware/auth');
 
 const app  = express();
@@ -165,7 +167,9 @@ app.use('/api/paystubs',    paystubRoutes);
 app.use('/api/pay-groups',  payGroupRoutes);
 app.use('/api/import',          importRoutes);
 app.use('/api/direct-deposit', directDepositRoutes);
-app.use('/api/twc-submissions', twcSubmissionRoutes);
+app.use('/api/twc-submissions',  twcSubmissionRoutes);
+app.use('/api/client-portal',   clientPortalRoutes);
+app.use('/api/employee-portal', employeePortalRoutes);
 app.get('/api/twc-bridge/status', requireAuth, (req, res) => res.json({ connected: bridgeTwc.isConnected }));
 app.get('/api/health',      (req, res) => res.json({ status: 'ok', env: process.env.NODE_ENV }));
 

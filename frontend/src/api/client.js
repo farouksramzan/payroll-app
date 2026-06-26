@@ -188,6 +188,25 @@ const api = {
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   },
 
+  // Invite system
+  inviteClient: (clientId) => request('/auth/invite-client', { method: 'POST', body: JSON.stringify({ clientId }) }),
+  inviteEmployee: (employeeId) => request('/auth/invite-employee', { method: 'POST', body: JSON.stringify({ employeeId }) }),
+  getInvite: (token) => request(`/auth/invite/${token}`),
+  acceptInvite: (token, email, password) => request('/auth/accept-invite', { method: 'POST', body: JSON.stringify({ token, email, password }) }),
+  updateSetupStep: (step, complete = false) => request('/auth/setup-step', { method: 'PATCH', body: JSON.stringify({ step, complete }) }),
+
+  // Client portal
+  getClientPortalMe: () => request('/client-portal/me'),
+  getClientPortalEmployees: (clientId) => request(`/client-portal/employees${clientId ? `?clientId=${clientId}` : ''}`),
+  getClientPortalPaystubs: (params = {}) => request(`/client-portal/paystubs?${new URLSearchParams(params)}`),
+  getClientPortalSummary: (clientId) => request(`/client-portal/summary${clientId ? `?clientId=${clientId}` : ''}`),
+
+  // Employee portal
+  getEmployeePortalMe: () => request('/employee-portal/me'),
+  updateEmployeePortalMe: (data) => request('/employee-portal/me', { method: 'PATCH', body: JSON.stringify(data) }),
+  getEmployeePortalPaystubs: () => request('/employee-portal/paystubs'),
+  getEmployeePortalPaystub: (id) => request(`/employee-portal/paystubs/${id}`),
+
   // Preparer info
   getPreparerInfo: () => request('/auth/preparer'),
   savePreparerInfo: (data) => request('/auth/preparer', { method: 'PUT', body: JSON.stringify(data) }),
