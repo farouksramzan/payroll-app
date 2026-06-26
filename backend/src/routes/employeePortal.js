@@ -32,8 +32,8 @@ router.patch('/me', (req, res) => {
   const eid = req.user.employeeId;
   if (!eid) return res.status(400).json({ error: 'No employee record linked to this account' });
 
-  const scalarFields = ['address', 'city', 'state', 'zip', 'filing_status', 'step4a', 'step4b', 'step4c'];
-  const intFields    = ['step2_checkbox', 'step3_children', 'step3_other'];
+  const intFields = ['step2_checkbox', 'step3_children', 'step3_other'];
+  const W4_KEYS   = ['filingStatus', 'step2Checkbox', 'step3Children', 'step3Other', 'step4a', 'step4b', 'step4c'];
 
   // Map camelCase body keys → snake_case column names
   const keyMap = {
@@ -46,14 +46,17 @@ router.patch('/me', (req, res) => {
   };
 
   const updates = {};
+  let savingW4 = false;
   for (const [bodyKey, col] of Object.entries(keyMap)) {
     if (req.body[bodyKey] === undefined) continue;
+    if (W4_KEYS.includes(bodyKey)) savingW4 = true;
     if (intFields.includes(col)) {
       updates[col] = req.body[bodyKey] ? 1 : 0;
     } else {
       updates[col] = req.body[bodyKey];
     }
   }
+  if (savingW4) updates['w4_submitted'] = 1;
   if (!Object.keys(updates).length) return res.status(400).json({ error: 'No valid fields to update' });
 
   const setClause = Object.keys(updates).map(k => `${k} = ?`).join(', ');
@@ -121,6 +124,7 @@ function serializeEmployee(e) {
     step4a:         e.step4a          || 0,
     step4b:         e.step4b          || 0,
     step4c:         e.step4c          || 0,
+    w4Submitted:    !!e.w4_submitted,
   };
 }
 

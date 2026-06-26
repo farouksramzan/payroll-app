@@ -35,7 +35,7 @@ const FILING_OPTIONS = [
 ];
 
 function W4Wizard({ me, onSaved }) {
-  const [step, setStep]       = useState(1);
+  const [step, setStep]       = useState(me.w4Submitted ? 5 : 1);
   const [saving, setSaving]   = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
   const [w4, setW4]           = useState({
@@ -326,39 +326,83 @@ function W4Wizard({ me, onSaved }) {
 
         {/* ── Done screen ────────────────────────────────────────────────────── */}
         {step === 5 && (
-          <div style={{ textAlign: 'center', padding: '16px 0 8px' }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>✓</div>
-            <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 6 }}>
-              W-4 Saved
+          <div style={{ padding: '4px 0 8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+              <div style={{
+                width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+                background: 'var(--success)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 8l4 4 6-6" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+              </div>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>W-4 on file</div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Your preferences are saved and used for payroll calculations.</div>
+              </div>
+              <div style={{ flex: 1 }} />
+              <button className="btn btn-secondary btn-sm" onClick={() => setStep(1)}>Edit</button>
             </div>
-            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
-              Your withholding preferences have been saved and will be used for future payroll calculations.
-            </div>
-            <div style={{
-              display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, textAlign: 'left',
-              background: 'var(--bg-secondary)', borderRadius: 8, padding: '14px 16px', marginBottom: 20,
-            }}>
+
+            {/* Summary rows */}
+            <div style={{ border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
               {[
-                ['Filing Status', FILING_OPTIONS.find(o => o.value === w4.filingStatus)?.label || w4.filingStatus],
-                ['Multiple Jobs', w4.step2Checkbox ? 'Yes' : 'No'],
-                ['Children under 17', w4.step3Children],
-                ['Other dependents', w4.step3Other],
-                ['Extra income', w4.step4a > 0 ? fmt(w4.step4a) : '—'],
-                ['Deductions', w4.step4b > 0 ? fmt(w4.step4b) : '—'],
-                ['Extra withholding', w4.step4c > 0 ? fmt(w4.step4c) + '/period' : '—'],
-              ].map(([label, val]) => (
-                <div key={label}>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{val}</div>
+                {
+                  label: 'Filing Status',
+                  value: FILING_OPTIONS.find(o => o.value === w4.filingStatus)?.label || w4.filingStatus,
+                  sub: 'Step 1',
+                },
+                {
+                  label: 'Multiple Jobs / Spouse Works',
+                  value: w4.step2Checkbox ? 'Yes — higher withholding applied' : 'No',
+                  sub: 'Step 2',
+                },
+                {
+                  label: 'Children under 17',
+                  value: w4.step3Children > 0
+                    ? `${w4.step3Children} child${w4.step3Children !== 1 ? 'ren' : ''} — ${fmt(w4.step3Children * 2000)} credit`
+                    : 'None',
+                  sub: 'Step 3',
+                },
+                {
+                  label: 'Other Dependents',
+                  value: w4.step3Other > 0
+                    ? `${w4.step3Other} dependent${w4.step3Other !== 1 ? 's' : ''} — ${fmt(w4.step3Other * 500)} credit`
+                    : 'None',
+                  sub: 'Step 3',
+                },
+                {
+                  label: 'Other Income (annual)',
+                  value: w4.step4a > 0 ? fmt(w4.step4a) : 'Not specified',
+                  sub: 'Step 4a',
+                },
+                {
+                  label: 'Deductions (annual)',
+                  value: w4.step4b > 0 ? fmt(w4.step4b) : 'Not specified',
+                  sub: 'Step 4b',
+                },
+                {
+                  label: 'Extra Withholding per Period',
+                  value: w4.step4c > 0 ? fmt(w4.step4c) : 'None',
+                  sub: 'Step 4c',
+                },
+              ].map((row, i, arr) => (
+                <div key={row.label} style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '12px 16px',
+                  borderBottom: i < arr.length - 1 ? '1px solid var(--border-light)' : 'none',
+                  background: 'var(--bg)',
+                }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{row.label}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{row.sub}</div>
+                  </div>
+                  <div style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 500, textAlign: 'right', maxWidth: '55%' }}>
+                    {row.value}
+                  </div>
                 </div>
               ))}
             </div>
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={() => setStep(1)}
-            >
-              Edit W-4
-            </button>
           </div>
         )}
 
@@ -554,9 +598,9 @@ export default function EmployeeDashboard() {
           </div>
         )}
 
-        {/* W-4 tab */}
+        {/* W-4 tab — key on w4Submitted so wizard resets to summary when status changes */}
         {tab === 'w4' && me && (
-          <W4Wizard me={me} onSaved={updated => setMe(updated)} />
+          <W4Wizard key={String(me.w4Submitted)} me={me} onSaved={updated => setMe(updated)} />
         )}
 
         {/* Profile tab */}
