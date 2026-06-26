@@ -14,6 +14,387 @@ const INPUT_STYLE = {
   background: 'var(--bg)', outline: 'none',
 };
 
+// ── W-4 Questionnaire ────────────────────────────────────────────────────────
+
+const FILING_OPTIONS = [
+  {
+    value: 'single',
+    label: 'Single or Married filing separately',
+    desc: 'You file taxes on your own, or married but file separate returns.',
+  },
+  {
+    value: 'married',
+    label: 'Married filing jointly',
+    desc: 'You and your spouse combine income on one tax return.',
+  },
+  {
+    value: 'head',
+    label: 'Head of household',
+    desc: 'You\'re unmarried and pay more than half the cost of a home for a qualifying person.',
+  },
+];
+
+function W4Wizard({ me, onSaved }) {
+  const [step, setStep]       = useState(1);
+  const [saving, setSaving]   = useState(false);
+  const [saveMsg, setSaveMsg] = useState('');
+  const [w4, setW4]           = useState({
+    filingStatus:  me.filingStatus  || 'single',
+    step2Checkbox: me.step2Checkbox || false,
+    step3Children: me.step3Children || 0,
+    step3Other:    me.step3Other    || 0,
+    step4a:        me.step4a        || 0,
+    step4b:        me.step4b        || 0,
+    step4c:        me.step4c        || 0,
+  });
+
+  const dependentCredit =
+    Number(w4.step3Children || 0) * 2000 +
+    Number(w4.step3Other    || 0) * 500;
+
+  async function handleSave() {
+    setSaving(true); setSaveMsg('');
+    try {
+      const updated = await api.updateEmployeePortalMe(w4);
+      onSaved(updated);
+      setSaveMsg('W-4 saved successfully.');
+      setStep(5); // done screen
+    } catch (err) {
+      setSaveMsg(err.message || 'Failed to save.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const TOTAL_STEPS = 4;
+
+  const stepLabel = [
+    '', 'Filing Status', 'Multiple Jobs', 'Dependents', 'Other Adjustments',
+  ][step] || 'Done';
+
+  return (
+    <div className="card" style={{ maxWidth: 600 }}>
+
+      {/* Header */}
+      <div style={{ padding: '20px 24px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+          <h3 style={{ margin: 0, fontSize: 16, fontWeight: 800, color: 'var(--text-primary)' }}>
+            W-4 Withholding Setup
+          </h3>
+          {step <= TOTAL_STEPS && (
+            <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>
+              Step {step} of {TOTAL_STEPS}
+            </span>
+          )}
+        </div>
+
+        {/* Progress bar */}
+        {step <= TOTAL_STEPS && (
+          <div style={{ height: 4, background: 'var(--border)', borderRadius: 2, marginBottom: 24 }}>
+            <div style={{
+              height: '100%', borderRadius: 2,
+              background: 'var(--accent)',
+              width: `${(step / TOTAL_STEPS) * 100}%`,
+              transition: 'width 0.3s',
+            }} />
+          </div>
+        )}
+      </div>
+
+      <div style={{ padding: '0 24px 24px' }}>
+
+        {/* ── Step 1: Filing Status ───────────────────────────────────────────── */}
+        {step === 1 && (
+          <>
+            <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+              How do you file your taxes?
+            </p>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
+              This determines how much federal income tax is withheld from your paycheck.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {FILING_OPTIONS.map(opt => (
+                <label
+                  key={opt.value}
+                  style={{
+                    display: 'flex', alignItems: 'flex-start', gap: 12,
+                    padding: '14px 16px', borderRadius: 8, cursor: 'pointer',
+                    border: `2px solid ${w4.filingStatus === opt.value ? 'var(--accent)' : 'var(--border)'}`,
+                    background: w4.filingStatus === opt.value ? 'rgba(var(--accent-rgb, 30,86,160), 0.04)' : 'var(--bg)',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="filingStatus"
+                    value={opt.value}
+                    checked={w4.filingStatus === opt.value}
+                    onChange={() => setW4(f => ({ ...f, filingStatus: opt.value }))}
+                    style={{ accentColor: 'var(--accent)', marginTop: 2, flexShrink: 0 }}
+                  />
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>
+                      {opt.label}
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{opt.desc}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* ── Step 2: Multiple Jobs ───────────────────────────────────────────── */}
+        {step === 2 && (
+          <>
+            <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+              Do you have more than one job, or does your spouse work?
+            </p>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
+              If you (or your spouse, if married filing jointly) have income from multiple jobs, checking this box ensures enough tax is withheld.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {[
+                { val: false, label: 'No — I have one job and my spouse doesn\'t work (or I\'m single with one job)' },
+                { val: true,  label: 'Yes — I have multiple jobs or my spouse also works' },
+              ].map(opt => (
+                <label
+                  key={String(opt.val)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 12,
+                    padding: '14px 16px', borderRadius: 8, cursor: 'pointer',
+                    border: `2px solid ${w4.step2Checkbox === opt.val ? 'var(--accent)' : 'var(--border)'}`,
+                    background: w4.step2Checkbox === opt.val ? 'rgba(var(--accent-rgb, 30,86,160), 0.04)' : 'var(--bg)',
+                    transition: 'all 0.15s',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="step2"
+                    checked={w4.step2Checkbox === opt.val}
+                    onChange={() => setW4(f => ({ ...f, step2Checkbox: opt.val }))}
+                    style={{ accentColor: 'var(--accent)', flexShrink: 0 }}
+                  />
+                  <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{opt.label}</span>
+                </label>
+              ))}
+            </div>
+            <div style={{
+              marginTop: 16, padding: '10px 14px', borderRadius: 6,
+              background: 'var(--bg-tertiary)', border: '1px solid var(--border-light)',
+              fontSize: 12, color: 'var(--text-muted)',
+            }}>
+              Answering "Yes" increases withholding at the higher tax bracket — this prevents a tax bill at filing time.
+            </div>
+          </>
+        )}
+
+        {/* ── Step 3: Dependents ─────────────────────────────────────────────── */}
+        {step === 3 && (
+          <>
+            <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+              Do you have qualifying dependents?
+            </p>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
+              Claiming dependents reduces your withholding. Leave at 0 if you don't qualify or prefer higher withholding.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div style={{
+                padding: '16px', borderRadius: 8,
+                border: '1.5px solid var(--border)', background: 'var(--bg)',
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+                  Children under age 17
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+                  Worth $2,000 each in tax credit
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => setW4(f => ({ ...f, step3Children: Math.max(0, f.step3Children - 1) }))}
+                    style={{ width: 32, height: 32, borderRadius: 6, border: '1.5px solid var(--border)', background: 'var(--bg-secondary)', cursor: 'pointer', fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >−</button>
+                  <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', minWidth: 32, textAlign: 'center' }}>{w4.step3Children}</span>
+                  <button
+                    type="button"
+                    onClick={() => setW4(f => ({ ...f, step3Children: f.step3Children + 1 }))}
+                    style={{ width: 32, height: 32, borderRadius: 6, border: '1.5px solid var(--border)', background: 'var(--bg-secondary)', cursor: 'pointer', fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >+</button>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 4 }}>
+                    = {fmt(w4.step3Children * 2000)} credit
+                  </span>
+                </div>
+              </div>
+
+              <div style={{
+                padding: '16px', borderRadius: 8,
+                border: '1.5px solid var(--border)', background: 'var(--bg)',
+              }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+                  Other dependents
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+                  Worth $500 each (parents, older children, etc.)
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <button
+                    type="button"
+                    onClick={() => setW4(f => ({ ...f, step3Other: Math.max(0, f.step3Other - 1) }))}
+                    style={{ width: 32, height: 32, borderRadius: 6, border: '1.5px solid var(--border)', background: 'var(--bg-secondary)', cursor: 'pointer', fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >−</button>
+                  <span style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', minWidth: 32, textAlign: 'center' }}>{w4.step3Other}</span>
+                  <button
+                    type="button"
+                    onClick={() => setW4(f => ({ ...f, step3Other: f.step3Other + 1 }))}
+                    style={{ width: 32, height: 32, borderRadius: 6, border: '1.5px solid var(--border)', background: 'var(--bg-secondary)', cursor: 'pointer', fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >+</button>
+                  <span style={{ fontSize: 12, color: 'var(--text-muted)', marginLeft: 4 }}>
+                    = {fmt(w4.step3Other * 500)} credit
+                  </span>
+                </div>
+              </div>
+
+              {dependentCredit > 0 && (
+                <div style={{
+                  padding: '10px 14px', borderRadius: 6,
+                  background: 'var(--success-light)', border: '1px solid var(--success)',
+                  fontSize: 13, color: 'var(--success)', fontWeight: 600,
+                }}>
+                  Total dependent credit: {fmt(dependentCredit)} — this reduces your annual withholding by approximately this amount.
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {/* ── Step 4: Other Adjustments ──────────────────────────────────────── */}
+        {step === 4 && (
+          <>
+            <p style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>
+              Any other adjustments? <span style={{ fontWeight: 500, color: 'var(--text-muted)', fontSize: 13 }}>(optional)</span>
+            </p>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
+              Most people can skip this step. Only fill in if you have non-job income, extra deductions, or want additional tax withheld.
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {[
+                {
+                  key: 'step4a',
+                  label: '4(a) Other income (annual)',
+                  desc: 'Non-job income like dividends, interest, or freelance work. Leave blank if none.',
+                  placeholder: '0.00',
+                },
+                {
+                  key: 'step4b',
+                  label: '4(b) Deductions (annual)',
+                  desc: 'If you expect to itemize deductions and they\'ll exceed the standard deduction. Leave blank if unsure.',
+                  placeholder: '0.00',
+                },
+                {
+                  key: 'step4c',
+                  label: '4(c) Extra withholding per paycheck',
+                  desc: 'Want a buffer? Add a flat dollar amount to be withheld each pay period.',
+                  placeholder: '0.00',
+                },
+              ].map(field => (
+                <div key={field.key}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    {field.label}
+                  </label>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>{field.desc}</div>
+                  <div style={{ position: 'relative', maxWidth: 200 }}>
+                    <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 13 }}>$</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder={field.placeholder}
+                      value={w4[field.key] || ''}
+                      onChange={e => setW4(f => ({ ...f, [field.key]: parseFloat(e.target.value) || 0 }))}
+                      style={{ ...INPUT_STYLE, paddingLeft: 22, maxWidth: 200 }}
+                      onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+                      onBlur={e => e.target.style.borderColor = 'var(--border)'}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* ── Done screen ────────────────────────────────────────────────────── */}
+        {step === 5 && (
+          <div style={{ textAlign: 'center', padding: '16px 0 8px' }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>✓</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 6 }}>
+              W-4 Saved
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
+              Your withholding preferences have been saved and will be used for future payroll calculations.
+            </div>
+            <div style={{
+              display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, textAlign: 'left',
+              background: 'var(--bg-secondary)', borderRadius: 8, padding: '14px 16px', marginBottom: 20,
+            }}>
+              {[
+                ['Filing Status', FILING_OPTIONS.find(o => o.value === w4.filingStatus)?.label || w4.filingStatus],
+                ['Multiple Jobs', w4.step2Checkbox ? 'Yes' : 'No'],
+                ['Children under 17', w4.step3Children],
+                ['Other dependents', w4.step3Other],
+                ['Extra income', w4.step4a > 0 ? fmt(w4.step4a) : '—'],
+                ['Deductions', w4.step4b > 0 ? fmt(w4.step4b) : '—'],
+                ['Extra withholding', w4.step4c > 0 ? fmt(w4.step4c) + '/period' : '—'],
+              ].map(([label, val]) => (
+                <div key={label}>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{val}</div>
+                </div>
+              ))}
+            </div>
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => setStep(1)}
+            >
+              Edit W-4
+            </button>
+          </div>
+        )}
+
+        {saveMsg && step !== 5 && (
+          <div style={{ marginTop: 12, padding: '8px 14px', borderRadius: 6, background: 'var(--error-light)', border: '1px solid var(--error)', fontSize: 13, color: 'var(--error)' }}>
+            {saveMsg}
+          </div>
+        )}
+
+        {/* Navigation */}
+        {step <= TOTAL_STEPS && (
+          <div style={{ display: 'flex', gap: 10, marginTop: 24 }}>
+            {step > 1 && (
+              <button className="btn btn-secondary btn-sm" onClick={() => setStep(s => s - 1)}>
+                Back
+              </button>
+            )}
+            <div style={{ flex: 1 }} />
+            {step < TOTAL_STEPS ? (
+              <button className="btn btn-primary btn-sm" onClick={() => setStep(s => s + 1)}>
+                Next
+              </button>
+            ) : (
+              <button className="btn btn-primary btn-sm" disabled={saving} onClick={handleSave}>
+                {saving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : 'Save W-4'}
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Main dashboard ────────────────────────────────────────────────────────────
+
 export default function EmployeeDashboard() {
   const { user, logout } = useAuth();
 
@@ -56,6 +437,12 @@ export default function EmployeeDashboard() {
       <div className="spinner spinner-dark" style={{ width: 36, height: 36 }} />
     </div>
   );
+
+  const TABS = [
+    ['paystubs', 'My Pay Records'],
+    ['w4',       'My W-4'],
+    ['profile',  'My Profile'],
+  ];
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-secondary)', display: 'flex', flexDirection: 'column' }}>
@@ -100,14 +487,14 @@ export default function EmployeeDashboard() {
               {me.firstName} {me.lastName}
             </h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginTop: 4 }}>
-              {me.jobTitle || 'Employee'} · {me.payType === 'hourly' ? `$${(me.payRate || 0).toFixed(2)}/hr` : `$${(me.payRate || 0).toLocaleString()}/yr`}
+              Employee · {me.payType === 'hourly' ? `$${(me.payRate || 0).toFixed(2)}/hr` : `$${(me.payRate || 0).toLocaleString()}/yr`}
             </p>
           </div>
         )}
 
         {/* Tabs */}
         <div style={{ display: 'flex', gap: 2, marginBottom: 20, background: 'var(--bg-tertiary)', borderRadius: 8, padding: 3, width: 'fit-content' }}>
-          {[['paystubs', 'My Pay Records'], ['profile', 'My Profile']].map(([k, label]) => (
+          {TABS.map(([k, label]) => (
             <button
               key={k}
               onClick={() => setTab(k)}
@@ -167,6 +554,11 @@ export default function EmployeeDashboard() {
           </div>
         )}
 
+        {/* W-4 tab */}
+        {tab === 'w4' && me && (
+          <W4Wizard me={me} onSaved={updated => setMe(updated)} />
+        )}
+
         {/* Profile tab */}
         {tab === 'profile' && me && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -178,7 +570,6 @@ export default function EmployeeDashboard() {
                 <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Managed by your accountant</span>
               </div>
               {[
-                ['Job Title',    me.jobTitle   || '—'],
                 ['Pay Type',     me.payType    || '—'],
                 ['Pay Rate',     me.payType === 'hourly' ? `$${(me.payRate || 0).toFixed(2)}/hr` : `$${(me.payRate || 0).toLocaleString()}/yr`],
                 ['Hire Date',    me.hireDate   || '—'],
@@ -213,8 +604,6 @@ export default function EmployeeDashboard() {
                 <>
                   {[
                     ['Address', [me.address, me.city, me.state, me.zip].filter(Boolean).join(', ') || '—'],
-                    ['Email',   me.email  || '—'],
-                    ['Phone',   me.phone  || '—'],
                   ].map(([label, value]) => (
                     <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid var(--border-light)' }}>
                       <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{label}</span>

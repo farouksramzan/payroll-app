@@ -32,13 +32,27 @@ router.patch('/me', (req, res) => {
   const eid = req.user.employeeId;
   if (!eid) return res.status(400).json({ error: 'No employee record linked to this account' });
 
-  const allowedFields = [
-    'address', 'city', 'state', 'zip',
-  ];
+  const scalarFields = ['address', 'city', 'state', 'zip', 'filing_status', 'step4a', 'step4b', 'step4c'];
+  const intFields    = ['step2_checkbox', 'step3_children', 'step3_other'];
+
+  // Map camelCase body keys → snake_case column names
+  const keyMap = {
+    address: 'address', city: 'city', state: 'state', zip: 'zip',
+    filingStatus:  'filing_status',
+    step2Checkbox: 'step2_checkbox',
+    step3Children: 'step3_children',
+    step3Other:    'step3_other',
+    step4a: 'step4a', step4b: 'step4b', step4c: 'step4c',
+  };
 
   const updates = {};
-  for (const f of allowedFields) {
-    if (req.body[f] !== undefined) updates[f] = req.body[f];
+  for (const [bodyKey, col] of Object.entries(keyMap)) {
+    if (req.body[bodyKey] === undefined) continue;
+    if (intFields.includes(col)) {
+      updates[col] = req.body[bodyKey] ? 1 : 0;
+    } else {
+      updates[col] = req.body[bodyKey];
+    }
   }
   if (!Object.keys(updates).length) return res.status(400).json({ error: 'No valid fields to update' });
 
@@ -99,6 +113,14 @@ function serializeEmployee(e) {
     accountType:    e.bank_account_type    || null,
     hireDate:       e.hire_date || null,
     ssn:            e.ssn_encrypted ? `•••-••-${String(e.ssn_encrypted).slice(-4)}` : null,
+    // W-4 fields
+    filingStatus:   e.filing_status   || 'single',
+    step2Checkbox:  !!e.step2_checkbox,
+    step3Children:  e.step3_children  || 0,
+    step3Other:     e.step3_other     || 0,
+    step4a:         e.step4a          || 0,
+    step4b:         e.step4b          || 0,
+    step4c:         e.step4c          || 0,
   };
 }
 
