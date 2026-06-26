@@ -1,7 +1,7 @@
 'use strict';
 const express     = require('express');
 const { getDb }   = require('../database/db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, canAccessClient } = require('../middleware/auth');
 
 const router = express.Router();
 router.use(requireAuth);
@@ -25,7 +25,7 @@ router.get('/', (req, res) => {
   const { clientId } = req.query;
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
   const db = getDb();
-  const client = db.prepare('SELECT id FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  const client = canAccessClient(db, clientId, req.user);
   if (!client) return res.status(404).json({ error: 'Client not found' });
   const groups = db.prepare('SELECT * FROM pay_groups WHERE client_id = ? ORDER BY name ASC').all(clientId);
   res.json(groups.map(sanitizeGroup));
@@ -34,24 +34,16 @@ router.get('/', (req, res) => {
 // GET /api/pay-groups/:id
 router.get('/:id', (req, res) => {
   const db = getDb();
-  const g = db.prepare(`
-    SELECT pg.* FROM pay_groups pg
-    JOIN clients c ON pg.client_id = c.id
-    WHERE pg.id = ? AND c.user_id = ?
-  `).get(req.params.id, req.user.id);
-  if (!g) return res.status(404).json({ error: 'Pay group not found' });
+  const g = db.prepare('SELECT * FROM pay_groups WHERE id = ?').get(req.params.id);
+  if (!g || !canAccessClient(db, g.client_id, req.user)) return res.status(404).json({ error: 'Pay group not found' });
   res.json(sanitizeGroup(g));
 });
 
 // GET /api/pay-groups/:id/employees
 router.get('/:id/employees', (req, res) => {
   const db = getDb();
-  const g = db.prepare(`
-    SELECT pg.* FROM pay_groups pg
-    JOIN clients c ON pg.client_id = c.id
-    WHERE pg.id = ? AND c.user_id = ?
-  `).get(req.params.id, req.user.id);
-  if (!g) return res.status(404).json({ error: 'Pay group not found' });
+  const g = db.prepare('SELECT * FROM pay_groups WHERE id = ?').get(req.params.id);
+  if (!g || !canAccessClient(db, g.client_id, req.user)) return res.status(404).json({ error: 'Pay group not found' });
   const employees = db.prepare(`
     SELECT id, first_name, last_name, pay_type, pay_group_id, is_active
     FROM employees WHERE pay_group_id = ?
@@ -65,10 +57,12 @@ router.get('/:id/employees', (req, res) => {
 
 // POST /api/pay-groups
 router.post('/', (req, res) => {
-  const { clientId, name, frequency, firstPayPeriodStart, firstPayPeriodEnd, payDate } = req.body;
+  const { name, frequency, firstPayPeriodStart, firstPayPeriodEnd, payDate } = req.body;
+  // For client-role users, force their own clientId regardless of what was passed
+  const clientId = req.user.role === 'client' ? req.user.clientId : req.body.clientId;
   if (!clientId || !name) return res.status(400).json({ error: 'clientId and name required' });
   const db = getDb();
-  const client = db.prepare('SELECT id FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  const client = canAccessClient(db, clientId, req.user);
   if (!client) return res.status(404).json({ error: 'Client not found' });
   const result = db.prepare(`
     INSERT INTO pay_groups (client_id, name, frequency, first_pay_period_start, first_pay_period_end, pay_date)
@@ -81,12 +75,8 @@ router.post('/', (req, res) => {
 router.put('/:id', (req, res) => {
   const { name, frequency, firstPayPeriodStart, firstPayPeriodEnd, payDate } = req.body;
   const db = getDb();
-  const g = db.prepare(`
-    SELECT pg.* FROM pay_groups pg
-    JOIN clients c ON pg.client_id = c.id
-    WHERE pg.id = ? AND c.user_id = ?
-  `).get(req.params.id, req.user.id);
-  if (!g) return res.status(404).json({ error: 'Pay group not found' });
+  const g = db.prepare('SELECT * FROM pay_groups WHERE id = ?').get(req.params.id);
+  if (!g || !canAccessClient(db, g.client_id, req.user)) return res.status(404).json({ error: 'Pay group not found' });
   db.prepare(`
     UPDATE pay_groups SET name = ?, frequency = ?, first_pay_period_start = ?, first_pay_period_end = ?, pay_date = ?
     WHERE id = ?
@@ -130,12 +120,8 @@ router.put('/:id', (req, res) => {
 // DELETE /api/pay-groups/:id  (soft delete — sets deleted_at, unassigns employees)
 router.delete('/:id', (req, res) => {
   const db = getDb();
-  const g = db.prepare(`
-    SELECT pg.* FROM pay_groups pg
-    JOIN clients c ON pg.client_id = c.id
-    WHERE pg.id = ? AND c.user_id = ?
-  `).get(req.params.id, req.user.id);
-  if (!g) return res.status(404).json({ error: 'Pay group not found' });
+  const g = db.prepare('SELECT * FROM pay_groups WHERE id = ?').get(req.params.id);
+  if (!g || !canAccessClient(db, g.client_id, req.user)) return res.status(404).json({ error: 'Pay group not found' });
   if (g.deleted_at) return res.status(400).json({ error: 'Pay group already deleted' });
   db.transaction(() => {
     db.prepare('UPDATE employees SET pay_group_id = NULL WHERE pay_group_id = ?').run(g.id);

@@ -21,11 +21,19 @@ import InviteAccept from './pages/InviteAccept';
 import ClientDashboard from './pages/ClientDashboard';
 import EmployeeDashboard from './pages/EmployeeDashboard';
 
+// Redirect /client → /company/:id for client users
+function ClientRedirect() {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role === 'client') return <Navigate to={`/company/${user.clientId}`} replace />;
+  return <Navigate to="/" replace />;
+}
+
 // Route "/" redirects based on role
 function RootRedirect() {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  if (user.role === 'client')   return <Navigate to="/client" replace />;
+  if (user.role === 'client')   return <Navigate to={`/company/${user.clientId}`} replace />;
   if (user.role === 'employee') return <Navigate to="/employee" replace />;
   return null; // admin — render Outlet (Layout/Dashboard)
 }
@@ -39,10 +47,13 @@ export default function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/invite/:token" element={<InviteAccept />} />
 
-        {/* Client portal */}
-        <Route path="/client" element={
+        {/* Client legacy redirect */}
+        <Route path="/client" element={<ClientRedirect />} />
+
+        {/* Client company workspace — full self-service portal (no admin sidebar) */}
+        <Route path="/company/:id" element={
           <ProtectedRoute roles={['client', 'admin']}>
-            <ClientDashboard />
+            <CompanyWorkspace clientMode />
           </ProtectedRoute>
         } />
 

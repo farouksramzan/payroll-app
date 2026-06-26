@@ -4,7 +4,7 @@ const express      = require('express');
 const PDFDocument  = require('pdfkit');
 const path         = require('path');
 const { getDb }    = require('../database/db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, canAccessClient } = require('../middleware/auth');
 const { decrypt, encrypt }  = require('../services/cryptoService');
 const { calculateWithholding, getTaxPeriod } = require('../services/taxCalculator');
 const { submitToEFTPS } = require('../services/eftpsAutomation');
@@ -65,7 +65,7 @@ router.get('/', (req, res) => {
   const { clientId, employeeId } = req.query;
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
 
-  const client = db.prepare('SELECT id FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  const client = canAccessClient(db, clientId, req.user);
   if (!client) return res.status(404).json({ error: 'Client not found' });
 
   let sql = `
@@ -86,7 +86,7 @@ router.get('/pay-periods', (req, res) => {
   const db = getDb();
   const { clientId } = req.query;
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
-  const client = db.prepare('SELECT id FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  const client = canAccessClient(db, clientId, req.user);
   if (!client) return res.status(404).json({ error: 'Client not found' });
 
   const periods = db.prepare(`
@@ -118,8 +118,9 @@ router.post('/mark-pending', (req, res) => {
     return res.status(400).json({ error: 'clientId and periods[] required' });
   }
   const db = getDb();
-  const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  const client = canAccessClient(db, clientId, req.user);
   if (!client) return res.status(404).json({ error: 'Client not found' });
+  const fullClient = db.prepare('SELECT * FROM clients WHERE id = ?').get(client.id);
 
   const targetStatus = status || 'voided';
   const { quarter, year } = getTaxPeriod(periods[0].periodEnd || new Date().toISOString().slice(0, 10));
@@ -145,7 +146,7 @@ router.post('/mark-pending', (req, res) => {
       `).run(
         clientId, p.employeeId || null, p.employeeName || null, groupId || null,
         p.periodStart, p.periodEnd, p.settlementDate || p.periodEnd, p.payFrequency || 'biweekly',
-        client.state || 'TX',
+        fullClient.state || 'TX',
         quarter, year,
         targetStatus
       );
@@ -161,14 +162,26 @@ router.post('/mark-pending', (req, res) => {
 router.post('/mark-late', (req, res) => {
   const db = getDb();
   const today = new Date().toISOString().slice(0, 10);
-  const result = db.prepare(`
-    UPDATE paystubs
-    SET check_status = 'late'
-    WHERE check_status = 'draft'
-      AND settlement_date IS NOT NULL
-      AND settlement_date < ?
-      AND client_id IN (SELECT id FROM clients WHERE user_id = ?)
-  `).run(today, req.user.id);
+  let result;
+  if (req.user.role === 'client') {
+    result = db.prepare(`
+      UPDATE paystubs
+      SET check_status = 'late'
+      WHERE check_status = 'draft'
+        AND settlement_date IS NOT NULL
+        AND settlement_date < ?
+        AND client_id = ?
+    `).run(today, req.user.clientId);
+  } else {
+    result = db.prepare(`
+      UPDATE paystubs
+      SET check_status = 'late'
+      WHERE check_status = 'draft'
+        AND settlement_date IS NOT NULL
+        AND settlement_date < ?
+        AND client_id IN (SELECT id FROM clients WHERE user_id = ?)
+    `).run(today, req.user.id);
+  }
   res.json({ updated: result.changes });
 });
 
@@ -178,8 +191,9 @@ router.post('/print-selected', (req, res) => {
     return res.status(400).json({ error: 'clientId and paystubIds[] required' });
 
   const db = getDb();
-  const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
-  if (!client) return res.status(404).json({ error: 'Client not found' });
+  const access = canAccessClient(db, clientId, req.user);
+  if (!access) return res.status(404).json({ error: 'Client not found' });
+  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(access.id);
 
   const ph = paystubIds.map(() => '?').join(',');
   const stubs = db.prepare(`
@@ -761,8 +775,9 @@ router.post('/paystub-selected', (req, res) => {
     return res.status(400).json({ error: 'clientId and paystubIds[] required' });
 
   const db = getDb();
-  const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
-  if (!client) return res.status(404).json({ error: 'Client not found' });
+  const access = canAccessClient(db, clientId, req.user);
+  if (!access) return res.status(404).json({ error: 'Client not found' });
+  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(access.id);
 
   const ph = paystubIds.map(() => '?').join(',');
   const stubs = db.prepare(`
@@ -938,7 +953,7 @@ router.get('/by-employee', (req, res) => {
   const db = getDb();
   const { clientId, employeeId } = req.query;
   if (!clientId || !employeeId) return res.status(400).json({ error: 'clientId and employeeId required' });
-  const client = db.prepare('SELECT id FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  const client = canAccessClient(db, clientId, req.user);
   if (!client) return res.status(404).json({ error: 'Client not found' });
   const rows = db.prepare(`
     SELECT p.*, e.first_name, e.last_name
@@ -955,7 +970,7 @@ router.get('/credits', (req, res) => {
   const db = getDb();
   const { clientId } = req.query;
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
-  const client = db.prepare('SELECT id FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  const client = canAccessClient(db, clientId, req.user);
   if (!client) return res.status(404).json({ error: 'Client not found' });
   const credits = db.prepare('SELECT * FROM paystub_credits WHERE client_id = ? ORDER BY created_at DESC').all(clientId);
   res.json(credits);
@@ -970,16 +985,17 @@ router.get('/:id', (req, res) => {
     FROM paystubs p
     JOIN clients c ON p.client_id = c.id
     LEFT JOIN employees e ON p.employee_id = e.id
-    WHERE p.id = ? AND c.user_id = ?
-  `).get(req.params.id, req.user.id);
+    WHERE p.id = ?
+  `).get(req.params.id);
   if (!stub) return res.status(404).json({ error: 'Paystub not found' });
+  if (!canAccessClient(db, stub.client_id, req.user)) return res.status(404).json({ error: 'Paystub not found' });
   res.json(attachLineItems(db, stub));
 });
 
 // ── POST /api/paystubs — create (Save as Paystub) ────────────────────────────
 router.post('/', (req, res) => {
   const {
-    clientId, employeeId,
+    employeeId,
     payPeriodStart, payPeriodEnd, settlementDate, payFrequency,
     filingStatus, step2Checkbox, step3Children, step3Other,
     step4a, step4b, step4c,
@@ -988,13 +1004,17 @@ router.post('/', (req, res) => {
     notes,
   } = req.body;
 
+  // For client-role users, force their own clientId regardless of what was passed
+  const clientId = req.user.role === 'client' ? req.user.clientId : req.body.clientId;
+
   if (!clientId || !payPeriodStart || !payPeriodEnd || !payFrequency) {
     return res.status(400).json({ error: 'clientId, payPeriodStart, payPeriodEnd, payFrequency required' });
   }
 
   const db = getDb();
-  const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
-  if (!client) return res.status(404).json({ error: 'Client not found' });
+  const access = canAccessClient(db, clientId, req.user);
+  if (!access) return res.status(404).json({ error: 'Client not found' });
+  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(access.id);
 
   const items = Array.isArray(lineItems) && lineItems.length > 0 ? lineItems : null;
   const computedGross = items
@@ -1104,12 +1124,8 @@ router.post('/', (req, res) => {
 // ── PUT /api/paystubs/:id — edit paystub ──────────────────────────────────────
 router.put('/:id', (req, res) => {
   const db = getDb();
-  const stub = db.prepare(`
-    SELECT p.* FROM paystubs p
-    JOIN clients c ON p.client_id = c.id
-    WHERE p.id = ? AND c.user_id = ?
-  `).get(req.params.id, req.user.id);
-  if (!stub) return res.status(404).json({ error: 'Paystub not found' });
+  const stub = db.prepare('SELECT * FROM paystubs WHERE id = ?').get(req.params.id);
+  if (!stub || !canAccessClient(db, stub.client_id, req.user)) return res.status(404).json({ error: 'Paystub not found' });
 
   const alreadySubmitted = stub.status === 'submitted' || stub.status_940 === 'submitted';
 
@@ -1317,12 +1333,8 @@ router.put('/:id', (req, res) => {
 // ── DELETE /api/paystubs/:id ──────────────────────────────────────────────────
 router.delete('/:id', (req, res) => {
   const db = getDb();
-  const stub = db.prepare(`
-    SELECT p.* FROM paystubs p
-    JOIN clients c ON p.client_id = c.id
-    WHERE p.id = ? AND c.user_id = ?
-  `).get(req.params.id, req.user.id);
-  if (!stub) return res.status(404).json({ error: 'Paystub not found' });
+  const stub = db.prepare('SELECT * FROM paystubs WHERE id = ?').get(req.params.id);
+  if (!stub || !canAccessClient(db, stub.client_id, req.user)) return res.status(404).json({ error: 'Paystub not found' });
   if (stub.status === 'submitted') return res.status(400).json({ error: 'Cannot delete a submitted paystub' });
   if (stub.check_status === 'voided') return res.status(400).json({ error: 'Voided checks cannot be deleted — they must stay for record keeping' });
 
@@ -1352,6 +1364,8 @@ router.delete('/:id', (req, res) => {
 router.post('/:id/submit', async (req, res) => {
   const { taxType = '941' } = req.body;
   const db = getDb();
+  const stubBase = db.prepare('SELECT * FROM paystubs WHERE id = ?').get(req.params.id);
+  if (!stubBase || !canAccessClient(db, stubBase.client_id, req.user)) return res.status(404).json({ error: 'Paystub not found' });
   const stub = db.prepare(`
     SELECT p.*, c.ein, c.business_name, c.batch_provider_pin_encrypted,
            c.eftps_internet_password_encrypted, c.eftps_enrollment_number,
@@ -1359,8 +1373,8 @@ router.post('/:id/submit', async (req, res) => {
            c.bank_routing_number, c.bank_account_type
     FROM paystubs p
     JOIN clients c ON p.client_id = c.id
-    WHERE p.id = ? AND c.user_id = ?
-  `).get(req.params.id, req.user.id);
+    WHERE p.id = ?
+  `).get(req.params.id);
 
   if (!stub) return res.status(404).json({ error: 'Paystub not found' });
 
@@ -1499,13 +1513,16 @@ function advanceDate(dateStr, frequency) {
 router.post('/payroll-run', (req, res) => {
   try {
   const db = getDb();
-  const { clientId, payPeriodStart, payPeriodEnd, settlementDate, employees, paymentMethod, payGroupId } = req.body;
+  const { payPeriodStart, payPeriodEnd, settlementDate, employees, paymentMethod, payGroupId } = req.body;
+  // For client-role users, force their own clientId regardless of what was passed
+  const clientId = req.user.role === 'client' ? req.user.clientId : req.body.clientId;
   if (!clientId || !payPeriodStart || !payPeriodEnd || !Array.isArray(employees)) {
     return res.status(400).json({ error: 'clientId, payPeriodStart, payPeriodEnd, employees required' });
   }
 
-  const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
-  if (!client) return res.status(404).json({ error: 'Client not found' });
+  const access = canAccessClient(db, clientId, req.user);
+  if (!access) return res.status(404).json({ error: 'Client not found' });
+  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(access.id);
 
   const runId = `run-${Date.now()}`;
   const { quarter, year } = getTaxPeriod(payPeriodEnd);
@@ -1861,8 +1878,9 @@ router.get('/run-pdf/:runId', (req, res) => {
   const { clientId } = req.query;
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
 
-  const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
-  if (!client) return res.status(404).json({ error: 'Client not found' });
+  const access = canAccessClient(db, clientId, req.user);
+  if (!access) return res.status(404).json({ error: 'Client not found' });
+  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(access.id);
 
   const stubs = db.prepare(`
     SELECT p.*, e.first_name, e.last_name, e.address AS emp_address, e.city AS emp_city,
@@ -2087,7 +2105,15 @@ router.post('/batch-reset-tax', (req, res) => {
   }
   const ph = clientIds.map(() => '?').join(',');
   // Verify ownership of all requested clients
-  const owned = db.prepare(`SELECT id FROM clients WHERE id IN (${ph}) AND user_id = ?`).all(...clientIds, req.user.id);
+  let owned;
+  if (req.user.role === 'client') {
+    // client users can only access their own company
+    owned = clientIds.every(id => parseInt(id, 10) === req.user.clientId)
+      ? db.prepare(`SELECT id FROM clients WHERE id IN (${ph})`).all(...clientIds)
+      : [];
+  } else {
+    owned = db.prepare(`SELECT id FROM clients WHERE id IN (${ph}) AND user_id = ?`).all(...clientIds, req.user.id);
+  }
   if (owned.length !== clientIds.length) return res.status(403).json({ error: 'One or more clients not found' });
 
   const ISSUED = ['printed', 'deposited', 'direct_deposit_sent', 'direct_deposit_cleared'];
@@ -2115,8 +2141,9 @@ router.post('/sui-report', async (req, res) => {
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
 
   const db = getDb();
-  const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
-  if (!client) return res.status(404).json({ error: 'Client not found' });
+  const access = canAccessClient(db, clientId, req.user);
+  if (!access) return res.status(404).json({ error: 'Client not found' });
+  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(access.id);
 
   // Determine quarter/year from selected or all pending SUI stubs
   let refStubs;
@@ -2178,8 +2205,9 @@ router.post('/batch-submit', async (req, res) => {
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
 
   const db = getDb();
-  const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
-  if (!client) return res.status(404).json({ error: 'Client not found' });
+  const access = canAccessClient(db, clientId, req.user);
+  if (!access) return res.status(404).json({ error: 'Client not found' });
+  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(access.id);
 
   const pin = resolvePin(db, client.id, client.batch_provider_pin_encrypted);
 
@@ -2396,6 +2424,8 @@ router.post('/batch-submit', async (req, res) => {
 // ── GET /api/paystubs/:id/pdf — generate paystub PDF ─────────────────────────
 router.get('/:id/pdf', (req, res) => {
   const db = getDb();
+  const stubBase = db.prepare('SELECT client_id FROM paystubs WHERE id = ?').get(req.params.id);
+  if (!stubBase || !canAccessClient(db, stubBase.client_id, req.user)) return res.status(404).json({ error: 'Paystub not found' });
   const stub = db.prepare(`
     SELECT p.*, c.business_name, c.ein, c.state AS client_state,
            e.first_name, e.last_name, e.address, e.city,
@@ -2403,8 +2433,8 @@ router.get('/:id/pdf', (req, res) => {
     FROM paystubs p
     JOIN clients c ON p.client_id = c.id
     LEFT JOIN employees e ON p.employee_id = e.id
-    WHERE p.id = ? AND c.user_id = ?
-  `).get(req.params.id, req.user.id);
+    WHERE p.id = ?
+  `).get(req.params.id);
   if (!stub) return res.status(404).json({ error: 'Paystub not found' });
 
   const lineItems = db.prepare('SELECT * FROM paystub_line_items WHERE paystub_id = ?').all(stub.id);
@@ -2641,12 +2671,8 @@ function generatePaystubPDF(stub, lineItems, ytd, stream) {
 // ── PUT /api/paystubs/:id/status ─────────────────────────────────────────────
 router.put('/:id/status', async (req, res) => {
   const db = getDb();
-  const stub = db.prepare(`
-    SELECT p.* FROM paystubs p
-    JOIN clients c ON p.client_id = c.id
-    WHERE p.id = ? AND c.user_id = ?
-  `).get(req.params.id, req.user.id);
-  if (!stub) return res.status(404).json({ error: 'Paystub not found' });
+  const stub = db.prepare('SELECT * FROM paystubs WHERE id = ?').get(req.params.id);
+  if (!stub || !canAccessClient(db, stub.client_id, req.user)) return res.status(404).json({ error: 'Paystub not found' });
 
   const { status, taxType } = req.body;
 
@@ -2708,12 +2734,8 @@ router.put('/:id/status', async (req, res) => {
 // ── POST /api/paystubs/:id/void ──────────────────────────────────────────────
 router.post('/:id/void', (req, res) => {
   const db = getDb();
-  const stub = db.prepare(`
-    SELECT p.* FROM paystubs p
-    JOIN clients c ON p.client_id = c.id
-    WHERE p.id = ? AND c.user_id = ?
-  `).get(req.params.id, req.user.id);
-  if (!stub) return res.status(404).json({ error: 'Paystub not found' });
+  const stub = db.prepare('SELECT * FROM paystubs WHERE id = ?').get(req.params.id);
+  if (!stub || !canAccessClient(db, stub.client_id, req.user)) return res.status(404).json({ error: 'Paystub not found' });
   if (stub.check_status === 'voided') return res.status(400).json({ error: 'Already voided' });
 
   const { reason } = req.body;

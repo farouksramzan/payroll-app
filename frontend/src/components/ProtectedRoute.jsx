@@ -16,7 +16,7 @@ export default function ProtectedRoute({ children, roles }) {
 
   // If roles are specified and the user's role is not in the allowed list, redirect
   if (roles && !roles.includes(user.role)) {
-    if (user.role === 'client')   return <Navigate to="/client"   replace />;
+    if (user.role === 'client')   return <Navigate to={`/company/${user.clientId}`} replace />;
     if (user.role === 'employee') return <Navigate to="/employee" replace />;
     return <Navigate to="/" replace />;
   }

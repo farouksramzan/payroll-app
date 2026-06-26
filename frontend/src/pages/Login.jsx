@@ -74,7 +74,7 @@ export default function Login() {
   const [empForm, setEmpForm]     = useState({ email: '', password: '', confirmPassword: '' });
 
   if (user) {
-    if (user.role === 'client')   return <Navigate to="/client"   replace />;
+    if (user.role === 'client')   return <Navigate to={`/company/${user.clientId}`} replace />;
     if (user.role === 'employee') return <Navigate to="/employee" replace />;
     return <Navigate to="/" replace />;
   }
@@ -100,7 +100,7 @@ export default function Login() {
     setError(''); setLoading(true);
     try {
       const u = await login(loginForm.username, loginForm.password);
-      if (u.role === 'client')        navigate('/client',   { replace: true });
+      if (u.role === 'client')        navigate(`/company/${u.clientId}`, { replace: true });
       else if (u.role === 'employee') navigate('/employee', { replace: true });
       else                            navigate('/',         { replace: true });
     } catch (err) {
@@ -127,7 +127,7 @@ export default function Login() {
       });
       localStorage.setItem('token', data.token);
       setUser(data.user);
-      navigate('/client', { replace: true });
+      navigate(`/company/${data.user.clientId}`, { replace: true });
     } catch (err) {
       setError(err.message);
     } finally {

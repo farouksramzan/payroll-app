@@ -34,4 +34,17 @@ function requireEmployee(req, res, next) {
   next();
 }
 
-module.exports = { requireAuth, requireAdmin, requireClient, requireEmployee };
+function canAccessClient(db, clientId, user) {
+  const id = parseInt(clientId, 10);
+  if (isNaN(id)) return null;
+  if (user.role === 'admin') {
+    return db.prepare('SELECT id FROM clients WHERE id = ? AND user_id = ?').get(id, user.id) || null;
+  }
+  if (user.role === 'client') {
+    if (user.clientId !== id) return null;
+    return db.prepare('SELECT id FROM clients WHERE id = ?').get(id) || null;
+  }
+  return null;
+}
+
+module.exports = { requireAuth, requireAdmin, requireClient, requireEmployee, canAccessClient };

@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto  = require('crypto');
 const { getDb } = require('../database/db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, canAccessClient } = require('../middleware/auth');
 const { encrypt, decrypt } = require('../services/cryptoService');
 const { calcNextDueDate } = require('../services/taxCalculator');
 
@@ -134,6 +134,14 @@ function sanitizeClient(client, includeSecrets = false) {
 // GET /api/clients
 router.get('/', (req, res) => {
   const db = getDb();
+
+  // Client-role users: return just their own company record (no enrichment needed)
+  if (req.user.role === 'client') {
+    const own = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.user.clientId);
+    if (!own) return res.json([]);
+    return res.json([sanitizeClient(own)]);
+  }
+
   const clients = db.prepare('SELECT * FROM clients WHERE user_id = ? ORDER BY business_name').all(req.user.id);
 
   const today = new Date().toISOString().slice(0, 10);
@@ -250,7 +258,9 @@ router.get('/', (req, res) => {
 // GET /api/clients/:id
 router.get('/:id', (req, res) => {
   const db = getDb();
-  const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  const access = canAccessClient(db, req.params.id, req.user);
+  if (!access) return res.status(404).json({ error: 'Client not found' });
+  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(access.id);
   if (!client) return res.status(404).json({ error: 'Client not found' });
   res.json(sanitizeClient(client));
 });
@@ -319,7 +329,9 @@ router.post('/', (req, res) => {
 // PUT /api/clients/:id
 router.put('/:id', (req, res) => {
   const db = getDb();
-  const existing = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  const access = canAccessClient(db, req.params.id, req.user);
+  if (!access) return res.status(404).json({ error: 'Client not found' });
+  const existing = db.prepare('SELECT * FROM clients WHERE id = ?').get(access.id);
   if (!existing) return res.status(404).json({ error: 'Client not found' });
 
   const { businessName, ein, state, bankAccountNumber, bankRoutingNumber, bankAccountType, batchProviderPin,
@@ -367,7 +379,7 @@ router.put('/:id', (req, res) => {
       bank_name = ?,
       county_code = ?,
       updated_at = CURRENT_TIMESTAMP
-    WHERE id = ? AND user_id = ?
+    WHERE id = ?
   `).run(
     businessName || existing.business_name,
     ein || existing.ein,
@@ -399,11 +411,10 @@ router.put('/:id', (req, res) => {
     twcPassword ? encrypt(twcPassword) : existing.twc_password_encrypted,
     bankName !== undefined ? (bankName || null) : existing.bank_name,
     countyCode !== undefined ? (countyCode || null) : existing.county_code,
-    req.params.id,
-    req.user.id,
+    existing.id,
   );
 
-  const updated = db.prepare('SELECT * FROM clients WHERE id = ?').get(req.params.id);
+  const updated = db.prepare('SELECT * FROM clients WHERE id = ?').get(existing.id);
   res.json(sanitizeClient(updated));
 });
 

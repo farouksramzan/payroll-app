@@ -4712,9 +4712,12 @@ function UsersPanel() {
   );
 }
 
-export default function CompanyWorkspace() {
-  const { user } = useAuth();
-  const { id } = useParams(), location = useLocation(), navigate = useNavigate();
+export default function CompanyWorkspace({ clientMode = false }) {
+  const { user, logout } = useAuth();
+  const { id: paramId } = useParams(), location = useLocation(), navigate = useNavigate();
+  // In clientMode, use the param id (which equals user.clientId via routing)
+  const id = paramId || (clientMode ? String(user?.clientId) : null);
+
   const [client, setClient]       = useState(null);
   const [employees, setEmployees] = useState([]);
   const [loading, setLoading]     = useState(true);
@@ -4727,11 +4730,11 @@ export default function CompanyWorkspace() {
   );
 
   useEffect(() => { sessionStorage.setItem(WS_TAB_KEY, activeTab); }, [activeTab]);
-  useEffect(() => { loadAll(); }, [id]);
+  useEffect(() => { if (id) loadAll(); }, [id]);
 
   async function loadAll() {
     try { const [c, emps] = await Promise.all([api.getClient(id), api.getEmployees(id)]); setClient(c); setEmployees(emps); }
-    catch (e) { alert(e.message); navigate('/'); }
+    catch (e) { alert(e.message); if (!clientMode) navigate('/'); }
     finally { setLoading(false); }
   }
 
@@ -4757,13 +4760,38 @@ export default function CompanyWorkspace() {
     }
   }
 
-  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', padding: 60 }}><div className="spinner spinner-dark" style={{ width: 36, height: 36 }} /></div>;
+  if (loading) return <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: clientMode ? '100vh' : '100%', padding: 60 }}><div className="spinner spinner-dark" style={{ width: 36, height: 36 }} /></div>;
 
   return (
-    <div className="workspace">
+    <div className="workspace" style={clientMode ? { height: '100vh', display: 'flex', flexDirection: 'column' } : {}}>
+
+      {/* Client-mode top nav (replaces the admin Layout nav) */}
+      {clientMode && (
+        <div style={{
+          height: 'var(--nav-h)', background: 'var(--accent)',
+          display: 'flex', alignItems: 'center', padding: '0 24px',
+          gap: 14, flexShrink: 0, boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+        }}>
+          <div style={{ fontSize: 17, fontWeight: 800, color: '#fff', letterSpacing: '-0.4px' }}>
+            Payroll<span style={{ color: '#7ca4e0' }}>Tax</span> Pro
+          </div>
+          {client?.businessName && (
+            <>
+              <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 18 }}>|</div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>{client.businessName}</div>
+            </>
+          )}
+          <div style={{ flex: 1 }} />
+          <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)' }}>{user?.email || user?.username}</span>
+          <button onClick={logout} style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, padding: '5px 14px', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+            Sign out
+          </button>
+        </div>
+      )}
+
       <div className="workspace-header">
         <div className="workspace-title-row">
-          <Link to="/" className="workspace-back">← All Companies</Link>
+          {!clientMode && <Link to="/" className="workspace-back">← All Companies</Link>}
           <div><div className="workspace-name">{client?.businessName}</div></div>
           <span className="workspace-ein">EIN {client?.ein}</span>
           <div style={{ flex: 1 }} />
@@ -4782,14 +4810,16 @@ export default function CompanyWorkspace() {
               >⧉</button>
             </div>
           )}
-          <button
-            onClick={handleInviteClient}
-            disabled={inviting}
-            title="Generate invite link for client portal"
-            style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, cursor: inviting ? 'default' : 'pointer', padding: '3px 10px', color: 'var(--text-secondary)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
-          >
-            ✉ {inviting ? '…' : 'Invite Client'}
-          </button>
+          {!clientMode && (
+            <button
+              onClick={handleInviteClient}
+              disabled={inviting}
+              title="Generate invite link for client portal"
+              style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, cursor: inviting ? 'default' : 'pointer', padding: '3px 10px', color: 'var(--text-secondary)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
+            >
+              ✉ {inviting ? '…' : 'Invite Client'}
+            </button>
+          )}
           <button
             onClick={handleRefresh}
             disabled={refreshing}
@@ -4799,7 +4829,7 @@ export default function CompanyWorkspace() {
             <span style={{ display: 'inline-block', animation: refreshing ? 'spin 0.7s linear infinite' : 'none' }}>↻</span>
           </button>
         </div>
-        {inviteUrl && (
+        {!clientMode && inviteUrl && (
           <div style={{ padding: '8px 16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Client invite link:</span>
             <input
@@ -4813,7 +4843,7 @@ export default function CompanyWorkspace() {
           </div>
         )}
         <div className="ws-tabs">
-          {[['employees','Employees'],['company','Company'],['payroll','Payroll'],...(user?.username === 'admin' ? [['users','Users']] : [])].map(([k, label]) => (
+          {[['employees','Employees'],['company','Company'],['payroll','Payroll'],...(!clientMode && user?.username === 'admin' ? [['users','Users']] : [])].map(([k, label]) => (
             <button key={k} className={`ws-tab${activeTab === k ? ' active' : ''}`} onClick={() => setActiveTab(k)} data-tour-id={k === 'payroll' ? 'tour-payroll-tab-btn' : k === 'employees' ? 'tour-employees-tab-btn' : undefined}>
               {label}
               {k === 'employees' && employees.length > 0 && <span style={{ marginLeft: 6, background: activeTab === k ? 'var(--accent)' : 'var(--bg-tertiary)', color: activeTab === k ? '#fff' : 'var(--text-muted)', borderRadius: 20, fontSize: 10, fontWeight: 700, padding: '1px 6px' }}>{employees.length}</span>}

@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb } = require('../database/db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, canAccessClient } = require('../middleware/auth');
 const { encrypt, decrypt } = require('../services/cryptoService');
 
 const router = express.Router();
@@ -43,7 +43,7 @@ router.get('/', (req, res) => {
   const db = getDb();
   const { clientId } = req.query;
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
-  const client = db.prepare('SELECT id FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  const client = canAccessClient(db, clientId, req.user);
   if (!client) return res.status(404).json({ error: 'Client not found' });
   const rows = db.prepare(`
     SELECT e.*,
@@ -64,7 +64,7 @@ router.get('/ytd-batch', (req, res) => {
   const db = getDb();
   const { clientId } = req.query;
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
-  const client = db.prepare('SELECT id FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  const client = canAccessClient(db, clientId, req.user);
   if (!client) return res.status(404).json({ error: 'Client not found' });
   const year = parseInt(req.query.year || new Date().getFullYear(), 10);
   const rows = db.prepare(`
@@ -85,19 +85,19 @@ router.get('/:id', (req, res) => {
            pg.first_pay_period_start AS pay_group_first_start,
            pg.first_pay_period_end   AS pay_group_first_end
     FROM employees e
-    JOIN clients c ON e.client_id = c.id
     LEFT JOIN pay_groups pg ON e.pay_group_id = pg.id
-    WHERE e.id = ? AND c.user_id = ?
-  `).get(req.params.id, req.user.id);
+    WHERE e.id = ?
+  `).get(req.params.id);
   if (!e) return res.status(404).json({ error: 'Employee not found' });
+  if (!canAccessClient(db, e.client_id, req.user)) return res.status(404).json({ error: 'Employee not found' });
   res.json(sanitize(e, req.query.withSSN === 'true'));
 });
 
 // GET /api/employees/:id/ytd?year=2026
 router.get('/:id/ytd', (req, res) => {
   const db = getDb();
-  const e = db.prepare('SELECT e.id FROM employees e JOIN clients c ON e.client_id = c.id WHERE e.id = ? AND c.user_id = ?').get(req.params.id, req.user.id);
-  if (!e) return res.status(404).json({ error: 'Employee not found' });
+  const e = db.prepare('SELECT id, client_id FROM employees WHERE id = ?').get(req.params.id);
+  if (!e || !canAccessClient(db, e.client_id, req.user)) return res.status(404).json({ error: 'Employee not found' });
   const year = parseInt(req.query.year || new Date().getFullYear(), 10);
   const ytd = db.prepare('SELECT * FROM employee_ytd_wages WHERE employee_id = ? AND tax_year = ?').get(req.params.id, year);
   res.json(ytd || { employee_id: req.params.id, tax_year: year, ytd_gross: 0, ytd_ss_wages: 0, ytd_futa_wages: 0, ytd_suta_wages: 0 });
@@ -106,13 +106,16 @@ router.get('/:id/ytd', (req, res) => {
 // POST /api/employees
 router.post('/', (req, res) => {
   const db = getDb();
-  const { clientId, firstName, lastName, ssn, address, city, state, zip, workState,
+  const { firstName, lastName, ssn, address, city, state, zip, workState,
     filingStatus, step2Checkbox, step3Children, step3Other, step4a, step4b, step4c,
     payType, hourlyRate, annualSalary, payFrequency, hireDate,
     firstPayPeriodStart, firstPayPeriodEnd, payGroupId } = req.body;
 
+  // For client-role users, force their own clientId regardless of what was passed
+  const clientId = req.user.role === 'client' ? req.user.clientId : req.body.clientId;
+
   if (!clientId || !firstName || !lastName) return res.status(400).json({ error: 'clientId, firstName, lastName required' });
-  const client = db.prepare('SELECT id FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  const client = canAccessClient(db, clientId, req.user);
   if (!client) return res.status(404).json({ error: 'Client not found' });
 
   const result = db.prepare(`
@@ -146,8 +149,8 @@ router.post('/', (req, res) => {
 // PUT /api/employees/:id
 router.put('/:id', (req, res) => {
   const db = getDb();
-  const e = db.prepare('SELECT e.* FROM employees e JOIN clients c ON e.client_id = c.id WHERE e.id = ? AND c.user_id = ?').get(req.params.id, req.user.id);
-  if (!e) return res.status(404).json({ error: 'Employee not found' });
+  const e = db.prepare('SELECT * FROM employees WHERE id = ?').get(req.params.id);
+  if (!e || !canAccessClient(db, e.client_id, req.user)) return res.status(404).json({ error: 'Employee not found' });
 
   const { firstName, lastName, ssn, address, city, state, zip, workState,
     filingStatus, step2Checkbox, step3Children, step3Other, step4a, step4b, step4c,
@@ -197,8 +200,8 @@ router.put('/:id', (req, res) => {
 // DELETE /api/employees/:id
 router.delete('/:id', (req, res) => {
   const db = getDb();
-  const e = db.prepare('SELECT e.id FROM employees e JOIN clients c ON e.client_id = c.id WHERE e.id = ? AND c.user_id = ?').get(req.params.id, req.user.id);
-  if (!e) return res.status(404).json({ error: 'Employee not found' });
+  const e = db.prepare('SELECT id, client_id FROM employees WHERE id = ?').get(req.params.id);
+  if (!e || !canAccessClient(db, e.client_id, req.user)) return res.status(404).json({ error: 'Employee not found' });
   db.prepare('DELETE FROM employees WHERE id = ?').run(req.params.id);
   res.json({ message: 'Employee deleted' });
 });

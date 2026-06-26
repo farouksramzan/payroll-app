@@ -33,7 +33,7 @@ export default function InviteAccept() {
       const data = await api.acceptInvite(token, email, password);
       localStorage.setItem('token', data.token);
       setUser(data.user);
-      if (data.user.role === 'client')   navigate('/client', { replace: true });
+      if (data.user.role === 'client')   navigate(`/company/${data.user.clientId}`, { replace: true });
       else if (data.user.role === 'employee') navigate('/employee', { replace: true });
       else navigate('/', { replace: true });
     } catch (err) {
