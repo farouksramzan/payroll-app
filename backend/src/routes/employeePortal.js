@@ -61,8 +61,8 @@ router.get('/paystubs', (req, res) => {
   }
 
   const records = db.prepare(`
-    SELECT * FROM payroll_records WHERE employee_id = ?
-    ORDER BY year DESC, quarter DESC
+    SELECT * FROM paystubs WHERE employee_id = ?
+    ORDER BY pay_period_end DESC
   `).all(eid);
 
   res.json(records);
@@ -71,7 +71,7 @@ router.get('/paystubs', (req, res) => {
 // ── GET /api/employee-portal/paystubs/:id ────────────────────────────────────
 router.get('/paystubs/:id', (req, res) => {
   const db     = getDb();
-  const record = db.prepare('SELECT * FROM payroll_records WHERE id = ?').get(req.params.id);
+  const record = db.prepare('SELECT * FROM paystubs WHERE id = ?').get(req.params.id);
   if (!record) return res.status(404).json({ error: 'Paystub not found' });
 
   // Enforce ownership
@@ -88,21 +88,17 @@ function serializeEmployee(e) {
     id:             e.id,
     firstName:      e.first_name,
     lastName:       e.last_name,
-    email:          e.email || null,
-    phone:          e.phone || null,
     address:        e.address || null,
     city:           e.city || null,
     state:          e.state || null,
     zip:            e.zip || null,
-    jobTitle:       e.job_title || null,
     payType:        e.pay_type || null,
     payRate:        e.pay_type === 'hourly' ? e.hourly_rate : e.annual_salary,
-    // Mask bank account — only show last 4
     routingNumber:  e.bank_routing_number  ? `••••${String(e.bank_routing_number).slice(-4)}`  : null,
     accountNumber:  e.bank_account_last4   ? `••••${e.bank_account_last4}`                     : null,
     accountType:    e.bank_account_type    || null,
     hireDate:       e.hire_date || null,
-    ssn:            e.ssn ? `•••-••-${String(e.ssn).slice(-4)}` : null,
+    ssn:            e.ssn_encrypted ? `•••-••-${String(e.ssn_encrypted).slice(-4)}` : null,
   };
 }
 
