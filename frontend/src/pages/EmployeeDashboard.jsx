@@ -437,30 +437,83 @@ function W4Wizard({ me, onSaved }) {
   );
 }
 
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function FieldRow({ label, value, last }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: last ? 'none' : '1px solid var(--border-light)' }}>
+      <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{label}</span>
+      <span style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 500 }}>{value || '—'}</span>
+    </div>
+  );
+}
+
+function FormField({ label, children }) {
+  return (
+    <div>
+      <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</label>
+      {children}
+    </div>
+  );
+}
+
+function SensitiveInput({ value, onChange, placeholder, maxLength }) {
+  const [show, setShow] = useState(false);
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        type={show ? 'text' : 'password'}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        maxLength={maxLength}
+        style={{ ...INPUT_STYLE, paddingRight: 44 }}
+        onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+        onBlur={e => e.target.style.borderColor = 'var(--border)'}
+      />
+      <button
+        type="button"
+        onClick={() => setShow(s => !s)}
+        style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12, fontWeight: 600, padding: '2px 4px' }}
+      >
+        {show ? 'Hide' : 'Show'}
+      </button>
+    </div>
+  );
+}
+
 // ── Main dashboard ────────────────────────────────────────────────────────────
 
 export default function EmployeeDashboard() {
   const { user, logout } = useAuth();
 
-  const [me,       setMe]       = useState(null);
-  const [paystubs, setPaystubs] = useState([]);
-  const [tab,      setTab]      = useState('paystubs');
-  const [loading,  setLoading]  = useState(true);
-  const [error,    setError]    = useState('');
-  const [editing,  setEditing]  = useState(false);
-  const [form,     setForm]     = useState({});
-  const [saving,   setSaving]   = useState(false);
-  const [saveMsg,  setSaveMsg]  = useState('');
+  const [me,          setMe]          = useState(null);
+  const [paystubs,    setPaystubs]    = useState([]);
+  const [tab,         setTab]         = useState('paystubs');
+  const [loading,     setLoading]     = useState(true);
+  const [error,       setError]       = useState('');
+  const [editSection, setEditSection] = useState(null); // 'contact' | 'tax' | 'bank'
+  const [form,        setForm]        = useState({});
+  const [saving,      setSaving]      = useState(false);
+  const [saveMsg,     setSaveMsg]     = useState('');
 
   useEffect(() => {
     Promise.all([api.getEmployeePortalMe(), api.getEmployeePortalPaystubs()])
-      .then(([m, p]) => { setMe(m); setForm(buildForm(m)); setPaystubs(p); })
+      .then(([m, p]) => { setMe(m); setPaystubs(p); })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
 
-  function buildForm(m) {
-    return { address: m.address || '', city: m.city || '', state: m.state || '', zip: m.zip || '' };
+  function startEdit(section, fields) {
+    setForm(fields);
+    setEditSection(section);
+    setSaveMsg('');
+  }
+
+  function cancelEdit() {
+    setEditSection(null);
+    setForm({});
+    setSaveMsg('');
   }
 
   async function handleSave(e) {
@@ -468,7 +521,10 @@ export default function EmployeeDashboard() {
     setSaving(true); setSaveMsg('');
     try {
       const updated = await api.updateEmployeePortalMe(form);
-      setMe(updated); setEditing(false); setSaveMsg('Profile updated.');
+      setMe(updated);
+      setEditSection(null);
+      setForm({});
+      setSaveMsg('Saved successfully.');
     } catch (err) {
       setSaveMsg(err.message);
     } finally {
@@ -607,86 +663,184 @@ export default function EmployeeDashboard() {
         {tab === 'profile' && me && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-            {/* Read-only info card */}
+            {saveMsg && (
+              <div style={{ background: 'var(--success-light)', border: '1px solid var(--success)', borderRadius: 6, padding: '10px 16px', fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>
+                {saveMsg}
+              </div>
+            )}
+
+            {/* ── Pay Info (read-only — set by accountant) ─────────────────── */}
             <div className="card">
               <div className="card-header">
-                <span className="card-title">Employment Information</span>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Managed by your accountant</span>
+                <span className="card-title">Pay Information</span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Set by your accountant</span>
               </div>
-              {[
-                ['Pay Type',     me.payType    || '—'],
-                ['Pay Rate',     me.payType === 'hourly' ? `$${(me.payRate || 0).toFixed(2)}/hr` : `$${(me.payRate || 0).toLocaleString()}/yr`],
-                ['Hire Date',    me.hireDate   || '—'],
-                ['SSN on File',  me.ssn        || '—'],
-                ['Routing #',    me.routingNumber  || 'Not on file'],
-                ['Account #',    me.accountNumber  || 'Not on file'],
-                ['Account Type', me.accountType    || '—'],
-              ].map(([label, value]) => (
-                <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid var(--border-light)' }}>
-                  <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{label}</span>
-                  <span style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 500 }}>{value}</span>
-                </div>
-              ))}
+              <FieldRow label="Pay Type" value={me.payType} />
+              <FieldRow label="Pay Rate" value={me.payType === 'hourly' ? `$${(me.payRate || 0).toFixed(2)}/hr` : `$${(me.payRate || 0).toLocaleString()}/yr`} last />
             </div>
 
-            {/* Editable contact info */}
+            {/* ── Tax & Employment ─────────────────────────────────────────── */}
             <div className="card">
               <div className="card-header">
-                <span className="card-title">Contact Information</span>
-                {!editing && (
-                  <button className="btn btn-secondary btn-sm" onClick={() => setEditing(true)}>Edit</button>
+                <span className="card-title">Tax &amp; Employment</span>
+                {editSection !== 'tax' && (
+                  <button className="btn btn-secondary btn-sm" onClick={() => startEdit('tax', { ssn: '', hireDate: me.hireDate || '' })}>
+                    {me.hasSSN && me.hireDate ? 'Edit' : 'Add Info'}
+                  </button>
                 )}
               </div>
 
-              {saveMsg && (
-                <div style={{ background: 'var(--success-light)', border: '1px solid var(--success)', borderRadius: 6, padding: '8px 14px', marginBottom: 14, fontSize: 13, color: 'var(--success)' }}>
-                  {saveMsg}
-                </div>
-              )}
-
-              {!editing ? (
-                <>
-                  {[
-                    ['Address', [me.address, me.city, me.state, me.zip].filter(Boolean).join(', ') || '—'],
-                  ].map(([label, value]) => (
-                    <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid var(--border-light)' }}>
-                      <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{label}</span>
-                      <span style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 500 }}>{value}</span>
+              {editSection === 'tax' ? (
+                <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <FormField label="Social Security Number (SSN)">
+                    <SensitiveInput
+                      value={form.ssn || ''}
+                      onChange={e => setForm(f => ({ ...f, ssn: e.target.value.replace(/\D/g, '') }))}
+                      placeholder={me.hasSSN ? 'Enter new SSN to update' : '9 digits, no dashes'}
+                      maxLength={9}
+                    />
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                      Stored encrypted. Enter 9 digits with no dashes or spaces.{me.hasSSN ? ` Current: ${me.ssn}` : ''}
                     </div>
-                  ))}
-                  <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 12 }}>
-                    You can update your address below. Email and phone changes must be handled by your accountant.
-                  </p>
-                </>
+                  </FormField>
+                  <FormField label="Hire Date">
+                    <input
+                      type="date"
+                      value={form.hireDate || ''}
+                      onChange={e => setForm(f => ({ ...f, hireDate: e.target.value }))}
+                      style={INPUT_STYLE}
+                      onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+                      onBlur={e => e.target.style.borderColor = 'var(--border)'}
+                    />
+                  </FormField>
+                  {saving && <div style={{ fontSize: 12, color: 'var(--error)' }}>{saveMsg}</div>}
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button type="submit" className="btn btn-primary btn-sm" disabled={saving}>
+                      {saving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : 'Save'}
+                    </button>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={cancelEdit}>Cancel</button>
+                  </div>
+                </form>
               ) : (
+                <>
+                  <FieldRow label="SSN on File" value={me.hasSSN ? me.ssn : 'Not provided'} />
+                  <FieldRow label="Hire Date" value={me.hireDate} last />
+                  {!me.hasSSN && (
+                    <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 6, background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', fontSize: 12, color: 'var(--error)' }}>
+                      Your SSN is required for payroll tax filing. Please add it above.
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* ── Direct Deposit ───────────────────────────────────────────── */}
+            <div className="card">
+              <div className="card-header">
+                <span className="card-title">Direct Deposit</span>
+                {editSection !== 'bank' && (
+                  <button className="btn btn-secondary btn-sm" onClick={() => startEdit('bank', {
+                    bankRoutingNumber: '',
+                    bankAccountNumber: '',
+                    bankAccountType:   me.accountType || 'checking',
+                  })}>
+                    {me.hasBankInfo ? 'Update' : 'Add Account'}
+                  </button>
+                )}
+              </div>
+
+              {editSection === 'bank' ? (
+                <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <FormField label="Routing Number">
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={form.bankRoutingNumber || ''}
+                      onChange={e => setForm(f => ({ ...f, bankRoutingNumber: e.target.value.replace(/\D/g, '') }))}
+                      placeholder={me.routingNumber ? `Current: ${me.routingNumber}` : '9-digit ABA routing number'}
+                      maxLength={9}
+                      style={INPUT_STYLE}
+                      onFocus={e => e.target.style.borderColor = 'var(--accent)'}
+                      onBlur={e => e.target.style.borderColor = 'var(--border)'}
+                    />
+                  </FormField>
+                  <FormField label="Account Number">
+                    <SensitiveInput
+                      value={form.bankAccountNumber || ''}
+                      onChange={e => setForm(f => ({ ...f, bankAccountNumber: e.target.value.replace(/\D/g, '') }))}
+                      placeholder={me.accountNumber ? `Current: ${me.accountNumber}` : 'Enter account number'}
+                    />
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Stored encrypted. Only the last 4 digits are visible after saving.</div>
+                  </FormField>
+                  <FormField label="Account Type">
+                    <select
+                      value={form.bankAccountType || 'checking'}
+                      onChange={e => setForm(f => ({ ...f, bankAccountType: e.target.value }))}
+                      style={{ ...INPUT_STYLE, cursor: 'pointer' }}
+                    >
+                      <option value="checking">Checking</option>
+                      <option value="savings">Savings</option>
+                    </select>
+                  </FormField>
+                  {saveMsg && editSection === 'bank' && <div style={{ fontSize: 12, color: 'var(--error)' }}>{saveMsg}</div>}
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    <button type="submit" className="btn btn-primary btn-sm" disabled={saving}>
+                      {saving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : 'Save'}
+                    </button>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={cancelEdit}>Cancel</button>
+                  </div>
+                </form>
+              ) : (
+                <>
+                  <FieldRow label="Routing #"    value={me.routingNumber  || 'Not on file'} />
+                  <FieldRow label="Account #"    value={me.accountNumber  || 'Not on file'} />
+                  <FieldRow label="Account Type" value={me.accountType    ? me.accountType.charAt(0).toUpperCase() + me.accountType.slice(1) : '—'} last />
+                  {!me.hasBankInfo && (
+                    <div style={{ marginTop: 10, padding: '8px 12px', borderRadius: 6, background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', fontSize: 12, color: 'var(--error)' }}>
+                      Bank account required for direct deposit. Please add your account details above.
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* ── Contact Address ──────────────────────────────────────────── */}
+            <div className="card">
+              <div className="card-header">
+                <span className="card-title">Contact Address</span>
+                {editSection !== 'contact' && (
+                  <button className="btn btn-secondary btn-sm" onClick={() => startEdit('contact', { address: me.address || '', city: me.city || '', state: me.state || '', zip: me.zip || '' })}>Edit</button>
+                )}
+              </div>
+
+              {editSection === 'contact' ? (
                 <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 4px' }}>
-                    Update your contact address below. Pay rate, SSN, and banking details must be changed by your accountant.
-                  </p>
                   {[
-                    ['address', 'Street Address', 'text'],
-                    ['city',    'City',           'text'],
-                    ['state',   'State',          'text'],
-                    ['zip',     'ZIP Code',       'text'],
-                  ].map(([field, label, type]) => (
-                    <div key={field}>
-                      <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</label>
-                      <input type={type} value={form[field]} onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
+                    ['address', 'Street Address'],
+                    ['city',    'City'],
+                    ['state',   'State'],
+                    ['zip',     'ZIP Code'],
+                  ].map(([field, label]) => (
+                    <FormField key={field} label={label}>
+                      <input
+                        type="text"
+                        value={form[field] || ''}
+                        onChange={e => setForm(f => ({ ...f, [field]: e.target.value }))}
                         style={INPUT_STYLE}
                         onFocus={e => e.target.style.borderColor = 'var(--accent)'}
                         onBlur={e => e.target.style.borderColor = 'var(--border)'}
                       />
-                    </div>
+                    </FormField>
                   ))}
-                  <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+                  <div style={{ display: 'flex', gap: 10 }}>
                     <button type="submit" className="btn btn-primary btn-sm" disabled={saving}>
-                      {saving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : 'Save Changes'}
+                      {saving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : 'Save'}
                     </button>
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => { setEditing(false); setForm(buildForm(me)); setSaveMsg(''); }}>
-                      Cancel
-                    </button>
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={cancelEdit}>Cancel</button>
                   </div>
                 </form>
+              ) : (
+                <FieldRow label="Address" value={[me.address, me.city, me.state, me.zip].filter(Boolean).join(', ')} last />
               )}
             </div>
 

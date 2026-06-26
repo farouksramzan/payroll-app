@@ -3,13 +3,13 @@
 const express = require('express');
 const { getDb } = require('../database/db');
 const { requireAuth, requireEmployee } = require('../middleware/auth');
+const { encrypt, decrypt } = require('../services/cryptoService');
 
 const router = express.Router();
 
 router.use(requireAuth, requireEmployee);
 
 function getEmpId(req) {
-  // Admin can pass ?employeeId=; employee users are locked to their own
   if (req.user.role === 'admin') return req.query.employeeId ? parseInt(req.query.employeeId, 10) : null;
   return req.user.employeeId;
 }
@@ -26,7 +26,6 @@ router.get('/me', (req, res) => {
 });
 
 // ── PATCH /api/employee-portal/me ────────────────────────────────────────────
-// Employee can update their own contact info + bank info
 router.patch('/me', (req, res) => {
   const db  = getDb();
   const eid = req.user.employeeId;
@@ -35,7 +34,6 @@ router.patch('/me', (req, res) => {
   const intFields = ['step2_checkbox', 'step3_children', 'step3_other'];
   const W4_KEYS   = ['filingStatus', 'step2Checkbox', 'step3Children', 'step3Other', 'step4a', 'step4b', 'step4c'];
 
-  // Map camelCase body keys → snake_case column names
   const keyMap = {
     address: 'address', city: 'city', state: 'state', zip: 'zip',
     filingStatus:  'filing_status',
@@ -43,10 +41,14 @@ router.patch('/me', (req, res) => {
     step3Children: 'step3_children',
     step3Other:    'step3_other',
     step4a: 'step4a', step4b: 'step4b', step4c: 'step4c',
+    hireDate:          'hire_date',
+    bankRoutingNumber: 'bank_routing_number',
+    bankAccountType:   'bank_account_type',
   };
 
   const updates = {};
   let savingW4 = false;
+
   for (const [bodyKey, col] of Object.entries(keyMap)) {
     if (req.body[bodyKey] === undefined) continue;
     if (W4_KEYS.includes(bodyKey)) savingW4 = true;
@@ -56,6 +58,22 @@ router.patch('/me', (req, res) => {
       updates[col] = req.body[bodyKey];
     }
   }
+
+  // SSN — encrypt before storing
+  if (req.body.ssn) {
+    const raw = String(req.body.ssn).replace(/\D/g, '');
+    if (raw.length !== 9) return res.status(400).json({ error: 'SSN must be 9 digits' });
+    updates['ssn_encrypted'] = encrypt(raw);
+  }
+
+  // Bank account number — encrypt + store last 4
+  if (req.body.bankAccountNumber) {
+    const raw = String(req.body.bankAccountNumber).replace(/\D/g, '');
+    if (raw.length < 4) return res.status(400).json({ error: 'Account number must be at least 4 digits' });
+    updates['bank_account_number_encrypted'] = encrypt(raw);
+    updates['bank_account_last4'] = raw.slice(-4);
+  }
+
   if (savingW4) updates['w4_submitted'] = 1;
   if (!Object.keys(updates).length) return res.status(400).json({ error: 'No valid fields to update' });
 
@@ -72,7 +90,6 @@ router.get('/paystubs', (req, res) => {
   const eid = getEmpId(req);
   if (!eid) return res.status(400).json({ error: 'employeeId required' });
 
-  // Employees can only see their own
   if (req.user.role === 'employee' && eid !== req.user.employeeId) {
     return res.status(403).json({ error: 'Access denied' });
   }
@@ -91,7 +108,6 @@ router.get('/paystubs/:id', (req, res) => {
   const record = db.prepare('SELECT * FROM paystubs WHERE id = ?').get(req.params.id);
   if (!record) return res.status(404).json({ error: 'Paystub not found' });
 
-  // Enforce ownership
   if (req.user.role === 'employee' && record.employee_id !== req.user.employeeId) {
     return res.status(403).json({ error: 'Access denied' });
   }
@@ -101,6 +117,16 @@ router.get('/paystubs/:id', (req, res) => {
 
 // ── Serializer ────────────────────────────────────────────────────────────────
 function serializeEmployee(e) {
+  let ssnDisplay = null;
+  if (e.ssn_encrypted) {
+    try {
+      const plain = decrypt(e.ssn_encrypted);
+      ssnDisplay = plain ? `•••-••-${plain.slice(-4)}` : '•••-••-????';
+    } catch {
+      ssnDisplay = 'On file';
+    }
+  }
+
   return {
     id:             e.id,
     firstName:      e.first_name,
@@ -111,11 +137,13 @@ function serializeEmployee(e) {
     zip:            e.zip || null,
     payType:        e.pay_type || null,
     payRate:        e.pay_type === 'hourly' ? e.hourly_rate : e.annual_salary,
+    hireDate:       e.hire_date || null,
+    hasSSN:         !!e.ssn_encrypted,
+    ssn:            ssnDisplay,
     routingNumber:  e.bank_routing_number  ? `••••${String(e.bank_routing_number).slice(-4)}`  : null,
     accountNumber:  e.bank_account_last4   ? `••••${e.bank_account_last4}`                     : null,
     accountType:    e.bank_account_type    || null,
-    hireDate:       e.hire_date || null,
-    ssn:            e.ssn_encrypted ? `•••-••-${String(e.ssn_encrypted).slice(-4)}` : null,
+    hasBankInfo:    !!(e.bank_routing_number && e.bank_account_last4),
     // W-4 fields
     filingStatus:   e.filing_status   || 'single',
     step2Checkbox:  !!e.step2_checkbox,
