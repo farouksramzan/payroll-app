@@ -6,17 +6,14 @@ const { requireAuth, requireClient } = require('../middleware/auth');
 
 const router = express.Router();
 
-// All routes require auth + client (or admin) role
 router.use(requireAuth, requireClient);
 
 function clientScope(req) {
-  // Admin can query any client; client users are locked to their own client
   if (req.user.role === 'admin') return req.query.clientId ? parseInt(req.query.clientId, 10) : null;
   return req.user.clientId;
 }
 
 // ── GET /api/client-portal/me ─────────────────────────────────────────────────
-// Returns the client record + company info for the logged-in client user
 router.get('/me', (req, res) => {
   const db = getDb();
   const clientId = req.user.clientId;
@@ -28,7 +25,6 @@ router.get('/me', (req, res) => {
 });
 
 // ── GET /api/client-portal/employees ─────────────────────────────────────────
-// Returns all employees for the client's company
 router.get('/employees', (req, res) => {
   const db = getDb();
   const clientId = clientScope(req);
@@ -46,7 +42,6 @@ router.get('/employees', (req, res) => {
 });
 
 // ── GET /api/client-portal/paystubs ──────────────────────────────────────────
-// Returns payroll history for the client
 router.get('/paystubs', (req, res) => {
   const db = getDb();
   const clientId = clientScope(req);
@@ -55,23 +50,22 @@ router.get('/paystubs', (req, res) => {
   const { year, quarter } = req.query;
 
   let query = `
-    SELECT pr.*, e.first_name, e.last_name
-    FROM payroll_records pr
-    JOIN employees e ON pr.employee_id = e.id
+    SELECT p.*, e.first_name, e.last_name
+    FROM paystubs p
+    JOIN employees e ON p.employee_id = e.id
     WHERE e.client_id = ?
   `;
   const params = [clientId];
 
-  if (year) { query += ' AND pr.year = ?'; params.push(year); }
-  if (quarter) { query += ' AND pr.quarter = ?'; params.push(quarter); }
-  query += ' ORDER BY pr.year DESC, pr.quarter DESC, e.last_name, e.first_name';
+  if (year)    { query += ' AND p.tax_year = ?';    params.push(year); }
+  if (quarter) { query += ' AND p.tax_quarter = ?'; params.push(quarter); }
+  query += ' ORDER BY p.tax_year DESC, p.tax_quarter DESC, e.last_name, e.first_name';
 
   const records = db.prepare(query).all(...params);
   res.json(records);
 });
 
 // ── GET /api/client-portal/summary ───────────────────────────────────────────
-// Dashboard summary: employee count, recent payroll quarter, invite status
 router.get('/summary', (req, res) => {
   const db = getDb();
   const clientId = clientScope(req);
@@ -85,10 +79,11 @@ router.get('/summary', (req, res) => {
   `).get(clientId)?.cnt || 0;
 
   const latestPayroll = db.prepare(`
-    SELECT year, quarter FROM payroll_records pr
-    JOIN employees e ON pr.employee_id = e.id
+    SELECT tax_year AS year, tax_quarter AS quarter
+    FROM paystubs p
+    JOIN employees e ON p.employee_id = e.id
     WHERE e.client_id = ?
-    ORDER BY year DESC, quarter DESC LIMIT 1
+    ORDER BY p.tax_year DESC, p.tax_quarter DESC LIMIT 1
   `).get(clientId);
 
   res.json({
@@ -105,27 +100,25 @@ function serializeClient(c) {
     id:           c.id,
     businessName: c.business_name,
     ein:          c.ein,
-    address:      c.address,
-    city:         c.city,
-    state:        c.state,
-    zip:          c.zip,
-    phone:        c.phone,
-    email:        c.email,
-    contactName:  c.contact_name,
+    address:      c.business_address || null,
+    city:         c.business_city    || null,
+    state:        c.state            || null,
+    zip:          c.business_zip     || null,
+    phone:        c.contact_phone    || null,
+    email:        c.contact_email    || null,
+    contactName:  c.contact_name     || null,
   };
 }
 
 function serializeEmployee(e) {
   return {
-    id:               e.id,
-    firstName:        e.first_name,
-    lastName:         e.last_name,
-    email:            e.email,
-    portalEmail:      e.portal_email || null,
-    hasPortalAccess:  !!e.has_portal_access,
-    jobTitle:         e.job_title || null,
-    payType:          e.pay_type || null,
-    payRate:          e.pay_rate || null,
+    id:              e.id,
+    firstName:       e.first_name,
+    lastName:        e.last_name,
+    portalEmail:     e.portal_email || null,
+    hasPortalAccess: !!e.has_portal_access,
+    payType:         e.pay_type     || null,
+    payRate:         e.pay_type === 'hourly' ? e.hourly_rate : e.annual_salary,
   };
 }
 

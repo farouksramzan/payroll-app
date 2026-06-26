@@ -33,9 +33,7 @@ router.patch('/me', (req, res) => {
   if (!eid) return res.status(400).json({ error: 'No employee record linked to this account' });
 
   const allowedFields = [
-    'email', 'phone', 'address', 'city', 'state', 'zip',
-    'routing_number', 'account_number', 'account_type',
-    'emergency_contact_name', 'emergency_contact_phone',
+    'address', 'city', 'state', 'zip',
   ];
 
   const updates = {};
@@ -98,11 +96,11 @@ function serializeEmployee(e) {
     zip:            e.zip || null,
     jobTitle:       e.job_title || null,
     payType:        e.pay_type || null,
-    payRate:        e.pay_rate || null,
+    payRate:        e.pay_type === 'hourly' ? e.hourly_rate : e.annual_salary,
     // Mask bank account — only show last 4
-    routingNumber:  e.routing_number ? `••••${String(e.routing_number).slice(-4)}` : null,
-    accountNumber:  e.account_number ? `••••${String(e.account_number).slice(-4)}` : null,
-    accountType:    e.account_type || null,
+    routingNumber:  e.bank_routing_number  ? `••••${String(e.bank_routing_number).slice(-4)}`  : null,
+    accountNumber:  e.bank_account_last4   ? `••••${e.bank_account_last4}`                     : null,
+    accountType:    e.bank_account_type    || null,
     hireDate:       e.hire_date || null,
     ssn:            e.ssn ? `•••-••-${String(e.ssn).slice(-4)}` : null,
   };
