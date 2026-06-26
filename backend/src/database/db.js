@@ -485,7 +485,15 @@ function migrate() {
 
   // preparer_info — per-user tax preparer details for autofilling forms
   addCols('users', [
-    { name: 'preparer_info', def: 'TEXT' },
+    { name: 'preparer_info',      def: 'TEXT' },
+    { name: 'role',               def: "TEXT NOT NULL DEFAULT 'admin'" },
+    { name: 'client_id',          def: 'INTEGER' },
+    { name: 'employee_id',        def: 'INTEGER' },
+    { name: 'email',              def: 'TEXT' },
+    { name: 'invite_token',       def: 'TEXT' },
+    { name: 'invite_expires_at',  def: 'DATETIME' },
+    { name: 'setup_step',         def: 'INTEGER DEFAULT 0' },
+    { name: 'setup_complete',     def: 'INTEGER DEFAULT 0' },
   ]);
 
   // notification_log — tracks sent notifications to avoid duplicates

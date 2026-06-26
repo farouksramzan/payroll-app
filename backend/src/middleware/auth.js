@@ -1,3 +1,5 @@
+'use strict';
+
 const jwt = require('jsonwebtoken');
 
 function requireAuth(req, res, next) {
@@ -14,4 +16,22 @@ function requireAuth(req, res, next) {
   }
 }
 
-module.exports = { requireAuth };
+function requireAdmin(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+  if (req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
+  next();
+}
+
+function requireClient(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+  if (!['admin', 'client'].includes(req.user.role)) return res.status(403).json({ error: 'Access denied' });
+  next();
+}
+
+function requireEmployee(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: 'Authentication required' });
+  if (!['admin', 'client', 'employee'].includes(req.user.role)) return res.status(403).json({ error: 'Access denied' });
+  next();
+}
+
+module.exports = { requireAuth, requireAdmin, requireClient, requireEmployee };
