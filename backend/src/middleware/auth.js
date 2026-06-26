@@ -14,4 +14,25 @@ function requireAuth(req, res, next) {
   }
 }
 
-module.exports = { requireAuth };
+function requireAdmin(req, res, next) {
+  if (req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  next();
+}
+
+function requireClient(req, res, next) {
+  if (req.user.role !== 'client' && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Client access required' });
+  }
+  next();
+}
+
+function requireEmployee(req, res, next) {
+  if (req.user.role !== 'employee' && req.user.role !== 'admin') {
+    return res.status(403).json({ error: 'Employee access required' });
+  }
+  next();
+}
+
+module.exports = { requireAuth, requireAdmin, requireClient, requireEmployee };
