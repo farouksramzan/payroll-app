@@ -32,28 +32,43 @@ const FEATURES = [
   },
 ];
 
+const ROLE_TABS = [
+  { key: 'admin',    label: 'Accountant', icon: '🧾', hint: 'Sign in to your accountant dashboard' },
+  { key: 'client',   label: 'Company',    icon: '🏢', hint: 'Sign in to your company portal' },
+  { key: 'employee', label: 'Employee',   icon: '👤', hint: 'Sign in to view your paystubs' },
+];
+
 export default function Login() {
   const { user, login } = useAuth();
   const navigate = useNavigate();
+  const [tab, setTab]   = useState('admin');
   const [form, setForm] = useState({ username: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  if (user) return <Navigate to="/" replace />;
+  if (user) {
+    if (user.role === 'client')   return <Navigate to="/client"   replace />;
+    if (user.role === 'employee') return <Navigate to="/employee" replace />;
+    return <Navigate to="/" replace />;
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      await login(form.username, form.password);
-      navigate('/');
+      const loggedInUser = await login(form.username, form.password);
+      if (loggedInUser.role === 'client')        navigate('/client',   { replace: true });
+      else if (loggedInUser.role === 'employee') navigate('/employee', { replace: true });
+      else                                       navigate('/',         { replace: true });
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
   }
+
+  const activeTab = ROLE_TABS.find(t => t.key === tab);
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', fontFamily: 'Inter, system-ui, sans-serif' }}>
@@ -213,7 +228,7 @@ export default function Login() {
 
       {/* ── Right — Login form ─────────────────────────────────────────────── */}
       <div style={{
-        width: 420,
+        width: 440,
         flexShrink: 0,
         background: '#f8fafc',
         display: 'flex',
@@ -223,32 +238,92 @@ export default function Login() {
         padding: '52px 44px',
         borderLeft: '1px solid #e2e8f0',
       }}>
-        <div style={{ width: '100%', maxWidth: 340 }}>
-          {/* Form header */}
-          <h2 style={{ fontSize: 24, fontWeight: 800, color: '#0f172a', margin: '0 0 6px', letterSpacing: '-0.3px' }}>Sign in</h2>
-          <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 28px' }}>Access your payroll dashboard</p>
+        <div style={{ width: '100%', maxWidth: 360 }}>
 
-          {/* Demo credentials box */}
+          {/* Role tabs */}
           <div style={{
-            background: '#fff',
-            border: '1px solid #bae6fd',
-            borderRadius: 10,
-            padding: '12px 14px',
-            marginBottom: 24,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 10,
+            display: 'grid',
+            gridTemplateColumns: 'repeat(3, 1fr)',
+            gap: 6,
+            marginBottom: 28,
+            background: '#e2e8f0',
+            borderRadius: 12,
+            padding: 4,
           }}>
-            <span style={{ fontSize: 18, flexShrink: 0 }}>👀</span>
-            <div>
-              <div style={{ fontSize: 12, fontWeight: 700, color: '#0369a1', marginBottom: 2 }}>Demo account</div>
-              <div style={{ fontSize: 12, color: '#475569' }}>
-                <code style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: 4, fontFamily: 'JetBrains Mono, monospace' }}>admin</code>
-                {' / '}
-                <code style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: 4, fontFamily: 'JetBrains Mono, monospace' }}>admin123</code>
+            {ROLE_TABS.map(t => (
+              <button
+                key={t.key}
+                type="button"
+                onClick={() => { setTab(t.key); setError(''); setForm({ username: '', password: '' }); }}
+                style={{
+                  padding: '9px 6px',
+                  borderRadius: 9,
+                  border: 'none',
+                  cursor: 'pointer',
+                  background: tab === t.key ? '#fff' : 'transparent',
+                  boxShadow: tab === t.key ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
+                  fontWeight: tab === t.key ? 700 : 500,
+                  fontSize: 12,
+                  color: tab === t.key ? '#0f172a' : '#64748b',
+                  transition: 'all 0.15s',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: 4,
+                }}
+              >
+                <span style={{ fontSize: 16 }}>{t.icon}</span>
+                {t.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Form header */}
+          <h2 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', margin: '0 0 4px', letterSpacing: '-0.3px' }}>
+            Sign in
+          </h2>
+          <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 24px' }}>{activeTab.hint}</p>
+
+          {/* Demo credentials — accountant only */}
+          {tab === 'admin' && (
+            <div style={{
+              background: '#fff',
+              border: '1px solid #bae6fd',
+              borderRadius: 10,
+              padding: '10px 14px',
+              marginBottom: 20,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+            }}>
+              <span style={{ fontSize: 16, flexShrink: 0 }}>👀</span>
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: '#0369a1', marginBottom: 2 }}>Demo account</div>
+                <div style={{ fontSize: 12, color: '#475569' }}>
+                  <code style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: 4, fontFamily: 'monospace' }}>admin</code>
+                  {' / '}
+                  <code style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: 4, fontFamily: 'monospace' }}>admin123</code>
+                </div>
               </div>
             </div>
-          </div>
+          )}
+
+          {/* Client/Employee hint */}
+          {tab !== 'admin' && (
+            <div style={{
+              background: '#fff',
+              border: '1px solid #d1fae5',
+              borderRadius: 10,
+              padding: '10px 14px',
+              marginBottom: 20,
+              fontSize: 12,
+              color: '#065f46',
+              lineHeight: 1.5,
+            }}>
+              <strong>First time?</strong> Ask your accountant for an invite link to create your account.
+              Once you've set up a password, sign in here with your email.
+            </div>
+          )}
 
           {error && (
             <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#b91c1c', display: 'flex', gap: 8 }}>
@@ -256,13 +331,15 @@ export default function Login() {
             </div>
           )}
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6, letterSpacing: '0.02em', textTransform: 'uppercase' }}>Username</label>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#374151', marginBottom: 5, letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                {tab === 'admin' ? 'Username' : 'Email address'}
+              </label>
               <input
-                type="text"
-                placeholder="admin"
-                autoComplete="username"
+                type={tab === 'admin' ? 'text' : 'email'}
+                placeholder={tab === 'admin' ? 'admin' : 'you@example.com'}
+                autoComplete={tab === 'admin' ? 'username' : 'email'}
                 value={form.username}
                 onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
                 required
@@ -272,14 +349,13 @@ export default function Login() {
                   border: '1.5px solid #e2e8f0',
                   fontSize: 14, color: '#0f172a',
                   background: '#fff', outline: 'none',
-                  transition: 'border-color 0.15s',
                 }}
                 onFocus={e => e.target.style.borderColor = '#22c55e'}
                 onBlur={e => e.target.style.borderColor = '#e2e8f0'}
               />
             </div>
             <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6, letterSpacing: '0.02em', textTransform: 'uppercase' }}>Password</label>
+              <label style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#374151', marginBottom: 5, letterSpacing: '0.04em', textTransform: 'uppercase' }}>Password</label>
               <input
                 type="password"
                 placeholder="••••••••"
@@ -293,7 +369,6 @@ export default function Login() {
                   border: '1.5px solid #e2e8f0',
                   fontSize: 14, color: '#0f172a',
                   background: '#fff', outline: 'none',
-                  transition: 'border-color 0.15s',
                 }}
                 onFocus={e => e.target.style.borderColor = '#22c55e'}
                 onBlur={e => e.target.style.borderColor = '#e2e8f0'}
@@ -311,14 +386,16 @@ export default function Login() {
                 transition: 'background 0.15s',
               }}
             >
-              {loading ? <span className="spinner" /> : 'Sign In →'}
+              {loading ? <span className="spinner" /> : `Sign In as ${activeTab.label} →`}
             </button>
           </form>
 
-          <p style={{ marginTop: 24, fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>
-            Don't have an account?{' '}
-            <Link to="/register" style={{ color: '#16a34a', fontWeight: 600, textDecoration: 'none' }}>Create one free</Link>
-          </p>
+          {tab === 'admin' && (
+            <p style={{ marginTop: 20, fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>
+              Don't have an account?{' '}
+              <Link to="/register" style={{ color: '#16a34a', fontWeight: 600, textDecoration: 'none' }}>Create one free</Link>
+            </p>
+          )}
         </div>
       </div>
     </div>
