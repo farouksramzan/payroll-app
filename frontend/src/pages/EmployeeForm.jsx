@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import api from '../api/client';
 
 const US_STATES = [
@@ -53,6 +53,8 @@ export default function EmployeeForm() {
   const { id, empId } = useParams();
   const isEdit = !!empId;
   const navigate = useNavigate();
+  const location = useLocation();
+  const isClientMode = location.pathname.startsWith('/company/');
   const [client, setClient] = useState(null);
   const [form, setForm]     = useState(EMPTY);
   const [errors, setErrors] = useState({});
@@ -174,7 +176,7 @@ export default function EmployeeForm() {
       } else {
         await api.createEmployee(payload);
       }
-      navigate(`/clients/${id}/employees`);
+      navigate(isClientMode ? `/company/${id}` : `/clients/${id}/employees`);
     } catch (err) {
       setApiError(err.message);
     } finally {
@@ -192,9 +194,11 @@ export default function EmployeeForm() {
     <>
       <div className="page-header">
         <div className="breadcrumb">
-          <Link to="/">Dashboard</Link><span>/</span>
-          <Link to={`/clients/${id}`}>{client?.businessName}</Link><span>/</span>
-          <Link to={`/clients/${id}/employees`}>Employees</Link><span>/</span>
+          {isClientMode ? (
+            <><Link to={`/company/${id}`}>{client?.businessName}</Link><span>/</span></>
+          ) : (
+            <><Link to="/">Dashboard</Link><span>/</span><Link to={`/clients/${id}`}>{client?.businessName}</Link><span>/</span><Link to={`/clients/${id}/employees`}>Employees</Link><span>/</span></>
+          )}
           <span>{isEdit ? 'Edit Employee' : 'Add Employee'}</span>
         </div>
         <h2>{isEdit ? 'Edit Employee' : 'Add New Employee'}</h2>
@@ -420,7 +424,7 @@ export default function EmployeeForm() {
           </div>
 
           <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
-            <Link to={`/clients/${id}/employees`} className="btn btn-secondary">Cancel</Link>
+            <Link to={isClientMode ? `/company/${id}` : `/clients/${id}/employees`} className="btn btn-secondary">Cancel</Link>
             <button className="btn btn-primary btn-lg" type="submit" disabled={saving}>
               {saving ? <span className="spinner" /> : isEdit ? 'Save Changes' : 'Add Employee'}
             </button>

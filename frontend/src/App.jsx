@@ -65,6 +65,18 @@ export default function App() {
           </ProtectedRoute>
         } />
 
+        {/* Client add/edit employee — mirrors admin EmployeeForm */}
+        <Route path="/company/:id/employees/new" element={
+          <ProtectedRoute roles={['client', 'admin']}>
+            <EmployeeForm />
+          </ProtectedRoute>
+        } />
+        <Route path="/company/:id/employees/:empId/edit" element={
+          <ProtectedRoute roles={['client', 'admin']}>
+            <EmployeeForm />
+          </ProtectedRoute>
+        } />
+
         {/* Employee portal */}
         <Route path="/employee" element={
           <ProtectedRoute roles={['employee', 'admin']}>

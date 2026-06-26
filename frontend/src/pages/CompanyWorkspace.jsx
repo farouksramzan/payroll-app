@@ -920,7 +920,7 @@ function PayGroupEditorModal({ group, clientId, allGroups, onSaved, onClose, onD
 }
 
 // ── Employees Tab ─────────────────────────────────────────────────────────────
-function EmployeesTab({ clientId, employees, onRefresh }) {
+function EmployeesTab({ clientId, employees, onRefresh, clientMode = false }) {
   const [drawerEmpId, setDrawerEmpId]     = useState(null);
   const [editGroup, setEditGroup]         = useState(null);
   const [payGroups, setPayGroups]         = useState([]);
@@ -944,7 +944,7 @@ function EmployeesTab({ clientId, employees, onRefresh }) {
       )}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 16 }}>
         <button className="btn btn-secondary" onClick={() => setShowImport(true)}>Import from Excel</button>
-        <Link to={`/clients/${clientId}/employees/new`} className="btn btn-primary">+ Add Employee</Link>
+        <Link to={clientMode ? `/company/${clientId}/employees/new` : `/clients/${clientId}/employees/new`} className="btn btn-primary">+ Add Employee</Link>
       </div>
       {employees.length === 0 ? (
         <div className="card">
@@ -952,7 +952,7 @@ function EmployeesTab({ clientId, employees, onRefresh }) {
             <div className="empty-state-icon">👤</div>
             <h3>No employees yet</h3>
             <p>Add your first employee to get started.</p>
-            <Link to={`/clients/${clientId}/employees/new`} className="btn btn-primary">Add Employee</Link>
+            <Link to={clientMode ? `/company/${clientId}/employees/new` : `/clients/${clientId}/employees/new`} className="btn btn-primary">Add Employee</Link>
           </div>
         </div>
       ) : (
@@ -4858,7 +4858,7 @@ export default function CompanyWorkspace({ clientMode = false }) {
         </div>
       </div>
       <div className="workspace-body">
-        {activeTab === 'employees' && <EmployeesTab clientId={id} employees={employees} onRefresh={loadAll} />}
+        {activeTab === 'employees' && <EmployeesTab clientId={id} employees={employees} onRefresh={loadAll} clientMode={clientMode} />}
         {activeTab === 'company'   && <CompanyTab client={client} onSaved={loadAll} />}
         {activeTab === 'payroll'   && <PayrollTab clientId={id} client={client} employees={employees} onRefresh={loadAll} refreshTick={refreshTick} />}
         {activeTab === 'users'     && user?.username === 'admin' && <UsersPanel />}

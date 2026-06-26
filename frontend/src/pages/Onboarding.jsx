@@ -430,24 +430,41 @@ export default function Onboarding() {
                   </div>
                 </div>
 
-                <div style={{ background: 'var(--bg-secondary)', borderRadius: 10, padding: 20, marginBottom: 20 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12 }}>How employees join:</div>
+                {/* Option A: employee self-registers */}
+                <div style={{ background: 'var(--bg-secondary)', borderRadius: 10, padding: 20, marginBottom: 12 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <div style={{ background: 'var(--accent)', color: '#fff', borderRadius: 6, padding: '3px 10px', fontSize: 11, fontWeight: 800, letterSpacing: '0.4px' }}>OPTION A</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Employees self-register with the join code</div>
+                  </div>
                   {[
-                    { n: '1', text: `Go to ${appUrl}` },
-                    { n: '2', text: 'Click the Employee tab → "Create account with join code"' },
-                    { n: '3', text: `Enter your company code: ${joinCode || '…'}` },
-                    { n: '4', text: 'Enter their name, email, and create a password — done!' },
+                    { n: '1', text: `Share this code with your employee: ${joinCode || '…'}` },
+                    { n: '2', text: `They go to ${appUrl} → Employee tab → "Create account with join code"` },
+                    { n: '3', text: 'They enter the code, their name, email, and create a password' },
+                    { n: '4', text: 'They appear in your Employees tab — you then set their pay rate and pay group' },
                   ].map(item => (
-                    <div key={item.n} style={{ display: 'flex', gap: 12, marginBottom: 10, alignItems: 'flex-start' }}>
+                    <div key={item.n} style={{ display: 'flex', gap: 12, marginBottom: 8, alignItems: 'flex-start' }}>
                       <div style={{ minWidth: 22, height: 22, borderRadius: '50%', background: 'var(--accent)', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{item.n}</div>
                       <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{item.text}</div>
                     </div>
                   ))}
                 </div>
 
-                <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 16px', marginBottom: 20, fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
-                  <strong style={{ color: 'var(--text-primary)' }}>Employee accounts are self-service.</strong>{' '}
-                  Each employee creates their own login. You assign them to a pay group and set their pay rate from the Employees tab. Their paystubs appear automatically once you run payroll.
+                {/* Option B: company adds manually */}
+                <div style={{ background: 'var(--bg-secondary)', borderRadius: 10, padding: 20, marginBottom: 20 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <div style={{ background: 'var(--bg-tertiary)', color: 'var(--text-muted)', borderRadius: 6, padding: '3px 10px', fontSize: 11, fontWeight: 800, letterSpacing: '0.4px', border: '1px solid var(--border)' }}>OPTION B</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>You add employees manually from the dashboard</div>
+                  </div>
+                  {[
+                    { n: '1', text: 'Go to your dashboard → Employees tab → "+ Add Employee"' },
+                    { n: '2', text: 'Fill in their name, pay type, rate, pay group, and W-4 settings' },
+                    { n: '3', text: 'Share the join code so they can create a login and view their paystubs' },
+                  ].map(item => (
+                    <div key={item.n} style={{ display: 'flex', gap: 12, marginBottom: 8, alignItems: 'flex-start' }}>
+                      <div style={{ minWidth: 22, height: 22, borderRadius: '50%', background: 'var(--bg-tertiary)', border: '1.5px solid var(--border)', color: 'var(--text-muted)', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{item.n}</div>
+                      <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{item.text}</div>
+                    </div>
+                  ))}
                 </div>
 
                 {error && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>{error}</div>}
