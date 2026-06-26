@@ -67,11 +67,10 @@ export default function Login() {
   const [companyForm, setCompanyForm] = useState({ businessName: '', ein: '', contactName: '', email: '', password: '', confirmPassword: '' });
 
   // Employee signup — 2-step flow
-  const [empStep, setEmpStep]     = useState(1); // 1=enter code, 2=pick name + set password
+  const [empStep, setEmpStep]     = useState(1); // 1=enter code, 2=name+email+password
   const [empCode, setEmpCode]     = useState('');
-  const [empCompany, setEmpCompany] = useState(null); // { clientId, businessName, employees }
-  const [empSelected, setEmpSelected] = useState(null); // { id, firstName, lastName }
-  const [empForm, setEmpForm]     = useState({ email: '', password: '', confirmPassword: '' });
+  const [empCompany, setEmpCompany] = useState(null); // { clientId, businessName }
+  const [empForm, setEmpForm]     = useState({ firstName: '', lastName: '', email: '', password: '', confirmPassword: '' });
 
   if (user) {
     if (user.role === 'client')   return <Navigate to={`/company/${user.clientId}`} replace />;
@@ -136,6 +135,7 @@ export default function Login() {
   }
 
   // ── Employee step 1: look up company ─────────────────────────────────────
+  // ── Employee step 1: verify join code ────────────────────────────────────
   async function handleFindCompany(e) {
     e.preventDefault();
     if (!empCode.trim()) return setError('Enter your company join code');
@@ -143,9 +143,7 @@ export default function Login() {
     try {
       const data = await api.lookupCompanyByCode(empCode.trim());
       setEmpCompany(data);
-      if (data.employees.length === 0) {
-        setError('No unclaimed employee profiles found at this company. Ask your accountant to add you first.');
-      }
+      setEmpStep(2);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -153,28 +151,25 @@ export default function Login() {
     }
   }
 
-  function handleSelectEmployee(emp) {
-    setEmpSelected(emp);
-    setEmpStep(2);
-    setError('');
-  }
-
   function handleBackToStep1() {
     setEmpStep(1);
-    setEmpSelected(null);
-    setEmpForm({ email: '', password: '', confirmPassword: '' });
+    setEmpCompany(null);
+    setEmpForm({ firstName: '', lastName: '', email: '', password: '', confirmPassword: '' });
     setError('');
   }
 
-  // ── Employee step 2: claim profile ───────────────────────────────────────
+  // ── Employee step 2: create account ──────────────────────────────────────
   async function handleClaimEmployee(e) {
     e.preventDefault();
+    if (!empForm.firstName.trim() || !empForm.lastName.trim()) return setError('Enter your full name');
     if (empForm.password !== empForm.confirmPassword) return setError('Passwords do not match');
+    if (empForm.password.length < 8) return setError('Password must be at least 8 characters');
     setError(''); setLoading(true);
     try {
       const data = await api.claimEmployee({
         joinCode:   empCode.trim().toUpperCase(),
-        employeeId: empSelected.id,
+        firstName:  empForm.firstName.trim(),
+        lastName:   empForm.lastName.trim(),
         email:      empForm.email,
         password:   empForm.password,
       });
@@ -494,17 +489,14 @@ export default function Login() {
           {tab === 'employee' && mode === 'signup' && empStep === 1 && (
             <EmployeeStep1
               empCode={empCode} setEmpCode={setEmpCode}
-              empCompany={empCompany}
               loading={loading}
               onFind={handleFindCompany}
-              onSelect={handleSelectEmployee}
               onBack={() => switchMode('login')}
             />
           )}
 
           {tab === 'employee' && mode === 'signup' && empStep === 2 && (
             <EmployeeStep2
-              empSelected={empSelected}
               empCompany={empCompany}
               empForm={empForm} setEmpForm={setEmpForm}
               loading={loading}
@@ -560,66 +552,33 @@ function SubmitBtn({ loading, label }) {
   );
 }
 
-function EmployeeStep1({ empCode, setEmpCode, empCompany, loading, onFind, onSelect, onBack }) {
+function EmployeeStep1({ empCode, setEmpCode, loading, onFind, onBack }) {
   return (
     <>
       <h2 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', margin: '0 0 4px', letterSpacing: '-0.3px' }}>Create Employee Account</h2>
-      <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 20px' }}>Enter the join code your company shared with you</p>
+      <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 20px' }}>Enter the join code your employer shared with you</p>
 
-      <form onSubmit={onFind} style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
-        <input
-          type="text"
-          placeholder="ABC123"
-          value={empCode}
-          onChange={e => setEmpCode(e.target.value.toUpperCase())}
-          maxLength={8}
-          style={{ ...INPUT_STYLE, flex: 1, textTransform: 'uppercase', letterSpacing: '0.15em', fontWeight: 700, fontFamily: 'monospace' }}
-          onFocus={e => e.target.style.borderColor = '#22c55e'}
-          onBlur={e => e.target.style.borderColor = '#e2e8f0'}
-        />
-        <button type="submit" disabled={loading} style={{
-          padding: '11px 16px', borderRadius: 9, background: '#16a34a', color: '#fff',
-          fontWeight: 600, fontSize: 13, border: 'none', cursor: loading ? 'not-allowed' : 'pointer', flexShrink: 0,
-        }}>
-          {loading ? '…' : 'Find'}
-        </button>
+      <form onSubmit={onFind} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div>
+          <label style={LABEL_STYLE}>Company Join Code</label>
+          <input
+            type="text"
+            placeholder="e.g. ABC123"
+            value={empCode}
+            onChange={e => setEmpCode(e.target.value.toUpperCase())}
+            maxLength={8}
+            style={{ ...INPUT_STYLE, textTransform: 'uppercase', letterSpacing: '0.2em', fontWeight: 700, fontFamily: 'monospace', fontSize: 18, textAlign: 'center' }}
+            onFocus={e => e.target.style.borderColor = '#22c55e'}
+            onBlur={e => e.target.style.borderColor = '#e2e8f0'}
+          />
+          <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 6 }}>
+            Ask your employer for their 6-character join code to create your account.
+          </p>
+        </div>
+        <SubmitBtn loading={loading} label="Continue" />
       </form>
 
-      {empCompany && (
-        <div style={{ background: '#fff', border: '1px solid #d1fae5', borderRadius: 10, padding: 16, marginBottom: 16 }}>
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#065f46', marginBottom: 12 }}>
-            🏢 {empCompany.businessName}
-          </div>
-          {empCompany.employees.length === 0 ? (
-            <p style={{ fontSize: 12, color: '#6b7280', margin: 0 }}>No unclaimed profiles at this company. Ask your accountant to add you.</p>
-          ) : (
-            <>
-              <p style={{ fontSize: 12, color: '#374151', marginBottom: 10 }}>Select your name:</p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                {empCompany.employees.map(emp => (
-                  <button
-                    key={emp.id}
-                    type="button"
-                    onClick={() => onSelect(emp)}
-                    style={{
-                      padding: '10px 14px', borderRadius: 8, border: '1.5px solid #d1fae5',
-                      background: '#f0fdf4', cursor: 'pointer', textAlign: 'left',
-                      fontSize: 13, fontWeight: 600, color: '#065f46',
-                      transition: 'all 0.12s',
-                    }}
-                    onMouseEnter={e => { e.target.style.background = '#dcfce7'; e.target.style.borderColor = '#86efac'; }}
-                    onMouseLeave={e => { e.target.style.background = '#f0fdf4'; e.target.style.borderColor = '#d1fae5'; }}
-                  >
-                    {emp.firstName} {emp.lastName}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      <p style={{ marginTop: 8, fontSize: 12, color: '#64748b', textAlign: 'center' }}>
+      <p style={{ marginTop: 20, fontSize: 12, color: '#64748b', textAlign: 'center' }}>
         Already have an account?{' '}
         <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#16a34a', fontWeight: 600, cursor: 'pointer', fontSize: 12 }}>
           Sign in
@@ -629,23 +588,43 @@ function EmployeeStep1({ empCode, setEmpCode, empCompany, loading, onFind, onSel
   );
 }
 
-function EmployeeStep2({ empSelected, empCompany, empForm, setEmpForm, loading, onSubmit, onBack }) {
+function EmployeeStep2({ empCompany, empForm, setEmpForm, loading, onSubmit, onBack }) {
   return (
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
         <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 18, padding: 0, lineHeight: 1 }}>←</button>
-        <h2 style={{ fontSize: 20, fontWeight: 800, color: '#0f172a', margin: 0, letterSpacing: '-0.3px' }}>Set Up Your Account</h2>
+        <h2 style={{ fontSize: 20, fontWeight: 800, color: '#0f172a', margin: 0, letterSpacing: '-0.3px' }}>Create Your Account</h2>
       </div>
 
       <div style={{ background: '#f0fdf4', border: '1px solid #d1fae5', borderRadius: 10, padding: '12px 16px', marginBottom: 20 }}>
         <div style={{ fontSize: 12, color: '#065f46' }}>
-          <strong>{empSelected.firstName} {empSelected.lastName}</strong> at <strong>{empCompany.businessName}</strong>
+          Joining <strong>{empCompany?.businessName}</strong>
         </div>
       </div>
 
-      <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div>
+            <label style={LABEL_STYLE}>First Name *</label>
+            <input type="text" placeholder="Jane" required value={empForm.firstName}
+              onChange={e => setEmpForm(f => ({ ...f, firstName: e.target.value }))}
+              style={INPUT_STYLE}
+              onFocus={e => e.target.style.borderColor = '#22c55e'}
+              onBlur={e => e.target.style.borderColor = '#e2e8f0'}
+            />
+          </div>
+          <div>
+            <label style={LABEL_STYLE}>Last Name *</label>
+            <input type="text" placeholder="Smith" required value={empForm.lastName}
+              onChange={e => setEmpForm(f => ({ ...f, lastName: e.target.value }))}
+              style={INPUT_STYLE}
+              onFocus={e => e.target.style.borderColor = '#22c55e'}
+              onBlur={e => e.target.style.borderColor = '#e2e8f0'}
+            />
+          </div>
+        </div>
         <div>
-          <label style={LABEL_STYLE}>Your Email Address *</label>
+          <label style={LABEL_STYLE}>Email Address *</label>
           <input type="email" placeholder="you@example.com" required value={empForm.email}
             onChange={e => setEmpForm(f => ({ ...f, email: e.target.value }))}
             style={INPUT_STYLE}

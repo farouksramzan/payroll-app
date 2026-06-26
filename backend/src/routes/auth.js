@@ -326,39 +326,61 @@ router.get('/company-by-code/:code', (req, res) => {
 });
 
 // ── POST /api/auth/claim-employee ─────────────────────────────────────────────
-// Self-service employee signup — links an employee record to a new user account.
+// Self-service employee signup. Employees provide their join code, name,
+// email, and password. If a pre-created unclaimed profile matches their name
+// (case-insensitive), it is claimed. Otherwise a new employee record is created.
 router.post('/claim-employee', async (req, res) => {
-  const { joinCode, employeeId, email, password } = req.body;
-  if (!joinCode || !employeeId || !email || !password) return res.status(400).json({ error: 'All fields are required' });
+  const { joinCode, firstName, lastName, email, password } = req.body;
+  if (!joinCode || !firstName?.trim() || !lastName?.trim() || !email || !password)
+    return res.status(400).json({ error: 'All fields are required' });
   if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
 
   const db = getDb();
   const client = db.prepare('SELECT id FROM clients WHERE join_code = ?').get(joinCode.toUpperCase().trim());
-  if (!client) return res.status(400).json({ error: 'Invalid join code' });
-
-  const empId = parseInt(employeeId, 10);
-  const emp = db.prepare('SELECT * FROM employees WHERE id = ? AND client_id = ?').get(empId, client.id);
-  if (!emp) return res.status(400).json({ error: 'Employee not found in this company' });
-
-  const alreadyClaimed = db.prepare("SELECT id FROM users WHERE employee_id = ? AND role = 'employee' AND setup_complete = 1").get(empId);
-  if (alreadyClaimed) return res.status(409).json({ error: 'This employee profile has already been claimed' });
+  if (!client) return res.status(400).json({ error: 'Invalid join code. Double-check and try again.' });
 
   const emailLower = email.toLowerCase().trim();
-  const emailTaken = db.prepare('SELECT id FROM users WHERE email = ? AND (employee_id IS NULL OR employee_id != ?)').get(emailLower, empId);
+  const emailTaken = db.prepare('SELECT id FROM users WHERE email = ?').get(emailLower);
   if (emailTaken) return res.status(409).json({ error: 'An account with this email already exists' });
 
   const hash = await bcrypt.hash(password, 12);
 
-  // Reuse invite placeholder if one exists
-  const placeholder = db.prepare("SELECT * FROM users WHERE employee_id = ? AND role = 'employee' AND setup_complete = 0").get(empId);
-  if (placeholder) {
-    db.prepare(`
-      UPDATE users SET email = ?, username = ?, password_hash = ?,
-        invite_token = NULL, invite_expires_at = NULL, setup_complete = 1
-      WHERE id = ?
-    `).run(emailLower, emailLower, hash, placeholder.id);
-    const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(placeholder.id);
-    return res.status(201).json({ token: makeToken(updated), user: serializeUser(updated) });
+  // Try to match an unclaimed pre-created profile by name
+  const fn = firstName.trim().toLowerCase();
+  const ln = lastName.trim().toLowerCase();
+  const unclaimed = db.prepare(`
+    SELECT e.* FROM employees e
+    WHERE e.client_id = ?
+      AND LOWER(e.first_name) = ?
+      AND LOWER(e.last_name) = ?
+      AND NOT EXISTS (
+        SELECT 1 FROM users u
+        WHERE u.employee_id = e.id AND u.role = 'employee' AND u.setup_complete = 1
+      )
+    LIMIT 1
+  `).get(client.id, fn, ln);
+
+  let empId;
+  if (unclaimed) {
+    empId = unclaimed.id;
+    // Reuse invite placeholder if one exists
+    const placeholder = db.prepare("SELECT * FROM users WHERE employee_id = ? AND role = 'employee' AND setup_complete = 0").get(empId);
+    if (placeholder) {
+      db.prepare(`
+        UPDATE users SET email = ?, username = ?, password_hash = ?,
+          invite_token = NULL, invite_expires_at = NULL, setup_complete = 1
+        WHERE id = ?
+      `).run(emailLower, emailLower, hash, placeholder.id);
+      const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(placeholder.id);
+      return res.status(201).json({ token: makeToken(updated), user: serializeUser(updated) });
+    }
+  } else {
+    // No pre-created profile — create a new employee record
+    const empResult = db.prepare(`
+      INSERT INTO employees (client_id, first_name, last_name, is_active)
+      VALUES (?, ?, ?, 1)
+    `).run(client.id, firstName.trim(), lastName.trim());
+    empId = empResult.lastInsertRowid;
   }
 
   const result = db.prepare(`

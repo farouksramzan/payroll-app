@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
@@ -15,7 +15,7 @@ const FREQ_OPTIONS = [
 const STEPS = [
   { id: 1, label: 'Your Business' },
   { id: 2, label: 'Pay Schedule' },
-  { id: 3, label: 'First Employee' },
+  { id: 3, label: 'Invite Team' },
   { id: 4, label: "You're set!" },
 ];
 
@@ -49,6 +49,10 @@ export default function Onboarding() {
   const [step, setStep] = useState(1);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [joinCode, setJoinCode] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const appUrl = window.location.origin;
 
   // Step 1: Business Details
   const [biz, setBiz] = useState({
@@ -66,31 +70,29 @@ export default function Onboarding() {
     nextPayrollDate: '',
   });
 
-  // Step 3: First Employee (optional)
-  const [emp, setEmp] = useState({
-    firstName: '',
-    lastName: '',
-    filingStatus: 'single',
-    payType: 'hourly',
-    payRate: '',
-  });
-  const [skipEmployee, setSkipEmployee] = useState(false);
+  // Fetch client data on mount to pre-fill business name + get join code
+  useEffect(() => {
+    if (!clientId) return;
+    api.getClient(clientId).then(c => {
+      if (c.businessName) setBiz(b => ({ ...b, businessName: c.businessName }));
+      if (c.joinCode) setJoinCode(c.joinCode);
+    }).catch(() => {});
+  }, [clientId]);
 
   function updateBiz(k, v) { setBiz(p => ({ ...p, [k]: v })); }
   function updateSchedule(k, v) { setSchedule(p => ({ ...p, [k]: v })); }
-  function updateEmp(k, v) { setEmp(p => ({ ...p, [k]: v })); }
 
   async function handleStep1() {
     if (!biz.businessName.trim()) return setError('Business name is required');
     setError(''); setSaving(true);
     try {
       await api.updateClient(clientId, {
-        businessName: biz.businessName.trim(),
+        businessName:    biz.businessName.trim(),
         businessAddress: biz.businessAddress.trim() || undefined,
-        businessCity: biz.businessCity.trim() || undefined,
-        state: biz.state,
-        businessZip: biz.businessZip.trim() || undefined,
-        contactPhone: biz.contactPhone.trim() || undefined,
+        businessCity:    biz.businessCity.trim() || undefined,
+        state:           biz.state,
+        businessZip:     biz.businessZip.trim() || undefined,
+        contactPhone:    biz.contactPhone.trim() || undefined,
       });
       setStep(2);
     } catch (e) { setError(e.message); }
@@ -103,13 +105,12 @@ export default function Onboarding() {
     try {
       await api.updateClient(clientId, {
         payrollFrequency: schedule.payrollFrequency,
-        nextPayrollDate: schedule.nextPayrollDate,
+        nextPayrollDate:  schedule.nextPayrollDate,
       });
-      // Create a default pay group for this company
       const freqLabel = FREQ_OPTIONS.find(f => f.value === schedule.payrollFrequency)?.label || 'Payroll';
       await api.createPayGroup({
         clientId,
-        name: `${freqLabel} Payroll`,
+        name:      `${freqLabel} Payroll`,
         frequency: schedule.payrollFrequency,
       });
       setStep(3);
@@ -120,26 +121,17 @@ export default function Onboarding() {
   async function handleStep3() {
     setError(''); setSaving(true);
     try {
-      if (!skipEmployee && emp.firstName.trim() && emp.lastName.trim()) {
-        const rate = parseFloat(emp.payRate);
-        if (!rate || rate <= 0) { setError('Enter a valid pay rate'); setSaving(false); return; }
-        await api.createEmployee({
-          clientId,
-          firstName: emp.firstName.trim(),
-          lastName: emp.lastName.trim(),
-          filingStatus: emp.filingStatus,
-          payType: emp.payType,
-          [emp.payType === 'hourly' ? 'hourlyRate' : 'annualSalary']: rate,
-        });
-      }
       await api.completeOnboarding(clientId);
       setStep(4);
     } catch (e) { setError(e.message); }
     finally { setSaving(false); }
   }
 
-  async function handleFinish() {
-    navigate(`/company/${clientId}`, { replace: true });
+  function copyCode() {
+    navigator.clipboard.writeText(joinCode).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
   }
 
   return (
@@ -160,14 +152,12 @@ export default function Onboarding() {
                 {i < STEPS.length - 1 && (
                   <div style={{
                     position: 'absolute', top: 26, left: '60%', right: '-40%',
-                    height: 2, background: done ? 'var(--accent)' : 'var(--border)',
-                    zIndex: 0,
+                    height: 2, background: done ? 'var(--accent)' : 'var(--border)', zIndex: 0,
                   }} />
                 )}
                 <div style={{
                   width: 28, height: 28, borderRadius: '50%', zIndex: 1,
-                  background: done ? 'var(--accent)' : active ? 'var(--accent)' : 'var(--bg-tertiary)',
-                  border: active && !done ? '2px solid var(--accent)' : 'none',
+                  background: done || active ? 'var(--accent)' : 'var(--bg-tertiary)',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                   fontSize: 12, fontWeight: 700,
                   color: done || active ? '#fff' : 'var(--text-muted)',
@@ -194,10 +184,10 @@ export default function Onboarding() {
                 Tell us about your business
               </h2>
               <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 28 }}>
-                We'll use this information for payroll documents and filings.
+                We'll use this for payroll documents and tax filings.
               </p>
               <div className="card" style={{ padding: 24 }}>
-                <Field label="Business Name *" error={error && error.includes('Business') ? error : ''}>
+                <Field label="Business Name *">
                   <input style={inputStyle} value={biz.businessName} onChange={e => updateBiz('businessName', e.target.value)} placeholder="Acme Corp" />
                 </Field>
                 <Field label="Street Address">
@@ -219,14 +209,8 @@ export default function Onboarding() {
                 <Field label="Business Phone">
                   <input style={inputStyle} value={biz.contactPhone} onChange={e => updateBiz('contactPhone', e.target.value)} placeholder="(512) 555-0100" type="tel" />
                 </Field>
-                {error && !error.includes('Business') && (
-                  <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>{error}</div>
-                )}
-                <button
-                  onClick={handleStep1}
-                  disabled={saving}
-                  style={{ width: '100%', padding: '12px 0', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 15, cursor: 'pointer', marginTop: 8 }}
-                >
+                {error && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>{error}</div>}
+                <button onClick={handleStep1} disabled={saving} style={{ width: '100%', padding: '12px 0', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 15, cursor: 'pointer', marginTop: 8 }}>
                   {saving ? 'Saving…' : 'Continue →'}
                 </button>
               </div>
@@ -246,29 +230,21 @@ export default function Onboarding() {
                 <Field label="Pay Frequency">
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                     {FREQ_OPTIONS.map(opt => (
-                      <div
-                        key={opt.value}
-                        onClick={() => updateSchedule('payrollFrequency', opt.value)}
-                        style={{
-                          border: `2px solid ${schedule.payrollFrequency === opt.value ? 'var(--accent)' : 'var(--border)'}`,
-                          borderRadius: 10, padding: '14px 16px', cursor: 'pointer',
-                          background: schedule.payrollFrequency === opt.value ? 'var(--accent-light, #f0f4ff)' : 'var(--bg)',
-                        }}
-                      >
-                        <div style={{ fontWeight: 700, fontSize: 14, color: schedule.payrollFrequency === opt.value ? 'var(--accent)' : 'var(--text-primary)' }}>
-                          {opt.label}
-                        </div>
+                      <div key={opt.value} onClick={() => updateSchedule('payrollFrequency', opt.value)} style={{
+                        border: `2px solid ${schedule.payrollFrequency === opt.value ? 'var(--accent)' : 'var(--border)'}`,
+                        borderRadius: 10, padding: '14px 16px', cursor: 'pointer',
+                        background: schedule.payrollFrequency === opt.value ? 'var(--accent-light, #f0f4ff)' : 'var(--bg)',
+                      }}>
+                        <div style={{ fontWeight: 700, fontSize: 14, color: schedule.payrollFrequency === opt.value ? 'var(--accent)' : 'var(--text-primary)' }}>{opt.label}</div>
                         <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{opt.sub}</div>
                       </div>
                     ))}
                   </div>
                 </Field>
-                <Field label="First Payroll Date *" error={error && error.includes('date') ? error : ''}>
+                <Field label="First Payroll Date *">
                   <input style={inputStyle} type="date" value={schedule.nextPayrollDate} onChange={e => updateSchedule('nextPayrollDate', e.target.value)} />
                 </Field>
-                {error && !error.includes('date') && (
-                  <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>{error}</div>
-                )}
+                {error && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>{error}</div>}
                 <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
                   <button onClick={() => setStep(1)} style={{ flex: 1, padding: '12px 0', background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1.5px solid var(--border)', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
                     ← Back
@@ -281,66 +257,75 @@ export default function Onboarding() {
             </div>
           )}
 
-          {/* ── Step 3: First Employee ── */}
+          {/* ── Step 3: Invite Your Team ── */}
           {step === 3 && (
             <div>
               <h2 style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 4 }}>
-                Add your first employee
+                Invite your employees
               </h2>
               <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 28 }}>
-                You can add more employees later from your dashboard.
+                Share your company join code so employees can create their own accounts and view paystubs.
               </p>
               <div className="card" style={{ padding: 24 }}>
-                {!skipEmployee ? (
-                  <>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                      <Field label="First Name">
-                        <input style={inputStyle} value={emp.firstName} onChange={e => updateEmp('firstName', e.target.value)} placeholder="Jane" />
-                      </Field>
-                      <Field label="Last Name">
-                        <input style={inputStyle} value={emp.lastName} onChange={e => updateEmp('lastName', e.target.value)} placeholder="Smith" />
-                      </Field>
-                    </div>
-                    <Field label="Pay Type">
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                        {[{ v: 'hourly', l: 'Hourly' }, { v: 'salary', l: 'Salary' }].map(o => (
-                          <div key={o.v} onClick={() => updateEmp('payType', o.v)} style={{ border: `2px solid ${emp.payType === o.v ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 10, padding: '12px 16px', cursor: 'pointer', textAlign: 'center', background: emp.payType === o.v ? 'var(--accent-light, #f0f4ff)' : 'var(--bg)', fontWeight: 700, color: emp.payType === o.v ? 'var(--accent)' : 'var(--text-primary)' }}>
-                            {o.l}
-                          </div>
-                        ))}
-                      </div>
-                    </Field>
-                    <Field label={emp.payType === 'hourly' ? 'Hourly Rate ($)' : 'Annual Salary ($)'} error={error}>
-                      <input style={inputStyle} type="number" min="0" step="0.01" value={emp.payRate} onChange={e => updateEmp('payRate', e.target.value)} placeholder={emp.payType === 'hourly' ? '18.00' : '55000'} />
-                    </Field>
-                    <Field label="Filing Status">
-                      <select style={inputStyle} value={emp.filingStatus} onChange={e => updateEmp('filingStatus', e.target.value)}>
-                        <option value="single">Single</option>
-                        <option value="married">Married</option>
-                        <option value="married_withholding_at_higher_single_rate">Married (withhold at single rate)</option>
-                        <option value="head_of_household">Head of Household</option>
-                      </select>
-                    </Field>
-                    <button onClick={() => setSkipEmployee(true)} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: 13, cursor: 'pointer', padding: '4px 0', marginBottom: 8 }}>
-                      Skip for now →
-                    </button>
-                  </>
-                ) : (
-                  <div style={{ textAlign: 'center', padding: '16px 0' }}>
-                    <div style={{ fontSize: 32, marginBottom: 8 }}>👥</div>
-                    <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 4 }}>Skipping employee setup</div>
-                    <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>You can add employees any time from the Employees tab.</div>
-                    <button onClick={() => setSkipEmployee(false)} style={{ background: 'none', border: 'none', color: 'var(--accent)', fontSize: 13, cursor: 'pointer' }}>
-                      ← Add one now
+
+                {/* Join code display */}
+                <div style={{ textAlign: 'center', marginBottom: 28 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                    Your Company Join Code
+                  </div>
+                  <div style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 12,
+                    background: 'var(--bg-secondary)', border: '2px dashed var(--border)',
+                    borderRadius: 12, padding: '16px 24px',
+                  }}>
+                    <span style={{ fontSize: 32, fontWeight: 900, letterSpacing: '0.3em', fontFamily: 'JetBrains Mono, monospace', color: 'var(--accent)' }}>
+                      {joinCode || '———'}
+                    </span>
+                    <button onClick={copyCode} style={{
+                      padding: '8px 14px', borderRadius: 8, border: '1.5px solid var(--border)',
+                      background: copied ? 'var(--accent)' : 'var(--bg)',
+                      color: copied ? '#fff' : 'var(--text-primary)',
+                      fontWeight: 600, fontSize: 12, cursor: 'pointer', transition: 'all 0.15s',
+                    }}>
+                      {copied ? '✓ Copied!' : 'Copy'}
                     </button>
                   </div>
-                )}
-                <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                </div>
+
+                {/* Instructions */}
+                <div style={{ background: 'var(--bg-secondary)', borderRadius: 10, padding: 20, marginBottom: 20 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 12 }}>
+                    How employees join:
+                  </div>
+                  {[
+                    { n: '1', text: `Go to ${appUrl}` },
+                    { n: '2', text: 'Click the Employee tab and select "Create account with join code"' },
+                    { n: '3', text: `Enter your company code: ${joinCode || '…'}` },
+                    { n: '4', text: 'Enter their name, email, and create a password' },
+                  ].map(item => (
+                    <div key={item.n} style={{ display: 'flex', gap: 12, marginBottom: 10, alignItems: 'flex-start' }}>
+                      <div style={{ minWidth: 22, height: 22, borderRadius: '50%', background: 'var(--accent)', color: '#fff', fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        {item.n}
+                      </div>
+                      <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{item.text}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: '12px 16px', marginBottom: 20 }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                    <strong style={{ color: 'var(--text-primary)' }}>Employee accounts are self-service.</strong>{' '}
+                    Each employee creates their own login. You can manage their pay rate, hours, and deductions from the Employees tab in your dashboard. Their paystubs will appear automatically once you run payroll.
+                  </div>
+                </div>
+
+                {error && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>{error}</div>}
+                <div style={{ display: 'flex', gap: 10 }}>
                   <button onClick={() => setStep(2)} style={{ flex: 1, padding: '12px 0', background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1.5px solid var(--border)', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
                     ← Back
                   </button>
                   <button onClick={handleStep3} disabled={saving} style={{ flex: 2, padding: '12px 0', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 15, cursor: 'pointer' }}>
-                    {saving ? 'Saving…' : skipEmployee ? 'Finish Setup →' : 'Add Employee & Finish →'}
+                    {saving ? 'Finishing…' : 'Done, go to dashboard →'}
                   </button>
                 </div>
               </div>
@@ -355,14 +340,14 @@ export default function Onboarding() {
                 You're all set!
               </h2>
               <p style={{ color: 'var(--text-muted)', fontSize: 15, maxWidth: 420, margin: '0 auto 32px' }}>
-                Your payroll workspace is ready. You can run payroll, manage employees, and track filings from your dashboard.
+                Your payroll workspace is ready. Run payroll, manage employees, and track filings from your dashboard.
               </p>
               <div className="card" style={{ padding: 28, maxWidth: 400, margin: '0 auto 24px', textAlign: 'left' }}>
                 <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 12, textTransform: 'uppercase', letterSpacing: '0.5px' }}>What's next</div>
                 {[
-                  { icon: '👥', title: 'Add more employees', desc: 'Go to the Employees tab to add your full team.' },
-                  { icon: '💸', title: 'Run your first payroll', desc: 'Use the Payroll tab to generate pay stubs.' },
-                  { icon: '📋', title: 'Review tax filings', desc: 'Check the Payroll tab to track 941 liabilities.' },
+                  { icon: '📤', title: 'Share your join code', desc: `Code: ${joinCode}  — send it to your team so they can create their accounts.` },
+                  { icon: '💸', title: 'Run your first payroll', desc: 'Go to the Payroll tab, enter hours, and generate pay stubs.' },
+                  { icon: '👥', title: 'Set employee pay rates', desc: 'Open the Employees tab to set up wages and deductions for each person.' },
                 ].map(item => (
                   <div key={item.title} style={{ display: 'flex', gap: 12, marginBottom: 14 }}>
                     <div style={{ fontSize: 20, minWidth: 28 }}>{item.icon}</div>
@@ -373,10 +358,7 @@ export default function Onboarding() {
                   </div>
                 ))}
               </div>
-              <button
-                onClick={handleFinish}
-                style={{ padding: '14px 40px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 800, fontSize: 16, cursor: 'pointer', letterSpacing: '-0.2px' }}
-              >
+              <button onClick={() => navigate(`/company/${clientId}`, { replace: true })} style={{ padding: '14px 40px', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 10, fontWeight: 800, fontSize: 16, cursor: 'pointer' }}>
                 Go to My Dashboard →
               </button>
             </div>
