@@ -1,8 +1,21 @@
 const express = require('express');
+const crypto  = require('crypto');
 const { getDb } = require('../database/db');
 const { requireAuth } = require('../middleware/auth');
 const { encrypt, decrypt } = require('../services/cryptoService');
 const { calcNextDueDate } = require('../services/taxCalculator');
+
+function generateJoinCode(db) {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let code, attempts = 0;
+  do {
+    const bytes = crypto.randomBytes(6);
+    code = '';
+    for (let i = 0; i < 6; i++) code += chars[bytes[i] % chars.length];
+    attempts++;
+  } while (db.prepare('SELECT id FROM clients WHERE join_code = ?').get(code) && attempts < 100);
+  return code;
+}
 
 const router = express.Router();
 router.use(requireAuth);
@@ -107,6 +120,7 @@ function sanitizeClient(client, includeSecrets = false) {
     notificationPhone:  client.notification_phone  || null,
     bankName:           client.bank_name           || null,
     countyCode:         client.county_code         || null,
+    joinCode:           client.join_code           || null,
   };
   if (includeSecrets) {
     out.batchProviderPin = client.batch_provider_pin_encrypted ? decrypt(client.batch_provider_pin_encrypted) : null;
@@ -261,13 +275,14 @@ router.post('/', (req, res) => {
   }
 
   const db = getDb();
+  const joinCode = generateJoinCode(db);
   const result = db.prepare(`
     INSERT INTO clients (user_id, business_name, ein, state, bank_account_number_encrypted, bank_routing_number,
       bank_account_type, batch_provider_pin_encrypted, eftps_internet_password_encrypted, eftps_enrollment_number,
       deposit_schedule, suta_rate, sui_rate_q1, sui_rate_q2, sui_rate_q3, sui_rate_q4, sui_account_number,
       contact_name, contact_email, contact_phone,
-      payroll_frequency, next_payroll_date, next_check_number, twc_username, twc_password_encrypted)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      payroll_frequency, next_payroll_date, next_check_number, twc_username, twc_password_encrypted, join_code)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     req.user.id,
     businessName.trim(),
@@ -294,6 +309,7 @@ router.post('/', (req, res) => {
     nextCheckNumber   ? parseInt(nextCheckNumber, 10) : 1001,
     twcUsername || null,
     twcPassword ? encrypt(twcPassword) : null,
+    joinCode,
   );
 
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(result.lastInsertRowid);

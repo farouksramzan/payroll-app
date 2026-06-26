@@ -250,6 +250,125 @@ router.patch('/setup-step', requireAuth, (req, res) => {
   res.json({ setupStep: step, setupComplete: !!complete });
 });
 
+// ── POST /api/auth/register-company ──────────────────────────────────────────
+// Self-service company signup — creates a new client record + client user account.
+router.post('/register-company', async (req, res) => {
+  const { businessName, ein, contactName, email, password } = req.body;
+  if (!businessName?.trim()) return res.status(400).json({ error: 'Business name is required' });
+  if (!ein?.trim())          return res.status(400).json({ error: 'EIN is required' });
+  if (!email?.trim())        return res.status(400).json({ error: 'Email is required' });
+  if (!password || password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  if (!/^\d{2}-?\d{7}$/.test(ein.trim())) return res.status(400).json({ error: 'EIN must be in format XX-XXXXXXX' });
+
+  const db = getDb();
+  const emailLower = email.toLowerCase().trim();
+
+  const emailTaken = db.prepare('SELECT id FROM users WHERE email = ?').get(emailLower);
+  if (emailTaken) return res.status(409).json({ error: 'An account with this email already exists' });
+
+  // Associate with the first admin in the system
+  const adminUser = db.prepare("SELECT id FROM users WHERE role = 'admin' ORDER BY id LIMIT 1").get();
+  if (!adminUser) return res.status(500).json({ error: 'No admin account found in the system' });
+
+  // Generate a unique join code
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let joinCode;
+  do {
+    const bytes = crypto.randomBytes(6);
+    joinCode = '';
+    for (let i = 0; i < 6; i++) joinCode += chars[bytes[i] % chars.length];
+  } while (db.prepare('SELECT id FROM clients WHERE join_code = ?').get(joinCode));
+
+  const clientResult = db.prepare(`
+    INSERT INTO clients (user_id, business_name, ein, contact_name, contact_email, batch_provider_pin_encrypted, join_code)
+    VALUES (?, ?, ?, ?, ?, '', ?)
+  `).run(adminUser.id, businessName.trim(), ein.trim(), contactName?.trim() || null, emailLower, joinCode);
+
+  const clientId = clientResult.lastInsertRowid;
+  const hash = await bcrypt.hash(password, 12);
+
+  const userResult = db.prepare(`
+    INSERT INTO users (username, email, password_hash, role, client_id, setup_complete)
+    VALUES (?, ?, ?, 'client', ?, 1)
+  `).run(emailLower, emailLower, hash, clientId);
+
+  const newUser = db.prepare('SELECT * FROM users WHERE id = ?').get(userResult.lastInsertRowid);
+  res.status(201).json({ token: makeToken(newUser), user: serializeUser(newUser) });
+});
+
+// ── GET /api/auth/company-by-code/:code ──────────────────────────────────────
+// Public: look up a company by its join code and return unclaimed employees.
+router.get('/company-by-code/:code', (req, res) => {
+  const db = getDb();
+  const client = db.prepare('SELECT id, business_name FROM clients WHERE join_code = ?')
+    .get(req.params.code.toUpperCase().trim());
+  if (!client) return res.status(404).json({ error: 'Company not found. Double-check the join code and try again.' });
+
+  const employees = db.prepare(`
+    SELECT e.id, e.first_name, e.last_name
+    FROM employees e
+    WHERE e.client_id = ?
+      AND e.is_active = 1
+      AND NOT EXISTS (
+        SELECT 1 FROM users u
+        WHERE u.employee_id = e.id
+          AND u.role = 'employee'
+          AND u.setup_complete = 1
+      )
+    ORDER BY e.last_name, e.first_name
+  `).all(client.id);
+
+  res.json({
+    clientId:     client.id,
+    businessName: client.business_name,
+    employees:    employees.map(e => ({ id: e.id, firstName: e.first_name, lastName: e.last_name })),
+  });
+});
+
+// ── POST /api/auth/claim-employee ─────────────────────────────────────────────
+// Self-service employee signup — links an employee record to a new user account.
+router.post('/claim-employee', async (req, res) => {
+  const { joinCode, employeeId, email, password } = req.body;
+  if (!joinCode || !employeeId || !email || !password) return res.status(400).json({ error: 'All fields are required' });
+  if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+
+  const db = getDb();
+  const client = db.prepare('SELECT id FROM clients WHERE join_code = ?').get(joinCode.toUpperCase().trim());
+  if (!client) return res.status(400).json({ error: 'Invalid join code' });
+
+  const empId = parseInt(employeeId, 10);
+  const emp = db.prepare('SELECT * FROM employees WHERE id = ? AND client_id = ?').get(empId, client.id);
+  if (!emp) return res.status(400).json({ error: 'Employee not found in this company' });
+
+  const alreadyClaimed = db.prepare("SELECT id FROM users WHERE employee_id = ? AND role = 'employee' AND setup_complete = 1").get(empId);
+  if (alreadyClaimed) return res.status(409).json({ error: 'This employee profile has already been claimed' });
+
+  const emailLower = email.toLowerCase().trim();
+  const emailTaken = db.prepare('SELECT id FROM users WHERE email = ? AND (employee_id IS NULL OR employee_id != ?)').get(emailLower, empId);
+  if (emailTaken) return res.status(409).json({ error: 'An account with this email already exists' });
+
+  const hash = await bcrypt.hash(password, 12);
+
+  // Reuse invite placeholder if one exists
+  const placeholder = db.prepare("SELECT * FROM users WHERE employee_id = ? AND role = 'employee' AND setup_complete = 0").get(empId);
+  if (placeholder) {
+    db.prepare(`
+      UPDATE users SET email = ?, username = ?, password_hash = ?,
+        invite_token = NULL, invite_expires_at = NULL, setup_complete = 1
+      WHERE id = ?
+    `).run(emailLower, emailLower, hash, placeholder.id);
+    const updated = db.prepare('SELECT * FROM users WHERE id = ?').get(placeholder.id);
+    return res.status(201).json({ token: makeToken(updated), user: serializeUser(updated) });
+  }
+
+  const result = db.prepare(`
+    INSERT INTO users (username, email, password_hash, role, employee_id, setup_complete)
+    VALUES (?, ?, ?, 'employee', ?, 1)
+  `).run(emailLower, emailLower, hash, empId);
+  const newUser = db.prepare('SELECT * FROM users WHERE id = ?').get(result.lastInsertRowid);
+  res.status(201).json({ token: makeToken(newUser), user: serializeUser(newUser) });
+});
+
 // ── Admin user management ─────────────────────────────────────────────────────
 router.get('/users', requireAuth, requireAdmin, (req, res) => {
   const db    = getDb();

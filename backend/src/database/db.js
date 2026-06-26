@@ -496,6 +496,28 @@ function migrate() {
     { name: 'setup_complete',     def: 'INTEGER DEFAULT 0' },
   ]);
 
+  // join_code — short code employees enter to self-register under a company
+  addCols('clients', [
+    { name: 'join_code', def: 'TEXT' },
+  ]);
+
+  // Backfill join codes for existing clients that don't have one
+  const cryptoMod = require('crypto');
+  const joinCodeChars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  const clientsNeedingCode = db.prepare("SELECT id FROM clients WHERE join_code IS NULL OR join_code = ''").all();
+  for (const c of clientsNeedingCode) {
+    let code, attempts = 0;
+    do {
+      const bytes = cryptoMod.randomBytes(6);
+      code = '';
+      for (let i = 0; i < 6; i++) code += joinCodeChars[bytes[i] % joinCodeChars.length];
+      attempts++;
+    } while (db.prepare('SELECT id FROM clients WHERE join_code = ?').get(code) && attempts < 100);
+    db.prepare('UPDATE clients SET join_code = ? WHERE id = ?').run(code, c.id);
+  }
+  if (clientsNeedingCode.length > 0)
+    console.log(`[DB] Generated join codes for ${clientsNeedingCode.length} client(s)`);
+
   // notification_log — tracks sent notifications to avoid duplicates
   db.exec(`
     CREATE TABLE IF NOT EXISTS notification_log (

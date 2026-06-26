@@ -188,6 +188,11 @@ const api = {
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   },
 
+  // Self-service signup
+  registerCompany: (data) => request('/auth/register-company', { method: 'POST', body: JSON.stringify(data) }),
+  lookupCompanyByCode: (code) => request(`/auth/company-by-code/${encodeURIComponent(code)}`),
+  claimEmployee: (data) => request('/auth/claim-employee', { method: 'POST', body: JSON.stringify(data) }),
+
   // Invite system
   inviteClient: (clientId) => request('/auth/invite-client', { method: 'POST', body: JSON.stringify({ clientId }) }),
   inviteEmployee: (employeeId) => request('/auth/invite-employee', { method: 'POST', body: JSON.stringify({ employeeId }) }),

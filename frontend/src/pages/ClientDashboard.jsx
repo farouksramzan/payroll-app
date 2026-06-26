@@ -7,23 +7,34 @@ export default function ClientDashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
+  const [clientInfo, setClientInfo] = useState(null);
   const [summary,   setSummary]   = useState(null);
   const [employees, setEmployees] = useState([]);
   const [paystubs,  setPaystubs]  = useState([]);
   const [tab,       setTab]       = useState('overview');
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState('');
+  const [codeCopied, setCodeCopied] = useState(false);
 
   useEffect(() => {
     Promise.all([
+      api.getClientPortalMe(),
       api.getClientPortalSummary(),
       api.getClientPortalEmployees(),
       api.getClientPortalPaystubs(),
     ])
-      .then(([s, e, p]) => { setSummary(s); setEmployees(e); setPaystubs(p); })
+      .then(([me, s, e, p]) => { setClientInfo(me); setSummary(s); setEmployees(e); setPaystubs(p); })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, []);
+
+  function copyJoinCode() {
+    if (clientInfo?.joinCode) {
+      navigator.clipboard.writeText(clientInfo.joinCode);
+      setCodeCopied(true);
+      setTimeout(() => setCodeCopied(false), 2000);
+    }
+  }
 
   if (loading) return (
     <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '100vh' }}>
@@ -139,7 +150,42 @@ export default function ClientDashboard() {
         )}
 
         {tab === 'employees' && (
-          <div className="card">
+          <>
+            {/* Join code card */}
+            {clientInfo?.joinCode && (
+              <div className="card mb-3" style={{ borderLeft: '4px solid #16a34a' }}>
+                <div className="card-body py-3">
+                  <div className="d-flex align-items-start gap-3 flex-wrap">
+                    <div style={{ flex: 1, minWidth: 200 }}>
+                      <div className="fw-bold text-dark mb-1" style={{ fontSize: 13 }}>Employee Join Code</div>
+                      <p className="text-muted mb-2" style={{ fontSize: 12 }}>
+                        Share this code with employees so they can create their own portal account at the login page.
+                        They'll select your company with this code, then pick their name from the list.
+                      </p>
+                      <div className="d-flex align-items-center gap-2">
+                        <code style={{
+                          fontSize: 22, fontWeight: 800, letterSpacing: '0.2em',
+                          color: '#16a34a', background: '#f0fdf4',
+                          padding: '6px 14px', borderRadius: 8, border: '1.5px solid #d1fae5',
+                          fontFamily: 'JetBrains Mono, monospace',
+                        }}>
+                          {clientInfo.joinCode}
+                        </code>
+                        <button
+                          className="btn btn-sm btn-outline-success"
+                          onClick={copyJoinCode}
+                          style={{ fontSize: 12 }}
+                        >
+                          {codeCopied ? 'Copied!' : 'Copy'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="card">
             <div className="card-body p-0">
               {employees.length === 0 ? (
                 <div className="p-4 text-muted">No employees found.</div>
@@ -174,6 +220,7 @@ export default function ClientDashboard() {
               )}
             </div>
           </div>
+          </>
         )}
 
         {tab === 'paystubs' && (

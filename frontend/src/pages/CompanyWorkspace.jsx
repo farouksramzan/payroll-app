@@ -4767,6 +4767,21 @@ export default function CompanyWorkspace() {
           <div><div className="workspace-name">{client?.businessName}</div></div>
           <span className="workspace-ein">EIN {client?.ein}</span>
           <div style={{ flex: 1 }} />
+          {client?.joinCode && (
+            <div
+              title="Share this join code with employees so they can self-register"
+              style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 10px', fontSize: 12 }}
+            >
+              <span style={{ color: 'var(--text-muted)' }}>Employee code:</span>
+              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--accent)', letterSpacing: '0.1em' }}>{client.joinCode}</span>
+              <button
+                type="button"
+                onClick={() => navigator.clipboard.writeText(client.joinCode)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 11, padding: '0 2px' }}
+                title="Copy code"
+              >⧉</button>
+            </div>
+          )}
           <button
             onClick={handleInviteClient}
             disabled={inviting}
