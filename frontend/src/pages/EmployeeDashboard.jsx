@@ -560,6 +560,12 @@ export default function EmployeeDashboard() {
           <>
             <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 18 }}>|</div>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>{me.firstName} {me.lastName}</div>
+            {me.companyName && (
+              <>
+                <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 14 }}>at</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.7)' }}>{me.companyName}</div>
+              </>
+            )}
           </>
         )}
         <div style={{ flex: 1 }} />
@@ -586,8 +592,9 @@ export default function EmployeeDashboard() {
             <h2 style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.3px', margin: 0 }}>
               {me.firstName} {me.lastName}
             </h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginTop: 4 }}>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 13, marginTop: 4, marginBottom: 0 }}>
               Employee · {me.payType === 'hourly' ? `$${(me.payRate || 0).toFixed(2)}/hr` : `$${(me.payRate || 0).toLocaleString()}/yr`}
+              {me.companyName && <> · <strong style={{ color: 'var(--text-primary)' }}>{me.companyName}</strong></>}
             </p>
           </div>
         )}
@@ -666,6 +673,17 @@ export default function EmployeeDashboard() {
             {saveMsg && (
               <div style={{ background: 'var(--success-light)', border: '1px solid var(--success)', borderRadius: 6, padding: '10px 16px', fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>
                 {saveMsg}
+              </div>
+            )}
+
+            {/* ── Company ─────────────────────────────────────────────────── */}
+            {me.companyName && (
+              <div className="card">
+                <div className="card-header">
+                  <span className="card-title">Company</span>
+                </div>
+                <FieldRow label="Company Name" value={me.companyName} />
+                <FieldRow label="Employee Join Code" value={me.companyJoinCode} last />
               </div>
             )}
 

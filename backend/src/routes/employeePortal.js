@@ -20,7 +20,12 @@ router.get('/me', (req, res) => {
   const eid = req.user.employeeId;
   if (!eid) return res.status(400).json({ error: 'No employee record linked to this account' });
 
-  const emp = db.prepare('SELECT * FROM employees WHERE id = ?').get(eid);
+  const emp = db.prepare(`
+    SELECT e.*, c.business_name AS company_name, c.join_code AS company_join_code
+    FROM employees e
+    JOIN clients c ON c.id = e.client_id
+    WHERE e.id = ?
+  `).get(eid);
   if (!emp) return res.status(404).json({ error: 'Employee not found' });
   res.json(serializeEmployee(emp));
 });
@@ -80,7 +85,12 @@ router.patch('/me', (req, res) => {
   const setClause = Object.keys(updates).map(k => `${k} = ?`).join(', ');
   db.prepare(`UPDATE employees SET ${setClause} WHERE id = ?`).run(...Object.values(updates), eid);
 
-  const updated = db.prepare('SELECT * FROM employees WHERE id = ?').get(eid);
+  const updated = db.prepare(`
+    SELECT e.*, c.business_name AS company_name, c.join_code AS company_join_code
+    FROM employees e
+    JOIN clients c ON c.id = e.client_id
+    WHERE e.id = ?
+  `).get(eid);
   res.json(serializeEmployee(updated));
 });
 
@@ -153,6 +163,8 @@ function serializeEmployee(e) {
     step4b:         e.step4b          || 0,
     step4c:         e.step4c          || 0,
     w4Submitted:    !!e.w4_submitted,
+    companyName:    e.company_name    || null,
+    companyJoinCode: e.company_join_code || null,
   };
 }
 
