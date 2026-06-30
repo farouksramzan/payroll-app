@@ -497,8 +497,10 @@ function migrate() {
   ]);
 
   // w4_submitted — 1 once the employee has explicitly saved their W-4 via the portal
+  // onboarding_done — 1 once the employee completes the initial setup wizard
   addCols('employees', [
-    { name: 'w4_submitted', def: 'INTEGER DEFAULT 0' },
+    { name: 'w4_submitted',    def: 'INTEGER DEFAULT 0' },
+    { name: 'onboarding_done', def: 'INTEGER DEFAULT 0' },
   ]);
 
   // join_code — short code employees enter to self-register under a company

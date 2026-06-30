@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
@@ -486,6 +487,7 @@ function SensitiveInput({ value, onChange, placeholder, maxLength }) {
 
 export default function EmployeeDashboard() {
   const { user, logout } = useAuth();
+  const navigate          = useNavigate();
 
   const [me,          setMe]          = useState(null);
   const [paystubs,    setPaystubs]    = useState([]);
@@ -499,7 +501,14 @@ export default function EmployeeDashboard() {
 
   useEffect(() => {
     Promise.all([api.getEmployeePortalMe(), api.getEmployeePortalPaystubs()])
-      .then(([m, p]) => { setMe(m); setPaystubs(p); })
+      .then(([m, p]) => {
+        if (!m.onboardingDone) {
+          navigate('/employee/onboarding', { replace: true });
+          return;
+        }
+        setMe(m);
+        setPaystubs(p);
+      })
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
   }, []);

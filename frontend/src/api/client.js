@@ -212,6 +212,7 @@ const api = {
   updateEmployeePortalMe: (data) => request('/employee-portal/me', { method: 'PATCH', body: JSON.stringify(data) }),
   getEmployeePortalPaystubs: () => request('/employee-portal/paystubs'),
   getEmployeePortalPaystub: (id) => request(`/employee-portal/paystubs/${id}`),
+  completeEmployeeOnboarding: () => request('/employee-portal/complete-onboarding', { method: 'POST' }),
 
   // Preparer info
   getPreparerInfo: () => request('/auth/preparer'),

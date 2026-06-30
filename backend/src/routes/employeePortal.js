@@ -94,6 +94,21 @@ router.patch('/me', (req, res) => {
   res.json(serializeEmployee(updated));
 });
 
+// ── POST /api/employee-portal/complete-onboarding ────────────────────────────
+router.post('/complete-onboarding', (req, res) => {
+  const db  = getDb();
+  const eid = req.user.employeeId;
+  if (!eid) return res.status(400).json({ error: 'No employee record linked to this account' });
+  db.prepare('UPDATE employees SET onboarding_done = 1 WHERE id = ?').run(eid);
+  const updated = db.prepare(`
+    SELECT e.*, c.business_name AS company_name, c.join_code AS company_join_code
+    FROM employees e
+    JOIN clients c ON c.id = e.client_id
+    WHERE e.id = ?
+  `).get(eid);
+  res.json(serializeEmployee(updated));
+});
+
 // ── GET /api/employee-portal/paystubs ────────────────────────────────────────
 router.get('/paystubs', (req, res) => {
   const db  = getDb();
@@ -163,8 +178,9 @@ function serializeEmployee(e) {
     step4b:         e.step4b          || 0,
     step4c:         e.step4c          || 0,
     w4Submitted:    !!e.w4_submitted,
-    companyName:    e.company_name    || null,
+    companyName:     e.company_name      || null,
     companyJoinCode: e.company_join_code || null,
+    onboardingDone:  !!e.onboarding_done,
   };
 }
 

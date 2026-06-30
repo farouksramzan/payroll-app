@@ -21,6 +21,7 @@ import InviteAccept from './pages/InviteAccept';
 import ClientDashboard from './pages/ClientDashboard';
 import EmployeeDashboard from './pages/EmployeeDashboard';
 import Onboarding from './pages/Onboarding';
+import EmployeeOnboarding from './pages/EmployeeOnboarding';
 
 // Redirect /client → /company/:id for client users
 function ClientRedirect() {
@@ -74,6 +75,13 @@ export default function App() {
         <Route path="/company/:id/employees/:empId/edit" element={
           <ProtectedRoute roles={['client', 'admin']}>
             <EmployeeForm />
+          </ProtectedRoute>
+        } />
+
+        {/* Employee onboarding wizard — shown once on first login */}
+        <Route path="/employee/onboarding" element={
+          <ProtectedRoute roles={['employee']}>
+            <EmployeeOnboarding />
           </ProtectedRoute>
         } />
 
