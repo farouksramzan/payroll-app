@@ -1,8 +1,5 @@
 ; submit.ahk — QuickFile desktop app automation (AHK v2)
-; Maximizes QuickFile for consistent coordinates. After QuickFile opens Edge,
-; captures the TWC URL + .qfh path, writes to result file, exits.
-; Puppeteer (bridge.js) handles the browser login + file upload.
-;
+; Maximizes QuickFile for consistent coordinates.
 ; Args: icesaFile, resultFile, quickfileExe
 
 #Requires AutoHotkey v2.0
@@ -12,7 +9,6 @@ SetTitleMatchMode 2
 SendMode "Input"
 CoordMode "Mouse", "Screen"
 
-; ── Arguments ──────────────────────────────────────────────────────────────────
 icesaFile    := A_Args[1]
 resultFile   := A_Args[2]
 quickfileExe := A_Args[3]
@@ -27,16 +23,15 @@ WriteError(msg) {
     ExitApp 1
 }
 
-; Catch any unhandled AHK runtime exception and write it to result file
 OnError(CatchAll)
 CatchAll(err, *) {
     global resultFile
     try FileDelete resultFile
     FileAppend "ERROR: Unhandled exception — " . err.Message . " (at " . err.What . ")`n", resultFile
-    return true
+    ExitApp 1
 }
 
-; ── Launch or activate QuickFile ───────────────────────────────────────────────
+; ── Launch QuickFile ───────────────────────────────────────────────────────────
 if !WinExist("QuickFile 5") {
     Run quickfileExe
     if !WinWait("QuickFile 5",, 30)
@@ -48,18 +43,23 @@ WinWaitActive "QuickFile 5",, 10
 WinMaximize "QuickFile 5"
 Sleep 2000
 
-; ── Find and Select File ───────────────────────────────────────────────────────
+; ── Options > Hide message prompts > OK ───────────────────────────────────────
+Click 95, 30
+Sleep 800
+Click 144, 107
+Sleep 800
+Click 1066, 580
+Sleep 800
+
+; ── Find and Select File ──────────────────────────────────────────────────────
+WinActivate "QuickFile 5"
+Sleep 500
 Click 378, 210
 Sleep 2000
 
-; ── File open dialog — keyboard only (filename field is focused by default) ────
-if !WinWait("Open",, 8)
-    if !WinWait("Choose a File",, 8)
-        WriteError("File open dialog did not appear")
-WinWaitActive "Open",, 5
+; ── File open dialog ──────────────────────────────────────────────────────────
+WinWaitActive "Open",, 8
 Sleep 500
-
-; Extract just the filename — paste into dialog, press Enter
 SplitPath icesaFile, &fileName
 Send "^a"
 Sleep 100
@@ -70,26 +70,25 @@ Sleep 500
 Send "{Enter}"
 Sleep 3000
 
-; ── Validate ───────────────────────────────────────────────────────────────────
+; ── Validate ──────────────────────────────────────────────────────────────────
 WinActivate "QuickFile 5"
 Sleep 500
 Click 388, 300
 Sleep 4000
 
-; ── Continue ───────────────────────────────────────────────────────────────────
+; ── Continue ──────────────────────────────────────────────────────────────────
 WinActivate "QuickFile 5"
 Sleep 500
 Click 53, 571
 Sleep 2000
 
-; ── "Would you like to see a summary?" → No ───────────────────────────────────
+; ── "Would you like to see a summary?" → No ──────────────────────────────────
 WinActivate "QuickFile 5"
 Sleep 500
 Click 1052, 581
-Sleep 1500
+Sleep 2000
 
-; ── Find the .qfh file BEFORE dismissing next dialog ─────────────────────────
-Sleep 500
+; ── Find .qfh file ────────────────────────────────────────────────────────────
 qfhFile    := ""
 newestTime := 0
 Loop Files "C:\QuickFile\Upload\*.qfh" {
@@ -101,44 +100,14 @@ Loop Files "C:\QuickFile\Upload\*.qfh" {
 if (!qfhFile)
     WriteError("No .qfh file found in C:\QuickFile\Upload\")
 
-; ── "Two files have been created..." → OK ─────────────────────────────────────
-WinActivate "QuickFile 5"
-Sleep 500
-Click 1106, 607
-Sleep 1500
+; ── Kill Edge — bridge.js constructs the upload URL itself ───────────────────
+Sleep 3000
+if WinExist("ahk_exe msedge.exe")
+    WinKill "ahk_exe msedge.exe"
+Sleep 1000
 
-; ── Nightly posting notice → OK ───────────────────────────────────────────────
-WinActivate "QuickFile 5"
-Sleep 500
-Click 1112, 671
-Sleep 1500
-
-; ── "We will now open your internet browser..." → OK ─────────────────────────
-WinActivate "QuickFile 5"
-Sleep 500
-Click 1085, 622
-Sleep 6000
-
-; ── Capture TWC URL from Edge address bar ─────────────────────────────────────
-if !WinWait("twc.state.tx.us",, 20)
-    WriteError("Edge / TWC page did not open within 20s")
-WinActivate "twc.state.tx.us"
-Sleep 2000
-
-Send "{F6}"
-Sleep 500
-Send "^a"
-Sleep 200
-Send "^c"
-Sleep 500
-twcUrl := A_Clipboard
-
-WinClose "twc.state.tx.us"
-Sleep 800
-
-; ── Write result: line 1 = TWC URL, line 2 = .qfh path ───────────────────────
+; ── Write result: just the .qfh path (URL built by bridge.js) ────────────────
 try FileDelete resultFile
-FileAppend twcUrl . "`n", resultFile
 FileAppend qfhFile . "`n", resultFile
 
 ExitApp 0

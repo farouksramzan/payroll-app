@@ -149,9 +149,24 @@ async function handleJob(job) {
   }
   try { fs.unlinkSync(filePath); } catch (_) {}
 
-  const { twcUrl, qfhFile } = ahkResult;
+  const { qfhFile } = ahkResult;
   console.log(`[TWC Bridge] AHK done — qfhFile: ${qfhFile}`);
-  console.log(`[TWC Bridge] TWC URL: ${twcUrl}`);
+
+  // Construct the TWC upload URL from known parameters
+  const qfhBasename = path.basename(qfhFile);
+  const ufn = qfhBasename.replace('.qfh', '.ice.gz');
+  const iceGzPath = path.join('C:\\QuickFile\\Upload', ufn);
+  let fileSize = 0;
+  try { fileSize = fs.statSync(iceGzPath).size; } catch (_) {}
+  const twcUrl = 'https://m06hostp.twc.state.tx.us/TAXWEB/qf/controller'
+    + '?rfn=' + encodeURIComponent(filename)
+    + '&drn=' + encodeURIComponent('C:\\QuickFile\\Upload\\')
+    + '&hfn=' + encodeURIComponent(qfhBasename)
+    + '&ufn=' + encodeURIComponent(ufn)
+    + '&type=Report'
+    + '&fs=' + fileSize
+    + '&ver=05.05.0009';
+  console.log(`[TWC Bridge] Upload URL: ${twcUrl}`);
 
   // Step 2: Puppeteer handles the TWC website (login + file upload)
   send({ type: 'status_update', jobId, submissionId, status: 'processing', message: 'Logging in to TWC website…' });
@@ -206,7 +221,7 @@ function runQuickFileApp(icesaFilePath, jobId, submissionId) {
       if (stdout) console.log('[AHK stdout]', stdout.trim());
       if (stderr) console.error('[AHK stderr]', stderr.trim());
 
-      // Read result file: line 1 = TWC URL, line 2 = .qfh file path
+      // Read result file: line 1 = .qfh file path (URL is constructed by bridge.js)
       if (!fs.existsSync(resultFile)) {
         reject(new Error(`AHK result file not found (exit code ${code})`));
         return;
@@ -218,11 +233,11 @@ function runQuickFileApp(icesaFilePath, jobId, submissionId) {
         reject(new Error(lines[0]));
         return;
       }
-      if (lines.length < 2) {
-        reject(new Error(`AHK result incomplete: ${lines.join(' | ')}`));
+      if (lines.length < 1 || !lines[0]) {
+        reject(new Error(`AHK result missing qfh path: ${lines.join(' | ')}`));
         return;
       }
-      resolve({ twcUrl: lines[0], qfhFile: lines[1] });
+      resolve({ qfhFile: lines[0] });
     });
   });
 }
