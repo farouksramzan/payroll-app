@@ -245,20 +245,45 @@ async function runTwcWebSubmission(twcUrl, qfhFile, jobId, submissionId) {
     await page.goto(twcUrl, { waitUntil: 'networkidle2' });
 
     // ── Login ──────────────────────────────────────────────────────────────
-    // The TWC controller redirects to login if no session exists.
-    // Form fields: name="username", name="password", hidden cmd=logon_cmd
-    const usernameField = await page.$('[name=username]');
-    if (usernameField) {
+    // Log all input fields on the page so we can see exact field names
+    const allInputs = await page.$$eval('input', els =>
+      els.map(e => ({ name: e.name, id: e.id, type: e.type, placeholder: e.placeholder }))
+    );
+    console.log('[Puppeteer] Page URL:', page.url());
+    console.log('[Puppeteer] Input fields found:', JSON.stringify(allInputs));
+
+    // Try multiple possible field name conventions for TWC login
+    const userField = await page.$('[name=username]')
+      || await page.$('[name=userid]')
+      || await page.$('[name=user_id]')
+      || await page.$('[name=UserID]')
+      || await page.$('[name=loginId]')
+      || await page.$('input[type=text]:not([type=hidden])');
+
+    if (userField) {
       console.log('[Puppeteer] Login page detected — logging in…');
       send({ type: 'status_update', jobId, submissionId, status: 'processing', message: 'Logging in to TWC website…' });
 
-      await page.type('[name=username]', TWC_USERNAME, { delay: 50 });
-      await page.type('[name=password]', TWC_PASSWORD, { delay: 50 });
+      await userField.click({ clickCount: 3 });
+      await userField.type(TWC_USERNAME, { delay: 50 });
+
+      const passField = await page.$('[name=password]')
+        || await page.$('[name=passwd]')
+        || await page.$('[name=Password]')
+        || await page.$('input[type=password]');
+
+      if (passField) {
+        await passField.click({ clickCount: 3 });
+        await passField.type(TWC_PASSWORD, { delay: 50 });
+      }
+
       await Promise.all([
         page.waitForNavigation({ waitUntil: 'networkidle2' }),
         page.click('[type=submit]'),
       ]);
       console.log('[Puppeteer] Logged in — current URL:', page.url());
+    } else {
+      console.log('[Puppeteer] No login fields found — may already be logged in or on a different page');
     }
 
     // ── Upload page ────────────────────────────────────────────────────────
