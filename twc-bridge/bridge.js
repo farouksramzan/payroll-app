@@ -143,7 +143,8 @@ async function handleJob(job) {
   try {
     ahkResult = await runQuickFileApp(filePath, jobId, submissionId);
   } catch (err) {
-    try { fs.unlinkSync(filePath); } catch (_) {}
+    // Do NOT delete the ICESA file on failure — leave it so it can be inspected or submitted manually
+    console.log(`[TWC Bridge] AHK failed — ICESA file left at: ${filePath}`);
     throw err;
   }
   try { fs.unlinkSync(filePath); } catch (_) {}

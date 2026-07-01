@@ -1,5 +1,5 @@
 ; submit.ahk — QuickFile desktop app automation (AHK v2)
-; Uses confirmed screen coordinates. After QuickFile opens Edge,
+; Maximizes QuickFile for consistent coordinates. After QuickFile opens Edge,
 ; captures the TWC URL + .qfh path, writes to result file, exits.
 ; Puppeteer (bridge.js) handles the browser login + file upload.
 ;
@@ -27,64 +27,70 @@ WriteError(msg) {
     ExitApp 1
 }
 
+; Catch any unhandled AHK runtime exception and write it to result file
+OnError(CatchAll)
+CatchAll(err, *) {
+    global resultFile
+    try FileDelete resultFile
+    FileAppend "ERROR: Unhandled exception — " . err.Message . " (at " . err.What . ")`n", resultFile
+    return true
+}
+
 ; ── Launch or activate QuickFile ───────────────────────────────────────────────
-if !WinExist("QuickFile") {
+if !WinExist("QuickFile 5") {
     Run quickfileExe
-    if !WinWait("QuickFile",, 30)
+    if !WinWait("QuickFile 5",, 30)
         WriteError("QuickFile did not open within 30s")
     Sleep 3000
 }
-WinActivate "QuickFile"
-WinWaitActive "QuickFile",, 10
+WinActivate "QuickFile 5"
+WinWaitActive "QuickFile 5",, 10
+WinMaximize "QuickFile 5"
 Sleep 2000
 
 ; ── Find and Select File ───────────────────────────────────────────────────────
-Click 1113, 442
+Click 378, 210
 Sleep 2000
 
-; ── File open dialog — paste path, click Open ─────────────────────────────────
+; ── File open dialog — keyboard only (filename field is focused by default) ────
 if !WinWait("Open",, 8)
     if !WinWait("Choose a File",, 8)
         WriteError("File open dialog did not appear")
+WinWaitActive "Open",, 5
 Sleep 500
 
-; Extract just the filename — dialog already opens in the right folder
+; Extract just the filename — paste into dialog, press Enter
 SplitPath icesaFile, &fileName
-
-; Use clipboard paste to safely handle any special characters
-Click 969, 805
-Sleep 300
 Send "^a"
 Sleep 100
 A_Clipboard := fileName
 Sleep 300
 Send "^v"
 Sleep 500
-
-Click 1486, 838
+Send "{Enter}"
 Sleep 3000
 
 ; ── Validate ───────────────────────────────────────────────────────────────────
-WinActivate "QuickFile"
+WinActivate "QuickFile 5"
 Sleep 500
-Click 1093, 531
+Click 388, 300
 Sleep 4000
 
 ; ── Continue ───────────────────────────────────────────────────────────────────
-WinActivate "QuickFile"
+WinActivate "QuickFile 5"
 Sleep 500
-Click 61, 582
+Click 53, 571
 Sleep 2000
 
 ; ── "Would you like to see a summary?" → No ───────────────────────────────────
-WinActivate "QuickFile"
+WinActivate "QuickFile 5"
 Sleep 500
-Click 1051, 580
+Click 1052, 581
 Sleep 1500
 
 ; ── Find the .qfh file BEFORE dismissing next dialog ─────────────────────────
 Sleep 500
-qfhFile  := ""
+qfhFile    := ""
 newestTime := 0
 Loop Files "C:\QuickFile\Upload\*.qfh" {
     if (A_LoopFileTimeModified > newestTime) {
@@ -96,21 +102,21 @@ if (!qfhFile)
     WriteError("No .qfh file found in C:\QuickFile\Upload\")
 
 ; ── "Two files have been created..." → OK ─────────────────────────────────────
-WinActivate "QuickFile"
+WinActivate "QuickFile 5"
 Sleep 500
-Click 1100, 605
+Click 1106, 607
 Sleep 1500
 
 ; ── Nightly posting notice → OK ───────────────────────────────────────────────
-WinActivate "QuickFile"
+WinActivate "QuickFile 5"
 Sleep 500
-Click 1109, 671
+Click 1112, 671
 Sleep 1500
 
 ; ── "We will now open your internet browser..." → OK ─────────────────────────
-WinActivate "QuickFile"
+WinActivate "QuickFile 5"
 Sleep 500
-Click 1083, 622
+Click 1085, 622
 Sleep 6000
 
 ; ── Capture TWC URL from Edge address bar ─────────────────────────────────────
