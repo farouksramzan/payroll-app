@@ -299,7 +299,7 @@ router.post('/paychecks/preview', upload.single('file'), (req, res) => {
 
 // POST /api/import/paychecks
 router.post('/paychecks', upload.single('file'), (req, res) => {
-  const { clientId, skipExisting } = req.body;
+  const { clientId, skipExisting, checkStatus, liabilityStatus } = req.body;
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
   const db = getDb();
   const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
@@ -340,6 +340,11 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
     const hasTipItem       = db.prepare("SELECT id FROM paystub_line_items WHERE paystub_id = ? AND pay_type = 'tips'");
     const patchTips        = db.prepare('UPDATE paystubs SET reported_tips = ? WHERE id = ?');
 
+    const VALID_CHECK_STATUSES = ['draft', 'printed', 'deposited', 'direct_deposit_sent', 'direct_deposit_cleared', 'late'];
+    const VALID_LIABILITY_STATUSES = ['pending', 'submitted'];
+    const resolvedCheckStatus     = VALID_CHECK_STATUSES.includes(checkStatus) ? checkStatus : 'printed';
+    const resolvedLiabilityStatus = VALID_LIABILITY_STATUSES.includes(liabilityStatus) ? liabilityStatus : 'pending';
+
     const importAll = db.transaction((rows) => {
       let imported = 0, skipped = 0, patched = 0;
       for (const c of rows) {
@@ -374,7 +379,7 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
           c.grossWages, c.fit, c.eeSS, c.eeMedicare, c.addlMedicare,
           c.erSS, c.erMedicare, c.futa, c.suta,
           c.totalDeposit, c.netPay, c.taxYear, c.taxQuarter,
-          c.checkNumber, 'printed', 'pending', 'pending', c.reportedTips || 0
+          c.checkNumber, resolvedCheckStatus, resolvedLiabilityStatus, resolvedLiabilityStatus, c.reportedTips || 0
         );
         const stubId = r.lastInsertRowid;
         if (c.compensation > 0) insertLineItem.run(stubId, 'regular', 'Compensation', c.compensation);

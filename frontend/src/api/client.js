@@ -254,12 +254,14 @@ const api = {
     return data;
   },
 
-  importPaychecks: async (clientId, file, skipExisting) => {
+  importPaychecks: async (clientId, file, skipExisting, checkStatus, liabilityStatus) => {
     const token = localStorage.getItem('token');
     const form = new FormData();
     form.append('clientId', clientId);
     form.append('file', file);
     form.append('skipExisting', skipExisting ? 'true' : 'false');
+    if (checkStatus)     form.append('checkStatus', checkStatus);
+    if (liabilityStatus) form.append('liabilityStatus', liabilityStatus);
     const res = await fetch(`${BASE}/import/paychecks`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` },

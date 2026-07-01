@@ -3,13 +3,28 @@ import api from '../api/client';
 
 const fmt = (n) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+const CHECK_STATUS_OPTIONS = [
+  { value: 'printed',                   label: 'Printed' },
+  { value: 'deposited',                 label: 'Deposited' },
+  { value: 'direct_deposit_sent',       label: 'Direct Deposit Sent' },
+  { value: 'direct_deposit_cleared',    label: 'Direct Deposit Cleared' },
+  { value: 'draft',                     label: 'Draft' },
+];
+
+const LIABILITY_STATUS_OPTIONS = [
+  { value: 'pending',   label: 'Pending' },
+  { value: 'submitted', label: 'Submitted' },
+];
+
 export default function ImportPaychecksModal({ clientId, onClose, onImported }) {
-  const [file, setFile]         = useState(null);
-  const [preview, setPreview]   = useState(null);
-  const [skipExisting, setSkip] = useState(true);
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState('');
-  const [done, setDone]         = useState(null);
+  const [file, setFile]               = useState(null);
+  const [preview, setPreview]         = useState(null);
+  const [skipExisting, setSkip]       = useState(true);
+  const [checkStatus, setCheckStatus] = useState('printed');
+  const [liabilityStatus, setLiabilityStatus] = useState('pending');
+  const [loading, setLoading]         = useState(false);
+  const [error, setError]             = useState('');
+  const [done, setDone]               = useState(null);
   const inputRef = useRef();
 
   async function handleFileChange(e) {
@@ -34,7 +49,7 @@ export default function ImportPaychecksModal({ clientId, onClose, onImported }) 
     setLoading(true);
     setError('');
     try {
-      const result = await api.importPaychecks(clientId, file, skipExisting);
+      const result = await api.importPaychecks(clientId, file, skipExisting, checkStatus, liabilityStatus);
       setDone(result);
       onImported();
     } catch (err) {
@@ -128,6 +143,32 @@ export default function ImportPaychecksModal({ clientId, onClose, onImported }) 
                       ))}
                     </tbody>
                   </table>
+                </div>
+
+                <div style={{ display: 'flex', gap: 20, padding: '12px 0', borderTop: '1px solid var(--border-light)', marginBottom: 4, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <label style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: 600 }}>Paycheck Status</label>
+                    <select
+                      value={checkStatus}
+                      onChange={e => setCheckStatus(e.target.value)}
+                      style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)', cursor: 'pointer' }}
+                    >
+                      {CHECK_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <label style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: 600 }}>Liability Status</label>
+                    <select
+                      value={liabilityStatus}
+                      onChange={e => setLiabilityStatus(e.target.value)}
+                      style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)', cursor: 'pointer' }}
+                    >
+                      {LIABILITY_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                    </select>
+                  </div>
+                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0, alignSelf: 'center' }}>
+                    Applies to all {toImport.length} check{toImport.length !== 1 ? 's' : ''} being imported
+                  </p>
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>

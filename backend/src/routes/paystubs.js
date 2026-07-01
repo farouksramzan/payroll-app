@@ -75,7 +75,18 @@ router.get('/', (req, res) => {
     WHERE p.client_id = ?
   `;
   const params = [clientId];
-  if (employeeId) { sql += ' AND p.employee_id = ?'; params.push(employeeId); }
+  if (employeeId) {
+    // Match either by employee_id OR by employee_name when employee_id is null
+    // (handles imported paychecks that weren't matched at import time)
+    const emp = db.prepare('SELECT first_name, last_name FROM employees WHERE id = ?').get(employeeId);
+    if (emp) {
+      sql += ` AND (p.employee_id = ? OR (p.employee_id IS NULL AND UPPER(p.employee_name) = UPPER(?)))`;
+      params.push(employeeId, `${emp.first_name} ${emp.last_name}`);
+    } else {
+      sql += ' AND p.employee_id = ?';
+      params.push(employeeId);
+    }
+  }
   sql += ' ORDER BY p.pay_period_end DESC, p.created_at DESC';
 
   res.json(attachLineItems(db, db.prepare(sql).all(...params)));
@@ -955,13 +966,25 @@ router.get('/by-employee', (req, res) => {
   if (!clientId || !employeeId) return res.status(400).json({ error: 'clientId and employeeId required' });
   const client = canAccessClient(db, clientId, req.user);
   if (!client) return res.status(404).json({ error: 'Client not found' });
-  const rows = db.prepare(`
-    SELECT p.*, e.first_name, e.last_name
-    FROM paystubs p
-    LEFT JOIN employees e ON p.employee_id = e.id
-    WHERE p.client_id = ? AND p.employee_id = ?
-    ORDER BY p.pay_period_end DESC, p.created_at DESC
-  `).all(clientId, employeeId);
+  const emp = db.prepare('SELECT first_name, last_name FROM employees WHERE id = ?').get(employeeId);
+  let rows;
+  if (emp) {
+    rows = db.prepare(`
+      SELECT p.*, e.first_name, e.last_name
+      FROM paystubs p
+      LEFT JOIN employees e ON p.employee_id = e.id
+      WHERE p.client_id = ? AND (p.employee_id = ? OR (p.employee_id IS NULL AND UPPER(p.employee_name) = UPPER(?)))
+      ORDER BY p.pay_period_end DESC, p.created_at DESC
+    `).all(clientId, employeeId, `${emp.first_name} ${emp.last_name}`);
+  } else {
+    rows = db.prepare(`
+      SELECT p.*, e.first_name, e.last_name
+      FROM paystubs p
+      LEFT JOIN employees e ON p.employee_id = e.id
+      WHERE p.client_id = ? AND p.employee_id = ?
+      ORDER BY p.pay_period_end DESC, p.created_at DESC
+    `).all(clientId, employeeId);
+  }
   res.json(rows);
 });
 
