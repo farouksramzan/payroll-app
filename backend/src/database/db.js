@@ -564,39 +564,6 @@ function migrate() {
     )
   `);
 
-  // ── One-time: fix Super Shawarma imported paystubs ───────────────────────────
-  // Reset liability status to pending (so they appear in the liabilities tab)
-  // and link employee_id by name where it is null (so they appear per-employee).
-  try {
-    const shawarma = db.prepare("SELECT id FROM clients WHERE LOWER(business_name) LIKE '%super shawarma%'").get();
-    if (shawarma) {
-      // Fix liability status: any imported stub with status='submitted' should be 'pending'
-      // so it appears in the Pay Liabilities tab (which only shows pending items)
-      const fixedStatus = db.prepare(`
-        UPDATE paystubs SET status='pending', status_940='pending'
-        WHERE client_id=? AND (status='submitted' OR status_940='submitted')
-      `).run(shawarma.id);
-      if (fixedStatus.changes > 0)
-        console.log(`[DB] Fixed ${fixedStatus.changes} Super Shawarma paystub liability statuses → pending`);
-
-      // Fix employee_id: match by name for paystubs that came in unlinked
-      const employees = db.prepare('SELECT id, first_name, last_name FROM employees WHERE client_id=?').all(shawarma.id);
-      let linked = 0;
-      for (const emp of employees) {
-        const fullName = `${emp.first_name} ${emp.last_name}`.toUpperCase();
-        const { changes } = db.prepare(`
-          UPDATE paystubs SET employee_id=?
-          WHERE client_id=? AND employee_id IS NULL AND UPPER(employee_name)=?
-        `).run(emp.id, shawarma.id, fullName);
-        linked += changes;
-      }
-      if (linked > 0)
-        console.log(`[DB] Linked ${linked} Super Shawarma paystubs to employees by name`);
-    }
-  } catch (e) {
-    console.error('[DB] Super Shawarma fix failed:', e.message);
-  }
-
   // ── One-time PIN fixes — run once, idempotent via eftps_enrolled check ───────
   try {
     const { encrypt } = require('../services/cryptoService');
