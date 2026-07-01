@@ -443,6 +443,19 @@ router.post('/:id/complete-onboarding', (req, res) => {
   res.json(sanitizeClient(updated));
 });
 
+// DELETE /api/clients/:id/paystubs — wipe all paystubs for a client (re-import helper)
+router.delete('/:id/paystubs', (req, res) => {
+  const db = getDb();
+  const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+  const ids = db.prepare('SELECT id FROM paystubs WHERE client_id = ?').all(req.params.id).map(r => r.id);
+  if (ids.length === 0) return res.json({ deleted: 0 });
+  const ph = ids.map(() => '?').join(',');
+  db.prepare(`DELETE FROM paystub_line_items WHERE paystub_id IN (${ph})`).run(...ids);
+  const { changes } = db.prepare('DELETE FROM paystubs WHERE client_id = ?').run(req.params.id);
+  res.json({ deleted: changes });
+});
+
 // DELETE /api/clients/:id
 router.delete('/:id', (req, res) => {
   const db = getDb();
