@@ -210,13 +210,10 @@ class BridgeTwcManager extends EventEmitter {
 
   _resendPendingJobs() {
     if (this._pending.size === 0) return;
-    console.log(`[TWC Bridge WS] Re-sending ${this._pending.size} pending job(s)`);
-    for (const [jobId] of this._pending) {
-      const payload = this._jobPayloads.get(jobId);
-      if (payload && this._ws?.readyState === WebSocket.OPEN) {
-        this._ws.send(JSON.stringify(payload));
-      }
-    }
+    // Fail stale jobs instead of re-sending — QuickFile automation is not idempotent.
+    // User must manually retry from the UI.
+    console.log(`[TWC Bridge WS] Failing ${this._pending.size} stale job(s) from previous session`);
+    this._failPendingJobs('Bridge reconnected — previous job was interrupted. Please resubmit.');
   }
 
   _failPendingJobs(reason) {
