@@ -564,6 +564,22 @@ function migrate() {
     )
   `);
 
+  // ── One-time: clear Super Shawarma paystubs so owner can re-import cleanly ───
+  try {
+    const shawarma = db.prepare("SELECT id FROM clients WHERE LOWER(business_name) LIKE '%super shawarma%'").get();
+    if (shawarma) {
+      const ids = db.prepare('SELECT id FROM paystubs WHERE client_id = ?').all(shawarma.id).map(r => r.id);
+      if (ids.length > 0) {
+        const ph = ids.map(() => '?').join(',');
+        db.prepare(`DELETE FROM paystub_line_items WHERE paystub_id IN (${ph})`).run(...ids);
+        const { changes } = db.prepare('DELETE FROM paystubs WHERE client_id = ?').run(shawarma.id);
+        console.log(`[DB] Cleared ${changes} paystubs for Super Shawarma (id=${shawarma.id}) — re-import ready`);
+      }
+    }
+  } catch (e) {
+    console.error('[DB] Super Shawarma cleanup failed:', e.message);
+  }
+
   // ── One-time PIN fixes — run once, idempotent via eftps_enrolled check ───────
   try {
     const { encrypt } = require('../services/cryptoService');
