@@ -15,9 +15,13 @@ const TWC_PASSWORD  = process.env.TWC_PASSWORD;
 const QUICKFILE_EXE = process.env.QUICKFILE_EXE || 'C:\\Program Files (x86)\\QuickFile\\QuickFile.exe';
 const AHK_EXE       = process.env.AHK_EXE       || 'C:\\Program Files\\AutoHotkey\\AutoHotkey.exe';
 const AHK_SCRIPT    = path.join(__dirname, 'submit.ahk');
-const TEMP_DIR      = process.env.TEMP_DIR       || path.join(__dirname, 'temp');
-const RECONNECT_MS  = 10_000;   // reconnect delay after disconnect
-const PING_MS       = 20_000;   // client-side ping interval
+const TEMP_DIR        = process.env.TEMP_DIR       || path.join(__dirname, 'temp');
+const SESSION_FILE    = path.join(__dirname, 'twc-session.json');
+const RECONNECT_MS    = 10_000;   // reconnect delay after disconnect
+const PING_MS         = 20_000;   // client-side ping interval
+const TWC_LOGIN_URL   = 'https://apps.twc.texas.gov/UITAXSERV/security/logon.do';
+const TWC_HOME_URL    = 'https://apps.twc.texas.gov/UITAXSERV/postLogon.do';
+const TWC_PAYMENT_URL = 'https://apps.twc.texas.gov/UITAXSERV/payments/onlinePayment.do';
 
 if (!SERVER_URL || !SECRET) {
   console.error('[TWC Bridge] RAILWAY_URL and BRIDGE_TWC_SECRET must be set in .env');
@@ -107,6 +111,14 @@ function handleMessage(msg) {
           success:      false,
           error:        err.message,
         });
+      });
+      break;
+
+    case 'twc_payment':
+      if (!authed) { console.warn('[TWC Bridge] Received payment job before auth — ignoring'); return; }
+      handlePaymentJob(msg).catch(err => {
+        console.error('[TWC Bridge] Unhandled payment error:', err.message);
+        send({ type: 'result', jobId: msg.jobId, paymentId: msg.paymentId, success: false, error: err.message });
       });
       break;
 
@@ -320,16 +332,330 @@ async function runTwcWebSubmission(twcUrl, qfhFile, jobId, submissionId) {
     ]);
 
     // ── Capture confirmation ───────────────────────────────────────────────
-    const bodyText = await page.evaluate(() => document.body.innerText);
-    console.log('[Puppeteer] Page after submit (first 300 chars):', bodyText.substring(0, 300));
+    const afterUrl  = page.url();
+    const bodyText  = await page.evaluate(() => document.body.innerText);
+    console.log('[Puppeteer] URL after submit:', afterUrl);
+    console.log('[Puppeteer] Page after submit:\n' + bodyText.substring(0, 600));
 
     // Extract a meaningful confirmation line
-    const confirmLine = bodyText.split('\n').find(l => l.match(/confirm|success|receipt|submit/i)) || bodyText.substring(0, 200);
+    const lines       = bodyText.split('\n').map(l => l.trim()).filter(Boolean);
+    const confirmLine = lines.find(l => l.match(/confirm|success|receipt|transmit|accept/i))
+      || lines.find(l => l.match(/\d{6,}/))  // any line with a long number (likely a receipt #)
+      || bodyText.substring(0, 200);
+
+    // Keep browser open 8 seconds so the user can read the confirmation page
+    console.log('[Puppeteer] Waiting 8s before closing browser…');
+    await new Promise(r => setTimeout(r, 8_000));
+
     return confirmLine.trim();
 
   } finally {
     await browser.close();
   }
+}
+
+// ── TWC Payment automation ────────────────────────────────────────────────────
+
+async function handlePaymentJob(job) {
+  const { jobId, paymentId, twcAccountNumber, amount, paymentDate, bankName, clientName } = job;
+  console.log(`[Payment] Job ${jobId}: ${clientName} — $${amount} on ${paymentDate} (account ${twcAccountNumber})`);
+
+  send({ type: 'status_update', jobId, paymentId, status: 'processing', message: 'Opening browser…' });
+
+  let confirmationNumber, bankNameConfirmed, scheduledDate, scheduledAmount;
+  try {
+    ({ confirmationNumber, bankNameConfirmed, scheduledDate, scheduledAmount } =
+      await runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, paymentDate, bankName }));
+  } catch (err) {
+    throw err;
+  }
+
+  send({
+    type:               'result',
+    jobId,
+    paymentId,
+    success:            true,
+    confirmationNumber,
+    bankName:           bankNameConfirmed,
+    scheduledDate,
+    scheduledAmount,
+  });
+}
+
+// Session helpers
+function loadSession() {
+  try {
+    if (fs.existsSync(SESSION_FILE)) return JSON.parse(fs.readFileSync(SESSION_FILE, 'utf8'));
+  } catch (_) {}
+  return null;
+}
+
+function saveSession(cookies) {
+  try { fs.writeFileSync(SESSION_FILE, JSON.stringify(cookies, null, 2)); } catch (_) {}
+}
+
+async function runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, paymentDate, bankName }) {
+  // paymentDate is YYYY-MM-DD
+  const [, payMonth, payDay, payYear] = paymentDate.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+    ? [, ...paymentDate.split('-').slice(1), paymentDate.split('-')[0]]  // rearrange
+    : [null, null, null, null];
+
+  const dateMatch = paymentDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!dateMatch) throw new Error(`Invalid paymentDate format: ${paymentDate}`);
+  const [, yyyy, mm, dd] = dateMatch;
+  const monthNum = parseInt(mm, 10); // 1-12
+
+  const savedCookies = loadSession();
+
+  // Always headless: false so user can solve CAPTCHA if needed (visible on Computer 2)
+  const browser = await puppeteer.launch({ headless: false, defaultViewport: null });
+
+  try {
+    const page = await browser.newPage();
+    page.setDefaultTimeout(60_000);
+
+    // Auto-accept any JS confirm/alert dialogs ("Are you sure you want to proceed?")
+    page.on('dialog', async dialog => {
+      console.log(`[Payment] Dialog: "${dialog.message()}" — accepting`);
+      await dialog.accept();
+    });
+
+    // ── Try saved session ───────────────────────────────────────────────────
+    if (savedCookies) {
+      console.log('[Payment] Loading saved session cookies…');
+      await page.setCookie(...savedCookies);
+      await page.goto(TWC_HOME_URL, { waitUntil: 'networkidle2' });
+
+      if (page.url().includes('postLogon') || page.url().includes('UITAXSERV') && !page.url().includes('logon')) {
+        console.log('[Payment] Session still valid — skipping login');
+      } else {
+        console.log('[Payment] Session expired — need fresh login');
+        await doLogin(page, jobId, paymentId);
+        saveSession(await page.cookies());
+      }
+    } else {
+      await doLogin(page, jobId, paymentId);
+      saveSession(await page.cookies());
+    }
+
+    // ── Select employer ─────────────────────────────────────────────────────
+    send({ type: 'status_update', jobId, paymentId, status: 'processing', message: `Selecting employer ${twcAccountNumber}…` });
+
+    // Make sure we're on the home page
+    if (!page.url().includes('postLogon') && !page.url().includes('UITAXSERV')) {
+      await page.goto(TWC_HOME_URL, { waitUntil: 'networkidle2' });
+    }
+
+    // Fill the "TWC Tax Account Number" field and click Select
+    const acctField = await page.$('input[name="taxAcctNum"]')
+      || await page.$('input[name="taxAccountNumber"]')
+      || await page.$('input[name="accountNumber"]')
+      || await page.$('input[type="text"]');
+    if (!acctField) throw new Error('Could not find TWC Tax Account Number field on home page');
+
+    await acctField.click({ clickCount: 3 });
+    await acctField.type(twcAccountNumber, { delay: 40 });
+
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2' }),
+      page.click('input[type="submit"][value="Select"], button[type="submit"]'),
+    ]);
+    console.log('[Payment] Employer selected — URL:', page.url());
+
+    // ── Navigate to Online Payment ──────────────────────────────────────────
+    send({ type: 'status_update', jobId, paymentId, status: 'processing', message: 'Opening payment form…' });
+    await page.goto(TWC_PAYMENT_URL, { waitUntil: 'networkidle2' });
+
+    // Verify we landed on the payment page
+    if (!page.url().includes('onlinePayment') && !page.url().includes('payment')) {
+      throw new Error(`Unexpected page after navigating to payment: ${page.url()}`);
+    }
+
+    // ── Fill payment form ───────────────────────────────────────────────────
+    // Bank dropdown — select if "Choose One" or blank, otherwise leave as-is
+    const bankSelect = await page.$('select[name="bankId"], select[name="bank"], select[name="bankAccount"]');
+    if (bankSelect) {
+      const currentVal = await page.evaluate(el => el.options[el.selectedIndex]?.text || '', bankSelect);
+      console.log(`[Payment] Bank dropdown current: "${currentVal}"`);
+
+      const needsSelection = /choose one|select/i.test(currentVal) || !currentVal.trim();
+      if (needsSelection && bankName) {
+        // Try to select by partial text match
+        const selected = await page.evaluate((el, target) => {
+          for (const opt of el.options) {
+            if (opt.text.toLowerCase().includes(target.toLowerCase())) {
+              el.value = opt.value;
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              return opt.text;
+            }
+          }
+          // Fall back: pick first non-empty option
+          for (const opt of el.options) {
+            if (opt.value && !/choose|select/i.test(opt.text)) {
+              el.value = opt.value;
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              return opt.text;
+            }
+          }
+          return null;
+        }, bankSelect, bankName || '');
+        console.log(`[Payment] Selected bank: "${selected}"`);
+      } else if (needsSelection) {
+        // No bank name hint — pick first real option
+        await page.evaluate(el => {
+          for (const opt of el.options) {
+            if (opt.value && !/choose|select/i.test(opt.text)) {
+              el.value = opt.value;
+              el.dispatchEvent(new Event('change', { bubbles: true }));
+              break;
+            }
+          }
+        }, bankSelect);
+      }
+    }
+
+    // Payment date — month select
+    const monthSelect = await page.$('select[name="month"], select[name="paymentMonth"]');
+    if (monthSelect) {
+      await page.evaluate((el, val) => {
+        // Find option where value == monthNum or text starts with month abbreviation
+        const months = ['', 'January','February','March','April','May','June','July','August','September','October','November','December'];
+        for (const opt of el.options) {
+          if (opt.value == val || opt.text.startsWith(months[parseInt(val)]?.slice(0,3))) {
+            el.value = opt.value;
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+            break;
+          }
+        }
+      }, monthSelect, monthNum.toString());
+    }
+
+    // Day select
+    const daySelect = await page.$('select[name="day"], select[name="paymentDay"]');
+    if (daySelect) {
+      await page.evaluate((el, val) => {
+        for (const opt of el.options) {
+          if (opt.value == val || opt.text == val) { el.value = opt.value; el.dispatchEvent(new Event('change', { bubbles: true })); break; }
+        }
+      }, daySelect, parseInt(dd, 10).toString());
+    }
+
+    // Year — could be select or input
+    const yearSelect = await page.$('select[name="year"], select[name="paymentYear"]');
+    if (yearSelect) {
+      await page.evaluate((el, val) => {
+        for (const opt of el.options) {
+          if (opt.value == val) { el.value = opt.value; el.dispatchEvent(new Event('change', { bubbles: true })); break; }
+        }
+      }, yearSelect, yyyy);
+    } else {
+      const yearInput = await page.$('input[name="year"], input[name="paymentYear"]');
+      if (yearInput) { await yearInput.click({ clickCount: 3 }); await yearInput.type(yyyy); }
+    }
+
+    // Amount
+    const amountInput = await page.$('input[name="amount"], input[name="paymentAmount"], input[name="scheduledPaymentAmount"]')
+      || await page.$('input[type="text"][name*="mount"]');
+    if (!amountInput) throw new Error('Could not find payment amount field');
+    await amountInput.click({ clickCount: 3 });
+    await amountInput.type(amount.toFixed(2), { delay: 40 });
+
+    console.log(`[Payment] Form filled — date: ${mm}/${dd}/${yyyy}, amount: $${amount.toFixed(2)}`);
+    send({ type: 'status_update', jobId, paymentId, status: 'processing', message: 'Submitting payment form…' });
+
+    // Click Next
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2' }),
+      page.click('input[type="submit"][value="Next"], button[value="Next"], input[value="Next"]'),
+    ]);
+    console.log('[Payment] After Next — URL:', page.url());
+
+    // ── Review and Submit page ──────────────────────────────────────────────
+    send({ type: 'status_update', jobId, paymentId, status: 'processing', message: 'Reviewing and submitting…' });
+
+    // Check the authorization checkbox (required field marked with *)
+    const authCheckbox = await page.$('input[type="checkbox"][name*="certif"], input[type="checkbox"][name*="auth"], input[type="checkbox"][name*="agree"]')
+      || await page.$('input[type="checkbox"]');
+    if (authCheckbox) {
+      const checked = await page.evaluate(el => el.checked, authCheckbox);
+      if (!checked) await authCheckbox.click();
+      console.log('[Payment] Authorization checkbox checked');
+    }
+
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2' }),
+      page.click('input[type="submit"][value="Submit"], button[value="Submit"], input[value="Submit"]'),
+    ]);
+    console.log('[Payment] After Submit — URL:', page.url());
+
+    // ── Payment Confirmation page ───────────────────────────────────────────
+    const bodyText = await page.evaluate(() => document.body.innerText);
+    console.log('[Payment] Confirmation page:\n' + bodyText.substring(0, 800));
+
+    if (!/scheduled|confirmation/i.test(bodyText)) {
+      throw new Error(`Payment may not have completed. Page text: ${bodyText.substring(0, 300)}`);
+    }
+
+    // Extract confirmation number
+    const confMatch = bodyText.match(/Confirmation\s+Number[:\s]+(\d+)/i)
+      || bodyText.match(/(\d{7,10})/);
+    const confirmation = confMatch ? confMatch[1] : null;
+
+    // Extract bank name
+    const bankMatch = bodyText.match(/Bank\s+Name[:\s]+([A-Z][^\n]+)/i);
+    const bankConfirmed = bankMatch ? bankMatch[1].trim() : null;
+
+    // Extract scheduled date and amount from confirmation
+    const dateLineMatch = bodyText.match(/Payment\s+Date[:\s]+([^\n]+)/i);
+    const amtLineMatch  = bodyText.match(/Scheduled\s+Payment\s+Amount[:\s]+([^\n]+)/i);
+
+    console.log(`[Payment] Confirmation: ${confirmation} | Bank: ${bankConfirmed}`);
+
+    // Save updated cookies after successful payment
+    saveSession(await page.cookies());
+
+    await new Promise(r => setTimeout(r, 4_000)); // brief pause so user can see confirmation
+
+    return {
+      confirmationNumber: confirmation,
+      bankNameConfirmed:  bankConfirmed,
+      scheduledDate:      dateLineMatch ? dateLineMatch[1].trim() : null,
+      scheduledAmount:    amtLineMatch  ? amtLineMatch[1].trim()  : null,
+    };
+  } finally {
+    await browser.close();
+  }
+}
+
+async function doLogin(page, jobId, paymentId) {
+  console.log('[Payment] Navigating to TWC login…');
+  await page.goto(TWC_LOGIN_URL, { waitUntil: 'networkidle2' });
+
+  // Fill User ID
+  const userField = await page.$('input[name="userid"]')
+    || await page.$('input[name="UserID"]')
+    || await page.$('input[name="username"]')
+    || await page.$('input[type="text"]:not([type="hidden"])');
+  if (!userField) throw new Error('Could not find User ID field on TWC login page');
+
+  await userField.click({ clickCount: 3 });
+  await userField.type(TWC_USERNAME, { delay: 40 });
+
+  const passField = await page.$('input[type="password"]');
+  if (!passField) throw new Error('Could not find Password field on TWC login page');
+  await passField.click({ clickCount: 3 });
+  await passField.type(TWC_PASSWORD, { delay: 40 });
+
+  // reCAPTCHA: we cannot solve it automatically — notify server and wait for user
+  console.log('[Payment] Credentials filled — waiting for user to solve CAPTCHA and click Logon…');
+  send({ type: 'status_update', jobId, paymentId, status: 'needs_captcha', message: 'Please solve the CAPTCHA and click Logon in the browser window on Computer 2.' });
+
+  // Wait up to 5 minutes for the user to complete login (URL changes away from logon.do)
+  await page.waitForFunction(
+    () => !window.location.href.includes('logon.do'),
+    { timeout: 5 * 60_000 }
+  );
+  console.log('[Payment] Login completed — URL:', page.url());
 }
 
 // ── Start ─────────────────────────────────────────────────────────────────────

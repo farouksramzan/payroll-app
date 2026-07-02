@@ -238,7 +238,8 @@ class BridgeTwcManager extends EventEmitter {
   queueJob(job, onResult, timeoutMs = 10 * 60 * 1000) {
     if (!this.isConnected) throw new Error('TWC Bridge is not connected. Start the TWC bridge on Computer 2.');
     const jobId   = `twc_${Date.now()}_${++this._jobSeq}`;
-    const payload = { type: 'submit', jobId, ...job };
+    // job.type overrides default 'submit' (e.g. 'twc_payment')
+    const payload = { type: 'submit', ...job, jobId };
 
     this._jobStatuses.set(jobId, { status: 'processing', message: 'Job queued', updatedAt: new Date().toISOString() });
 

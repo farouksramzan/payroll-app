@@ -156,6 +156,11 @@ const api = {
   getTwcSubmission: (id) => request(`/twc-submissions/${id}`),
   listTwcSubmissions: (clientId) => request(`/twc-submissions?clientId=${clientId}`),
 
+  // TWC SUI payments
+  createTwcPayment: (data) => request('/twc-payments', { method: 'POST', body: JSON.stringify(data) }),
+  getTwcPayment: (id) => request(`/twc-payments/${id}`),
+  listTwcPayments: (clientId) => request(`/twc-payments?clientId=${clientId}`),
+
   // Reports
   get941: (clientId, year, quarter) => request(`/reports/941?clientId=${clientId}&year=${year}&quarter=${quarter}`),
   get940: (clientId, year) => request(`/reports/940?clientId=${clientId}&year=${year}`),

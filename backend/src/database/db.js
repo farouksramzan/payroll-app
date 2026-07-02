@@ -567,6 +567,27 @@ function migrate() {
     )
   `);
 
+  // twc_payments — TWC SUI online payment jobs
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS twc_payments (
+      id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id             INTEGER NOT NULL,
+      client_id           INTEGER NOT NULL,
+      twc_account_number  TEXT NOT NULL,
+      amount              REAL NOT NULL,
+      payment_date        TEXT NOT NULL,
+      bank_name           TEXT,
+      status              TEXT NOT NULL DEFAULT 'pending',
+      confirmation_number TEXT,
+      bank_name_confirmed TEXT,
+      error               TEXT,
+      job_id              TEXT,
+      created_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at          DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+    )
+  `);
+
   // ── Global: link unlinked paystubs to employees by fuzzy first+last name ─────
   // Runs on every startup; idempotent (only touches rows where employee_id IS NULL).
   // Fixes imported paychecks that had middle initials in QB names (e.g. "SHADI D AHVAZI").

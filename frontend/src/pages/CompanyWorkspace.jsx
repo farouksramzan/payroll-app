@@ -4101,6 +4101,9 @@ function PayLiabilitiesTab({ clientId, client }) {
   const [activeJobTaxType, setActiveJobTaxType] = useState(null);
   const [jobStatus,        setJobStatus]        = useState(null);   // 'enrollment_pending' | 'completed' | 'failed'
   const [jobMessage,       setJobMessage]       = useState('');
+  const [twcPayModal,      setTwcPayModal]      = useState(null); // { amount, defaultDate } | null
+  const [twcPayJob,        setTwcPayJob]        = useState(null); // { id, status, confirmationNumber, error } | null
+  const twcPollRef = useRef(null);
   const pollRef = useRef(null);
 
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -4327,6 +4330,15 @@ function PayLiabilitiesTab({ clientId, client }) {
                               onClick={e => { e.stopPropagation(); handleSubmitPeriod(period, sec.taxType); }}>
                               {sec.taxType === 'sui' ? '↓ SUI Report' : activeJobId && activeJobTaxType === sec.taxType ? 'Sent…' : 'Pay to EFTPS'}
                             </button>
+                            {sec.taxType === 'sui' && (
+                              <button
+                                className="btn btn-sm"
+                                style={{ fontSize: 13, whiteSpace: 'nowrap', background: '#0369a1', color: '#fff', border: 'none' }}
+                                disabled={twcPayJob?.status === 'processing'}
+                                onClick={e => { e.stopPropagation(); setTwcPayModal({ amount: period.total, defaultDate: new Date(Date.now() + 86400000).toISOString().slice(0,10) }); }}>
+                                Pay TWC
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -4696,6 +4708,133 @@ function PayLiabilitiesTab({ clientId, client }) {
           onClose={() => setPeriodModal(null)}
         />
       )}
+
+      {/* TWC Payment modal */}
+      {twcPayModal && (
+        <TwcPaymentModal
+          client={client}
+          defaultAmount={twcPayModal.amount}
+          defaultDate={twcPayModal.defaultDate}
+          twcPayJob={twcPayJob}
+          onSubmit={async ({ amount, paymentDate }) => {
+            const acctNum = client?.suiAccountNumber;
+            if (!acctNum) { alert('No TWC Account Number on file. Add it in the Company tab → State Unemployment section.'); return; }
+            try {
+              const res = await api.createTwcPayment({ clientId, twcAccountNumber: acctNum, amount, paymentDate });
+              setTwcPayJob({ id: res.id, status: res.status, confirmationNumber: res.confirmationNumber, error: res.error, bridgeOffline: res.bridgeOffline });
+              if (!res.bridgeOffline) {
+                clearInterval(twcPollRef.current);
+                twcPollRef.current = setInterval(async () => {
+                  const updated = await api.getTwcPayment(res.id).catch(() => null);
+                  if (!updated) return;
+                  setTwcPayJob({ id: updated.id, status: updated.status, confirmationNumber: updated.confirmationNumber, error: updated.error });
+                  if (updated.status === 'completed' || updated.status === 'failed') clearInterval(twcPollRef.current);
+                }, 8_000);
+              }
+            } catch (e) { alert(e.message); }
+          }}
+          onClose={() => { setTwcPayModal(null); }}
+        />
+      )}
+    </div>
+  );
+}
+
+function TwcPaymentModal({ client, defaultAmount, defaultDate, twcPayJob, onSubmit, onClose }) {
+  const [amount, setAmount]           = useState(defaultAmount ? defaultAmount.toFixed(2) : '');
+  const [paymentDate, setPaymentDate] = useState(defaultDate || '');
+  const [submitting, setSubmitting]   = useState(false);
+
+  const acctNum = client?.suiAccountNumber;
+  const done    = twcPayJob?.status === 'completed' || twcPayJob?.status === 'failed';
+
+  async function handleSubmit() {
+    const amtNum = parseFloat(amount);
+    if (!amtNum || amtNum <= 0) { alert('Enter a valid amount'); return; }
+    if (!paymentDate) { alert('Enter a payment date'); return; }
+    setSubmitting(true);
+    await onSubmit({ amount: amtNum, paymentDate });
+    setSubmitting(false);
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+      <div style={{ background: 'var(--bg-card)', borderRadius: 12, padding: 28, width: '100%', maxWidth: 480, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 18 }}>Pay TWC SUI Online</h3>
+            <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-muted)' }}>
+              ACH debit via TWC Unemployment Tax Services
+            </p>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+        </div>
+
+        {/* Account info */}
+        <div style={{ background: 'var(--bg-secondary)', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13 }}>
+          <div style={{ color: 'var(--text-muted)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>TWC Account</div>
+          {acctNum
+            ? <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{acctNum}</span>
+            : <span style={{ color: '#dc2626' }}>Not set — add it in Company tab → State Unemployment</span>
+          }
+        </div>
+
+        {/* Job status display */}
+        {twcPayJob && (
+          <div style={{ marginBottom: 16, padding: '12px 14px', borderRadius: 8, background: twcPayJob.status === 'completed' ? '#f0fdf4' : twcPayJob.status === 'failed' ? '#fff5f5' : twcPayJob.status === 'needs_captcha' ? '#fffbeb' : '#f0f9ff', border: `1px solid ${twcPayJob.status === 'completed' ? '#bbf7d0' : twcPayJob.status === 'failed' ? '#fecaca' : twcPayJob.status === 'needs_captcha' ? '#fde68a' : '#bae6fd'}` }}>
+            {twcPayJob.status === 'completed' && (
+              <>
+                <div style={{ fontWeight: 700, color: '#16a34a', marginBottom: 4 }}>Payment scheduled</div>
+                {twcPayJob.confirmationNumber && <div style={{ fontSize: 13 }}>Confirmation #<strong style={{ fontFamily: 'monospace' }}>{twcPayJob.confirmationNumber}</strong></div>}
+              </>
+            )}
+            {twcPayJob.status === 'failed' && (
+              <div style={{ color: '#dc2626', fontWeight: 600 }}>Failed: {twcPayJob.error || 'Unknown error'}</div>
+            )}
+            {twcPayJob.status === 'needs_captcha' && (
+              <div style={{ color: '#92400e', fontWeight: 600 }}>Waiting for CAPTCHA — solve it in the browser window on Computer 2, then click Logon.</div>
+            )}
+            {twcPayJob.status === 'processing' && !twcPayJob.confirmationNumber && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#0369a1' }}>
+                <span className="spinner spinner-dark" style={{ width: 14, height: 14 }} />
+                <span>Browser automation in progress on Computer 2…</span>
+              </div>
+            )}
+            {twcPayJob.bridgeOffline && (
+              <div style={{ color: '#92400e' }}>
+                <strong>TWC Bridge offline.</strong> Start bridge.js on Computer 2 — the job is saved and will run when the bridge reconnects.
+              </div>
+            )}
+          </div>
+        )}
+
+        {!twcPayJob && (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Amount ($)</label>
+                <input className="form-input mono" type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} placeholder="0.00" />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Payment Date</label>
+                <input className="form-input" type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} />
+              </div>
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
+              The bank on file in TWC will be used. Computer 2 must be online with the bridge running.
+            </div>
+          </>
+        )}
+
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button className="btn btn-secondary" onClick={onClose}>{done ? 'Close' : 'Cancel'}</button>
+          {!twcPayJob && (
+            <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting || !acctNum}>
+              {submitting ? 'Sending…' : 'Submit Payment'}
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
