@@ -55,6 +55,21 @@ function removePendingEnrollment(ein) {
 // The file-based pending_enrollments.json handles persistence across restarts.
 const _enrollingEINs = new Set();
 
+// ── Active process tracking (for kill_job) ───────────────────────────────────
+// Holds a reference to the currently running Python child process so it can be
+// force-killed via kill_job without restarting the bridge.
+let _activeProc  = null;  // ChildProcess | null
+let _activeJobId = null;  // string | null — for logging
+
+function setActiveProc(jobId, proc) { _activeProc = proc; _activeJobId = jobId; }
+function clearActiveProc()          { _activeProc = null; _activeJobId = null; }
+function killActiveProc() {
+  if (!_activeProc) return false;
+  try { _activeProc.kill('SIGKILL'); } catch (_) {}
+  clearActiveProc();
+  return true;
+}
+
 // ── Computer 2 lock ───────────────────────────────────────────────────────────
 // Only one Python automation script can run on Computer 2 at a time.
 // Jobs acquire this lock only while their script is executing — NOT during
@@ -197,10 +212,11 @@ function saveEnrollmentFile(enrollContent, ein) {
 
 // ── Python automation runners ─────────────────────────────────────────────────
 
-function runPython(script, args, logFn, { timeout = 180000, successToken, failToken, retryToken } = {}) {
+function runPython(script, args, logFn, { timeout = 180000, successToken, failToken, retryToken, jobId } = {}) {
   return new Promise((resolve, reject) => {
-    execFile('python', [script, ...args], { windowsHide: true, timeout },
+    const proc = execFile('python', [script, ...args], { windowsHide: true, timeout },
       (err, stdout, stderr) => {
+        clearActiveProc();
         if (stdout) stdout.split('\n').filter(Boolean).forEach((l) => logFn(l));
         if (stderr) stderr.split('\n').filter(Boolean).forEach((l) => logFn(`[stderr] ${l}`));
         if (err) return reject(new Error(`${path.basename(script)} error: ${err.message}`));
@@ -214,15 +230,17 @@ function runPython(script, args, logFn, { timeout = 180000, successToken, failTo
         reject(new Error(reason));
       }
     );
+    setActiveProc(jobId || script, proc);
   });
 }
 
-function runPaymentAutomation(achFilePath, logFn) {
+function runPaymentAutomation(achFilePath, logFn, jobId) {
   logFn(`[BP] Launching payment automation for: ${achFilePath}`);
   return runPython(BP_SCRIPT, [achFilePath], logFn, {
     successToken: 'IMPORT_COMPLETE',
     failToken:    'IMPORT_FAILED',
     retryToken:   'IMPORT_RETRY_NEEDED',
+    jobId,
   }).then(() => ({ success: true, confirmation: 'BP_AUTOMATION_OK', achFilePath }));
 }
 
@@ -236,7 +254,7 @@ async function runPaymentWithRetry(achFilePath, logFn) {
   return paymentLock.run('payment', async () => {
     for (let attempt = 1; attempt <= MAX_IMPORT_RETRIES; attempt++) {
       try {
-        return await c2.run('payment', () => runPaymentAutomation(achFilePath, logFn));
+        return await c2.run('payment', () => runPaymentAutomation(achFilePath, logFn, _activeJobId));
       } catch (err) {
         const isRetrySignal = err.message.includes('IMPORT_RETRY_NEEDED')
           || (err.stdout || '').includes('IMPORT_RETRY_NEEDED');
@@ -439,6 +457,13 @@ class BridgeClient extends EventEmitter {
       case 'submit':
         this._handleJob(msg);
         break;
+
+      case 'kill_job': {
+        const killed = killActiveProc();
+        this.emit('log', `kill_job received — ${killed ? `killed process for job ${_activeJobId}` : 'no active process'}`);
+        this._send({ type: 'job_killed', jobId: msg.jobId || _activeJobId || null });
+        break;
+      }
 
       case 'pong':
         // heartbeat acknowledged — connection alive

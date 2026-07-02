@@ -323,6 +323,11 @@ class BridgeManager extends EventEmitter {
     return jobId;
   }
 
+  killJob() {
+    if (!this.isConnected) throw new Error('Batch provider bridge is not connected');
+    this._ws.send(JSON.stringify({ type: 'kill_job' }));
+  }
+
   get isConnected() {
     return (
       this._ws !== null &&

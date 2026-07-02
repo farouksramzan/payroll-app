@@ -4529,9 +4529,9 @@ function PayLiabilitiesTab({ clientId, client }) {
           <button
             style={{ marginLeft: 'auto', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
             onClick={async () => {
-              if (!window.confirm('Kill the running automation job? This closes the browser on Computer 2 and marks the job as failed.')) return;
+              if (!window.confirm('Kill the running automation job? This stops the Python script on Computer 2 and marks the job as failed.')) return;
               try {
-                await api.killTwcBridgeJob();
+                await api.killBridgeJob();
                 setActiveJobId(null); setJobStatus('failed'); setJobMessage('Killed by user');
               } catch (e) { alert(e.message); }
             }}>
