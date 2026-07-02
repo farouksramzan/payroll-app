@@ -538,8 +538,12 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
     // correctly places employees inside their group instead of showing them as Unassigned.
     // Only updates employees that are currently unassigned to avoid overwriting manual changes.
     try {
+      // Always update to the detected group — repairs employees wrongly assigned by
+      // a previous import (e.g. semimonthly mis-classification). Users who manually
+      // moved an employee to a different group will need to re-assign afterward, but
+      // that's the right tradeoff: import is authoritative on frequency.
       const updateEmpGroup = db.prepare(
-        'UPDATE employees SET pay_group_id = ? WHERE id = ? AND (pay_group_id IS NULL OR pay_group_id = 0)'
+        'UPDATE employees SET pay_group_id = ? WHERE id = ?'
       );
       const assignedEmpIds = new Set();
       db.transaction(() => {
@@ -583,9 +587,11 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
       INSERT INTO paystub_line_items (paystub_id, pay_type, description, hours, rate, amount)
       VALUES (?, ?, ?, NULL, NULL, ?)
     `);
-    const getExistingStub = db.prepare('SELECT id, reported_tips FROM paystubs WHERE client_id = ? AND check_number = ?');
-    const hasTipItem      = db.prepare("SELECT id FROM paystub_line_items WHERE paystub_id = ? AND pay_type = 'tips'");
-    const patchTips       = db.prepare('UPDATE paystubs SET reported_tips = ? WHERE id = ?');
+    const getExistingStubByNum = db.prepare('SELECT id, reported_tips, pay_group_id FROM paystubs WHERE client_id = ? AND check_number = ?');
+    const getExistingStubByFp  = db.prepare('SELECT id, reported_tips, pay_group_id FROM paystubs WHERE client_id = ? AND employee_name = ? AND settlement_date = ? AND ROUND(gross_wages * 100) = ?');
+    const hasTipItem           = db.prepare("SELECT id FROM paystub_line_items WHERE paystub_id = ? AND pay_type = 'tips'");
+    const patchTips            = db.prepare('UPDATE paystubs SET reported_tips = ? WHERE id = ?');
+    const patchGroup           = db.prepare('UPDATE paystubs SET pay_group_id = ? WHERE id = ? AND (pay_group_id IS NULL OR pay_group_id != ?)');
 
     const VALID_CHECK_STATUSES     = ['draft', 'printed', 'deposited', 'direct_deposit_sent', 'direct_deposit_cleared', 'late'];
     const VALID_LIABILITY_STATUSES = ['pending', 'submitted'];
@@ -593,22 +599,36 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
     const resolvedLiabilityStatus  = VALID_LIABILITY_STATUSES.includes(liabilityStatus) ? liabilityStatus : 'pending';
 
     const importAll = db.transaction((rows) => {
-      let imported = 0, skipped = 0, patched = 0;
+      let imported = 0, skipped = 0, patched = 0, repaired = 0;
       for (const c of rows) {
         const numKey = c.checkNumber ? String(c.checkNumber) : null;
         const fp     = checkFingerprint(c.empName, c.checkDate, c.grossWages);
 
+        const empKey     = (c.empName || '').toUpperCase().trim();
+        const detFreq    = empFreqMap.get(empKey) || dominantFreq;
+        const payGroupId = freqToGroupId.get(detFreq) || null;
+
         if (skipExisting === 'true' && (
           (numKey && existingByNum.has(numKey)) || existingFp.has(fp)
         )) {
-          if (c.reportedTips > 0 && numKey) {
-            const existingStub = getExistingStub.get(clientId, c.checkNumber);
-            if (existingStub && !(existingStub.reported_tips > 0)) {
+          // Find the existing paystub so we can repair its group assignment and tips
+          const existingStub = numKey
+            ? getExistingStubByNum.get(clientId, c.checkNumber)
+            : getExistingStubByFp.get(clientId, c.empName, c.checkDate, Math.round((c.grossWages || 0) * 100));
+
+          if (existingStub) {
+            // Patch tips if missing
+            if (c.reportedTips > 0 && !(existingStub.reported_tips > 0)) {
               patchTips.run(c.reportedTips, existingStub.id);
               if (!hasTipItem.get(existingStub.id)) {
                 insertLineItem.run(existingStub.id, 'tips', 'Reported Tips', c.reportedTips);
               }
               patched++;
+            }
+            // Re-assign to the correct pay group if wrong or missing
+            if (payGroupId && existingStub.pay_group_id !== payGroupId) {
+              patchGroup.run(payGroupId, existingStub.id, payGroupId);
+              repaired++;
             }
           }
           skipped++;
@@ -638,7 +658,7 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
         if (c.reportedTips  > 0) insertLineItem.run(stubId, 'tips',    'Reported Tips',  c.reportedTips);
         imported++;
       }
-      return { imported, skipped, patched };
+      return { imported, skipped, patched, repaired };
     });
 
     const result = importAll(checks);

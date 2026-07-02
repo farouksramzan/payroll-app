@@ -280,9 +280,11 @@ function DoneScreen({ done, onClose }) {
       <div style={{ fontSize: 48, marginBottom: 12 }}>✓</div>
       <h3 style={{ marginBottom: 6 }}>{done.imported} paycheck{done.imported !== 1 ? 's' : ''} imported</h3>
 
-      {done.skipped > 0 && (
+      {(done.skipped > 0 || done.repaired > 0) && (
         <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 12px' }}>
-          {done.skipped} skipped{done.patched > 0 ? ` · ${done.patched} patched with tips` : ''}
+          {done.skipped > 0 && <>{done.skipped} skipped</>}
+          {done.patched  > 0 && <> · {done.patched} patched with tips</>}
+          {done.repaired > 0 && <> · <strong style={{ color: '#166534' }}>{done.repaired} reassigned to correct group</strong></>}
         </p>
       )}
 
