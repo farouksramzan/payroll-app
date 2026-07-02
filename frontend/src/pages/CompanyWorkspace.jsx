@@ -501,24 +501,37 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                 <div style={{ marginBottom: 16 }}>
                   {/* Status badge + info */}
                   {dd.status === 'active' && !ddEdit && (
-                    <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-                      <div>
-                        <div style={{ fontWeight: 700, fontSize: 13, color: '#16a34a' }}>✓ Active — Direct Deposit Enabled</div>
-                        <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                          {dd.bankAccountType === 'savings' ? 'Savings' : 'Checking'} ···· {dd.last4}
-                          {dd.routingNumber && <span style={{ marginLeft: 10 }}>Routing: {dd.routingNumber}</span>}
+                    <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: '14px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                        <div>
+                          <div style={{ fontWeight: 700, fontSize: 14, color: '#16a34a', marginBottom: 8 }}>✓ Direct Deposit Active</div>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            {dd.routingNumber && (
+                              <span className="ref-num">
+                                <span className="ref-num-label">Routing</span>
+                                {dd.routingNumber.replace(/(\d{4})(\d{4})(\d{1})/, '$1 $2 $3')}
+                              </span>
+                            )}
+                            <span className="ref-num">
+                              <span className="ref-num-label">{dd.bankAccountType === 'savings' ? 'Savings' : 'Checking'}</span>
+                              ···· {dd.last4}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                      <div style={{ display: 'flex', gap: 8 }}>
-                        <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => { setDdEdit(true); setDdErr(''); }}>Change</button>
-                        <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, color: '#dc2626' }} onClick={handleRemoveDd} disabled={ddSaving}>Remove</button>
+                        <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                          <button className="btn btn-ghost btn-sm" onClick={() => { setDdEdit(true); setDdErr(''); }}>Change</button>
+                          <button className="btn btn-ghost btn-sm" style={{ color: '#dc2626' }} onClick={handleRemoveDd} disabled={ddSaving}>Remove</button>
+                        </div>
                       </div>
                     </div>
                   )}
                   {dd.status === 'pending' && !ddEdit && (
-                    <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, padding: '12px 14px' }}>
-                      <div style={{ fontWeight: 700, fontSize: 13, color: '#d97706' }}>⏳ Pending — Bank account saved, not yet verified with Moov</div>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{dd.bankAccountType} ···· {dd.last4}</div>
+                    <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, padding: '14px 16px' }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: '#d97706', marginBottom: 6 }}>⏳ Pending — Awaiting bank verification</div>
+                      <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                        {dd.routingNumber && <span className="ref-num"><span className="ref-num-label">Routing</span>{dd.routingNumber.replace(/(\d{4})(\d{4})(\d{1})/, '$1 $2 $3')}</span>}
+                        <span className="ref-num"><span className="ref-num-label">{dd.bankAccountType === 'savings' ? 'Savings' : 'Checking'}</span>···· {dd.last4}</span>
+                      </div>
                       <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
                         <button className="btn btn-primary btn-sm" style={{ fontSize: 11 }} onClick={async () => { setDdSaving(true); setDdErr(''); try { const r = await api.activateDirectDeposit(empId); setDd(r); } catch(e) { setDdErr(e.message); } finally { setDdSaving(false); } }} disabled={ddSaving}>{ddSaving ? <span className="spinner" style={{ width: 10, height: 10 }} /> : 'Retry Moov Connection'}</button>
                         <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => { setDdEdit(true); setDdErr(''); }}>Change Account</button>
@@ -527,9 +540,12 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                     </div>
                   )}
                   {dd.status === 'failed' && !ddEdit && (
-                    <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '12px 14px' }}>
-                      <div style={{ fontWeight: 700, fontSize: 13, color: '#dc2626' }}>✗ Failed — Moov rejected the bank account</div>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{dd.bankAccountType} ···· {dd.last4}</div>
+                    <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '14px 16px' }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: '#dc2626', marginBottom: 6 }}>✗ Failed — Bank account not accepted</div>
+                      <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                        {dd.routingNumber && <span className="ref-num"><span className="ref-num-label">Routing</span>{dd.routingNumber.replace(/(\d{4})(\d{4})(\d{1})/, '$1 $2 $3')}</span>}
+                        <span className="ref-num"><span className="ref-num-label">{dd.bankAccountType === 'savings' ? 'Savings' : 'Checking'}</span>···· {dd.last4}</span>
+                      </div>
                       <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
                         <button className="btn btn-primary btn-sm" style={{ fontSize: 11 }} onClick={() => { setDdEdit(true); setDdErr(''); }}>Enter New Account</button>
                         <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, color: '#dc2626' }} onClick={handleRemoveDd} disabled={ddSaving}>Remove</button>
@@ -545,42 +561,53 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
 
                   {/* Bank account form */}
                   {ddEdit && (
-                    <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: '14px 14px 10px', marginTop: dd.status !== 'none' ? 12 : 0 }}>
-                      {ddErr && <div className="alert alert-error" style={{ marginBottom: 10, fontSize: 12 }}><span>⚠</span>{ddErr}</div>}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+                    <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: '16px 16px 12px', marginTop: dd.status !== 'none' ? 12 : 0 }}>
+                      {ddErr && <div className="alert alert-error" style={{ marginBottom: 12 }}><span>⚠</span>{ddErr}</div>}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                         <div className="form-group" style={{ marginBottom: 0 }}>
-                          <label className="form-label" style={{ fontSize: 11 }}>Routing Number</label>
+                          <label className="form-label">Routing Number</label>
                           <input className="form-input mono" type="text" inputMode="numeric" maxLength={9} value={ddForm.routingNumber}
                             onChange={e => setDdForm(f => ({ ...f, routingNumber: e.target.value.replace(/\D/g, '') }))}
-                            placeholder="9 digits" style={{ height: 32, fontSize: 13 }} />
+                            placeholder="9 digits" />
+                          <div className="form-hint" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                            <span>{ddForm.routingNumber ? ddForm.routingNumber.replace(/(\d{4})(\d{4})(\d{1})/, '$1 $2 $3') : 'e.g. 0210 0002 8'}</span>
+                            <span style={{ color: ddForm.routingNumber.length === 9 ? 'var(--success)' : 'var(--text-muted)', fontWeight: 600 }}>{ddForm.routingNumber.length}/9</span>
+                          </div>
                         </div>
                         <div className="form-group" style={{ marginBottom: 0 }}>
-                          <label className="form-label" style={{ fontSize: 11 }}>Account Type</label>
-                          <select className="form-select" value={ddForm.bankAccountType} onChange={e => setDdForm(f => ({ ...f, bankAccountType: e.target.value }))} style={{ height: 32, fontSize: 13 }}>
+                          <label className="form-label">Account Type</label>
+                          <select className="form-select" value={ddForm.bankAccountType} onChange={e => setDdForm(f => ({ ...f, bankAccountType: e.target.value }))}>
                             <option value="checking">Checking</option>
                             <option value="savings">Savings</option>
                           </select>
                         </div>
                       </div>
-                      <div className="form-group" style={{ marginBottom: 10 }}>
-                        <label className="form-label" style={{ fontSize: 11 }}>Account Number</label>
+                      <div className="form-group" style={{ marginBottom: 12 }}>
+                        <label className="form-label">Account Number</label>
                         <input className="form-input mono" type="password" value={ddForm.accountNumber}
                           onChange={e => setDdForm(f => ({ ...f, accountNumber: e.target.value.replace(/\D/g, '') }))}
-                          placeholder="Account number" style={{ height: 32, fontSize: 13 }} />
+                          placeholder="Account number" />
                       </div>
-                      <div className="form-group" style={{ marginBottom: 12 }}>
-                        <label className="form-label" style={{ fontSize: 11 }}>Confirm Account Number</label>
+                      <div className="form-group" style={{ marginBottom: 14 }}>
+                        <label className="form-label">
+                          Confirm Account Number
+                          {ddForm.confirmAccount && ddForm.accountNumber && (
+                            <span style={{ marginLeft: 8, fontWeight: 700, fontSize: 11, textTransform: 'none', color: ddForm.confirmAccount === ddForm.accountNumber ? 'var(--success)' : '#dc2626' }}>
+                              {ddForm.confirmAccount === ddForm.accountNumber ? '✓ Match' : '✗ Mismatch'}
+                            </span>
+                          )}
+                        </label>
                         <input className="form-input mono" type="text" value={ddForm.confirmAccount}
                           onChange={e => setDdForm(f => ({ ...f, confirmAccount: e.target.value.replace(/\D/g, '') }))}
-                          placeholder="Re-enter account number" style={{ height: 32, fontSize: 13 }} />
+                          placeholder="Re-enter account number" />
                       </div>
                       <div style={{ display: 'flex', gap: 8 }}>
-                        <button className="btn btn-primary btn-sm" onClick={handleSaveDd} disabled={ddSaving} style={{ fontSize: 12 }}>
-                          {ddSaving ? <span className="spinner" style={{ width: 10, height: 10 }} /> : 'Save & Connect'}
+                        <button className="btn btn-primary btn-sm" onClick={handleSaveDd} disabled={ddSaving}>
+                          {ddSaving ? <span className="spinner" style={{ width: 12, height: 12 }} /> : 'Save & Connect'}
                         </button>
-                        <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} onClick={() => { setDdEdit(false); setDdErr(''); }}>Cancel</button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => { setDdEdit(false); setDdErr(''); }}>Cancel</button>
                       </div>
-                      <p style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 8 }}>Account info is encrypted with AES-256. Linked via Moov ACH.</p>
+                      <p className="form-hint" style={{ marginTop: 10 }}>Account info is encrypted with AES-256.</p>
                     </div>
                   )}
                 </div>
@@ -674,21 +701,21 @@ function CheckHistory({ clientId, employeeId, employeeName, selectedChecks, onTo
 
   return (
     <div style={{ marginTop: 8 }}>
-      <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6 }}>Check History</div>
+      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6, letterSpacing: '0.05em' }}>Check History</div>
       <div style={{ borderRadius: 8, border: '1px solid var(--border)', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
           <thead>
             <tr style={{ background: 'var(--bg-secondary)' }}>
-              <th style={{ padding: '6px 8px', width: 32 }}>
-                <input type="checkbox" checked={allSelected} onChange={e => allSelectableIds.forEach(id => { if (e.target.checked !== (selectedChecks?.has(id) ?? false)) onToggleCheck?.(id); })} style={{ accentColor: 'var(--accent)', width: 13, height: 13 }} />
+              <th style={{ padding: '7px 10px', width: 34 }}>
+                <input type="checkbox" checked={allSelected} onChange={e => allSelectableIds.forEach(id => { if (e.target.checked !== (selectedChecks?.has(id) ?? false)) onToggleCheck?.(id); })} style={{ accentColor: 'var(--accent)', width: 14, height: 14 }} />
               </th>
-              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>Check #</th>
-              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>Period</th>
-              <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>Gross</th>
-              <th style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>Net Pay</th>
-              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>Status</th>
-              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 11 }}>EFTPS Due</th>
-              <th style={{ padding: '6px 8px', width: 110 }}></th>
+              <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, letterSpacing: '0.05em' }}>CHECK #</th>
+              <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, letterSpacing: '0.05em' }}>PERIOD</th>
+              <th style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, letterSpacing: '0.05em' }}>GROSS</th>
+              <th style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, letterSpacing: '0.05em' }}>NET PAY</th>
+              <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, letterSpacing: '0.05em' }}>STATUS</th>
+              <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, letterSpacing: '0.05em' }}>EFTPS DUE</th>
+              <th style={{ padding: '7px 10px', width: 120 }}></th>
             </tr>
           </thead>
           <tbody>
@@ -701,37 +728,37 @@ function CheckHistory({ clientId, employeeId, employeeName, selectedChecks, onTo
               const busy     = actioning === c.id;
               return (
                 <tr key={c.id} style={{ background: checkRowBg(c.check_status, isSel), borderTop: '1px solid var(--border)' }}>
-                  <td style={{ padding: '7px 8px' }}>
-                    {canSel && <input type="checkbox" checked={isSel} onChange={() => onToggleCheck?.(c.id)} style={{ accentColor: 'var(--accent)', width: 13, height: 13 }} />}
+                  <td style={{ padding: '10px 10px' }}>
+                    {canSel && <input type="checkbox" checked={isSel} onChange={() => onToggleCheck?.(c.id)} style={{ accentColor: 'var(--accent)', width: 14, height: 14 }} />}
                   </td>
-                  <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: voided ? '#dc2626' : 'var(--accent)', textDecoration: voided ? 'line-through' : 'none' }}>
-                    {c.check_number ? `#${c.check_number}` : isDraft ? <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: 11 }}>Draft</span> : '—'}
+                  <td style={{ padding: '10px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 800, color: voided ? '#dc2626' : 'var(--accent)', textDecoration: voided ? 'line-through' : 'none' }}>
+                    {c.check_number ? `#${c.check_number}` : isDraft ? <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: 12 }}>Draft</span> : '—'}
                   </td>
-                  <td style={{ padding: '7px 8px', color: 'var(--text-secondary)', textDecoration: voided ? 'line-through' : 'none' }}>
+                  <td style={{ padding: '10px 10px', color: 'var(--text-secondary)', textDecoration: voided ? 'line-through' : 'none', fontVariantNumeric: 'tabular-nums' }}>
                     {c.pay_period_start} – {c.pay_period_end}
                   </td>
-                  <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', textDecoration: voided ? 'line-through' : 'none' }}>{fmt(c.gross_wages)}</td>
-                  <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', color: voided ? '#dc2626' : 'var(--success)', fontWeight: 600, textDecoration: voided ? 'line-through' : 'none' }}>
+                  <td style={{ padding: '10px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', textDecoration: voided ? 'line-through' : 'none', fontVariantNumeric: 'tabular-nums' }}>{fmt(c.gross_wages)}</td>
+                  <td style={{ padding: '10px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, color: voided ? '#dc2626' : 'var(--success)', fontWeight: 700, textDecoration: voided ? 'line-through' : 'none', fontVariantNumeric: 'tabular-nums' }}>
                     {(() => { const np = Math.round(((c.gross_wages||0)-(c.fit_withholding||0)-(c.employee_ss||0)-(c.employee_medicare||0)-(c.additional_medicare||0)-(c.state_income_tax||0)-(c.deduction||0)-(c.garnishment||0)+(c.reimbursement||0))*100)/100; return voided ? `(${fmt(np)})` : fmt(np); })()}
                   </td>
-                  <td style={{ padding: '7px 8px' }}><StatusBadge status={c.check_status || 'draft'} /></td>
-                  <td style={{ padding: '7px 8px', fontSize: 11, color: isOverdue(c.settlement_due_date) ? '#dc2626' : dueDays !== null && dueDays <= 5 ? '#d97706' : 'var(--text-muted)', fontWeight: isOverdue(c.settlement_due_date) ? 700 : 400 }}>
+                  <td style={{ padding: '10px 10px' }}><StatusBadge status={c.check_status || 'draft'} /></td>
+                  <td style={{ padding: '10px 10px', fontSize: 12, color: isOverdue(c.settlement_due_date) ? '#dc2626' : dueDays !== null && dueDays <= 5 ? '#d97706' : 'var(--text-muted)', fontWeight: isOverdue(c.settlement_due_date) ? 700 : 400 }}>
                     {c.settlement_due_date ? (
                       <>{fmtDate(c.settlement_due_date)}{isOverdue(c.settlement_due_date) && <span style={{ marginLeft: 4 }}>({Math.abs(dueDays)}d overdue)</span>}</>
                     ) : '—'}
                   </td>
-                  <td style={{ padding: '7px 8px' }}>
+                  <td style={{ padding: '10px 10px' }}>
                     <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
                       {c.check_status === 'draft' && (
-                        <Link to={`/clients/${clientId}/paystubs/${c.id}/edit`} className="btn btn-ghost btn-sm" style={{ fontSize: 11 }}>Edit</Link>
+                        <Link to={`/clients/${clientId}/paystubs/${c.id}/edit`} className="btn btn-ghost btn-sm">Edit</Link>
                       )}
                       {!voided && (
-                        <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, color: '#dc2626', opacity: busy ? 0.5 : 1 }} onClick={() => handleVoid(c)} disabled={busy}>
+                        <button className="btn btn-ghost btn-sm" style={{ color: '#dc2626', opacity: busy ? 0.5 : 1 }} onClick={() => handleVoid(c)} disabled={busy}>
                           {busy ? '…' : 'Void'}
                         </button>
                       )}
                       {!voided && (
-                        <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, color: '#6b7280', opacity: busy ? 0.5 : 1 }} onClick={() => handleDelete(c)} disabled={busy} title="Delete check and reverse tax liabilities">
+                        <button className="btn btn-ghost btn-sm" style={{ color: '#6b7280', opacity: busy ? 0.5 : 1 }} onClick={() => handleDelete(c)} disabled={busy} title="Delete check and reverse tax liabilities">
                           {busy ? '…' : 'Del'}
                         </button>
                       )}
@@ -1037,6 +1064,7 @@ function CompanyTab({ client, onSaved }) {
       bankAccountType: client.bankAccountType || 'checking',
       bankAccountNumber: '',
       bankName: client.bankName || '',
+      nextCheckNumber: String(client.nextCheckNumber || 1001),
       twcUsername: client.twcUsername || '', twcPassword: '',
       contactName: client.contactName || '',
       contactEmail: client.contactEmail || '',
@@ -1176,13 +1204,31 @@ if (!payload.twcPassword) delete payload.twcPassword;
         <F label="Bank Name" hint="Printed on checks (e.g. BANK OF AMERICA)"><input className="form-input" value={form.bankName || ''} onChange={set('bankName')} placeholder="e.g. BANK OF AMERICA" /></F>
         <div className="form-grid">
           <F label="Account Number"><input className="form-input mono" type="password" value={form.bankAccountNumber} onChange={set('bankAccountNumber')} placeholder="(leave blank to keep)" /></F>
-          <F label="Routing Number"><input className="form-input mono" value={form.bankRoutingNumber} onChange={set('bankRoutingNumber')} maxLength={9} /></F>
+          <div>
+            <label className="form-label">Routing Number</label>
+            <input className="form-input mono" value={form.bankRoutingNumber} onChange={set('bankRoutingNumber')} maxLength={9} />
+            {form.bankRoutingNumber && (
+              <div className="form-hint" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span style={{ fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.08em' }}>
+                  {form.bankRoutingNumber.replace(/(\d{4})(\d{4})(\d{1})/, '$1 $2 $3')}
+                </span>
+                <span style={{ color: form.bankRoutingNumber.length === 9 ? 'var(--success)' : 'var(--warning)', fontWeight: 700 }}>
+                  {form.bankRoutingNumber.length}/9 digits
+                </span>
+              </div>
+            )}
+          </div>
         </div>
-        <F label="Account Type">
-          <select className="form-select" value={form.bankAccountType} onChange={set('bankAccountType')} style={{ maxWidth: 200 }}>
-            <option value="checking">Checking</option><option value="savings">Savings</option>
-          </select>
-        </F>
+        <div className="form-grid" style={{ marginTop: 4 }}>
+          <F label="Account Type">
+            <select className="form-select" value={form.bankAccountType} onChange={set('bankAccountType')}>
+              <option value="checking">Checking</option><option value="savings">Savings</option>
+            </select>
+          </F>
+          <F label="Next Check Number" hint="The number assigned to the next paycheck. Update if your physical check stock starts at a different number.">
+            <input className="form-input mono" type="number" min="1" step="1" value={form.nextCheckNumber} onChange={set('nextCheckNumber')} />
+          </F>
+        </div>
       </div>
 
       <div className="card" style={{ marginBottom: 20 }}>
@@ -3054,8 +3100,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
 
       {/* Main table: pending + late checks */}
       {mainRows.length > 0 && (
-        <div className="card" data-tour-id="tour-pending-section" style={{ padding: 0, overflow: 'hidden', marginBottom: 12 }}>
-          {renderTable(mainRows, 0)}
+        <div className="card" data-tour-id="tour-pending-section" style={{ padding: 0, overflow: 'visible', marginBottom: 12 }}>
+          <div style={{ overflowX: 'auto' }}>
+            {renderTable(mainRows, 0)}
+          </div>
         </div>
       )}
 
@@ -3082,8 +3130,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
             Printed &amp; Deposited Checks ({printedRows.length})
           </button>
           {showPrinted && (
-            <div className="card" data-tour-id="tour-printed-section" style={{ padding: 0, overflow: 'hidden', marginTop: 6 }}>
-              {renderTable(printedRows, mainRows.length)}
+            <div className="card" data-tour-id="tour-printed-section" style={{ padding: 0, overflow: 'visible', marginTop: 6 }}>
+              <div style={{ overflowX: 'auto' }}>
+                {renderTable(printedRows, mainRows.length)}
+              </div>
             </div>
           )}
         </div>

@@ -504,13 +504,13 @@ html, body, #root {
 .btn-icon { padding: 7px; width: 32px; height: 32px; justify-content: center; }
 
 /* ── Forms ── */
-.form-group { margin-bottom: 16px; }
+.form-group { margin-bottom: 18px; }
 .form-label {
   display: block;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-secondary);
-  margin-bottom: 6px;
+  margin-bottom: 7px;
   letter-spacing: 0.1px;
   text-transform: uppercase;
 }
@@ -520,9 +520,9 @@ html, body, #root {
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 9px 12px;
+  padding: 10px 13px;
   color: var(--text-primary);
-  font-size: 13.5px;
+  font-size: 14.5px;
   font-family: inherit;
   transition: border-color 0.15s, box-shadow 0.15s;
   outline: none;
@@ -538,12 +538,12 @@ html, body, #root {
   background-repeat: no-repeat; background-position: right 12px center; padding-right: 32px;
 }
 .form-textarea { resize: vertical; min-height: 80px; }
-.form-hint { font-size: 11.5px; color: var(--text-muted); margin-top: 5px; line-height: 1.4; }
-.form-error-msg { font-size: 11.5px; color: var(--error); margin-top: 5px; }
+.form-hint { font-size: 12.5px; color: var(--text-muted); margin-top: 6px; line-height: 1.45; }
+.form-error-msg { font-size: 12.5px; color: var(--error); margin-top: 6px; }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; }
 .form-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0 20px; }
 .form-section-title {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -551,6 +551,30 @@ html, body, #root {
   margin: 24px 0 14px;
   padding-bottom: 8px;
   border-bottom: 1px solid var(--border-light);
+}
+
+/* ── Reference number chips — routing/account/check number display ── */
+.ref-num {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 5px 10px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+  letter-spacing: 0.02em;
+}
+.ref-num-label {
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 /* ── Tables ── */
@@ -575,7 +599,7 @@ tbody td {
 }
 tbody tr:last-child td { border-bottom: none; }
 tbody tr:hover td { background: var(--bg-hover); }
-.mono { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; }
+.mono { font-family: 'JetBrains Mono', monospace; font-size: 13.5px; }
 .amount { color: var(--text-primary); font-weight: 600; }
 
 /* ── Alert ── */
