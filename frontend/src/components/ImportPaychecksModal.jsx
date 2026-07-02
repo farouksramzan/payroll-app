@@ -189,8 +189,9 @@ const selectStyle = {
 
 // ── Smart summary strip shown between file drop and check table ───────────────
 function SmartSummary({ preview, skipExisting, alreadyExistCount, setSkip }) {
-  const { detectedFrequency, payGroupAction, willAutoCreateEmployees } = preview;
+  const { payGroupActions, willAutoCreateEmployees } = preview;
   const newEmpsCount = (willAutoCreateEmployees || []).length;
+  const groups = payGroupActions || [];
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
@@ -210,30 +211,22 @@ function SmartSummary({ preview, skipExisting, alreadyExistCount, setSkip }) {
         </label>
       </div>
 
-      {/* Smart cards row */}
+      {/* Smart cards row — one card per detected frequency/pay group */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        {/* Frequency */}
-        {detectedFrequency && (
-          <div style={infoCard('#eff6ff', '#1d4ed8')}>
-            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, opacity: 0.7 }}>Detected</span>
-            <span style={{ fontWeight: 700, fontSize: 13 }}>{FREQ_LABELS[detectedFrequency] || detectedFrequency}</span>
-          </div>
-        )}
-
-        {/* Pay group */}
-        {payGroupAction && (
-          <div style={infoCard(
-            payGroupAction.action === 'match' ? '#f0fdf4' : '#fdf4ff',
-            payGroupAction.action === 'match' ? '#166534' : '#6b21a8',
+        {groups.map(pg => (
+          <div key={pg.frequency} style={infoCard(
+            pg.action === 'match' ? '#f0fdf4' : '#fdf4ff',
+            pg.action === 'match' ? '#166534' : '#6b21a8',
           )}>
             <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, opacity: 0.7 }}>
-              Pay Group {payGroupAction.action === 'match' ? 'Match' : 'Will Create'}
+              {FREQ_LABELS[pg.frequency] || pg.frequency} · {pg.action === 'match' ? 'Matched' : 'Will Create'}
             </span>
             <span style={{ fontWeight: 700, fontSize: 13 }}>
-              {payGroupAction.action === 'match' ? payGroupAction.groupName : payGroupAction.suggestedName}
+              {pg.action === 'match' ? pg.groupName : pg.suggestedName}
             </span>
+            <span style={{ fontSize: 11, opacity: 0.65 }}>{pg.checkCount} check{pg.checkCount !== 1 ? 's' : ''}</span>
           </div>
-        )}
+        ))}
 
         {/* Auto-create employees */}
         {newEmpsCount > 0 && (
@@ -280,30 +273,34 @@ function infoCard(bg, color) {
 // ── Done screen ───────────────────────────────────────────────────────────────
 function DoneScreen({ done, onClose }) {
   const hasNewEmps = done.employeesCreated && done.employeesCreated.length > 0;
+  const groups = done.payGroups || [];
 
   return (
     <div style={{ textAlign: 'center', padding: '28px 0' }}>
       <div style={{ fontSize: 48, marginBottom: 12 }}>✓</div>
       <h3 style={{ marginBottom: 6 }}>{done.imported} paycheck{done.imported !== 1 ? 's' : ''} imported</h3>
 
-      {/* Stats line */}
-      <div style={{ display: 'flex', justifyContent: 'center', gap: 20, flexWrap: 'wrap', marginBottom: 16 }}>
-        {done.skipped > 0 && (
-          <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-            {done.skipped} skipped
-            {done.patched > 0 ? ` · ${done.patched} patched with tips` : ''}
-          </span>
-        )}
-        {done.payGroupCreated && (
-          <span style={{ fontSize: 13, color: '#6b21a8' }}>Pay group "{done.payGroupName}" created</span>
-        )}
-        {!done.payGroupCreated && done.payGroupName && (
-          <span style={{ fontSize: 13, color: '#166534' }}>Assigned to pay group "{done.payGroupName}"</span>
-        )}
-        {done.detectedFrequency && (
-          <span style={{ fontSize: 13, color: '#1d4ed8' }}>Detected: {FREQ_LABELS[done.detectedFrequency] || done.detectedFrequency}</span>
-        )}
-      </div>
+      {done.skipped > 0 && (
+        <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 12px' }}>
+          {done.skipped} skipped{done.patched > 0 ? ` · ${done.patched} patched with tips` : ''}
+        </p>
+      )}
+
+      {/* Pay group results */}
+      {groups.length > 0 && (
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+          {groups.map(pg => (
+            <span key={pg.frequency} style={{
+              fontSize: 12, padding: '3px 10px', borderRadius: 20,
+              background: pg.action === 'create' ? '#fdf4ff' : '#f0fdf4',
+              color: pg.action === 'create' ? '#6b21a8' : '#166534',
+              border: `1px solid ${pg.action === 'create' ? '#e9d5ff' : '#bbf7d0'}`,
+            }}>
+              {pg.action === 'create' ? 'Created' : 'Matched'}: {pg.name} ({pg.checkCount} checks)
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* W-4 guidance for auto-created employees */}
       {hasNewEmps && (
