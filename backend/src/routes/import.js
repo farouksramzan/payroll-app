@@ -639,10 +639,6 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
         existingFp.add(fp);
         if (numKey) existingByNum.add(numKey);
 
-        const empKey    = (c.empName || '').toUpperCase().trim();
-        const detFreq   = empFreqMap.get(empKey) || dominantFreq;
-        const payGroupId = freqToGroupId.get(detFreq) || null;
-
         const r = insert.run(
           clientId, c.employeeId || null, c.empName,
           c.periodStart, c.periodEnd, c.checkDate, c.payFrequency, c.filingStatus, c.workState,
