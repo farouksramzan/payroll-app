@@ -1573,11 +1573,37 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
   const mainRows    = [];
   const printedRows = [];
 
+  // Build a settlement-date index per employee for the current group. This is used
+  // below as a secondary "is this period already paid?" check for imported checks
+  // whose stored pay_period_end may be off by 1-3 days from the schedule-generated
+  // period end (due to pay-date variation month to month).
+  const stubSettleDatesByEmp = new Map();
+  if (currentGroupId && currentGroupId !== UNASSIGNED_ID) {
+    const byId = paystubs.filter(s => s.pay_group_id === currentGroupId);
+    const grpStubs = byId.length > 0 ? byId : (() => {
+      const ids = new Set(empsInGroup.map(e => e.id));
+      return paystubs.filter(s => s.employee_id && ids.has(s.employee_id));
+    })();
+    grpStubs.forEach(stub => {
+      if (!stub.employee_id || !stub.settlement_date) return;
+      if (!stubSettleDatesByEmp.has(stub.employee_id)) stubSettleDatesByEmp.set(stub.employee_id, []);
+      stubSettleDatesByEmp.get(stub.employee_id).push(stub.settlement_date);
+    });
+  }
+
   pendingPeriods.forEach(period => {
     empsInGroup.forEach(emp => {
-      if (!skippedPending.has(`${period.end}_${emp.id}`)) {
-        mainRows.push({ type: 'pending', period, emp, key: `p-${period.end}-${emp.id}` });
+      if (skippedPending.has(`${period.end}_${emp.id}`)) return;
+      // Suppress phantom pending when the employee already has a check whose
+      // settlement date falls within [period.start … payDate + 5 days].
+      const empDates = stubSettleDatesByEmp.get(emp.id);
+      if (empDates && empDates.length > 0) {
+        const buf = new Date(period.payDate + 'T00:00:00');
+        buf.setDate(buf.getDate() + 5);
+        const bufEnd = buf.toISOString().slice(0, 10);
+        if (empDates.some(sd => sd >= period.start && sd <= bufEnd)) return;
       }
+      mainRows.push({ type: 'pending', period, emp, key: `p-${period.end}-${emp.id}` });
     });
   });
   history.forEach(period => {

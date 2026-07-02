@@ -167,36 +167,84 @@ function freqDays(freq) {
   return 14;
 }
 
+function addDaysUTC(dateStr, n) {
+  const d = new Date(dateStr + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
+// Mirrors the frontend advancePeriod function using UTC arithmetic.
+// Used to recalculate canonical period dates so stored pay_period_end values
+// exactly match what getPendingPeriods() generates from the pay group anchor.
+function advancePeriodUTC(startStr, endStr, freq) {
+  const s = new Date(startStr + 'T00:00:00Z');
+  const e = new Date(endStr   + 'T00:00:00Z');
+  if (freq === 'weekly')   return [addDaysUTC(startStr, 7),  addDaysUTC(endStr, 7)];
+  if (freq === 'biweekly') return [addDaysUTC(startStr, 14), addDaysUTC(endStr, 14)];
+  if (freq === 'monthly') {
+    const ns = new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth() + 1, s.getUTCDate()));
+    const ne = new Date(Date.UTC(e.getUTCFullYear(), e.getUTCMonth() + 1, e.getUTCDate()));
+    return [ns.toISOString().slice(0, 10), ne.toISOString().slice(0, 10)];
+  }
+  if (freq === 'semimonthly') {
+    const ns = new Date(e); ns.setUTCDate(ns.getUTCDate() + 1);
+    const ne = ns.getUTCDate() === 1
+      ? new Date(Date.UTC(ns.getUTCFullYear(), ns.getUTCMonth(), 15))
+      : new Date(Date.UTC(ns.getUTCFullYear(), ns.getUTCMonth() + 1, 0));
+    return [ns.toISOString().slice(0, 10), ne.toISOString().slice(0, 10)];
+  }
+  return [addDaysUTC(startStr, 14), addDaysUTC(endStr, 14)];
+}
+
+// Find which pay group schedule period a check date belongs to.
+// Returns { periodStart, periodEnd } for the matching period, or null.
+function findCanonicalPeriod(checkDate, anchorStart, anchorEnd, freq) {
+  let [s, e] = [anchorStart, anchorEnd];
+  for (let i = 0; i < 200; i++) {
+    const payWindow = addDaysUTC(e, 10); // generous: check date up to 10 days after period end
+    if (checkDate <= payWindow && checkDate >= s) return { periodStart: s, periodEnd: e };
+    if (checkDate < s) break;
+    [s, e] = advancePeriodUTC(s, e, freq);
+  }
+  return null;
+}
+
 // Detect frequency from a sorted list of unique date strings (YYYY-MM-DD).
 // Returns null when there isn't enough signal (single date with no pattern).
 // IMPORTANT: gaps are evaluated first so monthly-on-the-1st is never mistaken
 // for semimonthly. Day-of-month clustering only breaks a biweekly/semimonthly tie.
 function detectFrequencyFromDates(dates) {
   const sorted = [...new Set(dates.filter(Boolean))].sort();
-  if (sorted.length < 2) return null; // can't compute a gap from a single date
+  if (sorted.length < 2) return null;
 
   const gaps = [];
   for (let i = 1; i < sorted.length; i++) {
     const d1 = new Date(sorted[i - 1] + 'T00:00:00Z');
-    const d2 = new Date(sorted[i] + 'T00:00:00Z');
+    const d2 = new Date(sorted[i]     + 'T00:00:00Z');
     const gap = Math.round((d2 - d1) / 86400000);
     if (gap > 0 && gap < 60) gaps.push(gap);
   }
   if (gaps.length === 0) return null;
 
-  const sorted_gaps = [...gaps].sort((a, b) => a - b);
+  // If the gap list has both short "burst" gaps (≤ 10 days) AND longer-cycle gaps
+  // (≥ 20 days), the short ones are likely bonus/adjustment checks issued mid-cycle.
+  // Re-classify using only the longer gaps so a monthly employee with bonus checks
+  // isn't mislabeled as semimonthly.
+  const longGaps = gaps.filter(g => g >= 20);
+  const effectiveGaps = (longGaps.length > 0 && longGaps.length < gaps.length) ? longGaps : gaps;
+
+  const sorted_gaps = [...effectiveGaps].sort((a, b) => a - b);
   const median = sorted_gaps[Math.floor(sorted_gaps.length / 2)];
 
-  // Gap-first classification: weekly and monthly are unambiguous
   if (median <= 8)  return 'weekly';
-  if (median >= 25) return 'monthly'; // monthly-on-1st: gap ~30 → correct
+  if (median >= 25) return 'monthly';
 
-  // Gap is 9–24 days: biweekly (14) vs semimonthly (15).
-  // Only use day-of-month clustering as a tiebreaker in this narrow range.
+  // Gap 9–24 days: biweekly vs semimonthly tiebreaker.
+  // Require ≥ 4 data points and ≥ 70% on 1st/2nd/15th/16th for a strong semimonthly signal.
   if (median >= 13 && median <= 17) {
     const dayNums = sorted.map(d => parseInt(d.slice(8, 10), 10));
     const semiHits = dayNums.filter(d => d === 1 || d === 2 || d === 15 || d === 16).length;
-    if (semiHits / dayNums.length >= 0.5) return 'semimonthly';
+    if (sorted.length >= 4 && semiHits / dayNums.length >= 0.70) return 'semimonthly';
   }
 
   return 'biweekly';
@@ -560,6 +608,38 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
       })();
     } catch (err) {
       console.error('[import] employee pay_group_id assign failed:', err.message);
+    }
+
+    // ── Recalculate canonical period dates ───────────────────────────────────
+    // Imported checks initially use periodEnd = checkDate - 2 (flat subtraction).
+    // The pay group schedule advances via advancePeriod (calendar arithmetic), so
+    // subsequent period ends may diverge by 1-3 days from stored values, causing
+    // getPendingPeriods() to generate phantom "pending" rows for already-paid periods.
+    // Re-map each check to the schedule period that contains its check date so the
+    // stored pay_period_end matches what the frontend generates from the anchor.
+    try {
+      const getGroupAnchor = db.prepare(
+        'SELECT first_pay_period_start, first_pay_period_end FROM pay_groups WHERE id = ?'
+      );
+      const anchorCache = new Map();
+      for (const c of checks) {
+        const empKey  = (c.empName || '').toUpperCase().trim();
+        const detFreq = empFreqMap.get(empKey) || dominantFreq;
+        const groupId = freqToGroupId.get(detFreq);
+        if (!groupId) continue;
+        if (!anchorCache.has(groupId)) anchorCache.set(groupId, getGroupAnchor.get(groupId));
+        const anchor = anchorCache.get(groupId);
+        if (!anchor?.first_pay_period_start || !anchor?.first_pay_period_end) continue;
+        const canonical = findCanonicalPeriod(
+          c.checkDate, anchor.first_pay_period_start, anchor.first_pay_period_end, detFreq
+        );
+        if (canonical) {
+          c.periodStart = canonical.periodStart;
+          c.periodEnd   = canonical.periodEnd;
+        }
+      }
+    } catch (err) {
+      console.warn('[import] canonical period recalc skipped:', err.message);
     }
 
     // ── Dedup sets ────────────────────────────────────────────────────────────
