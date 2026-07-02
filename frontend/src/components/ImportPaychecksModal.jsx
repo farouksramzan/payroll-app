@@ -168,8 +168,14 @@ export default function ImportPaychecksModal({ clientId, onClose, onImported }) 
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                   <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
-                  <button className="btn btn-primary" onClick={handleImport} disabled={toImport.length === 0}>
-                    Import {toImport.length} Check{toImport.length !== 1 ? 's' : ''}
+                  <button
+                    className="btn btn-primary"
+                    onClick={handleImport}
+                    disabled={toImport.length === 0 && alreadyExist.length === 0}
+                  >
+                    {toImport.length > 0
+                      ? `Import ${toImport.length} Check${toImport.length !== 1 ? 's' : ''}`
+                      : `Fix Group Assignments (${alreadyExist.length} checks)`}
                   </button>
                 </div>
               </>
