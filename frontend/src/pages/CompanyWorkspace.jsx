@@ -1042,73 +1042,96 @@ function FormField({ label, hint, children }) {
 
 // ── Company Tab ───────────────────────────────────────────────────────────────
 function CompanyTab({ client, onSaved }) {
-  const [form, setForm]     = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [saved,  setSaved]  = useState(false);
-  const [err, setErr]       = useState('');
+  const [form, setForm]           = useState(null);
+  const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
+  const [err, setErr]             = useState('');
+  const [changingAccount, setChangingAccount] = useState(false);
+  const [showAccountNum, setShowAccountNum]   = useState(false);
+  const saveTimerRef = useRef(null);
 
   useEffect(() => {
     if (!client) return;
+    setChangingAccount(false);
+    setShowAccountNum(false);
     setForm({
-      businessName: client.businessName || '',
-      ein: client.ein || '',
-      state: client.state || 'TX',
-      depositSchedule: client.depositSchedule || 'monthly',
+      businessName:     client.businessName    || '',
+      ein:              client.ein             || '',
+      state:            client.state           || 'TX',
+      depositSchedule:  client.depositSchedule || 'monthly',
       suiRateQ1: client.suiRateQ1 != null ? String(parseFloat(client.suiRateQ1) * 100) : '',
       suiRateQ2: client.suiRateQ2 != null ? String(parseFloat(client.suiRateQ2) * 100) : '',
       suiRateQ3: client.suiRateQ3 != null ? String(parseFloat(client.suiRateQ3) * 100) : '',
       suiRateQ4: client.suiRateQ4 != null ? String(parseFloat(client.suiRateQ4) * 100) : '',
       suiAccountNumber: client.suiAccountNumber || '',
-      countyCode: client.countyCode || '',
+      countyCode:       client.countyCode      || '',
       bankRoutingNumber: client.bankRoutingNumber || '',
-      bankAccountType: client.bankAccountType || 'checking',
-      bankAccountNumber: '',
-      bankName: client.bankName || '',
-      nextCheckNumber: String(client.nextCheckNumber || 1001),
-      twcUsername: client.twcUsername || '', twcPassword: '',
-      contactName: client.contactName || '',
-      contactEmail: client.contactEmail || '',
-      contactPhone: client.contactPhone || '',
-      payrollFrequency: client.payrollFrequency || 'biweekly',
-      nextPayrollDate: client.nextPayrollDate || '',
-      businessAddress: client.businessAddress || '',
-      businessCity: client.businessCity || '',
-      businessZip: client.businessZip || '',
+      bankAccountType:  client.bankAccountType || 'checking',
+      bankAccountNumber: '',       // blank = keep current; only sent when changingAccount
+      bankAccountLast4: client.bankAccountLast4 || '',
+      bankName:         client.bankName        || '',
+      nextCheckNumber:  String(client.nextCheckNumber || 1001),
+      contactName:      client.contactName     || '',
+      contactEmail:     client.contactEmail    || '',
+      contactPhone:     client.contactPhone    || '',
+      businessAddress:  client.businessAddress || '',
+      businessCity:     client.businessCity    || '',
+      businessZip:      client.businessZip     || '',
       notificationEmail: client.notificationEmail || '',
       notificationPhone: client.notificationPhone || '',
     });
   }, [client]);
 
-  function set(field) { return e => { setForm(f => ({ ...f, [field]: e.target.value })); setSaved(false); }; }
-
-  async function handleSave() {
-    setSaving(true); setErr(''); setSaved(false);
+  async function doSave(currentForm) {
+    setSaveStatus('saving'); setErr('');
     try {
       const payload = {
-        ...form,
-        suiRateQ1: form.suiRateQ1 ? parseFloat(form.suiRateQ1) / 100 : null,
-        suiRateQ2: form.suiRateQ2 ? parseFloat(form.suiRateQ2) / 100 : null,
-        suiRateQ3: form.suiRateQ3 ? parseFloat(form.suiRateQ3) / 100 : null,
-        suiRateQ4: form.suiRateQ4 ? parseFloat(form.suiRateQ4) / 100 : null,
-        suiAccountNumber: form.suiAccountNumber || null,
-        countyCode: form.countyCode || null,
+        ...currentForm,
+        suiRateQ1: currentForm.suiRateQ1 ? parseFloat(currentForm.suiRateQ1) / 100 : null,
+        suiRateQ2: currentForm.suiRateQ2 ? parseFloat(currentForm.suiRateQ2) / 100 : null,
+        suiRateQ3: currentForm.suiRateQ3 ? parseFloat(currentForm.suiRateQ3) / 100 : null,
+        suiRateQ4: currentForm.suiRateQ4 ? parseFloat(currentForm.suiRateQ4) / 100 : null,
+        suiAccountNumber: currentForm.suiAccountNumber || null,
+        countyCode: currentForm.countyCode || null,
       };
+      delete payload.bankAccountLast4; // never send last4 to backend
       if (!payload.bankAccountNumber) delete payload.bankAccountNumber;
-if (!payload.twcPassword) delete payload.twcPassword;
       await api.updateClient(client.id, payload);
-      setSaved(true); onSaved();
-    } catch (e) { setErr(e.message); }
-    finally { setSaving(false); }
+      setSaveStatus('saved'); onSaved();
+    } catch (e) { setErr(e.message); setSaveStatus('error'); }
+  }
+
+  function set(field) {
+    return e => {
+      const val = e.target.value;
+      setForm(f => {
+        const newForm = { ...f, [field]: val };
+        setSaveStatus('idle'); setErr('');
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = setTimeout(() => doSave(newForm), 1400);
+        return newForm;
+      });
+    };
   }
 
   if (!form) return <div style={{ padding: 40, textAlign: 'center' }}><div className="spinner spinner-dark" style={{ width: 28, height: 28 }} /></div>;
 
   const F = FormField;
+  const saveIndicator = saveStatus === 'saving' ? (
+    <span style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
+      <span className="spinner spinner-dark" style={{ width: 12, height: 12 }} /> Saving…
+    </span>
+  ) : saveStatus === 'saved' ? (
+    <span style={{ fontSize: 12, color: 'var(--success)', fontWeight: 600 }}>✓ Saved</span>
+  ) : saveStatus === 'error' ? (
+    <span style={{ fontSize: 12, color: '#dc2626', fontWeight: 600 }}>⚠ {err || 'Save failed'}</span>
+  ) : null;
 
   return (
     <div style={{ maxWidth: 760 }}>
-      {err   && <div className="alert alert-error"   style={{ marginBottom: 16 }}><span>⚠</span>{err}</div>}
-      {saved && <div className="alert alert-success" style={{ marginBottom: 16 }}><span>✓</span>Changes saved.</div>}
+      {/* Auto-save indicator — floats top right */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end', minHeight: 22, marginBottom: 8 }}>
+        {saveIndicator}
+      </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
         <p className="form-section-title" style={{ marginTop: 0 }}>Business Information</p>
@@ -1122,46 +1145,12 @@ if (!payload.twcPassword) delete payload.twcPassword;
           <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">State</label><select className="form-select" value={form.state} onChange={set('state')}>{US_STATES.map(([c, n]) => <option key={c} value={c}>{c} — {n}</option>)}</select></div>
           <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">ZIP</label><input className="form-input mono" value={form.businessZip} onChange={set('businessZip')} maxLength={10} /></div>
         </div>
-        <div className="form-grid" style={{ marginTop: 14 }}>
-          <F label="941 Deposit Schedule" hint="Monthly: 15th of following month. Semi-weekly: Wed or Fri after payroll.">
-            <select className="form-select" value={form.depositSchedule} onChange={set('depositSchedule')}>
+        <div style={{ marginTop: 14 }}>
+          <F label="IRS 941 Deposit Schedule" hint="Monthly: taxes due by the 15th of the following month. Semi-weekly: taxes due Wed or Fri after each payroll.">
+            <select className="form-select" style={{ maxWidth: 280 }} value={form.depositSchedule} onChange={set('depositSchedule')}>
               <option value="monthly">Monthly Depositor</option>
               <option value="semiweekly">Semi-weekly Depositor</option>
             </select>
-          </F>
-        </div>
-        <div className="form-grid" style={{ marginTop: 14 }}>
-          {[['Q1','suiRateQ1'],['Q2','suiRateQ2'],['Q3','suiRateQ3'],['Q4','suiRateQ4']].map(([q, key]) => (
-            <F key={q} label={`SUI Rate ${q} (%)`}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <input className="form-input mono" type="number" min="0" max="20" step="0.001" value={form[key]} onChange={set(key)} style={{ maxWidth: 120 }} placeholder="e.g. 0.32" />
-                <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>%</span>
-              </div>
-            </F>
-          ))}
-        </div>
-        <div className="form-grid">
-          <F label="Default Payroll Frequency">
-            <select className="form-select" value={form.payrollFrequency} onChange={set('payrollFrequency')}>
-              <option value="weekly">Weekly</option><option value="biweekly">Bi-weekly</option>
-              <option value="semimonthly">Semi-monthly</option><option value="monthly">Monthly</option>
-            </select>
-          </F>
-          <F label="Next Payroll Date"><input className="form-input" type="date" value={form.nextPayrollDate} onChange={set('nextPayrollDate')} /></F>
-        </div>
-      </div>
-
-      <div className="card" style={{ marginBottom: 16 }}>
-        <p className="form-section-title" style={{ marginTop: 0 }}>Tax Deposit Notifications</p>
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16 }}>
-          Receive email and SMS reminders 5 days and 2 days before each deposit due date, and immediately when overdue.
-        </p>
-        <div className="form-grid">
-          <F label="Notification Email" hint="SendGrid required — configure SENDGRID_API_KEY in .env">
-            <input className="form-input" type="email" value={form.notificationEmail} onChange={set('notificationEmail')} placeholder="accountant@firm.com" />
-          </F>
-          <F label="Notification Phone (SMS)" hint="Twilio required — configure TWILIO_* in .env. Include country code: +15550000000">
-            <input className="form-input" type="tel" value={form.notificationPhone} onChange={set('notificationPhone')} placeholder="+15550000000" />
           </F>
         </div>
       </div>
@@ -1172,21 +1161,13 @@ if (!payload.twcPassword) delete payload.twcPassword;
           const agencyName = SUI_AGENCIES[st] || `${st} Dept. of Labor`;
           return (
             <>
-              <p className="form-section-title" style={{ marginTop: 0 }}>{agencyName} — SUI</p>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
-                State unemployment insurance account number. Used on quarterly wage reports and QuickFile uploads.
-              </div>
+              <p className="form-section-title" style={{ marginTop: 0 }}>{agencyName} — State Unemployment</p>
               <F label="SUI Account Number" hint="Your state UI employer account number. Printed on quarterly SUI report.">
-                <input className="form-input mono" value={form.suiAccountNumber} onChange={set('suiAccountNumber')} placeholder="e.g. 10-818766-2" />
+                <input className="form-input mono" value={form.suiAccountNumber} onChange={set('suiAccountNumber')} placeholder="e.g. 10-818766-2" style={{ maxWidth: 280 }} />
               </F>
               {form.state === 'TX' && (
-                <F label="County" hint="Required for TWC QuickFile ICESA submission. Select the county where the business is located.">
-                  <select
-                    className="form-select"
-                    value={form.countyCode}
-                    onChange={set('countyCode')}
-                    style={{ maxWidth: 320 }}
-                  >
+                <F label="County" hint="Required for TWC QuickFile ICESA submission.">
+                  <select className="form-select" value={form.countyCode} onChange={set('countyCode')} style={{ maxWidth: 320 }}>
                     <option value="">— Select county —</option>
                     {TX_COUNTIES.map(([name, code]) => (
                       <option key={code} value={code}>{name} ({code})</option>
@@ -1194,6 +1175,16 @@ if (!payload.twcPassword) delete payload.twcPassword;
                   </select>
                 </F>
               )}
+              <div className="form-grid" style={{ marginTop: 4 }}>
+                {[['Q1','suiRateQ1'],['Q2','suiRateQ2'],['Q3','suiRateQ3'],['Q4','suiRateQ4']].map(([q, key]) => (
+                  <F key={q} label={`SUI Rate ${q} (%)`}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <input className="form-input mono" type="number" min="0" max="20" step="0.001" value={form[key]} onChange={set(key)} style={{ maxWidth: 110 }} placeholder="e.g. 0.32" />
+                      <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>%</span>
+                    </div>
+                  </F>
+                ))}
+              </div>
             </>
           );
         })()}
@@ -1201,9 +1192,50 @@ if (!payload.twcPassword) delete payload.twcPassword;
 
       <div className="card" style={{ marginBottom: 16 }}>
         <p className="form-section-title" style={{ marginTop: 0 }}>Bank Account</p>
-        <F label="Bank Name" hint="Printed on checks (e.g. BANK OF AMERICA)"><input className="form-input" value={form.bankName || ''} onChange={set('bankName')} placeholder="e.g. BANK OF AMERICA" /></F>
+        <F label="Bank Name" hint="Printed on checks (e.g. BANK OF AMERICA)">
+          <input className="form-input" value={form.bankName || ''} onChange={set('bankName')} placeholder="e.g. BANK OF AMERICA" />
+        </F>
         <div className="form-grid">
-          <F label="Account Number"><input className="form-input mono" type="password" value={form.bankAccountNumber} onChange={set('bankAccountNumber')} placeholder="(leave blank to keep)" /></F>
+          <div>
+            <label className="form-label">Account Number</label>
+            {changingAccount ? (
+              <div style={{ position: 'relative' }}>
+                <input
+                  className="form-input mono"
+                  type={showAccountNum ? 'text' : 'password'}
+                  value={form.bankAccountNumber}
+                  onChange={set('bankAccountNumber')}
+                  placeholder="Enter new account number"
+                  autoFocus
+                  style={{ paddingRight: 40 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowAccountNum(v => !v)}
+                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 16, padding: 0 }}
+                  title={showAccountNum ? 'Hide' : 'Show'}
+                >{showAccountNum ? '🙈' : '👁'}</button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 13px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', minHeight: 46 }}>
+                <span className="mono" style={{ color: form.bankAccountLast4 ? 'var(--text-primary)' : 'var(--text-muted)', letterSpacing: '0.05em' }}>
+                  {form.bankAccountLast4 ? `···· ···· ···· ${form.bankAccountLast4}` : 'No account on file'}
+                </span>
+                <button type="button" onClick={() => setChangingAccount(true)}
+                  style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--accent)', fontWeight: 600, padding: 0 }}>
+                  {form.bankAccountLast4 ? 'Change' : 'Add'}
+                </button>
+              </div>
+            )}
+            {changingAccount && (
+              <div className="form-hint">
+                <button type="button" onClick={() => { setChangingAccount(false); setForm(f => ({ ...f, bankAccountNumber: '' })); }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--text-muted)', padding: 0, textDecoration: 'underline' }}>
+                  Cancel change
+                </button>
+              </div>
+            )}
+          </div>
           <div>
             <label className="form-label">Routing Number</label>
             <input className="form-input mono" value={form.bankRoutingNumber} onChange={set('bankRoutingNumber')} maxLength={9} />
@@ -1225,13 +1257,13 @@ if (!payload.twcPassword) delete payload.twcPassword;
               <option value="checking">Checking</option><option value="savings">Savings</option>
             </select>
           </F>
-          <F label="Next Check Number" hint="The number assigned to the next paycheck. Update if your physical check stock starts at a different number.">
+          <F label="Next Check Number" hint="Number assigned to the next paycheck. Update if your physical check stock starts at a different number.">
             <input className="form-input mono" type="number" min="1" step="1" value={form.nextCheckNumber} onChange={set('nextCheckNumber')} />
           </F>
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: 20 }}>
+      <div className="card" style={{ marginBottom: 16 }}>
         <p className="form-section-title" style={{ marginTop: 0 }}>Contact Information</p>
         <div className="form-grid">
           <F label="Contact Name"><input className="form-input" value={form.contactName} onChange={set('contactName')} /></F>
@@ -1240,8 +1272,19 @@ if (!payload.twcPassword) delete payload.twcPassword;
         <F label="Email"><input className="form-input" type="email" value={form.contactEmail} onChange={set('contactEmail')} /></F>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <button className="btn btn-primary btn-lg" onClick={handleSave} disabled={saving}>{saving ? <span className="spinner" /> : 'Save Changes'}</button>
+      <div className="card" style={{ marginBottom: 20 }}>
+        <p className="form-section-title" style={{ marginTop: 0 }}>Tax Deposit Notifications</p>
+        <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14 }}>
+          Email and SMS reminders 5 days and 2 days before each 941 deposit due date, and immediately when overdue.
+        </p>
+        <div className="form-grid">
+          <F label="Notification Email" hint="Requires SendGrid — set SENDGRID_API_KEY in .env">
+            <input className="form-input" type="email" value={form.notificationEmail} onChange={set('notificationEmail')} placeholder="accountant@firm.com" />
+          </F>
+          <F label="Notification Phone (SMS)" hint="Requires Twilio — set TWILIO_* in .env. Include country code: +15550000000">
+            <input className="form-input" type="tel" value={form.notificationPhone} onChange={set('notificationPhone')} placeholder="+15550000000" />
+          </F>
+        </div>
       </div>
     </div>
   );
@@ -2640,15 +2683,15 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
     return (
       <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 15 }}>
         <colgroup>
-          <col style={{ width: 48 }} />
+          <col style={{ width: 40 }} />
           <col />
-          <col style={{ width: 110 }} />
-          <col style={{ width: 110 }} />
-          <col style={{ width: 110 }} />
-          <col style={{ width: 82 }} />
-          <col style={{ width: 82 }} />
-          <col style={{ width: 90 }} />
-          <col style={{ width: 110 }} />
+          <col style={{ width: 96 }} />
+          <col style={{ width: 96 }} />
+          <col style={{ width: 96 }} />
+          <col style={{ width: 62 }} />
+          <col style={{ width: 62 }} />
+          <col style={{ width: 72 }} />
+          <col style={{ width: 96 }} />
           <col style={{ width: 110 }} />
         </colgroup>
         <thead>
@@ -2870,14 +2913,24 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                   )) : '—'}
                 </td>
                 <td style={{ padding: '8px 10px', textAlign: 'right' }}>
-                  {!isVoided ? (
-                    <span style={{ cursor: 'pointer' }} title="Click to change status"
-                      onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setEmpStatusDrop(empStatusDrop?.stub?.id === stub.id ? null : { stub, top: r.bottom + 4, right: window.innerWidth - r.right }); }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                    {!isVoided ? (
+                      <span style={{ cursor: 'pointer' }} title="Click to change status"
+                        onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setEmpStatusDrop(empStatusDrop?.stub?.id === stub.id ? null : { stub, top: r.bottom + 4, right: window.innerWidth - r.right }); }}>
+                        <StatusBadge status={displayStatus} />
+                      </span>
+                    ) : (
                       <StatusBadge status={displayStatus} />
-                    </span>
-                  ) : (
-                    <StatusBadge status={displayStatus} />
-                  )}
+                    )}
+                    {!isVoided && (
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        style={{ fontSize: 11, color: '#6b7280', padding: '1px 6px', height: 'auto', lineHeight: 1.4 }}
+                        onClick={e => { e.stopPropagation(); if (window.confirm(`Delete check #${stub.check_number || stub.id} for ${stub.employee_name}?\n\nThis will reverse all associated tax liabilities.`)) { api.deletePaystub(stub.id).then(reloadStubs).catch(er => alert(er.message)); } }}
+                        title="Delete check and reverse tax liabilities"
+                      >Del</button>
+                    )}
+                  </div>
                 </td>
               </tr>
             );

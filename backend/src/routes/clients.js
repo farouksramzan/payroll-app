@@ -123,6 +123,10 @@ function sanitizeClient(client, includeSecrets = false) {
     joinCode:           client.join_code           || null,
     selfRegistered:     !!client.self_registered,
     onboardingDone:     !!client.onboarding_done,
+    bankAccountLast4: (() => {
+      if (!client.bank_account_number_encrypted) return null;
+      try { const n = decrypt(client.bank_account_number_encrypted); return n ? n.slice(-4) : null; } catch { return null; }
+    })(),
   };
   if (includeSecrets) {
     out.batchProviderPin = client.batch_provider_pin_encrypted ? decrypt(client.batch_provider_pin_encrypted) : null;
