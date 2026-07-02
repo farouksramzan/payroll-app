@@ -1317,12 +1317,29 @@ router.put('/:id', (req, res) => {
     }
   } else {
     // Only metadata changed — update dates, notes, status, and extra pay columns without touching tax values
+    const newDeduction     = deductionIn     !== undefined ? parseFloat(deductionIn     || 0) : (stub.deduction     || 0);
+    const newGarnishment   = garnishmentIn   !== undefined ? parseFloat(garnishmentIn   || 0) : (stub.garnishment   || 0);
+    const newReimbursement = reimbursementIn !== undefined ? parseFloat(reimbursementIn || 0) : (stub.reimbursement || 0);
+    // Recalculate net_pay when deduction/garnishment/reimbursement changes
+    const r2 = n => Math.round(n * 100) / 100;
+    const newNetPay = r2(
+      (stub.gross_wages || 0)
+      - (stub.fit_withholding || 0)
+      - (stub.employee_ss || 0)
+      - (stub.employee_medicare || 0)
+      - (stub.additional_medicare || 0)
+      - (stub.state_income_tax || 0)
+      - newDeduction
+      - newGarnishment
+      + newReimbursement
+    );
     db.prepare(`
       UPDATE paystubs SET
         pay_period_start = ?, pay_period_end = ?, settlement_date = ?, settlement_due_date = ?,
         eftps_settlement_date = ?,
         tax_year = ?, tax_quarter = ?, notes = ?, check_status = ?,
-        bonus = ?, commission = ?, reimbursement = ?, deduction = ?, garnishment = ?, reported_tips = ?
+        bonus = ?, commission = ?, reimbursement = ?, deduction = ?, garnishment = ?, reported_tips = ?,
+        net_pay = ?
       WHERE id = ?
     `).run(
       payPeriodStart  || stub.pay_period_start,
@@ -1335,10 +1352,11 @@ router.put('/:id', (req, res) => {
       checkStatus || stub.check_status,
       bonusIn !== undefined ? parseFloat(bonusIn || 0) : (stub.bonus || 0),
       commissionIn !== undefined ? parseFloat(commissionIn || 0) : (stub.commission || 0),
-      reimbursementIn !== undefined ? parseFloat(reimbursementIn || 0) : (stub.reimbursement || 0),
-      deductionIn !== undefined ? parseFloat(deductionIn || 0) : (stub.deduction || 0),
-      garnishmentIn !== undefined ? parseFloat(garnishmentIn || 0) : (stub.garnishment || 0),
+      newReimbursement,
+      newDeduction,
+      newGarnishment,
       reportedTipsIn !== undefined ? parseFloat(reportedTipsIn || 0) : (stub.reported_tips || 0),
+      newNetPay,
       stub.id,
     );
   }
@@ -1362,9 +1380,12 @@ router.delete('/:id', (req, res) => {
   if (stub.check_status === 'voided') return res.status(400).json({ error: 'Voided checks cannot be deleted — they must stay for record keeping' });
 
   db.transaction(() => {
-    // Reverse YTD wages
+    // Reverse YTD wages using actual taxable amounts (not raw gross)
     if (stub.employee_id && stub.gross_wages > 0) {
       const year = stub.tax_year || new Date().getFullYear();
+      const futaTaxableD = stub.futa_tax > 0 ? Math.round((stub.futa_tax / 0.006) * 100) / 100 : 0;
+      const sutaTaxableD = stub.suta_tax > 0 ? Math.round((stub.suta_tax / 0.027) * 100) / 100 : 0;
+      const ssTaxableD   = Math.round(((stub.employee_ss || 0) / 0.062) * 100) / 100;
       db.prepare(`
         UPDATE employee_ytd_wages SET
           ytd_gross      = MAX(0, ytd_gross      - ?),
@@ -1373,7 +1394,7 @@ router.delete('/:id', (req, res) => {
           ytd_suta_wages = MAX(0, ytd_suta_wages - ?),
           updated_at = CURRENT_TIMESTAMP
         WHERE employee_id = ? AND tax_year = ?
-      `).run(stub.gross_wages, stub.gross_wages, stub.gross_wages, stub.gross_wages, stub.employee_id, year);
+      `).run(stub.gross_wages, ssTaxableD, futaTaxableD, sutaTaxableD, stub.employee_id, year);
     }
     db.prepare('DELETE FROM paystub_line_items WHERE paystub_id = ?').run(stub.id);
     db.prepare('DELETE FROM paystubs WHERE id = ?').run(stub.id);
@@ -2712,7 +2733,7 @@ router.put('/:id/status', async (req, res) => {
   }
 
   // Check lifecycle statuses → update check_status column
-  const checkAllowed = ['draft', 'printed', 'direct_deposit_sent', 'direct_deposit_cleared', 'voided', 'late'];
+  const checkAllowed = ['draft', 'printed', 'deposited', 'direct_deposit_sent', 'direct_deposit_cleared', 'voided', 'late'];
   if (!checkAllowed.includes(status)) return res.status(400).json({ error: 'Invalid status' });
 
   db.prepare('UPDATE paystubs SET check_status = ? WHERE id = ?').run(status, stub.id);
@@ -2793,8 +2814,13 @@ router.post('/:id/void', (req, res) => {
       -(stub.futa_tax || 0),
     );
 
-    // Reverse YTD wages
+    // Reverse YTD wages using actual taxable amounts (not raw gross)
     const year = stub.tax_year || new Date().getFullYear();
+    const futaTaxable = stub.futa_tax > 0 ? Math.round((stub.futa_tax / 0.006) * 100) / 100 : 0;
+    const sutaTaxable = (stub.suta_tax > 0 && stub.suta_tax !== stub.futa_tax)
+      ? Math.round((stub.suta_tax / 0.027) * 100) / 100
+      : stub.suta_tax > 0 ? Math.round((stub.suta_tax / 0.027) * 100) / 100 : 0;
+    const ssTaxable   = Math.round(((stub.employee_ss || 0) / 0.062) * 100) / 100;
     db.prepare(`
       UPDATE employee_ytd_wages SET
         ytd_gross      = MAX(0, ytd_gross      - ?),
@@ -2803,11 +2829,7 @@ router.post('/:id/void', (req, res) => {
         ytd_suta_wages = MAX(0, ytd_suta_wages - ?),
         updated_at = CURRENT_TIMESTAMP
       WHERE employee_id = ? AND tax_year = ?
-    `).run(
-      stub.gross_wages || 0, stub.gross_wages || 0,
-      stub.gross_wages || 0, stub.gross_wages || 0,
-      stub.employee_id, year,
-    );
+    `).run(stub.gross_wages || 0, ssTaxable, futaTaxable, sutaTaxable, stub.employee_id, year);
   })();
 
   res.json({ message: 'Check voided and credit entry created', stubId: stub.id });

@@ -424,6 +424,40 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
       if (linked > 0) result.linked = linked;
     } catch (_) {}
 
+    // Update employee_ytd_wages for all linked imported paystubs.
+    // Without this, new paychecks created after import would use ytd=0, producing wrong FUTA/SS calculations.
+    try {
+      const upsertYtd = db.prepare(`
+        INSERT INTO employee_ytd_wages (employee_id, tax_year, ytd_gross, ytd_ss_wages, ytd_futa_wages, ytd_suta_wages)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(employee_id, tax_year) DO UPDATE SET
+          ytd_gross      = ytd_gross      + excluded.ytd_gross,
+          ytd_ss_wages   = ytd_ss_wages   + excluded.ytd_ss_wages,
+          ytd_futa_wages = ytd_futa_wages + excluded.ytd_futa_wages,
+          ytd_suta_wages = ytd_suta_wages + excluded.ytd_suta_wages,
+          updated_at     = CURRENT_TIMESTAMP
+      `);
+      // Only count newly imported checks (not skipped/existing ones)
+      const imported = checks.filter(c => {
+        const key = `${(c.empName||'').toLowerCase()}|${c.periodStart||''}|${c.periodEnd||''}`;
+        return c.employeeId; // only linked checks
+      });
+      // Re-query newly inserted stubs to get final employee_id (after re-link)
+      const newStubs = db.prepare(
+        `SELECT employee_id, tax_year, gross_wages, employee_ss, futa_tax, suta_tax
+         FROM paystubs WHERE client_id=? AND created_at >= datetime('now','-1 minute') AND employee_id IS NOT NULL`
+      ).all(clientId);
+      const ytdTx = db.transaction(() => {
+        for (const s of newStubs) {
+          const futaTax = s.futa_tax > 0 ? Math.round((s.futa_tax / 0.006) * 100) / 100 : 0;
+          const sutaTax = s.suta_tax > 0 ? Math.round((s.suta_tax / 0.027) * 100) / 100 : 0;
+          const ssTax   = Math.round(((s.employee_ss || 0) / 0.062) * 100) / 100;
+          upsertYtd.run(s.employee_id, s.tax_year, s.gross_wages, ssTax, futaTax, sutaTax);
+        }
+      });
+      ytdTx();
+    } catch (_) {}
+
     res.json(result);
   } catch (err) {
     res.status(400).json({ error: `Import failed: ${err.message}` });
