@@ -712,7 +712,7 @@ function CheckHistory({ clientId, employeeId, employeeName, selectedChecks, onTo
                   </td>
                   <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', textDecoration: voided ? 'line-through' : 'none' }}>{fmt(c.gross_wages)}</td>
                   <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', color: voided ? '#dc2626' : 'var(--success)', fontWeight: 600, textDecoration: voided ? 'line-through' : 'none' }}>
-                    {voided ? `(${fmt(c.net_pay)})` : fmt(c.net_pay)}
+                    {(() => { const np = Math.round(((c.gross_wages||0)-(c.fit_withholding||0)-(c.employee_ss||0)-(c.employee_medicare||0)-(c.additional_medicare||0)-(c.state_income_tax||0)-(c.deduction||0)-(c.garnishment||0)+(c.reimbursement||0))*100)/100; return voided ? `(${fmt(np)})` : fmt(np); })()}
                   </td>
                   <td style={{ padding: '7px 8px' }}><StatusBadge status={c.check_status || 'draft'} /></td>
                   <td style={{ padding: '7px 8px', fontSize: 11, color: isOverdue(c.settlement_due_date) ? '#dc2626' : dueDays !== null && dueDays <= 5 ? '#d97706' : 'var(--text-muted)', fontWeight: isOverdue(c.settlement_due_date) ? 700 : 400 }}>
@@ -1205,7 +1205,7 @@ if (!payload.twcPassword) delete payload.twcPassword;
 // Defined at module scope so React never unmounts/remounts them on re-renders,
 // which would destroy input focus mid-typing.
 
-const PRINTED_STATUSES = new Set(['printed','direct_deposit_sent','direct_deposit_cleared','voided']);
+const PRINTED_STATUSES = new Set(['printed','deposited','direct_deposit_sent','direct_deposit_cleared','voided']);
 const MODAL_MONO = { fontFamily: 'JetBrains Mono, monospace' };
 
 function ModalTR({ label, amount, ytdAmount, color, bold, borderTop, negative, editValue, onEditChange, editSuffix, noDollarSign }) {

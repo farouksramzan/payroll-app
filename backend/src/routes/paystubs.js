@@ -80,8 +80,8 @@ router.get('/', (req, res) => {
     // (handles imported paychecks that weren't matched at import time)
     const emp = db.prepare('SELECT first_name, last_name FROM employees WHERE id = ?').get(employeeId);
     if (emp) {
-      sql += ` AND (p.employee_id = ? OR (p.employee_id IS NULL AND UPPER(p.employee_name) = UPPER(?)))`;
-      params.push(employeeId, `${emp.first_name} ${emp.last_name}`);
+      sql += ` AND (p.employee_id = ? OR (p.employee_id IS NULL AND UPPER(p.employee_name) LIKE '%' || UPPER(?) || '%' AND UPPER(p.employee_name) LIKE '%' || UPPER(?) || '%'))`;
+      params.push(employeeId, emp.first_name, emp.last_name);
     } else {
       sql += ' AND p.employee_id = ?';
       params.push(employeeId);
@@ -973,9 +973,9 @@ router.get('/by-employee', (req, res) => {
       SELECT p.*, e.first_name, e.last_name
       FROM paystubs p
       LEFT JOIN employees e ON p.employee_id = e.id
-      WHERE p.client_id = ? AND (p.employee_id = ? OR (p.employee_id IS NULL AND UPPER(p.employee_name) = UPPER(?)))
+      WHERE p.client_id = ? AND (p.employee_id = ? OR (p.employee_id IS NULL AND UPPER(p.employee_name) LIKE '%' || UPPER(?) || '%' AND UPPER(p.employee_name) LIKE '%' || UPPER(?) || '%'))
       ORDER BY p.pay_period_end DESC, p.created_at DESC
-    `).all(clientId, employeeId, `${emp.first_name} ${emp.last_name}`);
+    `).all(clientId, employeeId, emp.first_name, emp.last_name);
   } else {
     rows = db.prepare(`
       SELECT p.*, e.first_name, e.last_name

@@ -567,38 +567,29 @@ function migrate() {
     )
   `);
 
-  // ── Super Shawarma import fix — idempotent, safe to leave permanently ────────
-  // Resets liability status → pending (so paychecks appear in Pay Liabilities tab)
-  // Links employee_id by name where null (so paychecks appear per-employee)
+  // ── Global: link unlinked paystubs to employees by fuzzy first+last name ─────
+  // Runs on every startup; idempotent (only touches rows where employee_id IS NULL).
+  // Fixes imported paychecks that had middle initials in QB names (e.g. "SHADI D AHVAZI").
   try {
-    const allClients = db.prepare('SELECT id, business_name FROM clients').all();
-    console.log('[DB] All clients:', JSON.stringify(allClients.map(c => ({ id: c.id, name: c.business_name }))));
-    const shawarma = db.prepare("SELECT id FROM clients WHERE LOWER(business_name) LIKE '%super shawarma%' OR LOWER(business_name) LIKE '%shawarma%'").get();
-    console.log('[DB] Super Shawarma match:', shawarma ? `id=${shawarma.id}` : 'NOT FOUND');
-    if (shawarma) {
-      const stubs = db.prepare('SELECT id, check_status, status, status_940, employee_id, employee_name, total_deposit, gross_wages FROM paystubs WHERE client_id=?').all(shawarma.id);
-      console.log(`[DB] Super Shawarma paystubs (${stubs.length}):`, JSON.stringify(stubs));
-      const empList = db.prepare('SELECT id, first_name, last_name FROM employees WHERE client_id=?').all(shawarma.id);
-      console.log(`[DB] Super Shawarma employees (${empList.length}):`, JSON.stringify(empList));
-      // Reset submitted → pending
-      const s1 = db.prepare(`UPDATE paystubs SET status='pending', status_940='pending' WHERE client_id=? AND status='submitted'`).run(shawarma.id);
-      const s2 = db.prepare(`UPDATE paystubs SET status='pending', status_940='pending' WHERE client_id=? AND status_940='submitted'`).run(shawarma.id);
-      if (s1.changes + s2.changes > 0) console.log(`[DB] Super Shawarma: reset ${s1.changes + s2.changes} statuses → pending`);
-      // Link employees by first+last name appearing anywhere in employee_name (handles middle initials)
-      let linked = 0;
+    const allClients2 = db.prepare('SELECT id FROM clients').all();
+    let totalLinked = 0;
+    for (const c of allClients2) {
+      const empList = db.prepare('SELECT id, first_name, last_name FROM employees WHERE client_id=?').all(c.id);
       for (const e of empList) {
         const fn = e.first_name.toUpperCase();
         const ln = e.last_name.toUpperCase();
         const { changes } = db.prepare(
           `UPDATE paystubs SET employee_id=? WHERE client_id=? AND employee_id IS NULL AND UPPER(employee_name) LIKE ? AND UPPER(employee_name) LIKE ?`
-        ).run(e.id, shawarma.id, `%${fn}%`, `%${ln}%`);
-        linked += changes;
+        ).run(e.id, c.id, `%${fn}%`, `%${ln}%`);
+        totalLinked += changes;
       }
-      if (linked > 0) console.log(`[DB] Super Shawarma: linked ${linked} paystubs to employees (fuzzy name match)`);
-      else console.log(`[DB] Super Shawarma: no unlinked paystubs to fix`);
     }
+    // Reset submitted → pending for any client (imported with wrong liability status)
+    const { changes: resetChanges } = db.prepare(`UPDATE paystubs SET status='pending', status_940='pending' WHERE status='submitted' AND check_status NOT IN ('voided')`).run();
+    if (totalLinked > 0) console.log(`[DB] startup: linked ${totalLinked} unlinked paystub(s) to employees`);
+    if (resetChanges > 0) console.log(`[DB] startup: reset ${resetChanges} submitted→pending liability status(es)`);
   } catch (e) {
-    console.error('[DB] Super Shawarma fix failed:', e.message);
+    console.error('[DB] startup employee link failed:', e.message);
   }
 
   // ── Recalculate net_pay from stored tax components — idempotent ─────────────
@@ -608,15 +599,22 @@ function migrate() {
     const round2 = n => Math.round(n * 100) / 100;
     const allStubs = db.prepare(`
       SELECT id, gross_wages, fit_withholding, employee_ss, employee_medicare,
-             additional_medicare, state_income_tax, net_pay
+             additional_medicare, state_income_tax, deduction, garnishment, reimbursement, net_pay
       FROM paystubs
       WHERE check_status NOT IN ('voided','draft') AND net_pay > 0
     `).all();
     let fixed = 0;
     for (const s of allStubs) {
       const expected = round2(
-        s.gross_wages - s.fit_withholding - s.employee_ss -
-        s.employee_medicare - s.additional_medicare - s.state_income_tax
+        s.gross_wages
+        - s.fit_withholding
+        - s.employee_ss
+        - s.employee_medicare
+        - s.additional_medicare
+        - s.state_income_tax
+        - (s.deduction    || 0)
+        - (s.garnishment  || 0)
+        + (s.reimbursement || 0)
       );
       if (Math.abs(expected - s.net_pay) >= 0.01) {
         db.prepare('UPDATE paystubs SET net_pay=? WHERE id=?').run(expected, s.id);
@@ -632,7 +630,7 @@ function migrate() {
   try {
     const { encrypt } = require('../services/cryptoService');
     // Balaji 24 — EIN 331912942, PIN 1404
-    const balaji = db.prepare("SELECT id FROM clients WHERE REPLACE(REPLACE(ein,'-',''),' ','') = '331912942' AND (eftps_enrolled IS NULL OR eftps_enrolled = 0 OR batch_provider_pin_encrypted IS NULL OR batch_provider_pin_encrypted = '')").get();
+    const balaji = db.prepare("SELECT id FROM clients WHERE REPLACE(REPLACE(ein,'-',''),' ','') = '331912942' AND (eftps_enrolled IS NULL OR eftps_enrolled = 0) AND (batch_provider_pin_encrypted IS NULL OR batch_provider_pin_encrypted = '')").get();
     if (balaji) {
       db.prepare('UPDATE clients SET batch_provider_pin_encrypted = ?, eftps_enrolled = 1 WHERE id = ?')
         .run(encrypt('1404'), balaji.id);

@@ -407,6 +407,23 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
     });
 
     const result = importAll(checks);
+
+    // Re-link any still-unlinked paystubs using fuzzy first+last name matching.
+    // Handles the case where paychecks were imported before employees existed.
+    try {
+      const allEmps = db.prepare('SELECT id, first_name, last_name FROM employees WHERE client_id = ?').all(clientId);
+      let linked = 0;
+      for (const e of allEmps) {
+        const fn = e.first_name.toUpperCase();
+        const ln = e.last_name.toUpperCase();
+        const { changes } = db.prepare(
+          `UPDATE paystubs SET employee_id=? WHERE client_id=? AND employee_id IS NULL AND UPPER(employee_name) LIKE ? AND UPPER(employee_name) LIKE ?`
+        ).run(e.id, clientId, `%${fn}%`, `%${ln}%`);
+        linked += changes;
+      }
+      if (linked > 0) result.linked = linked;
+    } catch (_) {}
+
     res.json(result);
   } catch (err) {
     res.status(400).json({ error: `Import failed: ${err.message}` });
