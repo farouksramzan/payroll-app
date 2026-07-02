@@ -1404,12 +1404,11 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
 
   // YTD aggregation from loaded paystubs (up to and including upToEnd)
   function calcEmpYTD(employeeId, upToEnd) {
+    if (employeeId == null) return { gross:0, fit:0, eeSS:0, eeMed:0, stateTax:0, futa:0, suta:0, netPay:0, erSS:0, erMed:0, regPay:0, otPay:0, tips:0, bonus:0, commission:0 };
     const stubs = paystubs.filter(s =>
-      // eslint-disable-next-line eqeqeq
-      s.employee_id == employeeId &&
+      s.employee_id === employeeId &&
       s.check_status !== 'voided' &&
-      // eslint-disable-next-line eqeqeq
-      (s.tax_year == curYear || (s.pay_period_end || '').startsWith(String(curYear))) &&
+      (s.tax_year === curYear || (s.pay_period_end || '').startsWith(String(curYear))) &&
       (!upToEnd || s.pay_period_end <= upToEnd)
     );
     return {

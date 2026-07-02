@@ -12,8 +12,8 @@ const CHECK_STATUS_OPTIONS = [
 ];
 
 const LIABILITY_STATUS_OPTIONS = [
-  { value: 'pending',   label: 'Pending' },
-  { value: 'submitted', label: 'Submitted' },
+  { value: 'pending',    label: 'Pending — show in Pay Liabilities' },
+  { value: 'processing', label: 'Processing — already submitted to EFTPS' },
 ];
 
 export default function ImportPaychecksModal({ clientId, onClose, onImported }) {

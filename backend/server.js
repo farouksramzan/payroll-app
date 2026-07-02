@@ -173,71 +173,14 @@ app.use('/api/employee-portal', employeePortalRoutes);
 app.get('/api/twc-bridge/status', requireAuth, (req, res) => res.json({ connected: bridgeTwc.isConnected }));
 app.get('/api/health',      (req, res) => res.json({ status: 'ok', env: process.env.NODE_ENV }));
 
-// ── Debug: inspect next-pay-date computation data ─────────────────────────────
-app.get('/api/debug/nextpay', (req, res) => {
-  try {
-    const db = getDb();
-    const clients = db.prepare('SELECT id, business_name, ein, next_payroll_date, payroll_frequency FROM clients ORDER BY business_name').all();
-    const result = clients.map(c => {
-      const groups = db.prepare('SELECT id, frequency, first_pay_period_end, deleted_at FROM pay_groups WHERE client_id = ?').all(c.id);
-      const paystubs = db.prepare(`
-        SELECT pay_group_id, check_status, MAX(pay_period_end) as last_end
-        FROM paystubs WHERE client_id = ? AND pay_period_end IS NOT NULL
-        GROUP BY pay_group_id, check_status
-        ORDER BY last_end DESC
-      `).all(c.id);
-      return { id: c.id, name: c.business_name, ein: c.ein, next_payroll_date: c.next_payroll_date, frequency: c.payroll_frequency, pay_groups: groups, paystub_summary: paystubs };
-    });
-    res.json(result);
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ── Debug: inspect paystub statuses in Railway's live DB ─────────────────────
-app.get('/api/debug/paystubs', (req, res) => {
-  try {
-    const db   = getDb();
-    const rows = db.prepare(`
-      SELECT id, client_id, employee_id, employee_name,
-             check_status, status, status_940,
-             gross_wages, total_deposit, pay_period_end, created_at
-      FROM   paystubs
-      ORDER  BY created_at DESC
-      LIMIT  50
-    `).all();
-    res.json({ count: rows.length, dbPath: process.env.DB_PATH || 'default (data/payroll.db)', rows });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-app.get('/api/debug/client-pin/:ein', (req, res) => {
-  try {
-    const { decrypt } = require('./src/services/cryptoService');
-    const db = getDb();
-    const digits = req.params.ein.replace(/\D/g, '');
-    const clients = db.prepare('SELECT id, business_name, ein, eftps_enrolled, batch_provider_pin_encrypted FROM clients').all();
-    const client = clients.find(c => c.ein.replace(/\D/g, '') === digits);
-    if (!client) return res.status(404).json({ error: 'Client not found' });
-    const pin = client.batch_provider_pin_encrypted ? decrypt(client.batch_provider_pin_encrypted) : null;
-    res.json({ id: client.id, business_name: client.business_name, ein: client.ein, eftps_enrolled: client.eftps_enrolled, pin });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-app.get('/api/bridge/job-status/:jobId', (req, res) => {
+app.get('/api/bridge/job-status/:jobId', requireAuth, (req, res) => {
   const status = bridgeManager.getJobStatus(req.params.jobId);
   if (!status) return res.status(404).json({ error: 'Job not found' });
   res.json(status);
 });
 
-app.get('/api/bridge/status', (req, res) => {
+app.get('/api/bridge/status', requireAuth, (req, res) => {
   const connected = bridgeManager.isConnected;
-  // Log every poll in dev so Railway's log stream shows the real-time state
-  if (process.env.NODE_ENV !== 'production') {
-    console.log(`[Bridge WS] /api/bridge/status → connected=${connected}`);
-  }
   res.json({ connected });
 });
 

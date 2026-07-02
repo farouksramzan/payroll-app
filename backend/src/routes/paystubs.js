@@ -103,13 +103,13 @@ router.get('/pay-periods', (req, res) => {
   const periods = db.prepare(`
     SELECT
       pay_period_start, pay_period_end, tax_year, tax_quarter,
-      COUNT(*)          AS employee_count,
-      SUM(gross_wages)  AS total_gross,
-      SUM(total_deposit) AS total_deposit_941,
-      SUM(futa_tax)     AS total_futa,
-      SUM(net_pay)      AS total_net,
-      MIN(check_number) AS first_check,
-      MAX(check_number) AS last_check
+      COUNT(*)                          AS employee_count,
+      ROUND(SUM(gross_wages), 2)        AS total_gross,
+      ROUND(SUM(total_deposit), 2)      AS total_deposit_941,
+      ROUND(SUM(futa_tax), 2)           AS total_futa,
+      ROUND(SUM(net_pay), 2)            AS total_net,
+      MIN(check_number)                 AS first_check,
+      MAX(check_number)                 AS last_check
     FROM paystubs
     WHERE client_id = ?
     GROUP BY pay_period_start, pay_period_end
@@ -1087,20 +1087,22 @@ router.post('/', (req, res) => {
     const checkNum  = clientRow.next_check_number || 1001;
     db.prepare('UPDATE clients SET next_check_number = next_check_number + 1 WHERE id = ?').run(clientId);
 
+    const settlementDueDateCalc = calcIrsDepositDue(payPeriodEnd, settlementDate || payPeriodEnd, '941', client.deposit_schedule || 'monthly');
+
     const r = db.prepare(`
       INSERT INTO paystubs (
         client_id, employee_id, employee_name,
-        pay_period_start, pay_period_end, settlement_date, pay_frequency,
+        pay_period_start, pay_period_end, settlement_date, settlement_due_date, pay_frequency,
         filing_status, step2_checkbox, step3_credits, work_state,
         gross_wages, fit_withholding, employee_ss, employee_medicare,
         additional_medicare, employer_ss, employer_medicare,
         state_income_tax, futa_tax, suta_tax,
         total_deposit, net_pay, ytd_wages_before,
         tax_year, tax_quarter, notes, check_number
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(
       clientId, employeeId || null, employeeName,
-      payPeriodStart, payPeriodEnd, settlementDate || null, payFrequency,
+      payPeriodStart, payPeriodEnd, settlementDate || null, settlementDueDateCalc, payFrequency,
       filingStatus || 'single', step2Checkbox ? 1 : 0, step3Credits, effectiveWorkState,
       taxes.grossWages, taxes.fitWithholding, taxes.employeeSS, taxes.employeeMedicare,
       taxes.additionalMedicare || 0, taxes.employerSS, taxes.employerMedicare,

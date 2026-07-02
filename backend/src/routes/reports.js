@@ -56,8 +56,9 @@ router.get('/941', (req, res) => {
     const employerSS     = round2(paystubs.reduce((s, r) => s + r.employer_ss, 0));
     const employeeMed    = round2(paystubs.reduce((s, r) => s + r.employee_medicare, 0));
     const employerMed    = round2(paystubs.reduce((s, r) => s + r.employer_medicare, 0));
+    const additionalMed  = round2(paystubs.reduce((s, r) => s + (r.additional_medicare || 0), 0));
     const totalSSTax     = round2((employeeSS + employerSS));
-    const totalMedTax    = round2((employeeMed + employerMed));
+    const totalMedTax    = round2((employeeMed + employerMed + additionalMed));
     const totalTaxes     = round2(fitWithheld + totalSSTax + totalMedTax);
     const totalDeposited = round2(paystubs.filter((s) => s.status === 'submitted' || s.status === 'dry_run').reduce((sum, r) => sum + r.total_deposit, 0));
     const balanceDue     = round2(totalTaxes - totalDeposited);
@@ -74,6 +75,7 @@ router.get('/941', (req, res) => {
         line5a_ssTax:        totalSSTax,
         line5c_medWages:     wages,
         line5c_medTax:       totalMedTax,
+        line5d_additionalMedTax: additionalMed,
         line6_totalTaxes:    totalTaxes,
         line13_deposited:    totalDeposited,
         line14_balanceDue:   balanceDue,
@@ -703,10 +705,11 @@ router.get('/pdf', async (req, res) => {
       const fitWithheld = round2(paystubs.reduce((s, r) => s + r.fit_withholding, 0));
       const employeeSS  = round2(paystubs.reduce((s, r) => s + r.employee_ss, 0));
       const employerSS  = round2(paystubs.reduce((s, r) => s + r.employer_ss, 0));
-      const employeeMed = round2(paystubs.reduce((s, r) => s + r.employee_medicare, 0));
-      const employerMed = round2(paystubs.reduce((s, r) => s + r.employer_medicare, 0));
+      const employeeMed    = round2(paystubs.reduce((s, r) => s + r.employee_medicare, 0));
+      const employerMed    = round2(paystubs.reduce((s, r) => s + r.employer_medicare, 0));
+      const additionalMed2 = round2(paystubs.reduce((s, r) => s + (r.additional_medicare || 0), 0));
       const totalSSTax  = round2(employeeSS + employerSS);
-      const totalMedTax = round2(employeeMed + employerMed);
+      const totalMedTax = round2(employeeMed + employerMed + additionalMed2);
       const totalTaxes  = round2(fitWithheld + totalSSTax + totalMedTax);
       const totalDeposited = round2(paystubs.filter((s) => s.status === 'submitted' || s.status === 'dry_run').reduce((sum, r) => sum + r.total_deposit, 0));
       data = {
