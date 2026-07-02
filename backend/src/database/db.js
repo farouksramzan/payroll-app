@@ -573,19 +573,26 @@ function migrate() {
     const shawarma = db.prepare("SELECT id FROM clients WHERE LOWER(business_name) LIKE '%super shawarma%' OR LOWER(business_name) LIKE '%shawarma%'").get();
     console.log('[DB] Super Shawarma match:', shawarma ? `id=${shawarma.id}` : 'NOT FOUND');
     if (shawarma) {
-      const stubs = db.prepare('SELECT id, check_status, status, status_940, employee_id, employee_name FROM paystubs WHERE client_id=?').all(shawarma.id);
-      console.log(`[DB] Super Shawarma paystubs (${stubs.length}):`, JSON.stringify(stubs.slice(0,3)));
+      const stubs = db.prepare('SELECT id, check_status, status, status_940, employee_id, employee_name, total_deposit, gross_wages FROM paystubs WHERE client_id=?').all(shawarma.id);
+      console.log(`[DB] Super Shawarma paystubs (${stubs.length}):`, JSON.stringify(stubs));
       const empList = db.prepare('SELECT id, first_name, last_name FROM employees WHERE client_id=?').all(shawarma.id);
       console.log(`[DB] Super Shawarma employees (${empList.length}):`, JSON.stringify(empList));
+      // Reset submitted → pending
       const s1 = db.prepare(`UPDATE paystubs SET status='pending', status_940='pending' WHERE client_id=? AND status='submitted'`).run(shawarma.id);
       const s2 = db.prepare(`UPDATE paystubs SET status='pending', status_940='pending' WHERE client_id=? AND status_940='submitted'`).run(shawarma.id);
-      if (s1.changes + s2.changes > 0) console.log(`[DB] Super Shawarma: reset ${s1.changes + s2.changes} liability statuses → pending`);
+      if (s1.changes + s2.changes > 0) console.log(`[DB] Super Shawarma: reset ${s1.changes + s2.changes} statuses → pending`);
+      // Link employees by first+last name appearing anywhere in employee_name (handles middle initials)
       let linked = 0;
       for (const e of empList) {
-        const { changes } = db.prepare(`UPDATE paystubs SET employee_id=? WHERE client_id=? AND employee_id IS NULL AND UPPER(employee_name)=UPPER(?)`).run(e.id, shawarma.id, `${e.first_name} ${e.last_name}`);
+        const fn = e.first_name.toUpperCase();
+        const ln = e.last_name.toUpperCase();
+        const { changes } = db.prepare(
+          `UPDATE paystubs SET employee_id=? WHERE client_id=? AND employee_id IS NULL AND UPPER(employee_name) LIKE ? AND UPPER(employee_name) LIKE ?`
+        ).run(e.id, shawarma.id, `%${fn}%`, `%${ln}%`);
         linked += changes;
       }
-      if (linked > 0) console.log(`[DB] Super Shawarma: linked ${linked} paystubs to employees by name`);
+      if (linked > 0) console.log(`[DB] Super Shawarma: linked ${linked} paystubs to employees (fuzzy name match)`);
+      else console.log(`[DB] Super Shawarma: no unlinked paystubs to fix`);
     }
   } catch (e) {
     console.error('[DB] Super Shawarma fix failed:', e.message);
