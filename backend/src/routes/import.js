@@ -10,6 +10,13 @@ router.use(requireAuth);
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+const FREQ_NAMES = {
+  weekly:      'Weekly Payroll',
+  biweekly:    'Biweekly Payroll',
+  semimonthly: 'Semimonthly Payroll',
+  monthly:     'Monthly Payroll',
+};
+
 function parseQbEmployeeRow(row) {
   // Split "FIRST LAST" — first word = first name, rest = last name
   const fullName = (row['Employee'] || '').trim();
@@ -22,14 +29,12 @@ function parseQbEmployeeRow(row) {
   const ssnRaw = row['SS No.'] ?? row['SS#'] ?? row['SSN'] ?? row['Social Security Number'] ?? '';
   let ssn = '';
   if (typeof ssnRaw === 'number') {
-    // Zero-pad to 9 digits, then format as XXX-XX-XXXX
     const digits = String(ssnRaw).padStart(9, '0');
     ssn = `${digits.slice(0,3)}-${digits.slice(3,5)}-${digits.slice(5)}`;
   } else {
     ssn = String(ssnRaw).trim();
   }
 
-  // Address field in QB exports includes "STREET CITY, ST ZIP" — strip city/state/zip suffix
   let address = (row['Address'] || '').trim();
   const city  = (row['City']  || '').trim();
   const state = (row['State'] || '').trim();
@@ -40,7 +45,6 @@ function parseQbEmployeeRow(row) {
     if (idx > 0) address = address.slice(0, idx).trim();
   }
 
-  // Date of Birth is an Excel serial number — convert for display only (not stored)
   let dob = '';
   if (row['Date of Birth'] && typeof row['Date of Birth'] === 'number') {
     const d = xlsx.SSF.parse_date_code(row['Date of Birth']);
@@ -51,7 +55,6 @@ function parseQbEmployeeRow(row) {
 }
 
 // POST /api/import/employees/preview
-// Body: multipart with field "file" (xlsx/csv) and "clientId"
 router.post('/employees/preview', upload.single('file'), (req, res) => {
   const { clientId } = req.body;
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
@@ -64,7 +67,6 @@ router.post('/employees/preview', upload.single('file'), (req, res) => {
   try {
     const wb = xlsx.read(req.file.buffer, { type: 'buffer' });
 
-    // Use second sheet if first is QuickBooks tips sheet, otherwise first sheet
     let sheetName = wb.SheetNames[0];
     if (wb.SheetNames.length > 1 && sheetName.toLowerCase().includes('quickbooks')) {
       sheetName = wb.SheetNames[1];
@@ -91,7 +93,6 @@ router.post('/employees/preview', upload.single('file'), (req, res) => {
 });
 
 // POST /api/import/employees
-// Body: multipart with field "file" (xlsx/csv), "clientId", optional "skipExisting"
 router.post('/employees', upload.single('file'), (req, res) => {
   const { clientId, skipExisting } = req.body;
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
@@ -136,7 +137,7 @@ router.post('/employees', upload.single('file'), (req, res) => {
           r.city    || null,
           homeState,
           r.zip     || null,
-          homeState,  // work_state defaults to same as home state
+          homeState,
           'single',
           'hourly',
           0,
@@ -181,29 +182,61 @@ function freqDays(freq) {
   return 14; // biweekly default
 }
 
+// Detect pay frequency from check date patterns in the imported data.
+// Uses two signals: day-of-month clustering (semimonthly) and median gap (weekly/biweekly/monthly).
+function detectFrequency(checks) {
+  const dates = [...new Set(checks.map(c => c.checkDate).filter(Boolean))].sort();
+  if (dates.length === 0) return 'biweekly';
+
+  // Semimonthly: pay dates cluster on the 1st and 15th (or 15th and last day of month)
+  const dayNums = dates.map(d => parseInt(d.slice(8, 10), 10));
+  const semiHits = dayNums.filter(d => d === 1 || d === 15 || d === 16).length;
+  if (dates.length >= 2 && semiHits / dates.length >= 0.35) return 'semimonthly';
+
+  if (dates.length < 2) return 'biweekly';
+
+  // Compute gaps between consecutive unique pay dates
+  const gaps = [];
+  for (let i = 1; i < dates.length; i++) {
+    const d1 = new Date(dates[i - 1] + 'T00:00:00Z');
+    const d2 = new Date(dates[i] + 'T00:00:00Z');
+    const gap = Math.round((d2 - d1) / 86400000);
+    if (gap > 0 && gap < 60) gaps.push(gap); // ignore huge gaps (spanning years)
+  }
+
+  if (gaps.length === 0) return 'biweekly';
+
+  const sorted = [...gaps].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+
+  if (median <= 8)  return 'weekly';
+  if (median <= 20) return 'biweekly';
+  return 'monthly';
+}
+
+// Dedup fingerprint: employee name + check date + gross wages in cents.
+// Robust against period-date re-estimation and handles missing check numbers.
+function checkFingerprint(empName, checkDate, grossWages) {
+  return `${(empName || '').toLowerCase().trim()}|${checkDate || ''}|${Math.round((grossWages || 0) * 100)}`;
+}
+
 function buildChecks(wb, employees, client) {
-  // Find the Detail Data sheet
   const sheetName = wb.SheetNames.find(n => n === 'Detail Data') || wb.SheetNames[wb.SheetNames.length - 1];
   const ws = wb.Sheets[sheetName];
   const rows = xlsx.utils.sheet_to_json(ws, { defval: '' });
 
-  // Build employee lookup: full name variants → employee record
-  // Handles "FIRST LAST", "FIRST MIDDLE LAST", "FIRST MI LAST", etc.
   function findEmployee(qbName) {
     const upper = (qbName || '').toUpperCase().trim();
-    // 1. Exact match on "FIRST LAST"
     for (const e of employees) {
       const exact = `${e.first_name} ${e.last_name}`.toUpperCase();
       if (upper === exact) return e;
     }
-    // 2. Exact match with middle name "FIRST MIDDLE LAST"
     for (const e of employees) {
       if (e.middle_name) {
         const withMiddle = `${e.first_name} ${e.middle_name} ${e.last_name}`.toUpperCase();
         if (upper === withMiddle) return e;
       }
     }
-    // 3. Fuzzy: first name AND last name both present as substrings (handles middle initials)
     for (const e of employees) {
       const fn = e.first_name.toUpperCase();
       const ln = e.last_name.toUpperCase();
@@ -212,7 +245,6 @@ function buildChecks(wb, employees, client) {
     return null;
   }
 
-  // Group rows by Trans ID
   const byTrans = {};
   rows.forEach(r => {
     const tid = r['Trans ID'];
@@ -246,8 +278,10 @@ function buildChecks(wb, employees, client) {
     const netPay       = grossWages - fit - eeSS - eeMedicare - addlMedicare;
     const totalDeposit = fit + eeSS + eeMedicare + addlMedicare + erSS + erMedicare;
 
+    // Frequency and period come from the employee's stored schedule (if matched).
+    // Unmatched employees get a placeholder freq that is patched after detection.
     const freq = emp ? (emp.pay_frequency || 'biweekly') : 'biweekly';
-    const periodDays = freqDays(freq);
+    const periodDays  = freqDays(freq);
     const periodEnd   = subtractDays(checkDate, 2);
     const periodStart = subtractDays(periodEnd, periodDays - 1);
 
@@ -287,6 +321,31 @@ function buildChecks(wb, employees, client) {
   return checks;
 }
 
+// Re-apply period dates for checks whose employee wasn't matched at build time
+// but is now matched after auto-creation; uses the detected (or employee's) frequency.
+function patchUnmatchedChecks(checks, detectedFreq, empMap) {
+  for (const c of checks) {
+    // Attach newly found employee if present in empMap
+    if (!c.empMatched && empMap.has(c.empName.toUpperCase().trim())) {
+      const emp = empMap.get(c.empName.toUpperCase().trim());
+      c.employeeId  = emp.id;
+      c.empMatched  = true;
+      c.filingStatus = emp.filing_status || 'single';
+      c.workState    = emp.work_state || emp.state || c.workState;
+    }
+    // Recalculate period using detected (or employee's) frequency
+    if (!c.empMatched || c.payFrequency === 'biweekly') {
+      const freq = c.empMatched
+        ? (empMap.get(c.empName.toUpperCase().trim())?.pay_frequency || detectedFreq)
+        : detectedFreq;
+      c.payFrequency = freq;
+      const days = freqDays(freq);
+      c.periodEnd   = subtractDays(c.checkDate, 2);
+      c.periodStart = subtractDays(c.periodEnd, days - 1);
+    }
+  }
+}
+
 function round2(n) { return Math.round(n * 100) / 100; }
 
 // POST /api/import/paychecks/preview
@@ -301,14 +360,63 @@ router.post('/paychecks/preview', upload.single('file'), (req, res) => {
   try {
     const wb = xlsx.read(req.file.buffer, { type: 'buffer' });
     const employees = db.prepare('SELECT * FROM employees WHERE client_id = ?').all(clientId);
-    const existing = new Set(
-      db.prepare('SELECT check_number FROM paystubs WHERE client_id = ? AND check_number IS NOT NULL').all(clientId).map(r => String(r.check_number))
+
+    // Existing check_number dedup set
+    const existingByNum = new Set(
+      db.prepare('SELECT check_number FROM paystubs WHERE client_id = ? AND check_number IS NOT NULL')
+        .all(clientId).map(r => String(r.check_number))
     );
-    const checks = buildChecks(wb, employees, client).map(c => ({
+
+    // Robust fingerprint dedup: employee_name + check_date + gross_wages_cents
+    const existingFp = new Set(
+      db.prepare('SELECT employee_name, settlement_date, gross_wages FROM paystubs WHERE client_id = ?')
+        .all(clientId)
+        .map(r => checkFingerprint(r.employee_name, r.settlement_date, r.gross_wages))
+    );
+
+    let checks = buildChecks(wb, employees, client);
+
+    // Detect frequency from actual check date patterns in the file
+    const detectedFrequency = detectFrequency(checks);
+
+    // Patch unmatched checks to use detected frequency for period calculation
+    for (const c of checks) {
+      if (!c.empMatched) {
+        c.payFrequency = detectedFrequency;
+        const days = freqDays(detectedFrequency);
+        c.periodEnd   = subtractDays(c.checkDate, 2);
+        c.periodStart = subtractDays(c.periodEnd, days - 1);
+      }
+    }
+
+    // Mark which checks already exist in DB
+    checks = checks.map(c => ({
       ...c,
-      alreadyExists: existing.has(String(c.checkNumber)),
+      alreadyExists:
+        existingByNum.has(String(c.checkNumber)) ||
+        existingFp.has(checkFingerprint(c.empName, c.checkDate, c.grossWages)),
     }));
-    res.json({ count: checks.length, checks });
+
+    // Determine pay group action (no DB write — preview only)
+    const existingGroup = db.prepare(
+      `SELECT * FROM pay_groups WHERE client_id = ? AND frequency = ? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1`
+    ).get(clientId, detectedFrequency);
+    const payGroupAction = existingGroup
+      ? { action: 'match', groupName: existingGroup.name, groupId: existingGroup.id }
+      : { action: 'create', suggestedName: FREQ_NAMES[detectedFrequency] || `${detectedFrequency} Payroll` };
+
+    // Collect unique unmatched employee names that will be auto-created on import
+    const willAutoCreateEmployees = [
+      ...new Set(checks.filter(c => !c.empMatched).map(c => c.empName))
+    ];
+
+    res.json({
+      count: checks.length,
+      checks,
+      detectedFrequency,
+      payGroupAction,
+      willAutoCreateEmployees,
+    });
   } catch (err) {
     res.status(400).json({ error: `Could not parse file: ${err.message}` });
   }
@@ -325,18 +433,119 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
 
   try {
     const wb = xlsx.read(req.file.buffer, { type: 'buffer' });
-    const employees = db.prepare('SELECT * FROM employees WHERE client_id = ?').all(clientId);
-    const existing = new Set(
-      db.prepare('SELECT check_number FROM paystubs WHERE client_id = ? AND check_number IS NOT NULL').all(clientId).map(r => String(r.check_number))
+    let employees = db.prepare('SELECT * FROM employees WHERE client_id = ?').all(clientId);
+
+    let checks = buildChecks(wb, employees, client);
+
+    // Detect frequency from actual check date patterns
+    const detectedFrequency = detectFrequency(checks);
+
+    // ── Auto-create skeleton employees for unmatched names ────────────────────
+    // Creates minimal records flagged for W-4 completion. These get linked to
+    // their checks immediately so the import data is connected from day one.
+    const unmatchedNames = [...new Set(
+      checks.filter(c => !c.empMatched).map(c => (c.empName || '').trim()).filter(Boolean)
+    )];
+
+    const createdEmployees = [];
+    if (unmatchedNames.length > 0) {
+      const insertEmp = db.prepare(`
+        INSERT OR IGNORE INTO employees
+          (client_id, first_name, last_name, work_state, state, filing_status,
+           pay_type, hourly_rate, annual_salary, pay_frequency, is_active, w4_submitted, onboarding_done)
+        VALUES (?,?,?,?,?,?,?,?,?,?,1,0,0)
+      `);
+      const insertTx = db.transaction(() => {
+        for (const name of unmatchedNames) {
+          const spaceIdx = name.indexOf(' ');
+          const firstName = spaceIdx > -1 ? name.slice(0, spaceIdx) : name;
+          const lastName  = spaceIdx > -1 ? name.slice(spaceIdx + 1) : '';
+          if (!firstName) continue;
+          const st = client.state || 'TX';
+          const r = insertEmp.run(clientId, firstName, lastName || '(unknown)', st, st, 'single', 'hourly', 0, 0, detectedFrequency);
+          if (r.lastInsertRowid) {
+            createdEmployees.push({ id: r.lastInsertRowid, name, firstName, lastName });
+          }
+        }
+      });
+      insertTx();
+
+      // Reload employee list to include newly created records
+      employees = db.prepare('SELECT * FROM employees WHERE client_id = ?').all(clientId);
+
+      // Build a fast lookup: uppercased name → employee
+      const empMap = new Map(employees.map(e => [
+        `${e.first_name} ${e.last_name}`.toUpperCase(), e
+      ]));
+      // Also add fuzzy entries for middle-name variations
+      for (const e of employees) {
+        if (e.middle_name) {
+          empMap.set(`${e.first_name} ${e.middle_name} ${e.last_name}`.toUpperCase(), e);
+        }
+      }
+
+      // Re-match unmatched checks and patch their periods with the detected frequency
+      patchUnmatchedChecks(checks, detectedFrequency, empMap);
+    } else {
+      // Even with fully matched checks, patch any that defaulted to biweekly
+      // when the detected frequency is different
+      for (const c of checks) {
+        if (!c.empMatched) {
+          c.payFrequency = detectedFrequency;
+          const days = freqDays(detectedFrequency);
+          c.periodEnd   = subtractDays(c.checkDate, 2);
+          c.periodStart = subtractDays(c.periodEnd, days - 1);
+        }
+      }
+    }
+
+    // ── Find or create pay group ──────────────────────────────────────────────
+    // Match an existing group by frequency, or create a new named one.
+    // All imported checks are assigned to this group.
+    let payGroupId = null;
+    let payGroupCreated = false;
+    let payGroupName = '';
+    try {
+      const existingGroup = db.prepare(
+        `SELECT * FROM pay_groups WHERE client_id = ? AND frequency = ? AND deleted_at IS NULL ORDER BY created_at ASC LIMIT 1`
+      ).get(clientId, detectedFrequency);
+
+      if (existingGroup) {
+        payGroupId   = existingGroup.id;
+        payGroupName = existingGroup.name;
+      } else {
+        const name = FREQ_NAMES[detectedFrequency] || `${detectedFrequency} Payroll`;
+        // Anchor the group on the earliest check's period
+        const earliest = checks.slice().sort((a, b) => a.checkDate.localeCompare(b.checkDate))[0];
+        const r = db.prepare(
+          `INSERT INTO pay_groups (client_id, name, frequency, first_pay_period_start, first_pay_period_end, pay_date) VALUES (?,?,?,?,?,?)`
+        ).run(
+          clientId, name, detectedFrequency,
+          earliest ? earliest.periodStart : null,
+          earliest ? earliest.periodEnd   : null,
+          earliest ? earliest.checkDate   : null,
+        );
+        payGroupId   = r.lastInsertRowid;
+        payGroupName = name;
+        payGroupCreated = true;
+      }
+    } catch (pgErr) {
+      // Non-fatal — import continues without pay_group_id
+      console.error('[import] pay group find/create failed:', pgErr.message);
+    }
+
+    // ── Dedup sets ───────────────────────────────────────────────────────────
+    const existingByNum = new Set(
+      db.prepare('SELECT check_number FROM paystubs WHERE client_id = ? AND check_number IS NOT NULL')
+        .all(clientId).map(r => String(r.check_number))
     );
-    // Dedup by (employee_name, pay_period_start, pay_period_end) — catches re-imports
-    // of the same pay period for the same person even when check numbers differ
-    const existingPeriods = new Set(
-      db.prepare('SELECT employee_name, pay_period_start, pay_period_end FROM paystubs WHERE client_id = ?')
+    // Fingerprint: employee_name + settlement_date + gross_wages_cents
+    // More robust than period-date pairs (which are estimated and can drift across imports)
+    const existingFp = new Set(
+      db.prepare('SELECT employee_name, settlement_date, gross_wages FROM paystubs WHERE client_id = ?')
         .all(clientId)
-        .map(r => `${(r.employee_name||'').toLowerCase()}|${r.pay_period_start||''}|${r.pay_period_end||''}`)
+        .map(r => checkFingerprint(r.employee_name, r.settlement_date, r.gross_wages))
     );
-    const checks = buildChecks(wb, employees, client);
 
     const insert = db.prepare(`
       INSERT INTO paystubs (
@@ -345,30 +554,35 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
         gross_wages, fit_withholding, employee_ss, employee_medicare, additional_medicare,
         employer_ss, employer_medicare, futa_tax, suta_tax,
         total_deposit, net_pay, tax_year, tax_quarter,
-        check_number, check_status, status, status_940, reported_tips
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        check_number, check_status, status, status_940, reported_tips, pay_group_id
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `);
     const insertLineItem = db.prepare(`
       INSERT INTO paystub_line_items (paystub_id, pay_type, description, hours, rate, amount)
       VALUES (?, ?, ?, NULL, NULL, ?)
     `);
 
-    const getExistingStub  = db.prepare('SELECT id, reported_tips FROM paystubs WHERE client_id = ? AND check_number = ?');
-    const hasTipItem       = db.prepare("SELECT id FROM paystub_line_items WHERE paystub_id = ? AND pay_type = 'tips'");
-    const patchTips        = db.prepare('UPDATE paystubs SET reported_tips = ? WHERE id = ?');
+    const getExistingStub = db.prepare('SELECT id, reported_tips FROM paystubs WHERE client_id = ? AND check_number = ?');
+    const hasTipItem      = db.prepare("SELECT id FROM paystub_line_items WHERE paystub_id = ? AND pay_type = 'tips'");
+    const patchTips       = db.prepare('UPDATE paystubs SET reported_tips = ? WHERE id = ?');
 
-    const VALID_CHECK_STATUSES = ['draft', 'printed', 'deposited', 'direct_deposit_sent', 'direct_deposit_cleared', 'late'];
+    const VALID_CHECK_STATUSES    = ['draft', 'printed', 'deposited', 'direct_deposit_sent', 'direct_deposit_cleared', 'late'];
     const VALID_LIABILITY_STATUSES = ['pending', 'submitted'];
-    const resolvedCheckStatus     = VALID_CHECK_STATUSES.includes(checkStatus) ? checkStatus : 'printed';
+    const resolvedCheckStatus     = VALID_CHECK_STATUSES.includes(checkStatus)     ? checkStatus     : 'printed';
     const resolvedLiabilityStatus = VALID_LIABILITY_STATUSES.includes(liabilityStatus) ? liabilityStatus : 'pending';
 
     const importAll = db.transaction((rows) => {
       let imported = 0, skipped = 0, patched = 0;
       for (const c of rows) {
-        // Skip if same check number already exists
-        if (skipExisting === 'true' && existing.has(String(c.checkNumber))) {
-          // Patch reported_tips and tip line item on existing checks when missing
-          if (c.reportedTips > 0) {
+        const numKey = c.checkNumber ? String(c.checkNumber) : null;
+        const fp     = checkFingerprint(c.empName, c.checkDate, c.grossWages);
+
+        // Skip if check already exists (by check number OR by fingerprint)
+        if (skipExisting === 'true' && (
+          (numKey && existingByNum.has(numKey)) || existingFp.has(fp)
+        )) {
+          // Patch missing tips on the existing check
+          if (c.reportedTips > 0 && numKey) {
             const existingStub = getExistingStub.get(clientId, c.checkNumber);
             if (existingStub && !(existingStub.reported_tips > 0)) {
               patchTips.run(c.reportedTips, existingStub.id);
@@ -381,26 +595,24 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
           skipped++;
           continue;
         }
-        // Skip if same employee + same pay period already exists (catches re-imports
-        // of the same period even when check numbers differ or are missing)
-        const periodKey = `${(c.empName||'').toLowerCase()}|${c.periodStart||''}|${c.periodEnd||''}`;
-        if (existingPeriods.has(periodKey)) {
-          skipped++;
-          continue;
-        }
-        // Track this period so duplicate rows within the same import file are also caught
-        existingPeriods.add(periodKey);
+
+        // Track fingerprint within this import to catch duplicates inside the same file
+        existingFp.add(fp);
+        if (numKey) existingByNum.add(numKey);
+
         const r = insert.run(
           clientId, c.employeeId || null, c.empName,
           c.periodStart, c.periodEnd, c.checkDate, c.payFrequency, c.filingStatus, c.workState,
           c.grossWages, c.fit, c.eeSS, c.eeMedicare, c.addlMedicare,
           c.erSS, c.erMedicare, c.futa, c.suta,
           c.totalDeposit, c.netPay, c.taxYear, c.taxQuarter,
-          c.checkNumber, resolvedCheckStatus, resolvedLiabilityStatus, resolvedLiabilityStatus, c.reportedTips || 0
+          c.checkNumber, resolvedCheckStatus, resolvedLiabilityStatus, resolvedLiabilityStatus,
+          c.reportedTips || 0,
+          payGroupId,
         );
         const stubId = r.lastInsertRowid;
         if (c.compensation > 0) insertLineItem.run(stubId, 'regular', 'Compensation', c.compensation);
-        if (c.reportedTips > 0) insertLineItem.run(stubId, 'tips', 'Reported Tips', c.reportedTips);
+        if (c.reportedTips  > 0) insertLineItem.run(stubId, 'tips',    'Reported Tips', c.reportedTips);
         imported++;
       }
       return { imported, skipped, patched };
@@ -408,8 +620,8 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
 
     const result = importAll(checks);
 
-    // Re-link any still-unlinked paystubs using fuzzy first+last name matching.
-    // Handles the case where paychecks were imported before employees existed.
+    // Re-link any still-unlinked paystubs via fuzzy name matching.
+    // Handles edge cases where name parsing slightly differed.
     try {
       const allEmps = db.prepare('SELECT id, first_name, last_name FROM employees WHERE client_id = ?').all(clientId);
       let linked = 0;
@@ -424,8 +636,7 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
       if (linked > 0) result.linked = linked;
     } catch (_) {}
 
-    // Update employee_ytd_wages for all linked imported paystubs.
-    // Without this, new paychecks created after import would use ytd=0, producing wrong FUTA/SS calculations.
+    // Update YTD wage buckets for all newly linked paystubs.
     try {
       const upsertYtd = db.prepare(`
         INSERT INTO employee_ytd_wages (employee_id, tax_year, ytd_gross, ytd_ss_wages, ytd_futa_wages, ytd_suta_wages)
@@ -437,20 +648,14 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
           ytd_suta_wages = ytd_suta_wages + excluded.ytd_suta_wages,
           updated_at     = CURRENT_TIMESTAMP
       `);
-      // Only count newly imported checks (not skipped/existing ones)
-      const imported = checks.filter(c => {
-        const key = `${(c.empName||'').toLowerCase()}|${c.periodStart||''}|${c.periodEnd||''}`;
-        return c.employeeId; // only linked checks
-      });
-      // Re-query newly inserted stubs to get final employee_id (after re-link)
       const newStubs = db.prepare(
         `SELECT employee_id, tax_year, gross_wages, employee_ss, futa_tax, suta_tax
          FROM paystubs WHERE client_id=? AND created_at >= datetime('now','-1 minute') AND employee_id IS NOT NULL`
       ).all(clientId);
       const ytdTx = db.transaction(() => {
         for (const s of newStubs) {
-          const futaTax = s.futa_tax > 0 ? Math.round((s.futa_tax / 0.006) * 100) / 100 : 0;
-          const sutaTax = s.suta_tax > 0 ? Math.round((s.suta_tax / 0.027) * 100) / 100 : 0;
+          const futaTax = s.futa_tax   > 0 ? Math.round((s.futa_tax   / 0.006) * 100) / 100 : 0;
+          const sutaTax = s.suta_tax   > 0 ? Math.round((s.suta_tax   / 0.027) * 100) / 100 : 0;
           const ssTax   = Math.round(((s.employee_ss || 0) / 0.062) * 100) / 100;
           upsertYtd.run(s.employee_id, s.tax_year, s.gross_wages, ssTax, futaTax, sutaTax);
         }
@@ -458,7 +663,14 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
       ytdTx();
     } catch (_) {}
 
-    res.json(result);
+    res.json({
+      ...result,
+      detectedFrequency,
+      payGroupCreated,
+      payGroupName,
+      payGroupId,
+      employeesCreated: createdEmployees,
+    });
   } catch (err) {
     res.status(400).json({ error: `Import failed: ${err.message}` });
   }

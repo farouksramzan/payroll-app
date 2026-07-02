@@ -3,12 +3,19 @@ import api from '../api/client';
 
 const fmt = (n) => `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
+const FREQ_LABELS = {
+  weekly:      'Weekly',
+  biweekly:    'Biweekly',
+  semimonthly: 'Semimonthly',
+  monthly:     'Monthly',
+};
+
 const CHECK_STATUS_OPTIONS = [
-  { value: 'printed',                   label: 'Printed' },
-  { value: 'deposited',                 label: 'Deposited' },
-  { value: 'direct_deposit_sent',       label: 'Direct Deposit Sent' },
-  { value: 'direct_deposit_cleared',    label: 'Direct Deposit Cleared' },
-  { value: 'draft',                     label: 'Draft' },
+  { value: 'printed',                label: 'Printed' },
+  { value: 'deposited',              label: 'Deposited' },
+  { value: 'direct_deposit_sent',    label: 'Direct Deposit Sent' },
+  { value: 'direct_deposit_cleared', label: 'Direct Deposit Cleared' },
+  { value: 'draft',                  label: 'Draft' },
 ];
 
 const LIABILITY_STATUS_OPTIONS = [
@@ -59,12 +66,13 @@ export default function ImportPaychecksModal({ clientId, onClose, onImported }) 
     }
   }
 
-  const toImport = preview ? preview.checks.filter(c => !(skipExisting && c.alreadyExists)) : [];
-  const unmatched = preview ? preview.checks.filter(c => !c.empMatched) : [];
+  const toImport   = preview ? preview.checks.filter(c => !(skipExisting && c.alreadyExists)) : [];
+  const unmatched  = preview ? preview.checks.filter(c => !c.empMatched) : [];
+  const alreadyExist = preview ? preview.checks.filter(c => c.alreadyExists) : [];
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-      <div style={{ background: 'var(--bg-card)', borderRadius: 12, padding: 28, width: '100%', maxWidth: 820, maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+      <div style={{ background: 'var(--bg-card)', borderRadius: 12, padding: 28, width: '100%', maxWidth: 860, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <div>
             <h3 style={{ margin: 0 }}>Import Paycheck History</h3>
@@ -74,16 +82,13 @@ export default function ImportPaychecksModal({ clientId, onClose, onImported }) 
         </div>
 
         {done ? (
-          <div style={{ textAlign: 'center', padding: '32px 0' }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>✓</div>
-            <h3 style={{ marginBottom: 8 }}>{done.imported} paycheck{done.imported !== 1 ? 's' : ''} imported</h3>
-            {done.skipped > 0 && <p style={{ color: 'var(--text-muted)' }}>{done.skipped} skipped (check numbers already exist{done.patched > 0 ? `, ${done.patched} patched with tips` : ''})</p>}
-            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 8 }}>Paychecks are marked as printed / 941 completed. Pay period dates are estimated — adjust per check if needed.</p>
-            <button className="btn btn-primary" style={{ marginTop: 20 }} onClick={onClose}>Done</button>
-          </div>
+          <DoneScreen done={done} onClose={onClose} />
         ) : (
           <>
-            <div onClick={() => inputRef.current?.click()} style={{ border: '2px dashed var(--border)', borderRadius: 8, padding: '20px 16px', textAlign: 'center', cursor: 'pointer', marginBottom: 16, background: file ? 'var(--bg-primary)' : 'transparent' }}>
+            <div
+              onClick={() => inputRef.current?.click()}
+              style={{ border: '2px dashed var(--border)', borderRadius: 8, padding: '20px 16px', textAlign: 'center', cursor: 'pointer', marginBottom: 16, background: file ? 'var(--bg-primary)' : 'transparent' }}
+            >
               <input ref={inputRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleFileChange} />
               {file
                 ? <><div style={{ fontWeight: 600 }}>{file.name}</div><div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Click to change file</div></>
@@ -96,19 +101,16 @@ export default function ImportPaychecksModal({ clientId, onClose, onImported }) 
 
             {preview && !loading && (
               <>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, flexWrap: 'wrap', gap: 8 }}>
-                  <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-                    Found <strong style={{ color: 'var(--text-primary)' }}>{preview.count}</strong> checks
-                    {unmatched.length > 0 && <span style={{ color: '#f59e0b', marginLeft: 8 }}>· {unmatched.length} employee{unmatched.length !== 1 ? 's' : ''} not matched (import employees first)</span>}
-                    {skipExisting && preview.checks.some(c => c.alreadyExists) && <span style={{ color: 'var(--text-muted)', marginLeft: 8 }}>· {preview.checks.filter(c => c.alreadyExists).length} already exist (will skip)</span>}
-                  </div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
-                    <input type="checkbox" checked={skipExisting} onChange={e => setSkip(e.target.checked)} />
-                    Skip existing check numbers
-                  </label>
-                </div>
+                {/* ── Smart import summary ── */}
+                <SmartSummary
+                  preview={preview}
+                  skipExisting={skipExisting}
+                  alreadyExistCount={alreadyExist.length}
+                  setSkip={setSkip}
+                />
 
-                <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 16 }}>
+                {/* ── Check table ── */}
+                <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 14 }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                     <thead>
                       <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', position: 'sticky', top: 0 }}>
@@ -124,7 +126,7 @@ export default function ImportPaychecksModal({ clientId, onClose, onImported }) 
                           <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>{c.checkDate}</td>
                           <td style={{ padding: '7px 10px' }}>
                             <div style={{ fontWeight: 600, fontSize: 12 }}>{c.empName}</div>
-                            {!c.empMatched && <div style={{ fontSize: 10, color: '#f59e0b' }}>Not found in employees</div>}
+                            {!c.empMatched && <div style={{ fontSize: 10, color: '#d97706' }}>Profile will be auto-created</div>}
                           </td>
                           <td style={{ padding: '7px 10px', fontFamily: 'monospace' }}>{fmt(c.grossWages)}</td>
                           <td style={{ padding: '7px 10px', fontFamily: 'monospace', color: c.reportedTips > 0 ? '#7c3aed' : 'var(--text-muted)' }}>{c.reportedTips > 0 ? fmt(c.reportedTips) : '—'}</td>
@@ -135,9 +137,9 @@ export default function ImportPaychecksModal({ clientId, onClose, onImported }) 
                           <td style={{ padding: '7px 10px' }}>
                             {c.alreadyExists
                               ? <span className="badge badge-neutral" style={{ fontSize: 10 }}>Exists</span>
-                              : c.empMatched
-                                ? <span className="badge badge-success" style={{ fontSize: 10 }}>Ready</span>
-                                : <span className="badge" style={{ fontSize: 10, background: '#fef3c7', color: '#92400e' }}>No employee</span>}
+                              : !c.empMatched
+                                ? <span className="badge" style={{ fontSize: 10, background: '#fef3c7', color: '#92400e' }}>New emp</span>
+                                : <span className="badge badge-success" style={{ fontSize: 10 }}>Ready</span>}
                           </td>
                         </tr>
                       ))}
@@ -145,30 +147,23 @@ export default function ImportPaychecksModal({ clientId, onClose, onImported }) 
                   </table>
                 </div>
 
-                <div style={{ display: 'flex', gap: 20, padding: '12px 0', borderTop: '1px solid var(--border-light)', marginBottom: 4, flexWrap: 'wrap' }}>
+                {/* ── Options bar ── */}
+                <div style={{ display: 'flex', gap: 20, padding: '10px 0', borderTop: '1px solid var(--border-light)', marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <label style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: 600 }}>Paycheck Status</label>
-                    <select
-                      value={checkStatus}
-                      onChange={e => setCheckStatus(e.target.value)}
-                      style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)', cursor: 'pointer' }}
-                    >
+                    <label style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: 600 }}>Check Status</label>
+                    <select value={checkStatus} onChange={e => setCheckStatus(e.target.value)} style={selectStyle}>
                       {CHECK_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <label style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap', fontWeight: 600 }}>Liability Status</label>
-                    <select
-                      value={liabilityStatus}
-                      onChange={e => setLiabilityStatus(e.target.value)}
-                      style={{ fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-card)', color: 'var(--text-primary)', cursor: 'pointer' }}
-                    >
+                    <select value={liabilityStatus} onChange={e => setLiabilityStatus(e.target.value)} style={selectStyle}>
                       {LIABILITY_STATUS_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   </div>
-                  <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0, alignSelf: 'center' }}>
+                  <span style={{ fontSize: 11, color: 'var(--text-muted)', marginLeft: 'auto' }}>
                     Applies to all {toImport.length} check{toImport.length !== 1 ? 's' : ''} being imported
-                  </p>
+                  </span>
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
@@ -177,17 +172,160 @@ export default function ImportPaychecksModal({ clientId, onClose, onImported }) 
                     Import {toImport.length} Check{toImport.length !== 1 ? 's' : ''}
                   </button>
                 </div>
-
-                {unmatched.length > 0 && (
-                  <p style={{ fontSize: 12, color: '#92400e', marginTop: 10, textAlign: 'center', background: '#fef3c7', padding: '6px 12px', borderRadius: 6 }}>
-                    Unmatched employees will still be imported with their check data — link them to an employee manually afterward.
-                  </p>
-                )}
               </>
             )}
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+const selectStyle = {
+  fontSize: 12, padding: '4px 8px', borderRadius: 6,
+  border: '1px solid var(--border)', background: 'var(--bg-card)',
+  color: 'var(--text-primary)', cursor: 'pointer',
+};
+
+// ── Smart summary strip shown between file drop and check table ───────────────
+function SmartSummary({ preview, skipExisting, alreadyExistCount, setSkip }) {
+  const { detectedFrequency, payGroupAction, willAutoCreateEmployees } = preview;
+  const newEmpsCount = (willAutoCreateEmployees || []).length;
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+      {/* Counts row */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+          Found <strong style={{ color: 'var(--text-primary)' }}>{preview.count}</strong> checks
+        </span>
+        {alreadyExistCount > 0 && (
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+            · {alreadyExistCount} already in system
+          </span>
+        )}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', marginLeft: 'auto' }}>
+          <input type="checkbox" checked={skipExisting} onChange={e => setSkip(e.target.checked)} />
+          Skip existing
+        </label>
+      </div>
+
+      {/* Smart cards row */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {/* Frequency */}
+        {detectedFrequency && (
+          <div style={infoCard('#eff6ff', '#1d4ed8')}>
+            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, opacity: 0.7 }}>Detected</span>
+            <span style={{ fontWeight: 700, fontSize: 13 }}>{FREQ_LABELS[detectedFrequency] || detectedFrequency}</span>
+          </div>
+        )}
+
+        {/* Pay group */}
+        {payGroupAction && (
+          <div style={infoCard(
+            payGroupAction.action === 'match' ? '#f0fdf4' : '#fdf4ff',
+            payGroupAction.action === 'match' ? '#166534' : '#6b21a8',
+          )}>
+            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, opacity: 0.7 }}>
+              Pay Group {payGroupAction.action === 'match' ? 'Match' : 'Will Create'}
+            </span>
+            <span style={{ fontWeight: 700, fontSize: 13 }}>
+              {payGroupAction.action === 'match' ? payGroupAction.groupName : payGroupAction.suggestedName}
+            </span>
+          </div>
+        )}
+
+        {/* Auto-create employees */}
+        {newEmpsCount > 0 && (
+          <div style={infoCard('#fffbeb', '#92400e')}>
+            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.4, opacity: 0.7 }}>
+              New Employee{newEmpsCount !== 1 ? 's' : ''}
+            </span>
+            <span style={{ fontWeight: 700, fontSize: 13 }}>
+              {newEmpsCount} profile{newEmpsCount !== 1 ? 's' : ''} will be auto-created
+            </span>
+          </div>
+        )}
+      </div>
+
+      {/* W-4 guidance banner for new employees */}
+      {newEmpsCount > 0 && (
+        <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 7, padding: '8px 12px', fontSize: 12, color: '#78350f' }}>
+          <strong>Action required after import:</strong> The following employee profiles will be created with blank tax settings. Go to each employee and fill in their W-4 info (filing status, allowances, deductions) so future payroll calculations are accurate.
+          <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: '2px 8px' }}>
+            {(willAutoCreateEmployees || []).map(name => (
+              <span key={name} style={{ fontFamily: 'monospace', fontWeight: 600 }}>{name}</span>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function infoCard(bg, color) {
+  return {
+    background: bg,
+    border: `1px solid ${color}22`,
+    borderRadius: 7,
+    padding: '6px 12px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 2,
+    color,
+    minWidth: 140,
+  };
+}
+
+// ── Done screen ───────────────────────────────────────────────────────────────
+function DoneScreen({ done, onClose }) {
+  const hasNewEmps = done.employeesCreated && done.employeesCreated.length > 0;
+
+  return (
+    <div style={{ textAlign: 'center', padding: '28px 0' }}>
+      <div style={{ fontSize: 48, marginBottom: 12 }}>✓</div>
+      <h3 style={{ marginBottom: 6 }}>{done.imported} paycheck{done.imported !== 1 ? 's' : ''} imported</h3>
+
+      {/* Stats line */}
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 20, flexWrap: 'wrap', marginBottom: 16 }}>
+        {done.skipped > 0 && (
+          <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+            {done.skipped} skipped
+            {done.patched > 0 ? ` · ${done.patched} patched with tips` : ''}
+          </span>
+        )}
+        {done.payGroupCreated && (
+          <span style={{ fontSize: 13, color: '#6b21a8' }}>Pay group "{done.payGroupName}" created</span>
+        )}
+        {!done.payGroupCreated && done.payGroupName && (
+          <span style={{ fontSize: 13, color: '#166534' }}>Assigned to pay group "{done.payGroupName}"</span>
+        )}
+        {done.detectedFrequency && (
+          <span style={{ fontSize: 13, color: '#1d4ed8' }}>Detected: {FREQ_LABELS[done.detectedFrequency] || done.detectedFrequency}</span>
+        )}
+      </div>
+
+      {/* W-4 guidance for auto-created employees */}
+      {hasNewEmps && (
+        <div style={{ background: '#fef9c3', border: '1px solid #fde68a', borderRadius: 8, padding: '12px 16px', marginBottom: 16, textAlign: 'left', maxWidth: 520, margin: '0 auto 16px' }}>
+          <div style={{ fontWeight: 700, color: '#78350f', marginBottom: 6 }}>
+            {done.employeesCreated.length} employee profile{done.employeesCreated.length !== 1 ? 's' : ''} auto-created — action needed
+          </div>
+          <p style={{ fontSize: 12, color: '#92400e', margin: '0 0 8px' }}>
+            These profiles were created with blank tax settings. Please open each employee and fill in their W-4 information (filing status, dependents, additional withholding) before running future payroll.
+          </p>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 10px' }}>
+            {done.employeesCreated.map(e => (
+              <span key={e.id} style={{ fontSize: 12, fontFamily: 'monospace', fontWeight: 600, color: '#78350f' }}>{e.name}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 20 }}>
+        Pay period dates are estimated — adjust per check if needed.
+      </p>
+      <button className="btn btn-primary" onClick={onClose}>Done</button>
     </div>
   );
 }
