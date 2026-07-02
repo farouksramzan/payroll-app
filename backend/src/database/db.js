@@ -575,14 +575,13 @@ function migrate() {
     if (shawarma) {
       const stubs = db.prepare('SELECT id, check_status, status, status_940, employee_id, employee_name FROM paystubs WHERE client_id=?').all(shawarma.id);
       console.log(`[DB] Super Shawarma paystubs (${stubs.length}):`, JSON.stringify(stubs.slice(0,3)));
-      const emps = db.prepare('SELECT id, first_name, last_name FROM employees WHERE client_id=?').all(shawarma.id);
-      console.log(`[DB] Super Shawarma employees (${emps.length}):`, JSON.stringify(emps));
+      const empList = db.prepare('SELECT id, first_name, last_name FROM employees WHERE client_id=?').all(shawarma.id);
+      console.log(`[DB] Super Shawarma employees (${empList.length}):`, JSON.stringify(empList));
       const s1 = db.prepare(`UPDATE paystubs SET status='pending', status_940='pending' WHERE client_id=? AND status='submitted'`).run(shawarma.id);
       const s2 = db.prepare(`UPDATE paystubs SET status='pending', status_940='pending' WHERE client_id=? AND status_940='submitted'`).run(shawarma.id);
       if (s1.changes + s2.changes > 0) console.log(`[DB] Super Shawarma: reset ${s1.changes + s2.changes} liability statuses → pending`);
-      const emps = db.prepare('SELECT id, first_name, last_name FROM employees WHERE client_id=?').all(shawarma.id);
       let linked = 0;
-      for (const e of emps) {
+      for (const e of empList) {
         const { changes } = db.prepare(`UPDATE paystubs SET employee_id=? WHERE client_id=? AND employee_id IS NULL AND UPPER(employee_name)=UPPER(?)`).run(e.id, shawarma.id, `${e.first_name} ${e.last_name}`);
         linked += changes;
       }
