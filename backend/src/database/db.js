@@ -601,6 +601,33 @@ function migrate() {
     console.error('[DB] Super Shawarma fix failed:', e.message);
   }
 
+  // ── Recalculate net_pay from stored tax components — idempotent ─────────────
+  // Fixes checks where net_pay was stored with an old/incorrect FIT value.
+  // Safe to leave permanently: only updates rows where the calculation disagrees.
+  try {
+    const round2 = n => Math.round(n * 100) / 100;
+    const allStubs = db.prepare(`
+      SELECT id, gross_wages, fit_withholding, employee_ss, employee_medicare,
+             additional_medicare, state_income_tax, net_pay
+      FROM paystubs
+      WHERE check_status NOT IN ('voided','draft') AND net_pay > 0
+    `).all();
+    let fixed = 0;
+    for (const s of allStubs) {
+      const expected = round2(
+        s.gross_wages - s.fit_withholding - s.employee_ss -
+        s.employee_medicare - s.additional_medicare - s.state_income_tax
+      );
+      if (Math.abs(expected - s.net_pay) >= 0.01) {
+        db.prepare('UPDATE paystubs SET net_pay=? WHERE id=?').run(expected, s.id);
+        fixed++;
+      }
+    }
+    if (fixed > 0) console.log(`[DB] net_pay recalc: fixed ${fixed} paystub(s)`);
+  } catch (e) {
+    console.error('[DB] net_pay recalc failed:', e.message);
+  }
+
   // ── One-time PIN fixes — run once, idempotent via eftps_enrolled check ───────
   try {
     const { encrypt } = require('../services/cryptoService');
