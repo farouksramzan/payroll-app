@@ -41,6 +41,17 @@ let pingTimer   = null;
 let reconnTimer = null;
 let authed      = false;
 
+// Only one automation job runs at a time.
+// kill() closes any open browser/process so the job promise rejects immediately.
+let activeJob = null; // { jobId, label, kill: async () => void }
+
+function jobLock(jobId, label, killFn) {
+  activeJob = { jobId, label, kill: killFn };
+}
+function jobUnlock() {
+  activeJob = null;
+}
+
 // ── WebSocket connection ──────────────────────────────────────────────────────
 function connect() {
   const wsUrl = SERVER_URL.replace(/^http/, 'ws') + '/ws/twc-bridge';
@@ -101,26 +112,49 @@ function handleMessage(msg) {
       break;
 
     case 'submit':
+    case 'twc_payment': {
       if (!authed) { console.warn('[TWC Bridge] Received job before auth — ignoring'); return; }
-      handleJob(msg).catch(err => {
-        console.error('[TWC Bridge] Unhandled job error:', err.message);
+      if (activeJob) {
+        console.warn(`[TWC Bridge] Job ${msg.jobId} rejected — bridge busy with ${activeJob.label}`);
         send({
           type:         'result',
           jobId:        msg.jobId,
           submissionId: msg.submissionId,
+          paymentId:    msg.paymentId,
+          success:      false,
+          error:        `Bridge is busy with another job (${activeJob.label}). Kill it from the app or wait for it to finish.`,
+        });
+        return;
+      }
+      const handler = msg.type === 'twc_payment' ? handlePaymentJob : handleJob;
+      handler(msg).catch(err => {
+        console.error(`[TWC Bridge] Job ${msg.jobId} failed:`, err.message);
+        send({
+          type:         'result',
+          jobId:        msg.jobId,
+          submissionId: msg.submissionId,
+          paymentId:    msg.paymentId,
           success:      false,
           error:        err.message,
         });
       });
       break;
+    }
 
-    case 'twc_payment':
-      if (!authed) { console.warn('[TWC Bridge] Received payment job before auth — ignoring'); return; }
-      handlePaymentJob(msg).catch(err => {
-        console.error('[TWC Bridge] Unhandled payment error:', err.message);
-        send({ type: 'result', jobId: msg.jobId, paymentId: msg.paymentId, success: false, error: err.message });
-      });
+    case 'kill_job': {
+      if (!activeJob) {
+        console.log('[TWC Bridge] kill_job received but no active job');
+        send({ type: 'job_killed', jobId: null });
+        return;
+      }
+      const killedId    = activeJob.jobId;
+      const killedLabel = activeJob.label;
+      console.log(`[TWC Bridge] Killing job ${killedId} (${killedLabel})…`);
+      activeJob.kill().catch(e => console.warn('[TWC Bridge] Kill error (ignored):', e.message));
+      // jobUnlock() is called inside the job's finally block when it catches the kill error
+      send({ type: 'job_killed', jobId: killedId, label: killedLabel });
       break;
+    }
 
     case 'pong':
       break;
@@ -135,76 +169,78 @@ async function handleJob(job) {
   const { jobId, submissionId, filename, icesaContent, clientName, quarter, year } = job;
   console.log(`[TWC Bridge] Job ${jobId}: ${clientName} Q${quarter} ${year}`);
 
-  // Notify server we've picked it up
-  send({ type: 'status_update', jobId, submissionId, status: 'processing', message: 'Bridge received job — saving ICESA file' });
+  let ahkProc    = null;
+  let puppBrowser = null;
 
-  // Save ICESA content to temp file
-  const filePath = path.join(TEMP_DIR, filename || `TWC_Q${quarter}_${year}.txt`);
-  try {
-    fs.writeFileSync(filePath, icesaContent, { encoding: 'utf8' });
-    console.log(`[TWC Bridge] ICESA file saved: ${filePath}`);
-  } catch (err) {
-    throw new Error(`Failed to save ICESA file: ${err.message}`);
-  }
-
-  send({ type: 'status_update', jobId, submissionId, status: 'processing', message: 'Launching QuickFile…' });
-
-  // Step 1: AHK handles the QuickFile desktop app
-  // Returns { twcUrl, qfhFile }
-  let ahkResult;
-  try {
-    ahkResult = await runQuickFileApp(filePath, jobId, submissionId);
-  } catch (err) {
-    // Do NOT delete the ICESA file on failure — leave it so it can be inspected or submitted manually
-    console.log(`[TWC Bridge] AHK failed — ICESA file left at: ${filePath}`);
-    throw err;
-  }
-  try { fs.unlinkSync(filePath); } catch (_) {}
-
-  const { qfhFile } = ahkResult;
-  console.log(`[TWC Bridge] AHK done — qfhFile: ${qfhFile}`);
-
-  // Construct the TWC upload URL from known parameters
-  const qfhBasename = path.basename(qfhFile);
-  const ufn = qfhBasename.replace('.qfh', '.ice.gz');
-  const iceGzPath = path.join('C:\\QuickFile\\Upload', ufn);
-  let fileSize = 0;
-  try { fileSize = fs.statSync(iceGzPath).size; } catch (_) {}
-  const twcUrl = 'https://m06hostp.twc.state.tx.us/TAXWEB/qf/controller'
-    + '?rfn=' + encodeURIComponent(filename)
-    + '&drn=' + encodeURIComponent('C:\\QuickFile\\Upload\\')
-    + '&hfn=' + encodeURIComponent(qfhBasename)
-    + '&ufn=' + encodeURIComponent(ufn)
-    + '&type=Report'
-    + '&fs=' + fileSize
-    + '&ver=05.05.0009';
-  console.log(`[TWC Bridge] Upload URL: ${twcUrl}`);
-
-  // Step 2: Puppeteer handles the TWC website (login + file upload)
-  send({ type: 'status_update', jobId, submissionId, status: 'processing', message: 'Logging in to TWC website…' });
-
-  let confirmation = null;
-  try {
-    confirmation = await runTwcWebSubmission(twcUrl, qfhFile, jobId, submissionId);
-  } catch (err) {
-    throw new Error(`TWC web submission failed: ${err.message}`);
-  }
-
-  console.log(`[TWC Bridge] Job ${jobId} complete — confirmation: ${confirmation || 'none'}`);
-  send({
-    type:         'result',
-    jobId,
-    submissionId,
-    success:      true,
-    confirmation: confirmation || null,
+  jobLock(jobId, `ICESA ${clientName} Q${quarter}${year}`, async () => {
+    if (ahkProc)    { try { ahkProc.kill('SIGKILL'); }    catch (_) {} }
+    if (puppBrowser){ try { await puppBrowser.close(); }  catch (_) {} }
   });
+
+  try {
+    send({ type: 'status_update', jobId, submissionId, status: 'processing', message: 'Bridge received job — saving ICESA file' });
+
+    const filePath = path.join(TEMP_DIR, filename || `TWC_Q${quarter}_${year}.txt`);
+    try {
+      fs.writeFileSync(filePath, icesaContent, { encoding: 'utf8' });
+    } catch (err) {
+      throw new Error(`Failed to save ICESA file: ${err.message}`);
+    }
+
+    send({ type: 'status_update', jobId, submissionId, status: 'processing', message: 'Launching QuickFile…' });
+
+    let ahkResult;
+    try {
+      ahkResult = await runQuickFileApp(filePath, jobId, submissionId, (proc) => { ahkProc = proc; });
+    } catch (err) {
+      console.log(`[TWC Bridge] AHK failed — ICESA file left at: ${filePath}`);
+      throw err;
+    }
+    ahkProc = null;
+    try { fs.unlinkSync(filePath); } catch (_) {}
+
+    const { qfhFile } = ahkResult;
+    console.log(`[TWC Bridge] AHK done — qfhFile: ${qfhFile}`);
+
+    const qfhBasename = path.basename(qfhFile);
+    const ufn = qfhBasename.replace('.qfh', '.ice.gz');
+    const iceGzPath = path.join('C:\\QuickFile\\Upload', ufn);
+    let fileSize = 0;
+    try { fileSize = fs.statSync(iceGzPath).size; } catch (_) {}
+    const twcUrl = 'https://m06hostp.twc.state.tx.us/TAXWEB/qf/controller'
+      + '?rfn=' + encodeURIComponent(filename)
+      + '&drn=' + encodeURIComponent('C:\\QuickFile\\Upload\\')
+      + '&hfn=' + encodeURIComponent(qfhBasename)
+      + '&ufn=' + encodeURIComponent(ufn)
+      + '&type=Report'
+      + '&fs=' + fileSize
+      + '&ver=05.05.0009';
+
+    send({ type: 'status_update', jobId, submissionId, status: 'processing', message: 'Logging in to TWC website…' });
+
+    let confirmation = null;
+    try {
+      confirmation = await runTwcWebSubmission(twcUrl, qfhFile, jobId, submissionId, (b) => { puppBrowser = b; });
+    } catch (err) {
+      throw new Error(`TWC web submission failed: ${err.message}`);
+    }
+
+    console.log(`[TWC Bridge] Job ${jobId} complete — confirmation: ${confirmation || 'none'}`);
+    send({ type: 'result', jobId, submissionId, success: true, confirmation: confirmation || null });
+
+  } finally {
+    // Always clean up, even if killed
+    if (ahkProc)     { try { ahkProc.kill('SIGKILL'); }    catch (_) {} }
+    if (puppBrowser) { try { await puppBrowser.close(); }  catch (_) {} }
+    jobUnlock();
+  }
 }
 
 // ── Step 1: AutoHotkey — QuickFile desktop app ────────────────────────────────
 // Runs the AHK script which clicks through all QuickFile dialogs,
 // then captures the TWC URL and .qfh file path before Edge opens.
 // Returns { twcUrl, qfhFile }
-function runQuickFileApp(icesaFilePath, jobId, submissionId) {
+function runQuickFileApp(icesaFilePath, jobId, submissionId, onProc) {
   return new Promise((resolve, reject) => {
     const resultFile = path.join(TEMP_DIR, `ahk_result_${jobId}.txt`);
 
@@ -212,6 +248,7 @@ function runQuickFileApp(icesaFilePath, jobId, submissionId) {
     const proc = spawn(AHK_EXE, [AHK_SCRIPT, icesaFilePath, resultFile, QUICKFILE_EXE], {
       stdio: ['ignore', 'pipe', 'pipe'],
     });
+    onProc?.(proc); // let caller track it for force-kill
 
     let stdout = '', stderr = '';
     proc.stdout?.on('data', d => { stdout += d.toString(); });
@@ -257,11 +294,12 @@ function runQuickFileApp(icesaFilePath, jobId, submissionId) {
 // ── Step 2: Puppeteer — TWC website login + file upload ───────────────────────
 // Navigates to the TWC QuickFile web portal, logs in, uploads the .qfh file,
 // submits, and returns the confirmation text.
-async function runTwcWebSubmission(twcUrl, qfhFile, jobId, submissionId) {
+async function runTwcWebSubmission(twcUrl, qfhFile, jobId, submissionId, onBrowser) {
   const browser = await puppeteer.launch({
-    headless: false,   // set to true once confirmed working
+    headless: false,
     defaultViewport: null,
   });
+  onBrowser?.(browser);
 
   try {
     const page = await browser.newPage();
@@ -360,26 +398,27 @@ async function handlePaymentJob(job) {
   const { jobId, paymentId, twcAccountNumber, amount, paymentDate, bankName, clientName } = job;
   console.log(`[Payment] Job ${jobId}: ${clientName} — $${amount} on ${paymentDate} (account ${twcAccountNumber})`);
 
-  send({ type: 'status_update', jobId, paymentId, status: 'processing', message: 'Opening browser…' });
+  let puppBrowser = null;
 
-  let confirmationNumber, bankNameConfirmed, scheduledDate, scheduledAmount;
-  try {
-    ({ confirmationNumber, bankNameConfirmed, scheduledDate, scheduledAmount } =
-      await runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, paymentDate, bankName }));
-  } catch (err) {
-    throw err;
-  }
-
-  send({
-    type:               'result',
-    jobId,
-    paymentId,
-    success:            true,
-    confirmationNumber,
-    bankName:           bankNameConfirmed,
-    scheduledDate,
-    scheduledAmount,
+  jobLock(jobId, `Payment ${clientName} $${amount}`, async () => {
+    if (puppBrowser) { try { await puppBrowser.close(); } catch (_) {} }
   });
+
+  try {
+    send({ type: 'status_update', jobId, paymentId, status: 'processing', message: 'Opening browser…' });
+
+    const { confirmationNumber, bankNameConfirmed, scheduledDate, scheduledAmount } =
+      await runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, paymentDate, bankName }, (b) => { puppBrowser = b; });
+
+    send({
+      type: 'result', jobId, paymentId, success: true,
+      confirmationNumber, bankName: bankNameConfirmed, scheduledDate, scheduledAmount,
+    });
+
+  } finally {
+    if (puppBrowser) { try { await puppBrowser.close(); } catch (_) {} }
+    jobUnlock();
+  }
 }
 
 // Session helpers
@@ -394,21 +433,16 @@ function saveSession(cookies) {
   try { fs.writeFileSync(SESSION_FILE, JSON.stringify(cookies, null, 2)); } catch (_) {}
 }
 
-async function runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, paymentDate, bankName }) {
-  // paymentDate is YYYY-MM-DD
-  const [, payMonth, payDay, payYear] = paymentDate.match(/^(\d{4})-(\d{2})-(\d{2})$/)
-    ? [, ...paymentDate.split('-').slice(1), paymentDate.split('-')[0]]  // rearrange
-    : [null, null, null, null];
-
+async function runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, paymentDate, bankName }, onBrowser) {
   const dateMatch = paymentDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!dateMatch) throw new Error(`Invalid paymentDate format: ${paymentDate}`);
   const [, yyyy, mm, dd] = dateMatch;
-  const monthNum = parseInt(mm, 10); // 1-12
+  const monthNum = parseInt(mm, 10);
 
   const savedCookies = loadSession();
 
-  // Always headless: false so user can solve CAPTCHA if needed (visible on Computer 2)
   const browser = await puppeteer.launch({ headless: false, defaultViewport: null });
+  onBrowser?.(browser);
 
   try {
     const page = await browser.newPage();

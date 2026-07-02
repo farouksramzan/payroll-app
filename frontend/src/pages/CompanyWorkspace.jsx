@@ -4526,6 +4526,17 @@ function PayLiabilitiesTab({ clientId, client }) {
               ? 'This is your first payment with us — enrollment is in progress. This can take 15 minutes to 1 hour. Please check back later.'
               : 'Payment sent — please check back in 5–10 minutes to confirm it was processed.'}
           </span>
+          <button
+            style={{ marginLeft: 'auto', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+            onClick={async () => {
+              if (!window.confirm('Kill the running automation job? This closes the browser on Computer 2 and marks the job as failed.')) return;
+              try {
+                await api.killTwcBridgeJob();
+                setActiveJobId(null); setJobStatus('failed'); setJobMessage('Killed by user');
+              } catch (e) { alert(e.message); }
+            }}>
+            Kill Job
+          </button>
         </div>
       )}
       {!activeJobId && jobStatus === 'completed' && (
@@ -4795,9 +4806,18 @@ function TwcPaymentModal({ client, defaultAmount, defaultDate, twcPayJob, onSubm
               <div style={{ color: '#92400e', fontWeight: 600 }}>Waiting for CAPTCHA — solve it in the browser window on Computer 2, then click Logon.</div>
             )}
             {twcPayJob.status === 'processing' && !twcPayJob.confirmationNumber && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#0369a1' }}>
-                <span className="spinner spinner-dark" style={{ width: 14, height: 14 }} />
-                <span>Browser automation in progress on Computer 2…</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#0369a1' }}>
+                <span className="spinner spinner-dark" style={{ width: 14, height: 14, flexShrink: 0 }} />
+                <span style={{ flex: 1 }}>Browser automation in progress on Computer 2…</span>
+                <button
+                  style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '3px 9px', fontSize: 12, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+                  onClick={async () => {
+                    if (!window.confirm('Kill the running payment automation? The browser on Computer 2 will close.')) return;
+                    try { await api.killTwcBridgeJob(); } catch (_) {}
+                    setTwcPayJob(prev => ({ ...prev, status: 'failed', error: 'Killed by user' }));
+                  }}>
+                  Kill
+                </button>
               </div>
             )}
             {twcPayJob.bridgeOffline && (

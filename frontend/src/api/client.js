@@ -160,6 +160,7 @@ const api = {
   createTwcPayment: (data) => request('/twc-payments', { method: 'POST', body: JSON.stringify(data) }),
   getTwcPayment: (id) => request(`/twc-payments/${id}`),
   listTwcPayments: (clientId) => request(`/twc-payments?clientId=${clientId}`),
+  killTwcBridgeJob: () => request('/twc-bridge/kill', { method: 'POST' }),
 
   // Reports
   get941: (clientId, year, quarter) => request(`/reports/941?clientId=${clientId}&year=${year}&quarter=${quarter}`),
