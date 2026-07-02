@@ -568,8 +568,15 @@ function migrate() {
   // Resets liability status → pending (so paychecks appear in Pay Liabilities tab)
   // Links employee_id by name where null (so paychecks appear per-employee)
   try {
-    const shawarma = db.prepare("SELECT id FROM clients WHERE LOWER(business_name) LIKE '%super shawarma%'").get();
+    const allClients = db.prepare('SELECT id, business_name FROM clients').all();
+    console.log('[DB] All clients:', JSON.stringify(allClients.map(c => ({ id: c.id, name: c.business_name }))));
+    const shawarma = db.prepare("SELECT id FROM clients WHERE LOWER(business_name) LIKE '%super shawarma%' OR LOWER(business_name) LIKE '%shawarma%'").get();
+    console.log('[DB] Super Shawarma match:', shawarma ? `id=${shawarma.id}` : 'NOT FOUND');
     if (shawarma) {
+      const stubs = db.prepare('SELECT id, check_status, status, status_940, employee_id, employee_name FROM paystubs WHERE client_id=?').all(shawarma.id);
+      console.log(`[DB] Super Shawarma paystubs (${stubs.length}):`, JSON.stringify(stubs.slice(0,3)));
+      const emps = db.prepare('SELECT id, first_name, last_name FROM employees WHERE client_id=?').all(shawarma.id);
+      console.log(`[DB] Super Shawarma employees (${emps.length}):`, JSON.stringify(emps));
       const s1 = db.prepare(`UPDATE paystubs SET status='pending', status_940='pending' WHERE client_id=? AND status='submitted'`).run(shawarma.id);
       const s2 = db.prepare(`UPDATE paystubs SET status='pending', status_940='pending' WHERE client_id=? AND status_940='submitted'`).run(shawarma.id);
       if (s1.changes + s2.changes > 0) console.log(`[DB] Super Shawarma: reset ${s1.changes + s2.changes} liability statuses → pending`);
