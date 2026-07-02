@@ -1394,6 +1394,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
   const [ugPreview, setUgPreview]                 = useState(null); // calculated check data before committing
   const [ugRunning, setUgRunning]                 = useState(false);
   const [ugErr, setUgErr]                         = useState('');
+  // Real FIT/state tax estimates per pending row, keyed by `${empId}_${periodEnd}_${grossCents}`
+  const [calcCache, setCalcCache]                 = useState({});
 
   useEffect(() => {
     api.getPayGroups(clientId)
@@ -1569,6 +1571,42 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       [periodEnd]: { ...(prev[periodEnd] || {}), [empId]: { ...((prev[periodEnd] || {})[empId] || {}), [field]: value } },
     }));
   }
+
+  // Pre-compute real FIT+state tax per pending row via the calculate API (same as the check detail modal).
+  // Keyed by `${empId}_${periodEnd}_${grossCents}` so stale entries are ignored.
+  useEffect(() => {
+    if (!empsInGroup.length || !pendingPeriods.length) return;
+    const payFreqStr = ppy === 52 ? 'weekly' : ppy === 26 ? 'biweekly' : ppy === 24 ? 'semimonthly' : 'monthly';
+    let cancelled = false;
+    pendingPeriods.forEach(period => {
+      empsInGroup.forEach(emp => {
+        const row   = getRow(period.end, emp.id);
+        const isSal = emp.payType === 'salary';
+        const salAmt = r2((emp.annualSalary || 0) / ppy);
+        const rate  = parseFloat(row.rate) || emp.hourlyRate || 0;
+        const gross = r2(
+          (isSal ? salAmt : r2(parseFloat(row.regHours || 0) * rate + parseFloat(row.otHours || 0) * rate * 1.5))
+          + parseFloat(row.tips || 0) + parseFloat(row.bonus || 0) + parseFloat(row.commission || 0)
+        );
+        if (gross <= 0) return;
+        const key = `${emp.id}_${period.end}_${Math.round(gross * 100)}`;
+        if (calcCache[key]) return;
+        const ytdGross = calcEmpYTD(emp.id, period.end).gross;
+        api.calculate({
+          grossWages: gross, payFrequency: payFreqStr,
+          filingStatus: emp.filingStatus || 'single',
+          step2Checkbox: !!emp.step2Checkbox,
+          step3Children: emp.step3Children || 0, step3Other: emp.step3Other || 0,
+          step4a: emp.step4a || 0, step4b: emp.step4b || 0, step4c: emp.step4c || 0,
+          workState: emp.workState || client?.state || 'TX',
+          ytdGross,
+          sutaRate: client?.suiRateQ1 ?? client?.sutaRate ?? 0.027,
+        }).then(res => { if (!cancelled) setCalcCache(prev => ({ ...prev, [key]: res })); }).catch(() => {});
+      });
+    });
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentGroupId, ppy, pendingPeriods.length, JSON.stringify(pendingRows), empsInGroup.length]);
 
   const selectedPendingCount = pendingPeriods.reduce((n, period) =>
     n + empsInGroup.filter(emp => getRow(period.end, emp.id).selected).length, 0);
@@ -2736,12 +2774,11 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
               const grossPreview = r2(basePay + tipsAmt + bonusAmt + commAmt);
               const estEeSS    = r2(grossPreview * EE_SS_RATE);
               const estEeMed   = r2(grossPreview * EE_MEDICARE_RATE);
-              // Rough FIT estimate using annualized percentage method (single filer, 2026 std deduction)
-              const annualGross = grossPreview * ppy;
-              const taxableAnn  = Math.max(0, annualGross - 16100);
-              const annualFIT   = taxableAnn <= 12225 ? taxableAnn * 0.10 : 1222.5 + (Math.min(taxableAnn, 49675) - 12225) * 0.12 + Math.max(0, taxableAnn - 49675) * 0.22;
-              const estFIT      = Math.round(annualFIT / ppy);
-              const estNetPay  = r2(grossPreview - estEeSS - estEeMed - estFIT);
+              const cacheKey   = `${emp.id}_${rawPeriod.end}_${Math.round(grossPreview * 100)}`;
+              const cached     = calcCache[cacheKey];
+              const estFIT     = cached != null ? (cached.fitWithholding || 0) : Math.round(((taxAnn => taxAnn <= 12225 ? taxAnn * 0.10 : 1222.5 + (Math.min(taxAnn, 49675) - 12225) * 0.12 + Math.max(0, taxAnn - 49675) * 0.22)(Math.max(0, grossPreview * ppy - 16100))) / ppy);
+              const estStateTax = cached != null ? (cached.stateIncomeTax || 0) : 0;
+              const estNetPay  = r2(grossPreview - estEeSS - estEeMed - estFIT - estStateTax);
               const daysToPayDate = daysUntil(period.payDate);
               const isLate   = period.payDate < new Date().toISOString().slice(0, 10);
               const status   = isLate ? 'late' : (daysToPayDate !== null && daysToPayDate <= 5 ? 'due-soon' : 'upcoming');
