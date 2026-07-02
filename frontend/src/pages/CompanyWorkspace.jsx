@@ -1046,13 +1046,16 @@ function CompanyTab({ client, onSaved }) {
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
   const [err, setErr]             = useState('');
   const [changingAccount, setChangingAccount] = useState(false);
-  const [showAccountNum, setShowAccountNum]   = useState(false);
+  const [accountDraft, setAccountDraft]       = useState('');
+  const [showAccountNum, setShowAccountNum]   = useState(true);
+  const [accountSaving, setAccountSaving]     = useState(false);
   const saveTimerRef = useRef(null);
 
   useEffect(() => {
     if (!client) return;
     setChangingAccount(false);
-    setShowAccountNum(false);
+    setAccountDraft('');
+    setShowAccountNum(true);
     setForm({
       businessName:     client.businessName    || '',
       ein:              client.ein             || '',
@@ -1066,7 +1069,6 @@ function CompanyTab({ client, onSaved }) {
       countyCode:       client.countyCode      || '',
       bankRoutingNumber: client.bankRoutingNumber || '',
       bankAccountType:  client.bankAccountType || 'checking',
-      bankAccountNumber: '',       // blank = keep current; only sent when changingAccount
       bankAccountLast4: client.bankAccountLast4 || '',
       bankName:         client.bankName        || '',
       nextCheckNumber:  String(client.nextCheckNumber || 1001),
@@ -1093,11 +1095,26 @@ function CompanyTab({ client, onSaved }) {
         suiAccountNumber: currentForm.suiAccountNumber || null,
         countyCode: currentForm.countyCode || null,
       };
-      delete payload.bankAccountLast4; // never send last4 to backend
-      if (!payload.bankAccountNumber) delete payload.bankAccountNumber;
+      delete payload.bankAccountLast4;
+      delete payload.bankAccountNumber; // account number saved separately via saveAccountNumber()
       await api.updateClient(client.id, payload);
       setSaveStatus('saved'); onSaved();
     } catch (e) { setErr(e.message); setSaveStatus('error'); }
+  }
+
+  async function saveAccountNumber() {
+    if (!accountDraft.trim()) return;
+    setAccountSaving(true); setErr('');
+    try {
+      await api.updateClient(client.id, { bankAccountNumber: accountDraft.trim() });
+      const last4 = accountDraft.trim().slice(-4);
+      setForm(f => ({ ...f, bankAccountLast4: last4 }));
+      setChangingAccount(false);
+      setAccountDraft('');
+      setSaveStatus('saved');
+      onSaved();
+    } catch (e) { setErr(e.message); }
+    finally { setAccountSaving(false); }
   }
 
   function set(field) {
@@ -1199,39 +1216,47 @@ function CompanyTab({ client, onSaved }) {
           <div>
             <label className="form-label">Account Number</label>
             {changingAccount ? (
-              <div style={{ position: 'relative' }}>
-                <input
-                  className="form-input mono"
-                  type={showAccountNum ? 'text' : 'password'}
-                  value={form.bankAccountNumber}
-                  onChange={set('bankAccountNumber')}
-                  placeholder="Enter new account number"
-                  autoFocus
-                  style={{ paddingRight: 40 }}
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowAccountNum(v => !v)}
-                  style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 16, padding: 0 }}
-                  title={showAccountNum ? 'Hide' : 'Show'}
-                >{showAccountNum ? '🙈' : '👁'}</button>
-              </div>
+              <>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    className="form-input mono"
+                    type={showAccountNum ? 'text' : 'password'}
+                    value={accountDraft}
+                    onChange={e => setAccountDraft(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter') saveAccountNumber(); if (e.key === 'Escape') { setChangingAccount(false); setAccountDraft(''); } }}
+                    placeholder="Enter account number"
+                    autoFocus
+                    style={{ paddingRight: 40 }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAccountNum(v => !v)}
+                    style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 15, padding: 0, lineHeight: 1 }}
+                    title={showAccountNum ? 'Hide' : 'Show'}
+                  >{showAccountNum ? '🙈' : '👁'}</button>
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={saveAccountNumber}
+                    disabled={!accountDraft.trim() || accountSaving}
+                  >{accountSaving ? 'Saving…' : 'Save Account Number'}</button>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    onClick={() => { setChangingAccount(false); setAccountDraft(''); }}
+                  >Cancel</button>
+                </div>
+              </>
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 13px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', minHeight: 46 }}>
                 <span className="mono" style={{ color: form.bankAccountLast4 ? 'var(--text-primary)' : 'var(--text-muted)', letterSpacing: '0.05em' }}>
-                  {form.bankAccountLast4 ? `···· ···· ···· ${form.bankAccountLast4}` : 'No account on file'}
+                  {form.bankAccountLast4 ? `···· ${form.bankAccountLast4}` : 'No account on file'}
                 </span>
-                <button type="button" onClick={() => setChangingAccount(true)}
+                <button type="button" onClick={() => { setChangingAccount(true); setAccountDraft(''); setShowAccountNum(true); }}
                   style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--accent)', fontWeight: 600, padding: 0 }}>
                   {form.bankAccountLast4 ? 'Change' : 'Add'}
-                </button>
-              </div>
-            )}
-            {changingAccount && (
-              <div className="form-hint">
-                <button type="button" onClick={() => { setChangingAccount(false); setForm(f => ({ ...f, bankAccountNumber: '' })); }}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--text-muted)', padding: 0, textDecoration: 'underline' }}>
-                  Cancel change
                 </button>
               </div>
             )}
