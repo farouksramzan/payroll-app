@@ -168,17 +168,12 @@ function freqDays(freq) {
 }
 
 // Detect frequency from a sorted list of unique date strings (YYYY-MM-DD).
-// Returns null when there isn't enough signal (single date, not on 1st/15th).
+// Returns null when there isn't enough signal (single date with no pattern).
+// IMPORTANT: gaps are evaluated first so monthly-on-the-1st is never mistaken
+// for semimonthly. Day-of-month clustering only breaks a biweekly/semimonthly tie.
 function detectFrequencyFromDates(dates) {
   const sorted = [...new Set(dates.filter(Boolean))].sort();
-  if (sorted.length === 0) return null;
-
-  // Semimonthly: dates cluster on 1st or 15th of month
-  const dayNums = sorted.map(d => parseInt(d.slice(8, 10), 10));
-  const semiHits = dayNums.filter(d => d === 1 || d === 15 || d === 16).length;
-  if (sorted.length >= 2 && semiHits / sorted.length >= 0.35) return 'semimonthly';
-
-  if (sorted.length < 2) return null; // single date, no gap to measure
+  if (sorted.length < 2) return null; // can't compute a gap from a single date
 
   const gaps = [];
   for (let i = 1; i < sorted.length; i++) {
@@ -192,9 +187,19 @@ function detectFrequencyFromDates(dates) {
   const sorted_gaps = [...gaps].sort((a, b) => a - b);
   const median = sorted_gaps[Math.floor(sorted_gaps.length / 2)];
 
+  // Gap-first classification: weekly and monthly are unambiguous
   if (median <= 8)  return 'weekly';
-  if (median <= 20) return 'biweekly';
-  return 'monthly';
+  if (median >= 25) return 'monthly'; // monthly-on-1st: gap ~30 → correct
+
+  // Gap is 9–24 days: biweekly (14) vs semimonthly (15).
+  // Only use day-of-month clustering as a tiebreaker in this narrow range.
+  if (median >= 13 && median <= 17) {
+    const dayNums = sorted.map(d => parseInt(d.slice(8, 10), 10));
+    const semiHits = dayNums.filter(d => d === 1 || d === 2 || d === 15 || d === 16).length;
+    if (semiHits / dayNums.length >= 0.5) return 'semimonthly';
+  }
+
+  return 'biweekly';
 }
 
 // Detect pay frequency per employee from their check dates, returning:
@@ -526,6 +531,31 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
       } catch (pgErr) {
         console.error(`[import] pay group for ${freq} failed:`, pgErr.message);
       }
+    }
+
+    // ── Assign employees to their pay groups ─────────────────────────────────
+    // Sets pay_group_id on the employee record (not just the paystub) so the UI
+    // correctly places employees inside their group instead of showing them as Unassigned.
+    // Only updates employees that are currently unassigned to avoid overwriting manual changes.
+    try {
+      const updateEmpGroup = db.prepare(
+        'UPDATE employees SET pay_group_id = ? WHERE id = ? AND (pay_group_id IS NULL OR pay_group_id = 0)'
+      );
+      const assignedEmpIds = new Set();
+      db.transaction(() => {
+        for (const c of checks) {
+          if (!c.employeeId || assignedEmpIds.has(c.employeeId)) continue;
+          const empKey  = (c.empName || '').toUpperCase().trim();
+          const detFreq = empFreqMap.get(empKey) || dominantFreq;
+          const groupId = freqToGroupId.get(detFreq);
+          if (groupId) {
+            updateEmpGroup.run(groupId, c.employeeId);
+            assignedEmpIds.add(c.employeeId);
+          }
+        }
+      })();
+    } catch (err) {
+      console.error('[import] employee pay_group_id assign failed:', err.message);
     }
 
     // ── Dedup sets ────────────────────────────────────────────────────────────

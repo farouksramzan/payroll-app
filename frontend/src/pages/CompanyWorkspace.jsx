@@ -1552,11 +1552,14 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
   const history = (() => {
     const empIds = new Set(empsInGroup.map(e => e.id));
     const byGroupId = paystubs.filter(s => s.pay_group_id === currentGroupId);
-    // Also include ungrouped checks (pay_group_id = null) for employees in this group
-    const ungrouped = paystubs.filter(s => s.pay_group_id == null && s.employee_id && empIds.has(s.employee_id));
-    const groupStubs = byGroupId.length > 0
-      ? [...byGroupId, ...ungrouped.filter(u => !byGroupId.some(b => b.id === u.id))]
-      : paystubs.filter(s => s.employee_id && empIds.has(s.employee_id));
+    // For the Unassigned bucket, show only paystubs with no pay_group_id (avoids
+    // showing the same check in both a named group and Unassigned simultaneously).
+    // For named groups, also pull in any legacy ungrouped checks for group members.
+    const groupStubs = currentGroupId === UNASSIGNED_ID
+      ? paystubs.filter(s => !s.pay_group_id && s.employee_id && empIds.has(s.employee_id))
+      : byGroupId.length > 0
+        ? [...byGroupId, ...paystubs.filter(s => s.pay_group_id == null && s.employee_id && empIds.has(s.employee_id) && !byGroupId.some(b => b.id === s.id))]
+        : paystubs.filter(s => s.employee_id && empIds.has(s.employee_id));
     const map = {};
     groupStubs.forEach(stub => {
       const end = stub.pay_period_end;
