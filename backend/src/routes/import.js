@@ -187,12 +187,30 @@ function buildChecks(wb, employees, client) {
   const ws = wb.Sheets[sheetName];
   const rows = xlsx.utils.sheet_to_json(ws, { defval: '' });
 
-  // Build employee lookup: full name (upper) → employee record
-  const empByName = {};
-  employees.forEach(e => {
-    const key = `${e.first_name} ${e.last_name}`.toUpperCase().trim();
-    empByName[key] = e;
-  });
+  // Build employee lookup: full name variants → employee record
+  // Handles "FIRST LAST", "FIRST MIDDLE LAST", "FIRST MI LAST", etc.
+  function findEmployee(qbName) {
+    const upper = (qbName || '').toUpperCase().trim();
+    // 1. Exact match on "FIRST LAST"
+    for (const e of employees) {
+      const exact = `${e.first_name} ${e.last_name}`.toUpperCase();
+      if (upper === exact) return e;
+    }
+    // 2. Exact match with middle name "FIRST MIDDLE LAST"
+    for (const e of employees) {
+      if (e.middle_name) {
+        const withMiddle = `${e.first_name} ${e.middle_name} ${e.last_name}`.toUpperCase();
+        if (upper === withMiddle) return e;
+      }
+    }
+    // 3. Fuzzy: first name AND last name both present as substrings (handles middle initials)
+    for (const e of employees) {
+      const fn = e.first_name.toUpperCase();
+      const ln = e.last_name.toUpperCase();
+      if (upper.includes(fn) && upper.includes(ln)) return e;
+    }
+    return null;
+  }
 
   // Group rows by Trans ID
   const byTrans = {};
@@ -206,8 +224,7 @@ function buildChecks(wb, employees, client) {
   const checks = [];
   for (const [tid, items] of Object.entries(byTrans)) {
     const first = items[0];
-    const empName = (first['Name'] || '').toUpperCase().trim();
-    const emp = empByName[empName];
+    const emp = findEmployee(first['Name']);
     const checkDate = xlsxDateToStr(first['Date']);
     if (!checkDate) continue;
 

@@ -9,8 +9,8 @@ router.use(requireAuth);
 function sanitize(e, withSSN = false) {
   return {
     id: e.id, clientId: e.client_id,
-    firstName: e.first_name, lastName: e.last_name,
-    fullName: `${e.first_name} ${e.last_name}`,
+    firstName: e.first_name, middleName: e.middle_name || '', lastName: e.last_name,
+    fullName: [e.first_name, e.middle_name, e.last_name].filter(Boolean).join(' '),
     address: e.address, city: e.city, state: e.state, zip: e.zip,
     workState: e.work_state || null,
     filingStatus: e.filing_status, step2Checkbox: !!e.step2_checkbox,
@@ -106,7 +106,7 @@ router.get('/:id/ytd', (req, res) => {
 // POST /api/employees
 router.post('/', (req, res) => {
   const db = getDb();
-  const { firstName, lastName, ssn, address, city, state, zip, workState,
+  const { firstName, middleName, lastName, ssn, address, city, state, zip, workState,
     filingStatus, step2Checkbox, step3Children, step3Other, step4a, step4b, step4c,
     payType, hourlyRate, annualSalary, payFrequency, hireDate,
     firstPayPeriodStart, firstPayPeriodEnd, payGroupId } = req.body;
@@ -119,13 +119,13 @@ router.post('/', (req, res) => {
   if (!client) return res.status(404).json({ error: 'Client not found' });
 
   const result = db.prepare(`
-    INSERT INTO employees (client_id, first_name, last_name, ssn_encrypted, address, city, state, zip, work_state,
+    INSERT INTO employees (client_id, first_name, middle_name, last_name, ssn_encrypted, address, city, state, zip, work_state,
       filing_status, step2_checkbox, step3_children, step3_other, step4a, step4b, step4c,
       pay_type, hourly_rate, annual_salary, pay_frequency, hire_date,
       first_pay_period_start, first_pay_period_end, pay_group_id)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
-    clientId, firstName.trim(), lastName.trim(), encrypt(ssn),
+    clientId, firstName.trim(), middleName ? middleName.trim() : null, lastName.trim(), encrypt(ssn),
     address || null, city || null, state || 'TX', zip || null,
     workState ? workState.toUpperCase() : null,
     filingStatus || 'single', step2Checkbox ? 1 : 0,
@@ -152,14 +152,14 @@ router.put('/:id', (req, res) => {
   const e = db.prepare('SELECT * FROM employees WHERE id = ?').get(req.params.id);
   if (!e || !canAccessClient(db, e.client_id, req.user)) return res.status(404).json({ error: 'Employee not found' });
 
-  const { firstName, lastName, ssn, address, city, state, zip, workState,
+  const { firstName, middleName, lastName, ssn, address, city, state, zip, workState,
     filingStatus, step2Checkbox, step3Children, step3Other, step4a, step4b, step4c,
     payType, hourlyRate, annualSalary, payFrequency, hireDate, isActive,
     firstPayPeriodStart, firstPayPeriodEnd, payGroupId } = req.body;
 
   db.prepare(`
     UPDATE employees SET
-      first_name=?, last_name=?, ssn_encrypted=?, address=?, city=?, state=?, zip=?, work_state=?,
+      first_name=?, middle_name=?, last_name=?, ssn_encrypted=?, address=?, city=?, state=?, zip=?, work_state=?,
       filing_status=?, step2_checkbox=?, step3_children=?, step3_other=?,
       step4a=?, step4b=?, step4c=?,
       pay_type=?, hourly_rate=?, annual_salary=?, pay_frequency=?,
@@ -167,7 +167,7 @@ router.put('/:id', (req, res) => {
       first_pay_period_start=?, first_pay_period_end=?, pay_group_id=?
     WHERE id = ?
   `).run(
-    firstName  || e.first_name, lastName || e.last_name,
+    firstName  || e.first_name, middleName !== undefined ? (middleName || null) : e.middle_name, lastName || e.last_name,
     ssn ? encrypt(ssn) : e.ssn_encrypted,
     address ?? e.address, city ?? e.city, state || e.state, zip ?? e.zip,
     workState !== undefined ? (workState ? workState.toUpperCase() : null) : e.work_state,

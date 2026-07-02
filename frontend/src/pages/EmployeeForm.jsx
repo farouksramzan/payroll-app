@@ -39,7 +39,7 @@ function calcStartFromEnd(endDate, freq) {
 function fmtDate(s) { if (!s) return '—'; const [y, m, d] = s.split('-'); return `${m}/${d}/${y}`; }
 
 const EMPTY = {
-  firstName: '', lastName: '', ssn: '',
+  firstName: '', middleName: '', lastName: '', ssn: '',
   address: '', city: '', state: 'TX', zip: '',
   workState: '',
   filingStatus: 'single', step2Checkbox: false,
@@ -80,8 +80,9 @@ export default function EmployeeForm() {
         setClient(c);
         if (emp) {
           setForm({
-            firstName: emp.firstName || '',
-            lastName:  emp.lastName  || '',
+            firstName:  emp.firstName  || '',
+            middleName: emp.middleName || '',
+            lastName:   emp.lastName   || '',
             ssn: emp.ssn || '',
             address: emp.address || '', city: emp.city || '',
             state: emp.state || 'TX', zip: emp.zip || '',
@@ -222,6 +223,10 @@ export default function EmployeeForm() {
                 <label className="form-label">First Name <span>*</span></label>
                 <input className="form-input" value={form.firstName} onChange={set('firstName')} placeholder="Jane" />
                 {errors.firstName && <p className="form-error-msg">{errors.firstName}</p>}
+              </div>
+              <div className="form-group">
+                <label className="form-label">Middle Name / Initial <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 12 }}>(optional)</span></label>
+                <input className="form-input" value={form.middleName} onChange={set('middleName')} placeholder="D or Danielle" />
               </div>
               <div className="form-group">
                 <label className="form-label">Last Name <span>*</span></label>

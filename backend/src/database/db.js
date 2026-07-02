@@ -249,6 +249,9 @@ function migrate() {
     { name: 'sui_rate_q4',                       def: 'REAL' },
     { name: 'sui_account_number',                def: 'TEXT' },
   ]);
+  addCols('employees', [
+    { name: 'middle_name', def: 'TEXT' },
+  ]);
 
   // Rename eftps_pin_encrypted → batch_provider_pin_encrypted on existing databases
   const clientCols = db.prepare('PRAGMA table_info(clients)').all().map((c) => c.name);
