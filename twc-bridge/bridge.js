@@ -19,6 +19,9 @@ const TEMP_DIR        = process.env.TEMP_DIR       || path.join(__dirname, 'temp
 const SESSION_FILE    = path.join(__dirname, 'twc-session.json');
 const RECONNECT_MS    = 10_000;   // reconnect delay after disconnect
 const PING_MS         = 20_000;   // client-side ping interval
+// Keep-alive: ping an authenticated TWC page on this interval so the server-side
+// session never idles out. Must be shorter than TWC's idle timeout (~15-20 min).
+const KEEPALIVE_MS    = 8 * 60_000;
 const TWC_LOGIN_URL   = 'https://apps.twc.texas.gov/UITAXSERV/security/logon.do';
 const TWC_HOME_URL    = 'https://apps.twc.texas.gov/UITAXSERV/postLogon.do';
 const TWC_PAYMENT_URL = 'https://apps.twc.texas.gov/UITAXSERV/payments/onlinePayment.do';
@@ -104,6 +107,8 @@ function handleMessage(msg) {
     case 'auth_ok':
       authed = true;
       console.log('[TWC Bridge] Authenticated — ready for jobs');
+      // Establish + keep the TWC session warm so we rarely hit the login CAPTCHA.
+      bootstrapSession();
       break;
 
     case 'auth_fail':
@@ -405,7 +410,7 @@ async function handlePaymentJob(job) {
   });
 
   try {
-    send({ type: 'status_update', jobId, paymentId, status: 'processing', message: 'Opening browser…' });
+    send({ type: 'status_update', jobId, paymentId, status: 'processing', message: 'Using kept-warm TWC session…' });
 
     const { confirmationNumber, bankNameConfirmed, scheduledDate, scheduledAmount } =
       await runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, paymentDate, bankName }, (b) => { puppBrowser = b; });
@@ -416,7 +421,8 @@ async function handlePaymentJob(job) {
     });
 
   } finally {
-    if (puppBrowser) { try { await puppBrowser.close(); } catch (_) {} }
+    // Do NOT close the browser here — it's the persistent session we keep warm.
+    // (The kill handler above still closes it to abort a stuck job.)
     jobUnlock();
   }
 }
@@ -433,45 +439,115 @@ function saveSession(cookies) {
   try { fs.writeFileSync(SESSION_FILE, JSON.stringify(cookies, null, 2)); } catch (_) {}
 }
 
+// ── Persistent TWC session ("stay logged in") ─────────────────────────────────
+// The reCAPTCHA lives ONLY on the login page. If we log in once and keep the
+// session alive, the bridge stops returning to the login page, so the checkbox
+// is never triggered on subsequent payments. A keep-alive timer pings an
+// authenticated page within TWC's idle window so the session never times out.
+// The single interactive CAPTCHA solve happens once at startup (or on the rare
+// occasion the session is truly lost), and can be done remotely.
+let sessionBrowser   = null;   // long-lived Puppeteer browser
+let sessionPage      = null;   // its logged-in page
+let keepAliveTimer   = null;
+let sessionLoggingIn = false;  // guard so keep-alive & payments don't double-login
+let sessionBootstrapped = false;
+
+function isLoggedIn(page) {
+  const url = page.url();
+  return /UITAXSERV/.test(url) && !/logon\.do/.test(url);
+}
+
+// Lazily launch (or reuse) the persistent, visible browser. Visible so a human
+// can solve the CAPTCHA on the rare occasion a fresh login is needed.
+async function getSessionPage() {
+  if (sessionBrowser && sessionPage && !sessionPage.isClosed()) return sessionPage;
+  sessionBrowser = await puppeteer.launch({ headless: false, defaultViewport: null });
+  sessionBrowser.on('disconnected', () => { sessionBrowser = null; sessionPage = null; });
+  sessionPage = await sessionBrowser.newPage();
+  sessionPage.setDefaultTimeout(60_000);
+  // Auto-accept JS confirm/alert dialogs ("Are you sure you want to proceed?")
+  sessionPage.on('dialog', async dialog => {
+    console.log(`[Session] Dialog: "${dialog.message()}" — accepting`);
+    try { await dialog.accept(); } catch (_) {}
+  });
+  const savedCookies = loadSession();
+  if (savedCookies) { try { await sessionPage.setCookie(...savedCookies); } catch (_) {} }
+  return sessionPage;
+}
+
+// Return a logged-in page. allowLogin=false (keep-alive) only refreshes an
+// existing session and returns null if it dropped; allowLogin=true (a payment,
+// or startup) performs the one interactive CAPTCHA login if needed.
+async function ensureLoggedIn({ allowLogin, jobId = 'session', paymentId = null }) {
+  const page = await getSessionPage();
+  await page.goto(TWC_HOME_URL, { waitUntil: 'networkidle2' });
+  if (isLoggedIn(page)) {
+    saveSession(await page.cookies());
+    return page;
+  }
+  if (!allowLogin) return null;                 // session dropped; caller decides
+  if (sessionLoggingIn) throw new Error('A TWC login is already in progress');
+  sessionLoggingIn = true;
+  try {
+    await doLogin(page, jobId, paymentId);
+    saveSession(await page.cookies());
+  } finally {
+    sessionLoggingIn = false;
+  }
+  return page;
+}
+
+function startSessionKeepAlive() {
+  if (keepAliveTimer) return;                   // idempotent across reconnects
+  keepAliveTimer = setInterval(async () => {
+    if (activeJob || sessionLoggingIn) return;  // don't disturb an in-flight job/login
+    try {
+      const page = await ensureLoggedIn({ allowLogin: false });
+      if (page) {
+        console.log('[Session] Keep-alive OK — session warm');
+      } else {
+        // Session expired. Proactively re-establish so the rare CAPTCHA solve can
+        // be done now/remotely instead of blocking the next payment.
+        console.log('[Session] Keep-alive found session expired — re-establishing…');
+        send({ type: 'session_status', status: 'expired', message: 'TWC session expired — solve the CAPTCHA on Computer 2 to restore auto-pay.' });
+        await ensureLoggedIn({ allowLogin: true }).catch(e => console.warn('[Session] Re-login skipped:', e.message));
+      }
+    } catch (e) {
+      console.warn('[Session] Keep-alive error (ignored):', e.message);
+    }
+  }, KEEPALIVE_MS);
+  console.log(`[Session] Keep-alive started (every ${Math.round(KEEPALIVE_MS / 60000)} min)`);
+}
+
+// Establish the session once at startup so the single CAPTCHA solve happens up
+// front, then keep it warm indefinitely. Safe to call on every (re)connect.
+async function bootstrapSession() {
+  startSessionKeepAlive();                       // idempotent
+  if (sessionBootstrapped || sessionLoggingIn) return;
+  sessionBootstrapped = true;
+  try {
+    send({ type: 'session_status', status: 'connecting', message: 'Establishing TWC session…' });
+    await ensureLoggedIn({ allowLogin: true });
+    send({ type: 'session_status', status: 'ready', message: 'TWC session established and kept warm.' });
+    console.log('[Session] Established — keep-alive will maintain it.');
+  } catch (e) {
+    sessionBootstrapped = false;                 // allow retry on next connect / keep-alive
+    console.warn('[Session] Bootstrap login skipped:', e.message);
+  }
+}
+
 async function runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, paymentDate, bankName }, onBrowser) {
   const dateMatch = paymentDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!dateMatch) throw new Error(`Invalid paymentDate format: ${paymentDate}`);
   const [, yyyy, mm, dd] = dateMatch;
   const monthNum = parseInt(mm, 10);
 
-  const savedCookies = loadSession();
-
-  const browser = await puppeteer.launch({ headless: false, defaultViewport: null });
-  onBrowser?.(browser);
+  // Reuse the persistent, kept-warm session so we don't return to the login page
+  // (and its reCAPTCHA). Logs in only if the session has genuinely dropped.
+  const page = await ensureLoggedIn({ allowLogin: true, jobId, paymentId });
+  onBrowser?.(sessionBrowser);
 
   try {
-    const page = await browser.newPage();
-    page.setDefaultTimeout(60_000);
-
-    // Auto-accept any JS confirm/alert dialogs ("Are you sure you want to proceed?")
-    page.on('dialog', async dialog => {
-      console.log(`[Payment] Dialog: "${dialog.message()}" — accepting`);
-      await dialog.accept();
-    });
-
-    // ── Try saved session ───────────────────────────────────────────────────
-    if (savedCookies) {
-      console.log('[Payment] Loading saved session cookies…');
-      await page.setCookie(...savedCookies);
-      await page.goto(TWC_HOME_URL, { waitUntil: 'networkidle2' });
-
-      if (page.url().includes('postLogon') || page.url().includes('UITAXSERV') && !page.url().includes('logon')) {
-        console.log('[Payment] Session still valid — skipping login');
-      } else {
-        console.log('[Payment] Session expired — need fresh login');
-        await doLogin(page, jobId, paymentId);
-        saveSession(await page.cookies());
-      }
-    } else {
-      await doLogin(page, jobId, paymentId);
-      saveSession(await page.cookies());
-    }
-
     // ── Select employer ─────────────────────────────────────────────────────
     send({ type: 'status_update', jobId, paymentId, status: 'processing', message: `Selecting employer ${twcAccountNumber}…` });
 
@@ -671,7 +747,9 @@ async function runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, payme
       scheduledAmount:    amtLineMatch  ? amtLineMatch[1].trim()  : null,
     };
   } finally {
-    await browser.close();
+    // Keep the session warm for the next payment — do NOT close the browser.
+    // Return to the home screen so the page is clean for the next job / keep-alive.
+    try { await page.goto(TWC_HOME_URL, { waitUntil: 'networkidle2' }); } catch (_) {}
   }
 }
 
