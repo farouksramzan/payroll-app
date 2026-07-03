@@ -623,7 +623,21 @@ async function runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, payme
     console.log('[Payment] After Submit — URL:', page.url());
 
     // ── Payment Confirmation page ───────────────────────────────────────────
-    const bodyText = await page.evaluate(() => document.body.innerText);
+    let bodyText = await page.evaluate(() => document.body.innerText);
+
+    // Some TWC flows show an interstitial after Submit that needs one more
+    // "Next" click before the confirmation page appears.
+    if (!/scheduled|confirmation/i.test(bodyText)) {
+      const nextBtn = await page.$('input[type="submit"][value="Next"], button[value="Next"], input[value="Next"]');
+      if (nextBtn) {
+        console.log('[Payment] Interstitial after Submit — clicking Next…');
+        await Promise.all([
+          page.waitForNavigation({ waitUntil: 'networkidle2' }),
+          nextBtn.click(),
+        ]);
+        bodyText = await page.evaluate(() => document.body.innerText);
+      }
+    }
     console.log('[Payment] Confirmation page:\n' + bodyText.substring(0, 800));
 
     if (!/scheduled|confirmation/i.test(bodyText)) {
