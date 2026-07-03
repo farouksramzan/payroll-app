@@ -226,12 +226,17 @@ function detectFrequencyFromDates(dates) {
   }
   if (gaps.length === 0) return null;
 
-  // If the gap list has both short "burst" gaps (≤ 10 days) AND longer-cycle gaps
-  // (≥ 20 days), the short ones are likely bonus/adjustment checks issued mid-cycle.
-  // Re-classify using only the longer gaps so a monthly employee with bonus checks
-  // isn't mislabeled as semimonthly.
-  const longGaps = gaps.filter(g => g >= 20);
-  const effectiveGaps = (longGaps.length > 0 && longGaps.length < gaps.length) ? longGaps : gaps;
+  // Remove burst-short gaps (≤ 10 days) when they coexist with normal-cycle gaps (> 10 days).
+  // Short bursts come from bonus/adjustment checks issued mid-cycle (e.g., a $200 bonus check
+  // 5 days after the regular check). We remove ONLY the short bursts, keeping vacation and
+  // leave gaps in place so that the median of the remaining gaps correctly identifies the cycle.
+  // (The old approach of keeping ONLY long gaps was wrong: a biweekly employee with one vacation
+  // gap would have median(vacation gap only) ≥ 25 → wrongly classified as monthly.)
+  const shortBursts  = gaps.filter(g => g <= 10);
+  const normalAndLong = gaps.filter(g => g > 10);
+  const effectiveGaps = (shortBursts.length > 0 && normalAndLong.length > 0)
+    ? normalAndLong
+    : gaps;
 
   const sorted_gaps = [...effectiveGaps].sort((a, b) => a - b);
   const median = sorted_gaps[Math.floor(sorted_gaps.length / 2)];
@@ -514,7 +519,9 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
         for (const name of unmatchedNames) {
           const spaceIdx = name.indexOf(' ');
           const firstName = spaceIdx > -1 ? name.slice(0, spaceIdx) : name;
-          const lastName  = spaceIdx > -1 ? name.slice(spaceIdx + 1) : '';
+          const rawLast   = spaceIdx > -1 ? name.slice(spaceIdx + 1) : '';
+          // Strip QB artifact ". " prefix (e.g. "ROOMI . RAMZAN" → lastName "RAMZAN")
+          const lastName  = rawLast.replace(/^\.\s*/, '');
           if (!firstName) continue;
           const key  = name.toUpperCase().trim();
           const freq = empFreqMap.get(key) || dominantFreq;
