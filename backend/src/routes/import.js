@@ -701,11 +701,12 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
       INSERT INTO paystub_line_items (paystub_id, pay_type, description, hours, rate, amount)
       VALUES (?, ?, ?, NULL, NULL, ?)
     `);
-    const getExistingStubByNum = db.prepare('SELECT id, reported_tips, pay_group_id FROM paystubs WHERE client_id = ? AND check_number = ?');
-    const getExistingStubByFp  = db.prepare('SELECT id, reported_tips, pay_group_id FROM paystubs WHERE client_id = ? AND employee_name = ? AND settlement_date = ? AND ROUND(gross_wages * 100) = ?');
+    const getExistingStubByNum = db.prepare('SELECT id, reported_tips, pay_group_id, pay_period_start, pay_period_end FROM paystubs WHERE client_id = ? AND check_number = ?');
+    const getExistingStubByFp  = db.prepare('SELECT id, reported_tips, pay_group_id, pay_period_start, pay_period_end FROM paystubs WHERE client_id = ? AND employee_name = ? AND settlement_date = ? AND ROUND(gross_wages * 100) = ?');
     const hasTipItem           = db.prepare("SELECT id FROM paystub_line_items WHERE paystub_id = ? AND pay_type = 'tips'");
     const patchTips            = db.prepare('UPDATE paystubs SET reported_tips = ? WHERE id = ?');
     const patchGroup           = db.prepare('UPDATE paystubs SET pay_group_id = ? WHERE id = ? AND (pay_group_id IS NULL OR pay_group_id != ?)');
+    const patchPeriod          = db.prepare('UPDATE paystubs SET pay_period_start = ?, pay_period_end = ? WHERE id = ?');
 
     const VALID_CHECK_STATUSES     = ['draft', 'printed', 'deposited', 'direct_deposit_sent', 'direct_deposit_cleared', 'late'];
     const VALID_LIABILITY_STATUSES = ['pending', 'submitted'];
@@ -747,6 +748,15 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
             // Re-assign to the correct pay group if wrong or missing
             if (payGroupId && existingStub.pay_group_id !== payGroupId) {
               patchGroup.run(payGroupId, existingStub.id, payGroupId);
+              repaired++;
+            }
+            // Repair stale period dates: older imports stored flat checkDate-2
+            // arithmetic; c.periodStart/End hold the canonical schedule-derived
+            // period, so syncing them makes the check line up with pending-row
+            // generation instead of leaving a phantom "unpaid" period behind.
+            if (c.periodStart && c.periodEnd &&
+                (existingStub.pay_period_start !== c.periodStart || existingStub.pay_period_end !== c.periodEnd)) {
+              patchPeriod.run(c.periodStart, c.periodEnd, existingStub.id);
               repaired++;
             }
           }

@@ -1594,10 +1594,26 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
   pendingPeriods.forEach(period => {
     empsInGroup.forEach(emp => {
       if (skippedPending.has(`${period.end}_${emp.id}`)) return;
-      // Suppress phantom pending when the employee already has a check whose
-      // settlement date falls within [period.start … payDate + 5 days].
       const empDates = stubSettleDatesByEmp.get(emp.id);
       if (empDates && empDates.length > 0) {
+        // Tenure window: no pending rows for periods before the employee's first
+        // check (not hired yet) or starting 45+ days after their last check
+        // (no longer employed). Employees with no check history at all are new
+        // hires — they keep their pending rows.
+        const firstCheck = empDates.reduce((a, b) => (a < b ? a : b));
+        const lastCheck  = empDates.reduce((a, b) => (a > b ? a : b));
+        if (period.end < firstCheck) return;
+        const dormant = new Date(period.start + 'T00:00:00');
+        dormant.setDate(dormant.getDate() - 45);
+        if (lastCheck < dormant.toISOString().slice(0, 10)) return;
+        // Historical hole: the period's pay date is 90+ days past AND the
+        // employee was paid again afterward — the company clearly moved on
+        // (leave of absence, seasonal gap). Not actionable payroll.
+        const stale = new Date();
+        stale.setDate(stale.getDate() - 90);
+        if (period.payDate < stale.toISOString().slice(0, 10) && lastCheck > period.payDate) return;
+        // Suppress phantom pending when the employee already has a check whose
+        // settlement date falls within [period.start … payDate + 5 days].
         const buf = new Date(period.payDate + 'T00:00:00');
         buf.setDate(buf.getDate() + 5);
         const bufEnd = buf.toISOString().slice(0, 10);
