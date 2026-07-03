@@ -730,29 +730,52 @@ async function runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, payme
     send({ type: 'status_update', jobId, paymentId, status: 'processing', message: 'Reviewing and submitting…' });
 
     // Certification checkbox — required ("I certify that I am authorized to submit
-    // an ACH payment…"). Check it with a real click, verify, and fall back to the
-    // label click then a programmatic check. Never submit uncertified.
-    const authCheckbox = await page.$('input[type="checkbox"]');
-    if (authCheckbox) {
+    // an ACH payment…"). First inventory every checkbox so the console tells us
+    // exactly what's on the page (name/id/disabled/nearby text).
+    const boxInventory = await page.$$eval('input[type="checkbox"]', els => els.map((el, i) => ({
+      i, name: el.name || '', id: el.id || '', disabled: el.disabled, checked: el.checked,
+      visible: !!(el.offsetParent !== null || el.getClientRects().length),
+      near: (el.closest('label')?.innerText || el.parentElement?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 90),
+    })));
+    console.log('[Payment] Checkboxes on review page:', JSON.stringify(boxInventory));
+
+    if (boxInventory.length) {
+      // Prefer a checkbox whose nearby text mentions certify/authorized; else the
+      // first visible, enabled one.
+      let targetIdx = boxInventory.findIndex(b => /certif|authoriz/i.test(b.near));
+      if (targetIdx < 0) targetIdx = boxInventory.findIndex(b => b.visible && !b.disabled);
+      if (targetIdx < 0) targetIdx = 0;
+      const handles = await page.$$('input[type="checkbox"]');
+      const authCheckbox = handles[targetIdx];
+      console.log(`[Payment] Targeting checkbox #${targetIdx} (name="${boxInventory[targetIdx].name}", id="${boxInventory[targetIdx].id}", disabled=${boxInventory[targetIdx].disabled})`);
+
       let isChecked = await page.evaluate(el => el.checked, authCheckbox);
       if (!isChecked) { try { await authCheckbox.click(); } catch (_) {} isChecked = await page.evaluate(el => el.checked, authCheckbox); }
       if (!isChecked) {
+        // Try clicking the associated label, then force via property + events.
         await page.evaluate(el => {
           const lbl = el.id && document.querySelector(`label[for="${el.id}"]`);
           if (lbl) lbl.click();
-          if (!el.checked) {
-            el.checked = true;
-            el.dispatchEvent(new Event('click',  { bubbles: true }));
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-          }
+        }, authCheckbox);
+        isChecked = await page.evaluate(el => el.checked, authCheckbox);
+      }
+      if (!isChecked) {
+        await page.evaluate(el => {
+          el.checked = true;
+          el.dispatchEvent(new Event('click',  { bubbles: true }));
+          el.dispatchEvent(new Event('input',  { bubbles: true }));
+          el.dispatchEvent(new Event('change', { bubbles: true }));
         }, authCheckbox);
         isChecked = await page.evaluate(el => el.checked, authCheckbox);
       }
       console.log(`[Payment] Certification checkbox checked: ${isChecked}`);
       if (!isChecked) {
         await dumpPage(page, 'checkbox-fail');
-        throw new Error('Could not check the ACH certification checkbox — aborting before submit.');
+        throw new Error(`Could not check the ACH certification checkbox — aborting before submit. Checkboxes seen: ${JSON.stringify(boxInventory)}`);
       }
+    } else {
+      console.warn('[Payment] No checkbox found on review page (may be in an iframe) — capturing dump.');
+      await dumpPage(page, 'no-checkbox');
     }
 
     // Confirm/Submit. TWC uses input[name="method:submit"] consistently for the
