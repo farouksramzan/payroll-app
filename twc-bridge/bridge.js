@@ -449,12 +449,26 @@ function saveSession(cookies) {
 let sessionBrowser   = null;   // long-lived Puppeteer browser
 let sessionPage      = null;   // its logged-in page
 let keepAliveTimer   = null;
-let sessionLoggingIn = false;  // guard so keep-alive & payments don't double-login
+let sessionLoggingIn = false;  // guard so keep-alive skips while a login is underway
 let sessionBootstrapped = false;
+let sessionOpChain   = Promise.resolve(); // serializes all session page access
 
+// Run fn with exclusive access to the session page. This prevents any two flows
+// (bootstrap login, a payment, the keep-alive ping) from navigating the page at
+// the same time — critical while a human is mid-CAPTCHA, so their solve isn't
+// wiped by a concurrent navigation.
+function runExclusive(fn) {
+  const next = sessionOpChain.then(fn, fn);
+  sessionOpChain = next.then(() => {}, () => {});
+  return next;
+}
+
+// Logged in = on a UITAXSERV page that is NOT the login page. Matched precisely
+// and case-insensitively so "postLogon.do" (the post-login home) isn't mistaken
+// for the "/security/logon.do" login page.
 function isLoggedIn(page) {
   const url = page.url();
-  return /UITAXSERV/.test(url) && !/logon\.do/.test(url);
+  return /UITAXSERV/i.test(url) && !/\/security\/logon\.do/i.test(url);
 }
 
 // Lazily launch (or reuse) the persistent, visible browser. Visible so a human
@@ -479,22 +493,28 @@ async function getSessionPage() {
 // existing session and returns null if it dropped; allowLogin=true (a payment,
 // or startup) performs the one interactive CAPTCHA login if needed.
 async function ensureLoggedIn({ allowLogin, jobId = 'session', paymentId = null }) {
-  const page = await getSessionPage();
-  await page.goto(TWC_HOME_URL, { waitUntil: 'networkidle2' });
-  if (isLoggedIn(page)) {
-    saveSession(await page.cookies());
+  // Serialize: no other flow may touch the page until this one finishes. A login
+  // holds the lock for its full duration (including the human CAPTCHA solve), so
+  // the keep-alive ping and any payment queue behind it instead of navigating
+  // the page away mid-solve.
+  return runExclusive(async () => {
+    const page = await getSessionPage();
+    await page.goto(TWC_HOME_URL, { waitUntil: 'networkidle2' });
+    if (isLoggedIn(page)) {
+      console.log('[Session] Already logged in — session valid.');
+      saveSession(await page.cookies());
+      return page;
+    }
+    if (!allowLogin) return null;               // session dropped; caller decides
+    sessionLoggingIn = true;
+    try {
+      await doLogin(page, jobId, paymentId);
+      saveSession(await page.cookies());
+    } finally {
+      sessionLoggingIn = false;
+    }
     return page;
-  }
-  if (!allowLogin) return null;                 // session dropped; caller decides
-  if (sessionLoggingIn) throw new Error('A TWC login is already in progress');
-  sessionLoggingIn = true;
-  try {
-    await doLogin(page, jobId, paymentId);
-    saveSession(await page.cookies());
-  } finally {
-    sessionLoggingIn = false;
-  }
-  return page;
+  });
 }
 
 function startSessionKeepAlive() {
@@ -772,16 +792,34 @@ async function doLogin(page, jobId, paymentId) {
   await passField.click({ clickCount: 3 });
   await passField.type(TWC_PASSWORD, { delay: 40 });
 
-  // reCAPTCHA: we cannot solve it automatically — notify server and wait for user
-  console.log('[Payment] Credentials filled — waiting for user to solve CAPTCHA and click Logon…');
-  send({ type: 'status_update', jobId, paymentId, status: 'needs_captcha', message: 'Please solve the CAPTCHA and click Logon in the browser window on Computer 2.' });
+  // Confirm the fields actually received the values (helps diagnose "clicked
+  // Logon, nothing happened" — an empty form silently fails to submit).
+  const filledUserLen = await page.evaluate(el => (el.value || '').length, userField);
+  const filledPassLen = await page.evaluate(el => (el.value || '').length, passField);
+  console.log(`[Session] Credentials filled — user chars: ${filledUserLen}, pass chars: ${filledPassLen}. Login URL: ${page.url()}`);
+  if (filledUserLen === 0 || filledPassLen === 0) {
+    console.warn('[Session] WARNING: a credential field is empty — check TWC_USERNAME/TWC_PASSWORD in .env and the login field selectors.');
+  }
 
-  // Wait up to 5 minutes for the user to complete login (URL changes away from logon.do)
-  await page.waitForFunction(
-    () => !window.location.href.includes('logon.do'),
-    { timeout: 5 * 60_000 }
-  );
-  console.log('[Payment] Login completed — URL:', page.url());
+  // reCAPTCHA: we cannot solve it automatically — notify server and wait for user.
+  // The human solves the checkbox AND clicks Logon; we only wait for the result.
+  console.log('[Session] Waiting for human to solve CAPTCHA and click Logon (up to 5 min)…');
+  send({ type: 'status_update', jobId, paymentId, status: 'needs_captcha', message: 'Solve the CAPTCHA and click Logon in the browser window on Computer 2.' });
+
+  // Consider login done when we leave the /security/logon.do page (precise,
+  // case-insensitive). waitForNavigation is more reliable than polling location.
+  try {
+    await page.waitForFunction(
+      () => !/\/security\/logon\.do/i.test(window.location.href),
+      { polling: 500, timeout: 5 * 60_000 }
+    );
+  } catch (e) {
+    console.warn(`[Session] Still on the login page after 5 min — URL: ${page.url()}. Login was not completed.`);
+    throw new Error('Login not completed: still on the TWC login page after 5 minutes. Solve the CAPTCHA and click Logon within the time window.');
+  }
+  // Give the post-login page a moment to settle.
+  await page.waitForNetworkIdle({ idleTime: 800, timeout: 15_000 }).catch(() => {});
+  console.log('[Session] Login completed — landed on:', page.url());
 }
 
 // ── Start ─────────────────────────────────────────────────────────────────────
