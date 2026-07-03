@@ -745,33 +745,57 @@ async function runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, payme
       let targetIdx = boxInventory.findIndex(b => /certif|authoriz/i.test(b.near));
       if (targetIdx < 0) targetIdx = boxInventory.findIndex(b => b.visible && !b.disabled);
       if (targetIdx < 0) targetIdx = 0;
-      const handles = await page.$$('input[type="checkbox"]');
-      const authCheckbox = handles[targetIdx];
-      console.log(`[Payment] Targeting checkbox #${targetIdx} (name="${boxInventory[targetIdx].name}", id="${boxInventory[targetIdx].id}", disabled=${boxInventory[targetIdx].disabled})`);
+      const meta = boxInventory[targetIdx];
+      console.log(`[Payment] Targeting checkbox #${targetIdx} (name="${meta.name}", id="${meta.id}", disabled=${meta.disabled}, visible=${meta.visible})`);
 
-      let isChecked = await page.evaluate(el => el.checked, authCheckbox);
-      if (!isChecked) { try { await authCheckbox.click(); } catch (_) {} isChecked = await page.evaluate(el => el.checked, authCheckbox); }
+      // Log the exact markup — reveals inline onclick handlers, hidden/custom
+      // widgets, or a wrapping label that a plain click misses.
+      const markup = await page.evaluate((idx) => {
+        const el = document.querySelectorAll('input[type="checkbox"]')[idx];
+        if (!el) return null;
+        return { self: el.outerHTML.slice(0, 300), parent: (el.parentElement?.outerHTML || '').slice(0, 500) };
+      }, targetIdx);
+      console.log('[Payment] Checkbox markup:', JSON.stringify(markup));
+
+      // Always re-query the handle so a re-render can't leave us reading a stale node.
+      const readChecked = async () => {
+        const hs = await page.$$('input[type="checkbox"]');
+        return hs[targetIdx] ? page.evaluate(el => el.checked, hs[targetIdx]) : false;
+      };
+
+      let isChecked = await readChecked();
+      // 1) Native trusted click (scrolls into view + fires real handlers).
       if (!isChecked) {
-        // Try clicking the associated label, then force via property + events.
-        await page.evaluate(el => {
-          const lbl = el.id && document.querySelector(`label[for="${el.id}"]`);
-          if (lbl) lbl.click();
-        }, authCheckbox);
-        isChecked = await page.evaluate(el => el.checked, authCheckbox);
+        try { const hs = await page.$$('input[type="checkbox"]'); await hs[targetIdx].click(); }
+        catch (e) { console.log('[Payment] native click failed:', e.message); }
+        isChecked = await readChecked();
+        console.log(`[Payment] after native click: ${isChecked}`);
       }
+      // 2) Click the associated / wrapping label.
       if (!isChecked) {
-        await page.evaluate(el => {
+        await page.evaluate((idx) => {
+          const el = document.querySelectorAll('input[type="checkbox"]')[idx];
+          const lbl = (el.id && document.querySelector(`label[for="${el.id}"]`)) || el.closest('label');
+          if (lbl) lbl.click();
+        }, targetIdx);
+        isChecked = await readChecked();
+        console.log(`[Payment] after label click: ${isChecked}`);
+      }
+      // 3) Force the property and fire change ONLY (no synthetic click — a click
+      //    handler could toggle a just-set box back off).
+      if (!isChecked) {
+        await page.evaluate((idx) => {
+          const el = document.querySelectorAll('input[type="checkbox"]')[idx];
           el.checked = true;
-          el.dispatchEvent(new Event('click',  { bubbles: true }));
-          el.dispatchEvent(new Event('input',  { bubbles: true }));
           el.dispatchEvent(new Event('change', { bubbles: true }));
-        }, authCheckbox);
-        isChecked = await page.evaluate(el => el.checked, authCheckbox);
+        }, targetIdx);
+        isChecked = await readChecked();
+        console.log(`[Payment] after force+change: ${isChecked}`);
       }
       console.log(`[Payment] Certification checkbox checked: ${isChecked}`);
       if (!isChecked) {
         await dumpPage(page, 'checkbox-fail');
-        throw new Error(`Could not check the ACH certification checkbox — aborting before submit. Checkboxes seen: ${JSON.stringify(boxInventory)}`);
+        throw new Error(`Could not check the ACH certification checkbox — aborting before submit. Markup: ${JSON.stringify(markup)}`);
       }
     } else {
       console.warn('[Payment] No checkbox found on review page (may be in an iframe) — capturing dump.');
