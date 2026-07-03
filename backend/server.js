@@ -172,7 +172,7 @@ app.use('/api/twc-submissions',  twcSubmissionRoutes);
 app.use('/api/twc-payments',     twcPaymentRoutes);
 app.use('/api/client-portal',   clientPortalRoutes);
 app.use('/api/employee-portal', employeePortalRoutes);
-app.get('/api/twc-bridge/status', requireAuth, (req, res) => res.json({ connected: bridgeTwc.isConnected }));
+app.get('/api/twc-bridge/status', requireAuth, (req, res) => res.json({ connected: bridgeTwc.isConnected, version: bridgeTwc.bridgeVersion || null }));
 app.post('/api/twc-bridge/kill',  requireAuth, (req, res) => {
   try { bridgeTwc.killJob(); res.json({ ok: true }); }
   catch (e) { res.status(400).json({ error: e.message }); }

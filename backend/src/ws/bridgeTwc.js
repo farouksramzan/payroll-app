@@ -64,6 +64,7 @@ class BridgeTwcManager extends EventEmitter {
       console.log(`[TWC Bridge WS] Closed (${code}) — ${reason?.toString() || 'no reason'}`);
       if (this._ws === ws) {
         this._ws = null;
+        this.bridgeVersion = null;
         clearInterval(this._pingTimer);
         this._pingTimer = null;
         this.emit('disconnected');
@@ -102,8 +103,9 @@ class BridgeTwcManager extends EventEmitter {
       }
       ws.bridgeAuthed = true;
       this._ws = ws;
+      this.bridgeVersion = msg.version || '(pre-versioning / old code)';
       ws.send(JSON.stringify({ type: 'auth_ok' }));
-      console.log('[TWC Bridge WS] Authenticated — TWC bridge is live');
+      console.log(`[TWC Bridge WS] Authenticated — TWC bridge is live [version: ${this.bridgeVersion}]`);
 
       clearTimeout(this._disconnectTimer);
       this._disconnectTimer = null;

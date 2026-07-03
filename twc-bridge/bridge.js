@@ -9,7 +9,7 @@ const puppeteer  = require('puppeteer');
 
 // ── Config ────────────────────────────────────────────────────────────────────
 // Bump this on every change so the console proves which version is running.
-const BRIDGE_VERSION = '2026-07-03-h · checkbox-markup-diagnostics';
+const BRIDGE_VERSION = '2026-07-03-i · version-handshake';
 const SERVER_URL    = process.env.RAILWAY_URL;
 const SECRET        = process.env.BRIDGE_TWC_SECRET;
 const TWC_USERNAME  = process.env.TWC_USERNAME;
@@ -66,7 +66,7 @@ function connect() {
 
   ws.on('open', () => {
     console.log('[TWC Bridge] Connected — authenticating…');
-    send({ type: 'auth', secret: SECRET });
+    send({ type: 'auth', secret: SECRET, version: BRIDGE_VERSION });
 
     // Client-side pings to detect dead connection
     pingTimer = setInterval(() => {
