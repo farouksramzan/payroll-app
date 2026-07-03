@@ -1628,37 +1628,41 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
 
   // Pre-compute real FIT+state tax per pending row via the calculate API (same as the check detail modal).
   // Keyed by `${empId}_${periodEnd}_${grossCents}` so stale entries are ignored.
+  // Debounced 300ms so rapid keystrokes don't spawn a wave of API calls on every character,
+  // which previously caused cascading setCalcCache re-renders that stole input focus.
   useEffect(() => {
     if (!empsInGroup.length || !pendingPeriods.length) return;
-    const payFreqStr = ppy === 52 ? 'weekly' : ppy === 26 ? 'biweekly' : ppy === 24 ? 'semimonthly' : 'monthly';
     let cancelled = false;
-    pendingPeriods.forEach(period => {
-      empsInGroup.forEach(emp => {
-        const row   = getRow(period.end, emp.id);
-        const isSal = emp.payType === 'salary';
-        const salAmt = r2((emp.annualSalary || 0) / ppy);
-        const rate  = parseFloat(row.rate) || emp.hourlyRate || 0;
-        const gross = r2(
-          (isSal ? salAmt : r2(parseFloat(row.regHours || 0) * rate + parseFloat(row.otHours || 0) * rate * 1.5))
-          + parseFloat(row.tips || 0) + parseFloat(row.bonus || 0) + parseFloat(row.commission || 0)
-        );
-        if (gross <= 0) return;
-        const key = `${emp.id}_${period.end}_${Math.round(gross * 100)}`;
-        if (calcCache[key]) return;
-        const ytdGross = calcEmpYTD(emp.id, period.end).gross;
-        api.calculate({
-          grossWages: gross, payFrequency: payFreqStr,
-          filingStatus: emp.filingStatus || 'single',
-          step2Checkbox: !!emp.step2Checkbox,
-          step3Children: emp.step3Children || 0, step3Other: emp.step3Other || 0,
-          step4a: emp.step4a || 0, step4b: emp.step4b || 0, step4c: emp.step4c || 0,
-          workState: emp.workState || client?.state || 'TX',
-          ytdGross,
-          sutaRate: client?.suiRateQ1 ?? client?.sutaRate ?? 0.027,
-        }).then(res => { if (!cancelled) setCalcCache(prev => ({ ...prev, [key]: res })); }).catch(() => {});
+    const timer = setTimeout(() => {
+      const payFreqStr = ppy === 52 ? 'weekly' : ppy === 26 ? 'biweekly' : ppy === 24 ? 'semimonthly' : 'monthly';
+      pendingPeriods.forEach(period => {
+        empsInGroup.forEach(emp => {
+          const row   = getRow(period.end, emp.id);
+          const isSal = emp.payType === 'salary';
+          const salAmt = r2((emp.annualSalary || 0) / ppy);
+          const rate  = parseFloat(row.rate) || emp.hourlyRate || 0;
+          const gross = r2(
+            (isSal ? salAmt : r2(parseFloat(row.regHours || 0) * rate + parseFloat(row.otHours || 0) * rate * 1.5))
+            + parseFloat(row.tips || 0) + parseFloat(row.bonus || 0) + parseFloat(row.commission || 0)
+          );
+          if (gross <= 0) return;
+          const key = `${emp.id}_${period.end}_${Math.round(gross * 100)}`;
+          if (calcCache[key]) return;
+          const ytdGross = calcEmpYTD(emp.id, period.end).gross;
+          api.calculate({
+            grossWages: gross, payFrequency: payFreqStr,
+            filingStatus: emp.filingStatus || 'single',
+            step2Checkbox: !!emp.step2Checkbox,
+            step3Children: emp.step3Children || 0, step3Other: emp.step3Other || 0,
+            step4a: emp.step4a || 0, step4b: emp.step4b || 0, step4c: emp.step4c || 0,
+            workState: emp.workState || client?.state || 'TX',
+            ytdGross,
+            sutaRate: client?.suiRateQ1 ?? client?.sutaRate ?? 0.027,
+          }).then(res => { if (!cancelled) setCalcCache(prev => ({ ...prev, [key]: res })); }).catch(() => {});
+        });
       });
-    });
-    return () => { cancelled = true; };
+    }, 300);
+    return () => { cancelled = true; clearTimeout(timer); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentGroupId, ppy, pendingPeriods.length, JSON.stringify(pendingRows), empsInGroup.length]);
 
@@ -2370,37 +2374,50 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       return s;
     });
     const [otherOpen, setOtherOpen] = useState(false);
-    const [editSaving, setEditSaving] = useState(false);
-    // Track whether user has manually overridden each tax field
+    // Track whether user has manually overridden each tax field so auto-estimates
+    // don't overwrite explicit user input (and so we know when to pin to the DB).
     const [fitManual,  setFitManual]  = useState(false);
     const [ssManual,   setSsManual]   = useState(false);
     const [medManual,  setMedManual]  = useState(false);
 
-    const itemDirty = !isVoided && (
-      parseFloat(itemForm.reportedTips  || 0) !== (displayedTips       || 0) ||
-      parseFloat(itemForm.bonus         || 0) !== (stub.bonus          || 0) ||
-      parseFloat(itemForm.commission    || 0) !== (stub.commission     || 0) ||
-      parseFloat(itemForm.reimbursement || 0) !== (stub.reimbursement  || 0) ||
-      parseFloat(itemForm.deduction     || 0) !== (stub.deduction      || 0) ||
-      parseFloat(itemForm.garnishment   || 0) !== (stub.garnishment    || 0)
-    );
+    // "committed" = the values as of the last successful save (initially = DB values).
+    // isDirty compares current form state against committed so autosave resets correctly
+    // after each save without needing to close/reopen the modal.
+    const [committed, setCommitted] = useState({
+      gross: String(initialGross), fit: String(initialFit), ss: String(initialSS), med: String(initialMed),
+      dateStart: stub.pay_period_start || '', dateEnd: stub.pay_period_end || '', datePayDate: stub.settlement_date || '',
+      tips: String(displayedTips || ''), bonus: String(stub.bonus || ''), commission: String(stub.commission || ''),
+      reimbursement: String(stub.reimbursement || ''), deduction: String(stub.deduction || ''), garnishment: String(stub.garnishment || ''),
+    });
+
     const isDirty = !isVoided && (
-      dateForm.start   !== (stub.pay_period_start || '') ||
-      dateForm.end     !== (stub.pay_period_end   || '') ||
-      dateForm.payDate !== (stub.settlement_date  || '') ||
-      parseFloat(grossOverride) !== initialGross ||
-      (fitManual  && parseFloat(fitOverride)  !== initialFit)  ||
-      (ssManual   && parseFloat(ssOverride)   !== initialSS)   ||
-      (medManual  && parseFloat(medOverride)  !== initialMed)  ||
-      itemDirty
+      parseFloat(grossOverride || 0) !== parseFloat(committed.gross || 0) ||
+      parseFloat(fitOverride   || 0) !== parseFloat(committed.fit   || 0) ||
+      parseFloat(ssOverride    || 0) !== parseFloat(committed.ss    || 0) ||
+      parseFloat(medOverride   || 0) !== parseFloat(committed.med   || 0) ||
+      dateForm.start   !== committed.dateStart ||
+      dateForm.end     !== committed.dateEnd   ||
+      dateForm.payDate !== committed.datePayDate ||
+      parseFloat(itemForm.reportedTips  || 0) !== parseFloat(committed.tips         || 0) ||
+      parseFloat(itemForm.bonus         || 0) !== parseFloat(committed.bonus        || 0) ||
+      parseFloat(itemForm.commission    || 0) !== parseFloat(committed.commission   || 0) ||
+      parseFloat(itemForm.reimbursement || 0) !== parseFloat(committed.reimbursement|| 0) ||
+      parseFloat(itemForm.deduction     || 0) !== parseFloat(committed.deduction    || 0) ||
+      parseFloat(itemForm.garnishment   || 0) !== parseFloat(committed.garnishment  || 0)
     );
-    async function saveModalEdits() {
-      setEditSaving(true);
+
+    const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
+    const autoSaveTimerRef = useRef(null);
+    const savedStatusTimerRef = useRef(null);
+    const isSavingRef = useRef(false);
+
+    async function saveEdits() {
+      if (isSavingRef.current) return;
+      isSavingRef.current = true;
+      setSaveStatus('saving');
       try {
         const payload = { payPeriodStart: dateForm.start, payPeriodEnd: dateForm.end, settlementDate: dateForm.payDate };
-        if (parseFloat(grossOverride) !== initialGross) {
-          // Include ALL current taxable items so computedGross stays correct on the backend.
-          // Tips/bonus/commission stay in their own line items alongside the new base pay.
+        if (parseFloat(grossOverride || 0) !== parseFloat(committed.gross || 0)) {
           const baseType = stub.regular_hours != null ? 'regular' : 'salary';
           const tipAmt   = parseFloat(itemForm.reportedTips || 0);
           const bonusAmt = parseFloat(itemForm.bonus        || 0);
@@ -2411,33 +2428,54 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
             ...(bonusAmt > 0 ? [{ payType: 'bonus',      amount: bonusAmt }] : []),
             ...(commAmt  > 0 ? [{ payType: 'commission', amount: commAmt  }] : []),
           ];
-          // Also sync separate DB columns so reported_tips / bonus / commission stay consistent
-          if (!Object.prototype.hasOwnProperty.call(payload, 'reportedTips')) payload.reportedTips = tipAmt;
-          if (!Object.prototype.hasOwnProperty.call(payload, 'bonus'))        payload.bonus        = bonusAmt;
-          if (!Object.prototype.hasOwnProperty.call(payload, 'commission'))   payload.commission   = commAmt;
+          payload.reportedTips = tipAmt;
+          payload.bonus        = bonusAmt;
+          payload.commission   = commAmt;
         }
-        // Only send tax overrides when the user explicitly typed new values.
-        // Auto-estimated values (from liveGross changing via tips/bonus) should let
-        // the backend recalculate from scratch instead of being pinned to estimates.
-        if (fitManual && parseFloat(fitOverride) !== initialFit) {
-          payload.fitWithholdingOverride = parseFloat(fitOverride || 0);
-        }
-        if (ssManual  && parseFloat(ssOverride)  !== initialSS)  payload.ssWithholdingOverride  = parseFloat(ssOverride  || 0);
-        if (medManual && parseFloat(medOverride) !== initialMed)  payload.medicareWithholdingOverride = parseFloat(medOverride || 0);
-        if (itemDirty) {
-          payload.reportedTips  = parseFloat(itemForm.reportedTips  || 0);
-          payload.bonus         = parseFloat(itemForm.bonus         || 0);
-          payload.commission    = parseFloat(itemForm.commission    || 0);
-          payload.reimbursement = parseFloat(itemForm.reimbursement || 0);
-          payload.deduction     = parseFloat(itemForm.deduction     || 0);
-          payload.garnishment   = parseFloat(itemForm.garnishment   || 0);
-        }
+        // Always send current tax values — either the user explicitly set them
+        // (fitManual=true) or auto-estimates updated them. Locking in the correct
+        // value is safe here; the backend will use whatever we send.
+        payload.fitWithholdingOverride      = parseFloat(fitOverride || 0);
+        payload.ssWithholdingOverride       = parseFloat(ssOverride  || 0);
+        payload.medicareWithholdingOverride = parseFloat(medOverride || 0);
+        payload.reportedTips  = parseFloat(itemForm.reportedTips  || 0);
+        payload.bonus         = parseFloat(itemForm.bonus         || 0);
+        payload.commission    = parseFloat(itemForm.commission    || 0);
+        payload.reimbursement = parseFloat(itemForm.reimbursement || 0);
+        payload.deduction     = parseFloat(itemForm.deduction     || 0);
+        payload.garnishment   = parseFloat(itemForm.garnishment   || 0);
         await api.updatePaystub(stub.id, payload);
         await reloadStubs();
-        onClose();
-      } catch (e) { alert(e.message); }
-      finally { setEditSaving(false); }
+        // Advance the baseline so isDirty resets without closing the modal
+        setCommitted({
+          gross: grossOverride, fit: fitOverride, ss: ssOverride, med: medOverride,
+          dateStart: dateForm.start, dateEnd: dateForm.end, datePayDate: dateForm.payDate,
+          tips: itemForm.reportedTips, bonus: itemForm.bonus, commission: itemForm.commission,
+          reimbursement: itemForm.reimbursement, deduction: itemForm.deduction, garnishment: itemForm.garnishment,
+        });
+        setSaveStatus('saved');
+        if (savedStatusTimerRef.current) clearTimeout(savedStatusTimerRef.current);
+        savedStatusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
+      } catch (e) {
+        setSaveStatus('error');
+        setTimeout(() => setSaveStatus('idle'), 3000);
+        alert('Save failed: ' + e.message);
+      } finally {
+        isSavingRef.current = false;
+      }
     }
+
+    // Autosave: debounce 900ms after any form value changes
+    useEffect(() => {
+      if (!isDirty) return;
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = setTimeout(() => saveEdits(), 900);
+      return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [grossOverride, fitOverride, ssOverride, medOverride,
+        dateForm.start, dateForm.end, dateForm.payDate,
+        itemForm.reportedTips, itemForm.bonus, itemForm.commission,
+        itemForm.reimbursement, itemForm.deduction, itemForm.garnishment]);
 
     const canEdit = !isVoided;
     const set = field => canEdit ? (v => setItemForm(p => ({ ...p, [field]: v }))) : undefined;
@@ -2662,8 +2700,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
               </button>
             )}
             <div style={{ flex: 1 }} />
-            <button className="btn btn-ghost" onClick={() => {
-              if (isDirty && !window.confirm('You have unsaved changes. Close without saving?')) return;
+            <button className="btn btn-ghost" onClick={async () => {
+              if (autoSaveTimerRef.current) {
+                clearTimeout(autoSaveTimerRef.current);
+                autoSaveTimerRef.current = null;
+                if (isDirty) await saveEdits();
+              }
               onClose();
             }} style={{ fontSize: 13 }}>Close</button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
@@ -2688,40 +2730,41 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
             }}>↓ Paystub</button>
             {isDirty && (
               <button onClick={() => {
-                setGrossOverride(String(initialGross));
-                setFitOverride(String(initialFit));
-                setSsOverride(String(initialSS));
-                setMedOverride(String(initialMed));
-                setItemForm({ reportedTips: String(displayedTips || ''), bonus: String(stub.bonus || ''), commission: String(stub.commission || ''), reimbursement: String(stub.reimbursement || ''), deduction: String(stub.deduction || ''), garnishment: String(stub.garnishment || '') });
-                setDateForm({ start: stub.pay_period_start || '', end: stub.pay_period_end || '', payDate: stub.settlement_date || '' });
+                if (autoSaveTimerRef.current) { clearTimeout(autoSaveTimerRef.current); autoSaveTimerRef.current = null; }
+                setGrossOverride(committed.gross);
+                setFitOverride(committed.fit);
+                setSsOverride(committed.ss);
+                setMedOverride(committed.med);
+                setItemForm({ reportedTips: committed.tips, bonus: committed.bonus, commission: committed.commission, reimbursement: committed.reimbursement, deduction: committed.deduction, garnishment: committed.garnishment });
+                setDateForm({ start: committed.dateStart, end: committed.dateEnd, payDate: committed.datePayDate });
                 const s = new Set();
-                if (displayedTips > 0) s.add('reportedTips');
-                if (stub.bonus > 0) s.add('bonus');
-                if (stub.commission > 0) s.add('commission');
-                if (stub.reimbursement > 0) s.add('reimbursement');
-                if (stub.deduction > 0) s.add('deduction');
-                if (stub.garnishment > 0) s.add('garnishment');
+                if (parseFloat(committed.tips)         > 0) s.add('reportedTips');
+                if (parseFloat(committed.bonus)        > 0) s.add('bonus');
+                if (parseFloat(committed.commission)   > 0) s.add('commission');
+                if (parseFloat(committed.reimbursement)> 0) s.add('reimbursement');
+                if (parseFloat(committed.deduction)    > 0) s.add('deduction');
+                if (parseFloat(committed.garnishment)  > 0) s.add('garnishment');
                 setAddedItems(s);
                 setOtherOpen(false);
+                setSaveStatus('idle');
               }} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-secondary)' }}>Revert</button>
             )}
-            <button
-              disabled={!isDirty || editSaving}
-              onClick={saveModalEdits}
-              style={{
-                background: isDirty ? '#16a34a' : '#94a3b8',
-                color: '#fff',
-                border: 'none', borderRadius: 7,
-                padding: '9px 24px',
-                fontSize: 15, fontWeight: 700,
-                cursor: isDirty ? 'pointer' : 'default',
-                transition: 'background 0.15s',
-                minWidth: 130,
-                opacity: isDirty ? 1 : 0.45,
-              }}
-            >
-              {editSaving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : '💾 Save Changes'}
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 110, justifyContent: 'flex-end' }}>
+              {saveStatus === 'saving' && (
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span className="spinner" style={{ width: 13, height: 13 }} /> Saving…
+                </span>
+              )}
+              {saveStatus === 'saved' && (
+                <span style={{ fontSize: 13, color: '#16a34a', fontWeight: 600 }}>✓ Saved</span>
+              )}
+              {saveStatus === 'error' && (
+                <span style={{ fontSize: 13, color: '#dc2626', fontWeight: 600 }}>✗ Error</span>
+              )}
+              {saveStatus === 'idle' && isDirty && (
+                <span style={{ fontSize: 12, color: '#f59e0b', fontWeight: 500 }}>Unsaved…</span>
+              )}
+            </div>
           </div>
         </div>
       </ModalOverlay>
@@ -2847,7 +2890,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                   <td style={{ padding: '0 0 0 14px' }}>
                     <input type="checkbox" checked={row.selected}
                       style={{ accentColor: 'var(--accent)', width: 16, height: 16, cursor: 'pointer' }}
-                      onChange={ev => setRow(period.end, emp.id, 'selected', ev.target.checked)} />
+                      onChange={ev => setRow(rawPeriod.end, emp.id, 'selected', ev.target.checked)} />
                   </td>
                   <td style={{ padding: '7px 8px', fontWeight: 600 }}>
                     <button onClick={e => { e.stopPropagation(); setDrawerEmpId(emp.id); }}
@@ -2866,13 +2909,13 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                     <>
                       <td style={{ padding: '4px 6px' }}>
                         <input className="form-input mono" type="text" inputMode="decimal" value={row.regHours} placeholder="0"
-                          onChange={ev => setRow(period.end, emp.id, 'regHours', ev.target.value)}
+                          onChange={ev => setRow(rawPeriod.end, emp.id, 'regHours', ev.target.value)}
                           onFocus={ev => ev.target.select()}
                           style={{ width: '100%', height: 46, fontSize: 16, textAlign: 'right', padding: '0 8px', borderRadius: 3, border: '2px solid #b0bec5', fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
                       </td>
                       <td style={{ padding: '4px 6px' }}>
                         <input className="form-input mono" type="text" inputMode="decimal" value={row.otHours} placeholder="0"
-                          onChange={ev => setRow(period.end, emp.id, 'otHours', ev.target.value)}
+                          onChange={ev => setRow(rawPeriod.end, emp.id, 'otHours', ev.target.value)}
                           onFocus={ev => ev.target.select()}
                           style={{ width: '100%', height: 46, fontSize: 16, textAlign: 'right', padding: '0 8px', borderRadius: 3, border: '2px solid #b0bec5', fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
                       </td>
@@ -2880,17 +2923,15 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                         <input className="form-input mono" type="text" inputMode="decimal"
                           value={row.rate !== undefined ? row.rate : String(emp.hourlyRate || '')}
                           placeholder={String(emp.hourlyRate || '')}
-                          onChange={ev => setRow(period.end, emp.id, 'rate', ev.target.value)}
+                          onChange={ev => setRow(rawPeriod.end, emp.id, 'rate', ev.target.value)}
                           onFocus={ev => ev.target.select()}
                           onBlur={ev => {
                             const entered = parseFloat(ev.target.value);
                             if (!isNaN(entered) && entered !== emp.hourlyRate) {
-                              // Don't open the rate-change modal when the user is just tabbing
-                              // to another input in the same table — it steals focus mid-entry.
                               const next = ev.relatedTarget;
                               const isMovingToInput = next && (next.tagName === 'INPUT' || next.tagName === 'SELECT');
                               if (!isMovingToInput) {
-                                setRateUpdatePrompt({ empId: emp.id, newRate: entered, periodEnd: period.end });
+                                setRateUpdatePrompt({ empId: emp.id, newRate: entered, periodEnd: rawPeriod.end });
                               }
                             }
                           }}
