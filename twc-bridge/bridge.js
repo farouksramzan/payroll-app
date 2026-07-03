@@ -556,6 +556,40 @@ async function bootstrapSession() {
   }
 }
 
+// Diagnostic: capture the real page so we can build correct selectors. Logs a
+// full inventory of form controls + links, and saves a screenshot and HTML to
+// TEMP_DIR. Everything is best-effort and never throws.
+async function dumpPage(page, label) {
+  const stamp = Date.now();
+  try {
+    console.log(`[Dump:${label}] URL: ${page.url()}`);
+    const controls = await page.evaluate(() => {
+      const visible = el => !!(el.offsetParent !== null || el.getClientRects().length);
+      const out = [];
+      document.querySelectorAll('input, select, textarea, button, a[href]').forEach(el => {
+        const d = { tag: el.tagName.toLowerCase(), type: el.type || '', name: el.name || '', id: el.id || '', vis: visible(el) };
+        if (el.tagName === 'SELECT') d.options = [...el.options].map(o => (o.text || '').trim()).slice(0, 40);
+        else if (el.tagName === 'BUTTON' || el.tagName === 'A') d.text = (el.innerText || el.value || '').trim().slice(0, 60);
+        else d.value = (el.value || '').slice(0, 40);
+        out.push(d);
+      });
+      return out;
+    });
+    controls.forEach(c => {
+      const extra = c.options ? `opts=${JSON.stringify(c.options)}`
+        : c.text !== undefined ? `text="${c.text}"`
+        : `val="${c.value || ''}"`;
+      console.log(`[Dump:${label}]  ${c.tag}${c.type ? `[${c.type}]` : ''} name="${c.name}" id="${c.id}" vis=${c.vis} ${extra}`);
+    });
+    await page.screenshot({ path: path.join(TEMP_DIR, `twc-${label}-${stamp}.png`), fullPage: true }).catch(() => {});
+    const html = await page.content().catch(() => '');
+    if (html) { try { fs.writeFileSync(path.join(TEMP_DIR, `twc-${label}-${stamp}.html`), html); } catch (_) {} }
+    console.log(`[Dump:${label}] Saved screenshot + HTML to ${TEMP_DIR}\\twc-${label}-${stamp}.{png,html}`);
+  } catch (e) {
+    console.warn(`[Dump:${label}] failed: ${e.message}`);
+  }
+}
+
 async function runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, paymentDate, bankName }, onBrowser) {
   const dateMatch = paymentDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (!dateMatch) throw new Error(`Invalid paymentDate format: ${paymentDate}`);
@@ -591,10 +625,15 @@ async function runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, payme
       page.click('input[type="submit"][value="Select"], button[type="submit"]'),
     ]);
     console.log('[Payment] Employer selected — URL:', page.url());
+    // Capture the post-select page so we can see the real "Payments" menu links.
+    await dumpPage(page, 'after-employer-select');
 
     // ── Navigate to Online Payment ──────────────────────────────────────────
     send({ type: 'status_update', jobId, paymentId, status: 'processing', message: 'Opening payment form…' });
     await page.goto(TWC_PAYMENT_URL, { waitUntil: 'networkidle2' });
+
+    // Capture whatever the payment URL actually lands on (form, or a menu page).
+    await dumpPage(page, 'payment-page');
 
     // Verify we landed on the payment page
     if (!page.url().includes('onlinePayment') && !page.url().includes('payment')) {
@@ -766,6 +805,12 @@ async function runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, payme
       scheduledDate:      dateLineMatch ? dateLineMatch[1].trim() : null,
       scheduledAmount:    amtLineMatch  ? amtLineMatch[1].trim()  : null,
     };
+  } catch (err) {
+    // Capture the exact page state at the point of failure so we can build
+    // correct selectors from real data instead of guesses.
+    console.error('[Payment] Failed:', err.message);
+    await dumpPage(page, 'payment-error');
+    throw err;
   } finally {
     // Keep the session warm for the next payment — do NOT close the browser.
     // Return to the home screen so the page is clean for the next job / keep-alive.
