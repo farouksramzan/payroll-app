@@ -729,15 +729,30 @@ async function runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, payme
     // ── Review and Submit page ──────────────────────────────────────────────
     send({ type: 'status_update', jobId, paymentId, status: 'processing', message: 'Reviewing and submitting…' });
 
-    // Check the authorization checkbox if the review page has one.
+    // Certification checkbox — required ("I certify that I am authorized to submit
+    // an ACH payment…"). Check it with a real click, verify, and fall back to the
+    // label click then a programmatic check. Never submit uncertified.
     const authCheckbox = await page.$('input[type="checkbox"]');
     if (authCheckbox) {
-      const checked = await page.evaluate(el => el.checked, authCheckbox);
-      if (!checked) {
-        try { await authCheckbox.click(); }
-        catch (_) { await page.evaluate(el => { el.checked = true; el.dispatchEvent(new Event('change', { bubbles: true })); }, authCheckbox); }
+      let isChecked = await page.evaluate(el => el.checked, authCheckbox);
+      if (!isChecked) { try { await authCheckbox.click(); } catch (_) {} isChecked = await page.evaluate(el => el.checked, authCheckbox); }
+      if (!isChecked) {
+        await page.evaluate(el => {
+          const lbl = el.id && document.querySelector(`label[for="${el.id}"]`);
+          if (lbl) lbl.click();
+          if (!el.checked) {
+            el.checked = true;
+            el.dispatchEvent(new Event('click',  { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+        }, authCheckbox);
+        isChecked = await page.evaluate(el => el.checked, authCheckbox);
       }
-      console.log('[Payment] Authorization checkbox checked');
+      console.log(`[Payment] Certification checkbox checked: ${isChecked}`);
+      if (!isChecked) {
+        await dumpPage(page, 'checkbox-fail');
+        throw new Error('Could not check the ACH certification checkbox — aborting before submit.');
+      }
     }
 
     // Confirm/Submit. TWC uses input[name="method:submit"] consistently for the
@@ -759,31 +774,45 @@ async function runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, payme
     await dumpPage(page, 'after-submit');
 
     // ── Payment Confirmation page ───────────────────────────────────────────
+    // Success signals — precise, so the "Scheduled Payments" NAV MENU link (present
+    // on every page) can't false-positive. Look for a real confirmation number or
+    // explicit success phrasing.
+    const isConfirmed = (txt) => {
+      const num = (txt.match(/Confirmation\s*(?:Number|No\.?|#)\s*[:#]?\s*([0-9]{4,})/i) || [])[1] || null;
+      const scheduled = /\b(?:has been|was|is|successfully)\s+(?:scheduled|submitted|accepted|processed)\b/i.test(txt)
+        || /\bpayment\s+(?:confirmation|scheduled|submitted|accepted)\b/i.test(txt);
+      return { num, ok: !!num || scheduled };
+    };
+
     let bodyText = await page.evaluate(() => document.body.innerText);
+    let verdict  = isConfirmed(bodyText);
 
     // Some TWC flows show an interstitial after Submit that needs one more
     // "Next" click before the confirmation page appears.
-    if (!/scheduled|confirmation/i.test(bodyText)) {
-      const nextBtn = await page.$('input[type="submit"][value="Next"], button[value="Next"], input[value="Next"]');
+    if (!verdict.ok) {
+      const nextBtn = await page.$('input[name="method:submit"][value="Next"], input[type="submit"][value="Next"], input[value="Next"]');
       if (nextBtn) {
         console.log('[Payment] Interstitial after Submit — clicking Next…');
         await Promise.all([
           page.waitForNavigation({ waitUntil: 'networkidle2' }),
           nextBtn.click(),
         ]);
+        await dumpPage(page, 'after-interstitial');
         bodyText = await page.evaluate(() => document.body.innerText);
+        verdict  = isConfirmed(bodyText);
       }
     }
-    console.log('[Payment] Confirmation page:\n' + bodyText.substring(0, 800));
+    console.log('[Payment] Post-submit page text:\n' + bodyText.substring(0, 800));
 
-    if (!/scheduled|confirmation/i.test(bodyText)) {
-      throw new Error(`Payment may not have completed. Page text: ${bodyText.substring(0, 300)}`);
+    if (!verdict.ok) {
+      // Not a confirmation page — the submit was likely rejected (e.g. required
+      // field). Capture it and report the on-page message instead of a false OK.
+      await dumpPage(page, 'no-confirmation');
+      const snippet = bodyText.replace(/\s+/g, ' ').trim().slice(0, 400);
+      throw new Error(`Payment did not reach a confirmation page — likely rejected on the review page. Page said: ${snippet}`);
     }
 
-    // Extract confirmation number
-    const confMatch = bodyText.match(/Confirmation\s+Number[:\s]+(\d+)/i)
-      || bodyText.match(/(\d{7,10})/);
-    const confirmation = confMatch ? confMatch[1] : null;
+    const confirmation = verdict.num;
 
     // Extract bank name
     const bankMatch = bodyText.match(/Bank\s+Name[:\s]+([A-Z][^\n]+)/i);
