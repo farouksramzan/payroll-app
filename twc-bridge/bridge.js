@@ -685,13 +685,34 @@ async function runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, payme
     if (!daySet) throw new Error(`Requested day ${dd} is not selectable — TWC's payment window may not include it (earliest is usually the next business day).`);
     console.log(`[Payment] Day selected: ${daySet}`);
 
-    // Amount: input[name="paymentAmount"] (visible text field, defaults "0.00").
+    // Amount: input[name="paymentAmount"] (visible text field, PRE-FILLED "0.00").
+    // Must clear the existing value first, or typing appends → "0.001.00".
     const amountInput = await page.$('input[name="paymentAmount"]');
     if (!amountInput) throw new Error('Could not find the payment amount field (input[name="paymentAmount"])');
-    await amountInput.click({ clickCount: 3 });
-    await amountInput.type(amount.toFixed(2), { delay: 40 });
-    const amountEntered = await page.evaluate(el => el.value, amountInput);
-    console.log(`[Payment] Amount entered: "${amountEntered}" (requested ${amount.toFixed(2)})`);
+    const wantAmount = amount.toFixed(2);
+
+    async function setAmount() {
+      await amountInput.click({ clickCount: 3 });
+      // Hard-clear regardless of whether select-all took, then type fresh.
+      await amountInput.evaluate(el => { el.value = ''; el.dispatchEvent(new Event('input', { bubbles: true })); });
+      await amountInput.focus();
+      await amountInput.type(wantAmount, { delay: 40 });
+      return page.evaluate(el => el.value, amountInput);
+    }
+
+    let amountEntered = await setAmount();
+    if (amountEntered !== wantAmount) {
+      console.warn(`[Payment] Amount field read "${amountEntered}" — retrying with select-all…`);
+      await amountInput.evaluate(el => el.select());
+      await amountInput.type(wantAmount, { delay: 40 });
+      amountEntered = await page.evaluate(el => el.value, amountInput);
+    }
+    console.log(`[Payment] Amount entered: "${amountEntered}" (requested ${wantAmount})`);
+    // Never submit a wrong amount — bail clearly if the field didn't take exactly.
+    if (amountEntered !== wantAmount) {
+      await dumpPage(page, 'amount-mismatch');
+      throw new Error(`Payment amount field shows "${amountEntered}" but ${wantAmount} was requested — aborting before submit.`);
+    }
 
     console.log(`[Payment] Form filled — date: ${mm}/${dd}/${yyyy}, amount: $${amount.toFixed(2)}`);
     send({ type: 'status_update', jobId, paymentId, status: 'processing', message: 'Submitting payment form…' });
