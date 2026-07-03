@@ -610,10 +610,10 @@ async function runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, payme
       await page.goto(TWC_HOME_URL, { waitUntil: 'networkidle2' });
     }
 
-    // Fill the "TWC Tax Account Number" field and click Select
-    const acctField = await page.$('input[name="taxAcctNum"]')
-      || await page.$('input[name="taxAccountNumber"]')
-      || await page.$('input[name="accountNumber"]')
+    // Fill the "TWC Tax Account Number" field and click Select. Real field name
+    // from DOM: input[name="twcTaxAccountNumber"]; button: input[name="method:select"].
+    const acctField = await page.$('input[name="twcTaxAccountNumber"]')
+      || await page.$('input[name="taxAcctNum"]')
       || await page.$('input[type="text"]');
     if (!acctField) throw new Error('Could not find TWC Tax Account Number field on home page');
 
@@ -622,7 +622,7 @@ async function runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, payme
 
     await Promise.all([
       page.waitForNavigation({ waitUntil: 'networkidle2' }),
-      page.click('input[type="submit"][value="Select"], button[type="submit"]'),
+      page.click('input[name="method:select"], input[type="submit"][value="Select"]'),
     ]);
     console.log('[Payment] Employer selected — URL:', page.url());
     // Capture the post-select page so we can see the real "Payments" menu links.
@@ -640,122 +640,102 @@ async function runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, payme
       throw new Error(`Unexpected page after navigating to payment: ${page.url()}`);
     }
 
-    // ── Fill payment form ───────────────────────────────────────────────────
-    // Bank dropdown — select if "Choose One" or blank, otherwise leave as-is
-    const bankSelect = await page.$('select[name="bankId"], select[name="bank"], select[name="bankAccount"]');
-    if (bankSelect) {
-      const currentVal = await page.evaluate(el => el.options[el.selectedIndex]?.text || '', bankSelect);
-      console.log(`[Payment] Bank dropdown current: "${currentVal}"`);
+    // ── Fill payment form (real TWC field names from DOM inspection) ──────────
+    // Bank: select[name="bankSequenceId"]. Options are "Choose One" plus the
+    // enrolled bank account(s). Pick the requested bank, else the only real one.
+    const bankSelect = await page.$('select[name="bankSequenceId"]');
+    if (!bankSelect) throw new Error('Could not find the bank dropdown (select[name="bankSequenceId"])');
+    const bankPicked = await page.evaluate((el, target) => {
+      const isPlaceholder = t => /choose one/i.test(t) || !t.trim();
+      const opts = [...el.options];
+      let choice = null;
+      if (target) choice = opts.find(o => !isPlaceholder(o.text) && o.text.toLowerCase().includes(String(target).toLowerCase()));
+      if (!choice) choice = opts.find(o => o.value && !isPlaceholder(o.text));
+      if (!choice) return null;
+      el.value = choice.value;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return choice.text;
+    }, bankSelect, bankName || '');
+    if (!bankPicked) throw new Error('No selectable bank account in the TWC bank dropdown');
+    console.log(`[Payment] Bank selected: "${bankPicked}"`);
 
-      const needsSelection = /choose one|select/i.test(currentVal) || !currentVal.trim();
-      if (needsSelection && bankName) {
-        // Try to select by partial text match
-        const selected = await page.evaluate((el, target) => {
-          for (const opt of el.options) {
-            if (opt.text.toLowerCase().includes(target.toLowerCase())) {
-              el.value = opt.value;
-              el.dispatchEvent(new Event('change', { bubbles: true }));
-              return opt.text;
-            }
-          }
-          // Fall back: pick first non-empty option
-          for (const opt of el.options) {
-            if (opt.value && !/choose|select/i.test(opt.text)) {
-              el.value = opt.value;
-              el.dispatchEvent(new Event('change', { bubbles: true }));
-              return opt.text;
-            }
-          }
-          return null;
-        }, bankSelect, bankName || '');
-        console.log(`[Payment] Selected bank: "${selected}"`);
-      } else if (needsSelection) {
-        // No bank name hint — pick first real option
-        await page.evaluate(el => {
-          for (const opt of el.options) {
-            if (opt.value && !/choose|select/i.test(opt.text)) {
-              el.value = opt.value;
-              el.dispatchEvent(new Event('change', { bubbles: true }));
-              break;
-            }
-          }
-        }, bankSelect);
-      }
+    // Date: month & year are HIDDEN inputs pre-set by TWC to the open payment
+    // window; only the DAY is user-selectable (select[name="paymentDay"]).
+    const twcWindow = await page.evaluate(() => ({
+      month: document.querySelector('input[name="paymentMonth"]')?.value || '',
+      year:  document.querySelector('input[name="paymentYear"]')?.value  || '',
+    }));
+    console.log(`[Payment] TWC payment window: ${twcWindow.month}/${twcWindow.year} (requested ${mm}/${yyyy})`);
+    if (twcWindow.month && twcWindow.month !== mm) {
+      throw new Error(`TWC's open payment window is month ${twcWindow.month}, but ${mm} was requested. Choose a date within the open window.`);
+    }
+    if (twcWindow.year && twcWindow.year !== yyyy) {
+      throw new Error(`TWC's open payment window is year ${twcWindow.year}, but ${yyyy} was requested.`);
     }
 
-    // Payment date — month select
-    const monthSelect = await page.$('select[name="month"], select[name="paymentMonth"]');
-    if (monthSelect) {
-      await page.evaluate((el, val) => {
-        // Find option where value == monthNum or text starts with month abbreviation
-        const months = ['', 'January','February','March','April','May','June','July','August','September','October','November','December'];
-        for (const opt of el.options) {
-          if (opt.value == val || opt.text.startsWith(months[parseInt(val)]?.slice(0,3))) {
-            el.value = opt.value;
-            el.dispatchEvent(new Event('change', { bubbles: true }));
-            break;
-          }
-        }
-      }, monthSelect, monthNum.toString());
-    }
+    const daySelect = await page.$('select[name="paymentDay"]');
+    if (!daySelect) throw new Error('Could not find the payment day dropdown (select[name="paymentDay"])');
+    const daySet = await page.evaluate((el, padded, num) => {
+      const opt = [...el.options].find(o => o.value === padded || o.value === num || o.text.trim() === padded || o.text.trim() === num);
+      if (!opt) return null;
+      el.value = opt.value;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      return opt.text.trim();
+    }, daySelect, dd, String(parseInt(dd, 10)));
+    if (!daySet) throw new Error(`Requested day ${dd} is not selectable — TWC's payment window may not include it (earliest is usually the next business day).`);
+    console.log(`[Payment] Day selected: ${daySet}`);
 
-    // Day select
-    const daySelect = await page.$('select[name="day"], select[name="paymentDay"]');
-    if (daySelect) {
-      await page.evaluate((el, val) => {
-        for (const opt of el.options) {
-          if (opt.value == val || opt.text == val) { el.value = opt.value; el.dispatchEvent(new Event('change', { bubbles: true })); break; }
-        }
-      }, daySelect, parseInt(dd, 10).toString());
-    }
-
-    // Year — could be select or input
-    const yearSelect = await page.$('select[name="year"], select[name="paymentYear"]');
-    if (yearSelect) {
-      await page.evaluate((el, val) => {
-        for (const opt of el.options) {
-          if (opt.value == val) { el.value = opt.value; el.dispatchEvent(new Event('change', { bubbles: true })); break; }
-        }
-      }, yearSelect, yyyy);
-    } else {
-      const yearInput = await page.$('input[name="year"], input[name="paymentYear"]');
-      if (yearInput) { await yearInput.click({ clickCount: 3 }); await yearInput.type(yyyy); }
-    }
-
-    // Amount
-    const amountInput = await page.$('input[name="amount"], input[name="paymentAmount"], input[name="scheduledPaymentAmount"]')
-      || await page.$('input[type="text"][name*="mount"]');
-    if (!amountInput) throw new Error('Could not find payment amount field');
+    // Amount: input[name="paymentAmount"] (visible text field, defaults "0.00").
+    const amountInput = await page.$('input[name="paymentAmount"]');
+    if (!amountInput) throw new Error('Could not find the payment amount field (input[name="paymentAmount"])');
     await amountInput.click({ clickCount: 3 });
     await amountInput.type(amount.toFixed(2), { delay: 40 });
+    const amountEntered = await page.evaluate(el => el.value, amountInput);
+    console.log(`[Payment] Amount entered: "${amountEntered}" (requested ${amount.toFixed(2)})`);
 
     console.log(`[Payment] Form filled — date: ${mm}/${dd}/${yyyy}, amount: $${amount.toFixed(2)}`);
     send({ type: 'status_update', jobId, paymentId, status: 'processing', message: 'Submitting payment form…' });
 
-    // Click Next
+    // Click Next: input[name="method:submit"][value="Next"].
     await Promise.all([
       page.waitForNavigation({ waitUntil: 'networkidle2' }),
-      page.click('input[type="submit"][value="Next"], button[value="Next"], input[value="Next"]'),
+      page.click('input[name="method:submit"]'),
     ]);
     console.log('[Payment] After Next — URL:', page.url());
+    // Capture the review/confirm page so we can wire its exact controls.
+    await dumpPage(page, 'after-next');
 
     // ── Review and Submit page ──────────────────────────────────────────────
     send({ type: 'status_update', jobId, paymentId, status: 'processing', message: 'Reviewing and submitting…' });
 
-    // Check the authorization checkbox (required field marked with *)
-    const authCheckbox = await page.$('input[type="checkbox"][name*="certif"], input[type="checkbox"][name*="auth"], input[type="checkbox"][name*="agree"]')
-      || await page.$('input[type="checkbox"]');
+    // Check the authorization checkbox if the review page has one.
+    const authCheckbox = await page.$('input[type="checkbox"]');
     if (authCheckbox) {
       const checked = await page.evaluate(el => el.checked, authCheckbox);
-      if (!checked) await authCheckbox.click();
+      if (!checked) {
+        try { await authCheckbox.click(); }
+        catch (_) { await page.evaluate(el => { el.checked = true; el.dispatchEvent(new Event('change', { bubbles: true })); }, authCheckbox); }
+      }
       console.log('[Payment] Authorization checkbox checked');
     }
 
+    // Confirm/Submit. TWC uses input[name="method:submit"] consistently for the
+    // forward action; fall back to explicit Submit/Confirm/Yes values. If none is
+    // found we capture the page and stop rather than clicking blindly.
+    const submitBtn = await page.$('input[name="method:submit"]')
+      || await page.$('input[type="submit"][value="Submit"], input[type="submit"][value="Confirm"], input[type="submit"][value="Yes"]');
+    if (!submitBtn) {
+      await dumpPage(page, 'review-no-submit');
+      throw new Error('Could not find the Submit/Confirm button on the review page (captured review-no-submit dump).');
+    }
+    const submitVal = await page.evaluate(el => el.value || el.innerText || '', submitBtn);
+    console.log(`[Payment] Clicking confirm button: "${submitVal}"`);
     await Promise.all([
       page.waitForNavigation({ waitUntil: 'networkidle2' }),
-      page.click('input[type="submit"][value="Submit"], button[value="Submit"], input[value="Submit"]'),
+      submitBtn.click(),
     ]);
     console.log('[Payment] After Submit — URL:', page.url());
+    await dumpPage(page, 'after-submit');
 
     // ── Payment Confirmation page ───────────────────────────────────────────
     let bodyText = await page.evaluate(() => document.body.innerText);
