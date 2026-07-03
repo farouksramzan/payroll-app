@@ -340,6 +340,11 @@ function buildChecks(wb, employees, client) {
       .reduce((s, r) => s + (Number(r['Amount']) || 0), 0);
 
     const compensation = sum('Compensation');
+    // Compensation paid via salary-type items ("Salary", "Officer Salary Regular").
+    // Used to infer pay_type when auto-creating employees.
+    const salaryComp = items
+      .filter(r => r['Tax Tracking Type'] === 'Compensation' && /salary/i.test(String(r['Payroll Item'] || '')))
+      .reduce((s, r) => s + (Number(r['Amount']) || 0), 0);
     const tips         = sum('Reported Tips');
     const grossWages   = compensation + tips;
     const fit          = Math.abs(sum('Federal Withholding'));
@@ -373,6 +378,7 @@ function buildChecks(wb, employees, client) {
       empMatched:    !!emp,
       grossWages:    round2(grossWages),
       compensation:  round2(compensation),
+      salaryComp:    round2(salaryComp),
       reportedTips:  round2(tips),
       fit:           round2(fit),
       eeSS:          round2(eeSS),
@@ -446,13 +452,19 @@ router.post('/paychecks/preview', upload.single('file'), (req, res) => {
     const { empFreqMap, dominantFreq } = detectPerEmployeeFrequency(checks);
     applyPerEmployeeFrequency(checks, empFreqMap);
 
-    // Mark duplicates using check number + robust fingerprint
-    checks = checks.map(c => ({
-      ...c,
-      alreadyExists:
-        (c.checkNumber && existingByNum.has(String(c.checkNumber))) ||
-        existingFp.has(checkFingerprint(c.empName, c.checkDate, c.grossWages)),
-    }));
+    // Mark duplicates using check number + robust fingerprint.
+    // Only numeric Doc Nums count as check numbers — QB's "E-PAY"/"E-CHECK"
+    // markers are shared across many checks and must not match as duplicates.
+    checks = checks.map(c => {
+      const rawNum = c.checkNumber ? String(c.checkNumber).trim() : '';
+      const numKey = /^\d+$/.test(rawNum) ? rawNum : null;
+      return {
+        ...c,
+        alreadyExists:
+          (numKey && existingByNum.has(numKey)) ||
+          existingFp.has(checkFingerprint(c.empName, c.checkDate, c.grossWages)),
+      };
+    });
 
     // Determine pay group action per detected frequency (no DB writes — preview only)
     const uniqueFreqs = [...new Set(empFreqMap.values())];
@@ -526,7 +538,22 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
           const key  = name.toUpperCase().trim();
           const freq = empFreqMap.get(key) || dominantFreq;
           const st   = client.state || 'TX';
-          const r = insertEmp.run(clientId, firstName, lastName || '(unknown)', st, st, 'single', 'hourly', 0, 0, freq);
+          // Infer pay type from QB pay items: if most of this employee's
+          // compensation came through salary items, create them as salaried
+          // with an annual salary estimated from their median check.
+          const empChecks = checks.filter(x => (x.empName || '').toUpperCase().trim() === key);
+          const totComp   = empChecks.reduce((s, x) => s + (x.compensation || 0), 0);
+          const totSalary = empChecks.reduce((s, x) => s + (x.salaryComp   || 0), 0);
+          const isSalary  = totComp > 0 && totSalary / totComp >= 0.5;
+          let annualSalary = 0;
+          if (isSalary) {
+            const grosses = empChecks.map(x => x.compensation).filter(g => g > 0).sort((a, b) => a - b);
+            const medGross = grosses.length ? grosses[Math.floor(grosses.length / 2)] : 0;
+            const ppy = freq === 'weekly' ? 52 : freq === 'biweekly' ? 26 : freq === 'semimonthly' ? 24 : freq === 'monthly' ? 12 : 26;
+            annualSalary = Math.round(medGross * ppy);
+          }
+          const r = insertEmp.run(clientId, firstName, lastName || '(unknown)', st, st, 'single',
+            isSalary ? 'salary' : 'hourly', 0, annualSalary, freq);
           if (r.lastInsertRowid) createdEmployees.push({ id: r.lastInsertRowid, name, firstName, lastName });
         }
       })();
@@ -688,7 +715,12 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
     const importAll = db.transaction((rows) => {
       let imported = 0, skipped = 0, patched = 0, repaired = 0;
       for (const c of rows) {
-        const numKey = c.checkNumber ? String(c.checkNumber) : null;
+        // Only NUMERIC Doc Nums are real check numbers usable for dedup.
+        // QB uses markers like "E-PAY" / "E-CHECK" / "e-check" for electronic
+        // payments — dozens of different checks share them, so treating them as
+        // identifiers silently drops every e-payment after the first.
+        const rawNum = c.checkNumber ? String(c.checkNumber).trim() : '';
+        const numKey = /^\d+$/.test(rawNum) ? rawNum : null;
         const fp     = checkFingerprint(c.empName, c.checkDate, c.grossWages);
 
         const empKey     = (c.empName || '').toUpperCase().trim();
@@ -700,7 +732,7 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
         )) {
           // Find the existing paystub so we can repair its group assignment and tips
           const existingStub = numKey
-            ? getExistingStubByNum.get(clientId, c.checkNumber)
+            ? getExistingStubByNum.get(clientId, numKey)
             : getExistingStubByFp.get(clientId, c.empName, c.checkDate, Math.round((c.grossWages || 0) * 100));
 
           if (existingStub) {
