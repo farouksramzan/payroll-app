@@ -8,6 +8,8 @@ const { spawn }  = require('child_process');
 const puppeteer  = require('puppeteer');
 
 // ── Config ────────────────────────────────────────────────────────────────────
+// Bump this on every change so the console proves which version is running.
+const BRIDGE_VERSION = '2026-07-03-h · checkbox-markup-diagnostics';
 const SERVER_URL    = process.env.RAILWAY_URL;
 const SECRET        = process.env.BRIDGE_TWC_SECRET;
 const TWC_USERNAME  = process.env.TWC_USERNAME;
@@ -401,7 +403,7 @@ async function runTwcWebSubmission(twcUrl, qfhFile, jobId, submissionId, onBrows
 
 async function handlePaymentJob(job) {
   const { jobId, paymentId, twcAccountNumber, amount, paymentDate, bankName, clientName } = job;
-  console.log(`[Payment] Job ${jobId}: ${clientName} — $${amount} on ${paymentDate} (account ${twcAccountNumber})`);
+  console.log(`[Payment] Job ${jobId}: ${clientName} — $${amount} on ${paymentDate} (account ${twcAccountNumber}) [bridge ${BRIDGE_VERSION}]`);
 
   let puppBrowser = null;
 
@@ -946,6 +948,7 @@ async function doLogin(page, jobId, paymentId) {
 
 // ── Start ─────────────────────────────────────────────────────────────────────
 console.log('=== TWC QuickFile Bridge ===');
+console.log(`Version: ${BRIDGE_VERSION}`);
 console.log(`Server: ${SERVER_URL}`);
 console.log(`QuickFile: ${QUICKFILE_EXE}`);
 console.log(`AHK: ${AHK_EXE}`);
