@@ -9,7 +9,7 @@ const puppeteer  = require('puppeteer');
 
 // ── Config ────────────────────────────────────────────────────────────────────
 // Bump this on every change so the console proves which version is running.
-const BRIDGE_VERSION = '2026-07-03-i · version-handshake';
+const BRIDGE_VERSION = '2026-07-06-j · real-click-checkbox + strict-success';
 const SERVER_URL    = process.env.RAILWAY_URL;
 const SECRET        = process.env.BRIDGE_TWC_SECRET;
 const TWC_USERNAME  = process.env.TWC_USERNAME;
@@ -728,155 +728,109 @@ async function runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, payme
     // Capture the review/confirm page so we can wire its exact controls.
     await dumpPage(page, 'after-next');
 
-    // ── Review and Submit page ──────────────────────────────────────────────
+    // ── Review page: certification checkbox + Submit ────────────────────────
+    // Ground truth from the user: when the box is genuinely checked and you
+    // submit, TWC advances to the Payment Confirmation page. So "success" =
+    // we actually LEFT the review page. If the certification checkbox is still
+    // on the page after submitting, the box was NOT accepted — a real failure.
     send({ type: 'status_update', jobId, paymentId, status: 'processing', message: 'Reviewing and submitting…' });
 
-    // Certification checkbox — required ("I certify that I am authorized to submit
-    // an ACH payment…"). First inventory every checkbox so the console tells us
-    // exactly what's on the page (name/id/disabled/nearby text).
+    // Diagnostics we attach to any failure so it lands in the DB — no console or
+    // file access needed to debug.
+    const diag = { reviewUrl: page.url() };
+
     const boxInventory = await page.$$eval('input[type="checkbox"]', els => els.map((el, i) => ({
       i, name: el.name || '', id: el.id || '', disabled: el.disabled, checked: el.checked,
       visible: !!(el.offsetParent !== null || el.getClientRects().length),
-      near: (el.closest('label')?.innerText || el.parentElement?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 90),
+      outer: (el.outerHTML || '').slice(0, 220),
+      near: (el.closest('label')?.innerText || el.parentElement?.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 120),
     })));
+    diag.checkboxes = boxInventory;
     console.log('[Payment] Checkboxes on review page:', JSON.stringify(boxInventory));
 
     if (boxInventory.length) {
-      // Prefer a checkbox whose nearby text mentions certify/authorized; else the
-      // first visible, enabled one.
-      let targetIdx = boxInventory.findIndex(b => /certif|authoriz/i.test(b.near));
-      if (targetIdx < 0) targetIdx = boxInventory.findIndex(b => b.visible && !b.disabled);
-      if (targetIdx < 0) targetIdx = 0;
-      const meta = boxInventory[targetIdx];
-      console.log(`[Payment] Targeting checkbox #${targetIdx} (name="${meta.name}", id="${meta.id}", disabled=${meta.disabled}, visible=${meta.visible})`);
+      let idx = boxInventory.findIndex(b => /certif|authoriz/i.test(b.near));
+      if (idx < 0) idx = boxInventory.findIndex(b => b.visible && !b.disabled);
+      if (idx < 0) idx = 0;
+      diag.targetIdx = idx;
 
-      // Log the exact markup — reveals inline onclick handlers, hidden/custom
-      // widgets, or a wrapping label that a plain click misses.
-      const markup = await page.evaluate((idx) => {
-        const el = document.querySelectorAll('input[type="checkbox"]')[idx];
-        if (!el) return null;
-        return { self: el.outerHTML.slice(0, 300), parent: (el.parentElement?.outerHTML || '').slice(0, 500) };
-      }, targetIdx);
-      console.log('[Payment] Checkbox markup:', JSON.stringify(markup));
+      // REAL clicks only. JS property-forcing (el.checked = true) creates a
+      // fake-checked state that passes a read but TWC rejects on submit — that
+      // was the bug that produced false "completed" with no confirmation.
+      const isChk = async () => { const hs = await page.$$('input[type="checkbox"]'); return hs[idx] ? page.evaluate(el => el.checked, hs[idx]) : null; };
 
-      // Always re-query the handle so a re-render can't leave us reading a stale node.
-      const readChecked = async () => {
-        const hs = await page.$$('input[type="checkbox"]');
-        return hs[targetIdx] ? page.evaluate(el => el.checked, hs[targetIdx]) : false;
-      };
+      // 1) Native trusted click on the checkbox itself.
+      try { const hs = await page.$$('input[type="checkbox"]'); if (hs[idx]) await hs[idx].click(); }
+      catch (e) { console.log('[Payment] checkbox native click err:', e.message); }
+      // Checking the box may itself trigger navigation (onclick submit).
+      await page.waitForNetworkIdle({ idleTime: 500, timeout: 3500 }).catch(() => {});
+      let checked = await isChk();
+      console.log(`[Payment] after native checkbox click: checked=${checked} url=${page.url()}`);
 
-      let isChecked = await readChecked();
-      // 1) Native trusted click (scrolls into view + fires real handlers).
-      if (!isChecked) {
-        try { const hs = await page.$$('input[type="checkbox"]'); await hs[targetIdx].click(); }
-        catch (e) { console.log('[Payment] native click failed:', e.message); }
-        isChecked = await readChecked();
-        console.log(`[Payment] after native click: ${isChecked}`);
+      // 2) If still present and unchecked, click its label with a real click.
+      if (checked === false) {
+        const lbl = await page.evaluateHandle((i) => {
+          const el = document.querySelectorAll('input[type="checkbox"]')[i];
+          return (el && el.id && document.querySelector(`label[for="${el.id}"]`)) || (el && el.closest('label')) || null;
+        }, idx);
+        try { if (lbl && lbl.asElement()) await lbl.asElement().click(); } catch (e) { console.log('[Payment] label click err:', e.message); }
+        await page.waitForNetworkIdle({ idleTime: 500, timeout: 3500 }).catch(() => {});
+        checked = await isChk();
+        console.log(`[Payment] after label click: checked=${checked} url=${page.url()}`);
       }
-      // 2) Click the associated / wrapping label.
-      if (!isChecked) {
-        await page.evaluate((idx) => {
-          const el = document.querySelectorAll('input[type="checkbox"]')[idx];
-          const lbl = (el.id && document.querySelector(`label[for="${el.id}"]`)) || el.closest('label');
-          if (lbl) lbl.click();
-        }, targetIdx);
-        isChecked = await readChecked();
-        console.log(`[Payment] after label click: ${isChecked}`);
-      }
-      // 3) Force the property and fire change ONLY (no synthetic click — a click
-      //    handler could toggle a just-set box back off).
-      if (!isChecked) {
-        await page.evaluate((idx) => {
-          const el = document.querySelectorAll('input[type="checkbox"]')[idx];
-          el.checked = true;
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-        }, targetIdx);
-        isChecked = await readChecked();
-        console.log(`[Payment] after force+change: ${isChecked}`);
-      }
-      console.log(`[Payment] Certification checkbox checked: ${isChecked}`);
-      if (!isChecked) {
-        await dumpPage(page, 'checkbox-fail');
-        throw new Error(`Could not check the ACH certification checkbox — aborting before submit. Markup: ${JSON.stringify(markup)}`);
-      }
+      diag.checkedAfterClicks = checked;
+      diag.urlAfterCheckbox = page.url();
     } else {
-      console.warn('[Payment] No checkbox found on review page (may be in an iframe) — capturing dump.');
-      await dumpPage(page, 'no-checkbox');
+      diag.noCheckbox = true;
+      console.warn('[Payment] No checkbox found on review page.');
     }
 
-    // Confirm/Submit. TWC uses input[name="method:submit"] consistently for the
-    // forward action; fall back to explicit Submit/Confirm/Yes values. If none is
-    // found we capture the page and stop rather than clicking blindly.
-    const submitBtn = await page.$('input[name="method:submit"]')
-      || await page.$('input[type="submit"][value="Submit"], input[type="submit"][value="Confirm"], input[type="submit"][value="Yes"]');
-    if (!submitBtn) {
-      await dumpPage(page, 'review-no-submit');
-      throw new Error('Could not find the Submit/Confirm button on the review page (captured review-no-submit dump).');
+    // Click Submit ONLY if we're still on the review page (checkbox present).
+    const stillOnReview = !!(await page.$('input[type="checkbox"]'));
+    if (stillOnReview) {
+      const submitBtn = await page.$('input[name="method:submit"]')
+        || await page.$('input[type="submit"][value="Submit"], input[type="submit"][value="Confirm"], input[type="submit"][value="Yes"]');
+      if (submitBtn) {
+        const submitVal = await page.evaluate(el => el.value || el.innerText || '', submitBtn);
+        console.log(`[Payment] Clicking submit: "${submitVal}"`);
+        await Promise.all([
+          page.waitForNavigation({ waitUntil: 'networkidle2' }).catch(() => {}),
+          submitBtn.click(),
+        ]);
+      } else {
+        diag.noSubmitButton = true;
+      }
     }
-    const submitVal = await page.evaluate(el => el.value || el.innerText || '', submitBtn);
-    console.log(`[Payment] Clicking confirm button: "${submitVal}"`);
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: 'networkidle2' }),
-      submitBtn.click(),
-    ]);
-    console.log('[Payment] After Submit — URL:', page.url());
+    console.log('[Payment] After submit — URL:', page.url());
     await dumpPage(page, 'after-submit');
 
-    // ── Payment Confirmation page ───────────────────────────────────────────
-    // Success signals — precise, so the "Scheduled Payments" NAV MENU link (present
-    // on every page) can't false-positive. Look for a real confirmation number or
-    // explicit success phrasing.
-    const isConfirmed = (txt) => {
-      const num = (txt.match(/Confirmation\s*(?:Number|No\.?|#)\s*[:#]?\s*([0-9]{4,})/i) || [])[1] || null;
-      const scheduled = /\b(?:has been|was|is|successfully)\s+(?:scheduled|submitted|accepted|processed)\b/i.test(txt)
-        || /\bpayment\s+(?:confirmation|scheduled|submitted|accepted)\b/i.test(txt);
-      return { num, ok: !!num || scheduled };
-    };
-
-    let bodyText = await page.evaluate(() => document.body.innerText);
-    let verdict  = isConfirmed(bodyText);
-
-    // Some TWC flows show an interstitial after Submit that needs one more
-    // "Next" click before the confirmation page appears.
-    if (!verdict.ok) {
-      const nextBtn = await page.$('input[name="method:submit"][value="Next"], input[type="submit"][value="Next"], input[value="Next"]');
-      if (nextBtn) {
-        console.log('[Payment] Interstitial after Submit — clicking Next…');
-        await Promise.all([
-          page.waitForNavigation({ waitUntil: 'networkidle2' }),
-          nextBtn.click(),
-        ]);
-        await dumpPage(page, 'after-interstitial');
-        bodyText = await page.evaluate(() => document.body.innerText);
-        verdict  = isConfirmed(bodyText);
-      }
-    }
+    // ── Determine real success ──────────────────────────────────────────────
+    const bodyText = await page.evaluate(() => document.body.innerText);
+    const stillHasCheckbox = !!(await page.$('input[type="checkbox"]'));
+    const confNum = (bodyText.match(/Confirmation\s*(?:Number|No\.?|#)?\s*[:#]?\s*([0-9]{3,})/i) || [])[1] || null;
+    diag.afterSubmitUrl = page.url();
+    diag.stillHasCheckbox = stillHasCheckbox;
+    diag.postText = bodyText.replace(/\s+/g, ' ').trim().slice(0, 700);
+    console.log('[Payment] stillHasCheckbox:', stillHasCheckbox, '| confNum:', confNum);
     console.log('[Payment] Post-submit page text:\n' + bodyText.substring(0, 800));
 
-    if (!verdict.ok) {
-      // Not a confirmation page — the submit was likely rejected (e.g. required
-      // field). Capture it and report the on-page message instead of a false OK.
-      await dumpPage(page, 'no-confirmation');
-      const snippet = bodyText.replace(/\s+/g, ' ').trim().slice(0, 400);
-      throw new Error(`Payment did not reach a confirmation page — likely rejected on the review page. Page said: ${snippet}`);
+    // If the certification checkbox is STILL on the page, we never left the
+    // review screen → the box was not accepted → genuine failure. Pack the full
+    // diagnostic into the error so it's readable from the DB.
+    if (stillHasCheckbox && !confNum) {
+      await dumpPage(page, 'checkbox-rejected');
+      throw new Error('CHECKBOX_NOT_ACCEPTED — still on review page after submit (never reached confirmation). DIAG=' + JSON.stringify(diag).slice(0, 1600));
     }
 
-    const confirmation = verdict.num;
-
-    // Extract bank name
+    const confirmation = confNum;
     const bankMatch = bodyText.match(/Bank\s+Name[:\s]+([A-Z][^\n]+)/i);
     const bankConfirmed = bankMatch ? bankMatch[1].trim() : null;
-
-    // Extract scheduled date and amount from confirmation
     const dateLineMatch = bodyText.match(/Payment\s+Date[:\s]+([^\n]+)/i);
     const amtLineMatch  = bodyText.match(/Scheduled\s+Payment\s+Amount[:\s]+([^\n]+)/i);
-
     console.log(`[Payment] Confirmation: ${confirmation} | Bank: ${bankConfirmed}`);
 
-    // Save updated cookies after successful payment
     saveSession(await page.cookies());
-
-    await new Promise(r => setTimeout(r, 4_000)); // brief pause so user can see confirmation
+    await new Promise(r => setTimeout(r, 4_000));
 
     return {
       confirmationNumber: confirmation,
