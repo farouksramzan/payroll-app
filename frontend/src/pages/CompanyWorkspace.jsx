@@ -4891,6 +4891,12 @@ function TwcPaymentModal({ client, defaultAmount, defaultDate, twcPayJob, onSubm
             {twcPayJob.status === 'needs_captcha' && (
               <div style={{ color: '#92400e', fontWeight: 600 }}>Waiting for CAPTCHA — solve it in the browser window on Computer 2, then click Logon.</div>
             )}
+            {twcPayJob.status === 'queued' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#0369a1' }}>
+                <span className="spinner spinner-dark" style={{ width: 14, height: 14, flexShrink: 0 }} />
+                <span>Queued — waiting for the bridge to finish other payments. It will run automatically.</span>
+              </div>
+            )}
             {twcPayJob.status === 'processing' && !twcPayJob.confirmationNumber && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#0369a1' }}>
                 <span className="spinner spinner-dark" style={{ width: 14, height: 14, flexShrink: 0 }} />

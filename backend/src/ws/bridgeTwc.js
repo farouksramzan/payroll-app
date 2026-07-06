@@ -28,6 +28,11 @@ class BridgeTwcManager extends EventEmitter {
     this._jobPayloads    = new Map(); // jobId → payload (for re-send on reconnect)
     this._jobStatuses    = new Map(); // jobId → { status, message, confirmation, updatedAt }
     this._jobSeq         = 0;
+    // FIFO queue: jobs wait here and are dispatched to the bridge ONE AT A TIME
+    // (the bridge drives a single shared browser session and rejects concurrent
+    // jobs). _activeJobId is the job currently in flight on the bridge.
+    this._queue          = []; // [{ jobId, payload, onResult, onDispatch, timeoutMs, submissionId }]
+    this._activeJobId    = null;
   }
 
   attach(httpServer) {
@@ -112,6 +117,7 @@ class BridgeTwcManager extends EventEmitter {
       this.emit('connected');
       this._startServerPings();
       this._resendPendingJobs();
+      this._drainQueue();   // start sending any jobs that queued while disconnected
       return;
     }
 
@@ -188,6 +194,7 @@ class BridgeTwcManager extends EventEmitter {
         confirmation: msg.confirmation || null,
         updatedAt:    new Date().toISOString(),
       });
+      if (this._activeJobId === msg.jobId) { this._activeJobId = null; this._drainQueue(); }
       return;
     }
 
@@ -208,6 +215,9 @@ class BridgeTwcManager extends EventEmitter {
       if (msg.success) p.resolve(msg);
       else p.reject(new Error(msg.error || 'TWC bridge processing failed'));
     }
+
+    // This job is done — send the next queued one.
+    if (this._activeJobId === msg.jobId) { this._activeJobId = null; this._drainQueue(); }
   }
 
   _resendPendingJobs() {
@@ -227,6 +237,9 @@ class BridgeTwcManager extends EventEmitter {
       else p.reject(new Error(reason));
     }
     this._pending.clear();
+    // The interrupted in-flight job is gone; let any still-queued jobs proceed.
+    this._activeJobId = null;
+    this._drainQueue();
   }
 
   getJobStatus(jobId) {
@@ -234,37 +247,76 @@ class BridgeTwcManager extends EventEmitter {
   }
 
   /**
-   * Queue a job and call onResult when complete (fire-and-forget, non-blocking).
-   * Returns jobId immediately.
+   * Enqueue a job to run on the bridge. Jobs are dispatched ONE AT A TIME in FIFO
+   * order — the next is sent only after the current one finishes — so multiple
+   * payments (same or different accounts) can be submitted at once and drain
+   * automatically instead of being rejected. Returns jobId immediately.
+   *
+   * onDispatch (optional) fires when the job actually leaves the queue and is
+   * sent to the bridge — use it to flip a DB row from 'queued' to 'processing'.
    */
-  queueJob(job, onResult, timeoutMs = 10 * 60 * 1000) {
+  queueJob(job, onResult, timeoutMs = 10 * 60 * 1000, onDispatch) {
     if (!this.isConnected) throw new Error('TWC Bridge is not connected. Start the TWC bridge on Computer 2.');
     const jobId   = `twc_${Date.now()}_${++this._jobSeq}`;
     // job.type overrides default 'submit' (e.g. 'twc_payment')
     const payload = { type: 'submit', ...job, jobId };
 
-    this._jobStatuses.set(jobId, { status: 'processing', message: 'Job queued', updatedAt: new Date().toISOString() });
+    const position = (this._activeJobId ? 1 : 0) + this._queue.length;
+    this._jobStatuses.set(jobId, {
+      status:  position === 0 ? 'processing' : 'queued',
+      message: position === 0 ? 'Sending to bridge…' : `Waiting in queue (position ${position})`,
+      updatedAt: new Date().toISOString(),
+    });
 
-    const timeout = setTimeout(() => {
-      this._jobStatuses.set(jobId, { status: 'failed', message: 'Timed out', updatedAt: new Date().toISOString() });
-      this._pending.delete(jobId);
-      this._jobPayloads.delete(jobId);
-
-      // Mark DB row failed too
-      if (job.submissionId) {
-        try {
-          const { getDb } = require('../database/db');
-          getDb().prepare(`UPDATE twc_submissions SET status='failed', error='Timed out', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(job.submissionId);
-        } catch (_) {}
-      }
-      onResult?.(false, { error: 'TWC bridge job timed out' });
-    }, timeoutMs);
-
-    this._jobPayloads.set(jobId, payload);
-    this._pending.set(jobId, { onResult, timeout, async: true });
-    this._ws.send(JSON.stringify(payload));
+    this._queue.push({ jobId, payload, onResult, onDispatch, timeoutMs, submissionId: job.submissionId });
+    this._drainQueue();
     return jobId;
   }
+
+  // Dispatch the next queued job if the bridge is free. Called after every job
+  // completes, on (re)connect, and whenever a job is enqueued.
+  _drainQueue() {
+    if (this._activeJobId) return;          // one job already in flight
+    if (this._queue.length === 0) return;
+    if (!this.isConnected) return;          // will retry on reconnect
+
+    const item = this._queue.shift();
+    this._activeJobId = item.jobId;
+
+    const timeout = setTimeout(() => {
+      this._jobStatuses.set(item.jobId, { status: 'failed', message: 'Timed out', updatedAt: new Date().toISOString() });
+      this._pending.delete(item.jobId);
+      this._jobPayloads.delete(item.jobId);
+      if (item.submissionId) {
+        try {
+          const { getDb } = require('../database/db');
+          getDb().prepare(`UPDATE twc_submissions SET status='failed', error='Timed out', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(item.submissionId);
+        } catch (_) {}
+      }
+      item.onResult?.(false, { error: 'TWC bridge job timed out' });
+      if (this._activeJobId === item.jobId) { this._activeJobId = null; this._drainQueue(); }
+    }, item.timeoutMs);
+
+    this._jobPayloads.set(item.jobId, item.payload);
+    this._pending.set(item.jobId, { onResult: item.onResult, timeout, async: true });
+    this._jobStatuses.set(item.jobId, { status: 'processing', message: 'Sent to bridge', updatedAt: new Date().toISOString() });
+
+    try { item.onDispatch?.(); } catch (e) { console.error('[TWC Bridge WS] onDispatch error:', e.message); }
+
+    try {
+      this._ws.send(JSON.stringify(item.payload));
+      console.log(`[TWC Bridge WS] Dispatched job ${item.jobId} (${this._queue.length} still queued)`);
+    } catch (e) {
+      // Send failed — put it back at the front and let a reconnect retry it.
+      console.error('[TWC Bridge WS] Send failed, requeuing:', e.message);
+      clearTimeout(timeout);
+      this._pending.delete(item.jobId);
+      this._activeJobId = null;
+      this._queue.unshift(item);
+    }
+  }
+
+  get queueDepth() { return this._queue.length + (this._activeJobId ? 1 : 0); }
 
   killJob() {
     if (!this.isConnected) throw new Error('TWC Bridge is not connected');

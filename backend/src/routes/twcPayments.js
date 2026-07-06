@@ -41,9 +41,12 @@ router.post('/', (req, res) => {
     return res.status(201).json({ ...serializePayment(db.prepare('SELECT * FROM twc_payments WHERE id=?').get(paymentId)), bridgeOffline: true });
   }
 
-  // Dispatch immediately
+  // Enqueue the job. The bridge manager runs jobs one at a time in FIFO order,
+  // so several payments (same or different accounts) can be submitted at once and
+  // will drain automatically instead of being rejected. Status flows:
+  // queued → processing → completed/failed.
   try {
-    db.prepare(`UPDATE twc_payments SET status='processing', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(paymentId);
+    db.prepare(`UPDATE twc_payments SET status='queued', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(paymentId);
     const jobId = bridgeTwc.queueJob(
       { type: 'twc_payment', paymentId, twcAccountNumber, amount: amountNum, paymentDate, bankName: bankName || null, clientName: client.business_name },
       (success, msg) => {
@@ -58,6 +61,11 @@ router.post('/', (req, res) => {
           msg.error || null,
           paymentId,
         );
+      },
+      10 * 60 * 1000,
+      // onDispatch: fires when this job leaves the queue and is sent to the bridge
+      () => {
+        db.prepare(`UPDATE twc_payments SET status='processing', updated_at=CURRENT_TIMESTAMP WHERE id=?`).run(paymentId);
       },
     );
     db.prepare(`UPDATE twc_payments SET job_id=? WHERE id=?`).run(jobId, paymentId);
