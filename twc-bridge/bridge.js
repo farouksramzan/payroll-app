@@ -9,7 +9,7 @@ const puppeteer  = require('puppeteer');
 
 // ── Config ────────────────────────────────────────────────────────────────────
 // Bump this on every change so the console proves which version is running.
-const BRIDGE_VERSION = '2026-07-06-j · real-click-checkbox + strict-success';
+const BRIDGE_VERSION = '2026-07-06-k · handle-are-you-sure-warning';
 const SERVER_URL    = process.env.RAILWAY_URL;
 const SECRET        = process.env.BRIDGE_TWC_SECRET;
 const TWC_USERNAME  = process.env.TWC_USERNAME;
@@ -804,33 +804,85 @@ async function runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, payme
     console.log('[Payment] After submit — URL:', page.url());
     await dumpPage(page, 'after-submit');
 
-    // ── Determine real success ──────────────────────────────────────────────
-    const bodyText = await page.evaluate(() => document.body.innerText);
-    const stillHasCheckbox = !!(await page.$('input[type="checkbox"]'));
-    const confNum = (bodyText.match(/Confirmation\s*(?:Number|No\.?|#)?\s*[:#]?\s*([0-9]{3,})/i) || [])[1] || null;
-    diag.afterSubmitUrl = page.url();
-    diag.stillHasCheckbox = stillHasCheckbox;
-    diag.postText = bodyText.replace(/\s+/g, ' ').trim().slice(0, 700);
-    console.log('[Payment] stillHasCheckbox:', stillHasCheckbox, '| confNum:', confNum);
-    console.log('[Payment] Post-submit page text:\n' + bodyText.substring(0, 800));
+    // ── Walk to the real confirmation page ──────────────────────────────────
+    // After Submit, TWC may interpose an "Are you sure you want to continue?"
+    // warning (payment amount greater than amount due, or same info as an
+    // existing scheduled payment). We click the affirmative (Yes/Continue) to
+    // proceed. Success is only declared on the actual confirmation page — a
+    // confirmation number or explicit "has been scheduled" wording.
+    const isSuccessText = (t) =>
+      /Confirmation\s*(?:Number|No\.?|#)\s*[:#]?\s*[0-9]{3,}/i.test(t)
+      || /\b(?:payment|it)\s+(?:has been|was)\s+(?:scheduled|accepted|submitted)\b/i.test(t)
+      || /\bsuccessfully\s+(?:scheduled|submitted|accepted)\b/i.test(t);
+    const isWarningText = (t) =>
+      /are you sure/i.test(t)
+      || /do you want to continue/i.test(t)
+      || /greater than the amount due/i.test(t)
+      || /same information as an existing/i.test(t)
+      || /existing scheduled payment/i.test(t);
 
-    // If the certification checkbox is STILL on the page, we never left the
-    // review screen → the box was not accepted → genuine failure. Pack the full
-    // diagnostic into the error so it's readable from the DB.
-    if (stillHasCheckbox && !confNum) {
-      await dumpPage(page, 'checkbox-rejected');
-      throw new Error('CHECKBOX_NOT_ACCEPTED — still on review page after submit (never reached confirmation). DIAG=' + JSON.stringify(diag).slice(0, 1600));
+    let bodyText = '';
+    let reachedConfirmation = false;
+    for (let step = 0; step < 4; step++) {
+      await dumpPage(page, step === 0 ? 'after-submit' : `post-submit-${step}`);
+      bodyText = await page.evaluate(() => document.body.innerText);
+      diag.step = step;
+      diag.url  = page.url();
+
+      if (isSuccessText(bodyText)) { reachedConfirmation = true; break; }
+
+      if (isWarningText(bodyText)) {
+        // Click the affirmative — Yes / Continue / OK / Confirm / Proceed / Submit.
+        // Explicitly never No / Cancel / Back. Per operator instruction we always
+        // continue past these warnings. NOTE: this bypasses TWC's duplicate-payment
+        // and over-amount warnings, so upstream logic must avoid sending unintended
+        // or duplicate payments.
+        console.log('[Payment] "Are you sure?" warning page — clicking affirmative to continue…');
+        const clicked = await page.evaluate(() => {
+          const cands = [...document.querySelectorAll('input[type="submit"], input[type="button"], button, a[href]')];
+          const label = el => (el.value || el.innerText || '').trim();
+          const isNeg = el => /\b(no|cancel|back|return)\b/i.test(label(el));
+          let yes = cands.find(el => /^(yes|continue|ok|confirm|submit|proceed)$/i.test(label(el)) && !isNeg(el));
+          if (!yes) yes = cands.find(el => /\b(yes|continue|proceed|confirm)\b/i.test(label(el)) && !isNeg(el));
+          if (yes) { yes.click(); return label(yes); }
+          return null;
+        });
+        console.log('[Payment] affirmative button clicked:', clicked);
+        if (!clicked) {
+          diag.warningText = bodyText.replace(/\s+/g, ' ').trim().slice(0, 600);
+          await dumpPage(page, 'warning-no-yes-button');
+          throw new Error('WARNING_NO_YES_BUTTON — could not find a Yes/Continue on the "are you sure" page. DIAG=' + JSON.stringify(diag).slice(0, 1400));
+        }
+        await page.waitForNavigation({ waitUntil: 'networkidle2' }).catch(() => {});
+        continue;
+      }
+
+      // Neither success nor a warning. If the certification checkbox is still
+      // present, the box was never accepted (real failure); otherwise it's an
+      // unexpected page. Either way capture full diagnostics into the error.
+      const hasCheckbox = !!(await page.$('input[type="checkbox"]'));
+      diag.stillHasCheckbox = hasCheckbox;
+      diag.postText = bodyText.replace(/\s+/g, ' ').trim().slice(0, 700);
+      await dumpPage(page, 'post-submit-unresolved');
+      throw new Error((hasCheckbox ? 'CHECKBOX_NOT_ACCEPTED' : 'NO_CONFIRMATION')
+        + ' — did not reach a confirmation page after submit. DIAG=' + JSON.stringify(diag).slice(0, 1400));
     }
 
-    const confirmation = confNum;
+    if (!reachedConfirmation) {
+      diag.postText = bodyText.replace(/\s+/g, ' ').trim().slice(0, 700);
+      throw new Error('NO_CONFIRMATION_AFTER_STEPS — too many warning/continue pages without reaching confirmation. DIAG=' + JSON.stringify(diag).slice(0, 1400));
+    }
+
+    // Confirmation page reached.
+    const confirmation = (bodyText.match(/Confirmation\s*(?:Number|No\.?|#)?\s*[:#]?\s*([0-9]{3,})/i) || [])[1] || null;
     const bankMatch = bodyText.match(/Bank\s+Name[:\s]+([A-Z][^\n]+)/i);
     const bankConfirmed = bankMatch ? bankMatch[1].trim() : null;
     const dateLineMatch = bodyText.match(/Payment\s+Date[:\s]+([^\n]+)/i);
     const amtLineMatch  = bodyText.match(/Scheduled\s+Payment\s+Amount[:\s]+([^\n]+)/i);
-    console.log(`[Payment] Confirmation: ${confirmation} | Bank: ${bankConfirmed}`);
+    console.log(`[Payment] CONFIRMED — number: ${confirmation} | bank: ${bankConfirmed}`);
 
     saveSession(await page.cookies());
-    await new Promise(r => setTimeout(r, 4_000));
+    await new Promise(r => setTimeout(r, 3_000));
 
     return {
       confirmationNumber: confirmation,
