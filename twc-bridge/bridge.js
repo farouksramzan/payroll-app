@@ -9,7 +9,7 @@ const puppeteer  = require('puppeteer');
 
 // ── Config ────────────────────────────────────────────────────────────────────
 // Bump this on every change so the console proves which version is running.
-const BRIDGE_VERSION = '2026-07-06-l · order-agnostic-review-loop';
+const BRIDGE_VERSION = '2026-07-06-m · linger-on-confirmation + flow-log';
 const SERVER_URL    = process.env.RAILWAY_URL;
 const SECRET        = process.env.BRIDGE_TWC_SECRET;
 const TWC_USERNAME  = process.env.TWC_USERNAME;
@@ -836,10 +836,20 @@ async function runTwcPayment({ jobId, paymentId, twcAccountNumber, amount, payme
     const bankConfirmed = bankMatch ? bankMatch[1].trim() : null;
     const dateLineMatch = bodyText.match(/Payment\s+Date[:\s]+([^\n]+)/i);
     const amtLineMatch  = bodyText.match(/Scheduled\s+Payment\s+Amount[:\s]+([^\n]+)/i);
-    console.log(`[Payment] CONFIRMED — number: ${confirmation} | bank: ${bankConfirmed}`);
+    const flowSummary = diag.steps.map(s => {
+      if (s.checked !== undefined) return 'checked box';
+      if (s.warningClicked) return `clicked "${s.warningClicked}" on warning`;
+      if (s.forwardClicked) return `clicked "${s.forwardClicked}"`;
+      return 'step';
+    }).join(' → ');
+    console.log(`[Payment] ✅ PAYMENT SCHEDULED — Confirmation #${confirmation} | ${bankConfirmed}`);
+    console.log(`[Payment] Flow: ${flowSummary || '(single step)'} → confirmation`);
 
     saveSession(await page.cookies());
-    await new Promise(r => setTimeout(r, 3_000));
+    // Linger on the confirmation page so the operator can see "payment has been
+    // scheduled" and the confirmation number before the session returns home.
+    console.log('[Payment] Leaving the confirmation page on screen for 15s…');
+    await new Promise(r => setTimeout(r, 15_000));
 
     return {
       confirmationNumber: confirmation,
