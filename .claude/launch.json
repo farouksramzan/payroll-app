@@ -19,6 +19,13 @@
       "runtimeArgs": ["-c", "python3 -m http.server \"${PORT:-4173}\" -d dc-reply-copilot"],
       "port": 4173,
       "autoPort": true
+    },
+    {
+      "name": "dc-outreach-radar",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "python3 -m http.server \"${PORT:-4174}\" -d dc-outreach-radar"],
+      "port": 4174,
+      "autoPort": true
     }
   ]
 }

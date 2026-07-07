@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DC Outreach Radar</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel-2: #1c2129;
+    --border: #262c34;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #2ea043;
+    --accent-2: #58a6ff;
+    --warn: #d29922;
+    --danger: #f85149;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    height: 100vh; overflow: hidden;
+  }
+
+  header { display: flex; align-items: center; gap: 14px; padding: 12px 18px; }
+  header h1 { font-size: 15px; font-weight: 700; }
+  header h1 span { color: var(--accent-2); }
+  #countChip { font-size: 12px; color: var(--muted); }
+  #countChip b { color: #ff7b72; }
+  header .spacer { flex: 1; }
+  .hbtn { font-size: 12px; color: var(--muted); cursor: pointer; padding: 4px 8px; border-radius: 6px; }
+  .hbtn:hover { color: var(--text); background: var(--panel); }
+
+  main { display: grid; grid-template-columns: 250px 1fr; height: calc(100vh - 46px); }
+
+  /* ---------- Candidate list ---------- */
+  #list { overflow-y: auto; padding: 0 6px 20px; }
+  .cand { padding: 9px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 2px; }
+  .cand:hover { background: var(--panel); }
+  .cand.active { background: var(--panel-2); }
+  .cand.done { opacity: .45; }
+  .cand .row1 { display: flex; align-items: center; gap: 8px; }
+  .cand .name { font-weight: 600; font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .cand .score { font-size: 11px; color: var(--accent-2); flex-shrink: 0; }
+  .cand .score.dim { color: var(--muted); }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #ff7b72; flex-shrink: 0; }
+  .wait-tag { font-size: 10px; color: var(--warn); flex-shrink: 0; }
+  .state-tag { font-size: 10px; color: var(--muted); flex-shrink: 0; text-transform: uppercase; }
+  .cand .handle { color: var(--muted); font-size: 12px; margin-top: 1px; }
+  .plat { font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 4px; flex-shrink: 0; }
+  .plat.IG { background: #2a1a30; color: #d05ce3; }
+  .plat.TT { background: #10262b; color: #4dd0e1; }
+
+  /* ---------- Detail ---------- */
+  #detail { display: flex; flex-direction: column; overflow: hidden; border-left: 1px solid var(--border); }
+  #detailHead {
+    padding: 10px 20px; font-size: 11px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border);
+  }
+  #profile { flex: 1; overflow-y: auto; padding: 18px 20px; }
+  .empty-hint { color: var(--muted); text-align: center; padding: 80px 20px; }
+
+  .biocard { background: var(--panel); border-radius: 12px; padding: 12px 14px; max-width: 680px; }
+  .biocard .stats { font-size: 12px; color: var(--muted); margin-bottom: 6px; }
+  .biocard .bio { white-space: pre-wrap; }
+  .linkchips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .linkchip { font-size: 11px; color: var(--accent-2); background: var(--panel-2); border-radius: 999px; padding: 2px 9px; }
+
+  .posts { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .post { max-width: 640px; background: var(--panel-2); border-radius: 14px; border-bottom-left-radius: 4px; padding: 9px 13px; white-space: pre-wrap; }
+  .post .meta { font-size: 10px; color: var(--muted); margin-bottom: 3px; text-transform: uppercase; letter-spacing: .05em; display: flex; justify-content: space-between; gap: 14px; }
+
+  /* ---------- Assist / draft ---------- */
+  #workbench { border-top: 1px solid var(--border); padding: 12px 20px 14px; }
+  #assist { font-size: 12.5px; color: var(--muted); margin-bottom: 8px; min-height: 18px; }
+  .sig {
+    display: inline-block; font-weight: 700; font-size: 10.5px; border-radius: 5px;
+    padding: 1px 7px; margin-right: 6px; vertical-align: 1px; text-transform: uppercase;
+  }
+  .sig.good { background: #16321f; color: #3fb950; }
+  .sig.info { background: #1a2a3d; color: #58a6ff; }
+  .sig.bad { background: #3a1518; color: #f85149; }
+  #assist .thinking::after { content: ""; animation: dots 1.2s steps(4) infinite; }
+  @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+  #assist .err { color: var(--danger); }
+  .touchline { font-size: 11.5px; color: var(--muted); margin-bottom: 6px; }
+
+  #draftText {
+    width: 100%; min-height: 60px; resize: vertical; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font: inherit;
+  }
+  #draftText:focus { outline: none; border-color: var(--muted); }
+  .bench-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  #lint { font-size: 11px; color: var(--muted); }
+  #lint.over { color: var(--danger); }
+  .bench-row .spacer { flex: 1; }
+  button {
+    background: none; color: var(--muted); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
+  }
+  button:hover { color: var(--text); border-color: var(--muted); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #04170a; }
+  button.primary:hover { filter: brightness(1.1); }
+  button.blue { border-color: var(--accent-2); color: var(--accent-2); }
+  button.danger-ghost:hover { border-color: var(--danger); color: var(--danger); }
+
+  /* ---------- Modals ---------- */
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 50; }
+  .modal-backdrop.open { display: flex; }
+  .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; width: min(680px, 92vw); max-height: 86vh; display: flex; flex-direction: column; }
+  .modal h2 { font-size: 15px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .modal .modal-body { padding: 14px 16px; overflow-y: auto; }
+  .modal label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  .modal input[type=password], .modal input[type=text], .modal input[type=number] { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; }
+  .modal .numrow { display: flex; gap: 10px; }
+  .modal .numrow > div { flex: 1; }
+  .modal textarea { width: 100%; min-height: 120px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 10px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
+  .modal textarea.tall { min-height: 300px; }
+  .modal .modal-foot { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; align-items: center; }
+  .modal .modal-foot .foot-left { margin-right: auto; }
+  .note { font-size: 12px; color: var(--warn); margin-top: 8px; }
+  .subnote { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .linklike { color: var(--accent-2); cursor: pointer; font-size: 12.5px; }
+  button.danger { border-color: var(--danger); color: var(--danger); }
+  #digestPre {
+    font: 12.5px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text);
+    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px; white-space: pre-wrap; word-break: break-word;
+  }
+
+  /* ---------- Toast ---------- */
+  #toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(calc(100% + 40px));
+    background: var(--panel-2); border: 1px solid var(--accent); border-radius: 10px;
+    padding: 12px 16px; max-width: 520px; width: 92vw; z-index: 100;
+    transition: transform .25s ease; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+  }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+  #toast .toast-title { font-weight: 700; color: var(--accent); margin-bottom: 4px; font-size: 13px; }
+  #toast pre { font: 11px/1.5 ui-monospace, Menlo, monospace; color: var(--muted); white-space: pre-wrap; word-break: break-word; max-height: 140px; overflow-y: auto; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>DC <span>Outreach Radar</span></h1>
+  <span id="countChip"></span>
+  <div class="spacer"></div>
+  <div class="hbtn" id="scanChip" title="Simulate the daily radar scan finding new IG/TT candidates">&#9654; scan</div>
+  <div class="hbtn" id="importChip" title="Import candidates as JSON (from Apify or any scraper export)">&#65291; import</div>
+  <div class="hbtn" id="digestChip" title="Hermes-ready morning digest">&#9728; digest</div>
+  <div class="hbtn" id="settingsChip" title="API key, caps, suppression list, system prompt">&#9881;</div>
+</header>
+
+<main>
+  <section id="list"></section>
+
+  <section id="detail">
+    <div id="detailHead">Candidate</div>
+    <div id="profile"><div class="empty-hint">Pick a candidate</div></div>
+    <div id="workbench" style="display:none;">
+      <div id="assist"></div>
+      <div class="touchline" id="touchLine"></div>
+      <textarea id="draftText" placeholder="First-touch opener drafts here&hellip;"></textarea>
+      <div class="bench-row">
+        <span id="lint"></span>
+        <span class="spacer"></span>
+        <button id="skipBtn" class="danger-ghost" title="Not a fit — drop from the radar">skip</button>
+        <button id="repliedBtn" title="They replied — hand off to the Reply Copilot">replied</button>
+        <button id="regenBtn" title="Redraft from a different angle">&#8635;</button>
+        <button id="copyBtn" class="blue" title="Copy the message and open their profile">copy &amp; open &nearr;</button>
+        <button class="primary" id="sentBtn" title="Record the touch as sent">mark sent &check;</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- ================= MODALS ================= -->
+<div class="modal-backdrop" id="settingsModal">
+  <div class="modal">
+    <h2>Settings</h2>
+    <div class="modal-body">
+      <label>Anthropic API key (stored in this browser's localStorage only)</label>
+      <input type="password" id="keyInput" placeholder="sk-ant-...">
+      <div class="note">&#9888; Browser-only demo: use a low-limit key, and don't ship this pattern to real users without a backend proxy.</div>
+
+      <div class="numrow" style="margin-top: 14px;">
+        <div><label>Daily send cap</label><input type="number" id="capInput" min="1"></div>
+        <div><label>Days between touches</label><input type="number" id="gapInput" min="1"></div>
+        <div><label>Max touches</label><input type="number" id="touchesInput" min="1"></div>
+      </div>
+
+      <label style="margin-top: 14px;">Suppression list — never pitch these (own cappers, said no, blocked). One handle per line.</label>
+      <textarea id="suppressInput" spellcheck="false"></textarea>
+
+      <div style="margin-top:16px;"><span class="linklike" id="openPromptLink">Edit system prompt &amp; style contract &rarr;</span></div>
+    </div>
+    <div class="modal-foot">
+      <button class="danger foot-left" id="resetDemoBtn" title="Clear radar state and reload the seeded demo">Reset demo data</button>
+      <button id="settingsCancel">Cancel</button>
+      <button class="primary" id="settingsSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="promptModal">
+  <div class="modal">
+    <h2>System prompt (DubClub context + signal extraction + style contract)</h2>
+    <div class="modal-body">
+      <textarea id="promptInput" class="tall" spellcheck="false"></textarea>
+    </div>
+    <div class="modal-foot">
+      <button id="promptReset">Reset to default</button>
+      <button id="promptCancel">Cancel</button>
+      <button class="primary" id="promptSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="importModal">
+  <div class="modal">
+    <h2>Import candidates (JSON)</h2>
+    <div class="modal-body">
+      <textarea id="importInput" class="tall" spellcheck="false" placeholder='[
+  {
+    "name": "display name",
+    "handle": "@handle",
+    "platform": "IG",
+    "followers": 12000,
+    "engagementPct": 8.5,
+    "bio": "bio text",
+    "links": ["https://whop.com/..."],
+    "posts": [{ "caption": "...", "likes": 900, "comments": 74, "daysAgo": 2 }]
+  }
+]'></textarea>
+      <div class="subnote">Paste an array in this shape — an Apify/scraper export mapped to these fields. Handles on the suppression list are skipped automatically; duplicates are ignored.</div>
+    </div>
+    <div class="modal-foot">
+      <button id="importCancel">Cancel</button>
+      <button class="primary" id="importGo">Import</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="digestModal">
+  <div class="modal">
+    <h2>&#9728; Morning digest (Hermes-ready)</h2>
+    <div class="modal-body">
+      <div id="digestPre"></div>
+      <div class="subnote" style="margin-top:8px;">Paste into Slack, or wire this to Hermes so it posts each morning next to the X radar's summary.</div>
+    </div>
+    <div class="modal-foot">
+      <button id="digestClose">Close</button>
+      <button class="primary" id="digestCopy">Copy to clipboard</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"><div class="toast-title" id="toastTitle"></div><pre id="toastBody"></pre></div>
+
+<script type="module">
+import Anthropic from "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk/+esm";
+
+/* =========================================================
+   CONSTANTS
+   ========================================================= */
+const LS_KEY      = "dcrc_api_key";          // shared with the Reply Copilot — one key, both tools
+const LS_STATE    = "dcor_state";
+const LS_SETTINGS = "dcor_settings";
+const LS_PROMPT   = "dcor_prompt";
+const SEED_VERSION = 1;
+
+const HOUR = 3600e3, DAY = 24 * HOUR;
+const DEFAULT_SETTINGS = { dailyCap: 30, gapDays: 3, maxTouches: 3, suppress: "@BigTicketRon\n@saidnosam" };
+
+const BANNED_PHRASES = ["circle back", "touch base", "value proposition", "leverage", "solution", "—"];
+
+const CHANNEL_LABELS = {
+  ig_dm: "IG DM",
+  telegram: "Telegram",
+  email: "email",
+  tiktok_comment: "TikTok comment"
+};
+
+/* =========================================================
+   SEED DATA — demo candidates the radar "found". Swap in real
+   scraper output via ＋ import (same shape).
+   ========================================================= */
+function seedCandidates() {
+  const now = Date.now();
+  return [
+    {
+      id: "parlayprincess", name: "Lex “ParlayPrincess”", handle: "@parlayprincess.bets", platform: "IG",
+      followers: 12400, engagementPct: 9.2,
+      bio: "picks that actually cash 💅 daily slips on the story · DM “PICKS” for tonight’s card · whop in bio",
+      links: ["https://whop.com/parlayprincess"],
+      state: "new", touches: [],
+      posts: [
+        { caption: "went 4/5 last night. receipts on the story like always. DM PICKS if you want tonight’s card early", likes: 1130, comments: 187, at: now - 1 * DAY },
+        { caption: "y’all keep asking how i track my record — everything’s screenshotted, no deleted posts over here lol", likes: 940, comments: 152, at: now - 3 * DAY },
+        { caption: "NBA card day. 3 legs, one lean, story has the slip", likes: 1260, comments: 203, at: now - 4 * DAY }
+      ]
+    },
+    {
+      id: "juicemanlocks", name: "Juice “JuicemanLocks”", handle: "@juicemanlocks", platform: "IG",
+      followers: 8900, engagementPct: 11.0,
+      bio: "MLB + NHL degenerate 🔒 private group $40/mo · telegram in bio · venmo/zelle",
+      links: ["https://t.me/juicemanlocks", "https://linktr.ee/juicemanlocks"],
+      state: "new", touches: [],
+      posts: [
+        { caption: "chasing venmo payments from 60 dudes every 1st of the month is my villain origin story", likes: 610, comments: 122, at: now - 2 * DAY },
+        { caption: "group went 11-4 this week. slip dump in the tele", likes: 720, comments: 141, at: now - 5 * DAY }
+      ]
+    },
+    {
+      id: "propqueen", name: "Bri “PropQueen”", handle: "@propqueen.tt", platform: "TT",
+      followers: 19200, engagementPct: 13.4,
+      bio: "props only. i don’t do parlays i BUILD them 😤 link in bio for the group",
+      links: ["https://linktr.ee/propqueen", "https://instagram.com/propqueen.bets", "https://t.me/propqueengroup"],
+      state: "new", touches: [],
+      posts: [
+        { caption: "POV: you tailed my SGA over and it cashed by the 3rd quarter. group link in bio", likes: 4200, comments: 380, at: now - 1 * DAY },
+        { caption: "breaking down why the books WANT you on the over tonight (2 min watch, save this)", likes: 6100, comments: 512, at: now - 2 * DAY }
+      ]
+    },
+    {
+      id: "fadegodfrank", name: "Frank “FadeGod”", handle: "@fadegodfrank", platform: "TT",
+      followers: 6200, engagementPct: 8.1,
+      bio: "fading the public since 2019 📉 pikkit tracked, receipts always",
+      links: ["https://linktr.ee/fadegodfrank"],
+      state: "new", touches: [],
+      posts: [
+        { caption: "pikkit screenshot in frame — 62% on unders this month. the public keeps donating", likes: 890, comments: 96, at: now - 1 * DAY },
+        { caption: "if your capper won’t show a tracked record, run. mine’s pinned", likes: 1020, comments: 133, at: now - 6 * DAY }
+      ]
+    },
+    {
+      id: "slipkingsteve", name: "Steve “SlipKing”", handle: "@slipkingsteve", platform: "TT",
+      followers: 88000, engagementPct: 2.4,
+      bio: "biggest slips on tiktok 🎰 mgmt: slipkingbiz@gmail.com",
+      links: ["https://linktr.ee/slipkingsteve"],
+      state: "new", touches: [],
+      posts: [
+        { caption: "$50 into $12K parlay hits — full reaction", likes: 21000, comments: 940, at: now - 2 * DAY },
+        { caption: "rating my followers’ wildest slips pt. 47", likes: 18400, comments: 810, at: now - 4 * DAY }
+      ]
+    },
+    {
+      id: "chalkeaters", name: "Chalk Eaters Daily", handle: "@chalkeaters_daily", platform: "IG",
+      followers: 45100, engagementPct: 1.1,
+      bio: "your daily dose of betting memes and slips 😂 submit yours · not financial advice",
+      links: ["https://linktr.ee/chalkeatersdaily"],
+      state: "new", touches: [],
+      posts: [
+        { caption: "bro really parlayed 14 legs on a tuesday 💀 (submitted by @user)", likes: 500, comments: 41, at: now - 1 * DAY },
+        { caption: "tag someone who bets the over on everything", likes: 460, comments: 38, at: now - 3 * DAY }
+      ]
+    },
+    {
+      id: "moneylinemel", name: "Mel “MoneylineMel”", handle: "@moneylineMel", platform: "IG",
+      followers: 27300, engagementPct: 6.2,
+      bio: "WNBA + NFL sharp 📊 winible in the linktree · verified record or it didn’t happen",
+      links: ["https://linktr.ee/moneylinemel", "https://winible.com/moneylinemel"],
+      state: "contacted", touches: [{ n: 1, at: now - 4 * DAY, text: "mel your liberty under call was surgical. i’m with dubclub, think your verified record would print with our fan network. worth 2 min?" }],
+      nextTouchAt: now - 1 * DAY,
+      posts: [
+        { caption: "4-1 on WNBA this week. winible has the full tracked card", likes: 1620, comments: 148, at: now - 2 * DAY },
+        { caption: "the liberty under was free money and i explained why BEFORE tip. record in bio", likes: 1890, comments: 176, at: now - 5 * DAY }
+      ]
+    },
+    {
+      id: "hoopshelen", name: "Helen “HoopsHelenParlays”", handle: "@hoopshelenparlays", platform: "IG",
+      followers: 15800, engagementPct: 7.4,
+      bio: "hoops only 🏀 free pick daily, premium card in the group · cashapp for now lol",
+      links: ["https://linktr.ee/hoopshelen"],
+      state: "contacted", touches: [{ n: 1, at: now - 1 * DAY, text: "helen the free pick streak is unreal, 7 straight? your premium group must be eating. i’m with dubclub, quick q when you have a sec" }],
+      nextTouchAt: now + 2 * DAY,
+      posts: [
+        { caption: "free pick hit AGAIN. 7 straight. premium card is in the group, cashapp me for access", likes: 1140, comments: 167, at: now - 1 * DAY }
+      ]
+    },
+    {
+      id: "saidnosam", name: "Sam “SaidNoSam”", handle: "@saidnosam", platform: "IG",
+      followers: 22000, engagementPct: 5.8,
+      bio: "picks + parlays · whop in bio",
+      links: ["https://whop.com/saidnosam"],
+      state: "suppressed", touches: [],
+      posts: [
+        { caption: "card’s live", likes: 800, comments: 60, at: now - 2 * DAY }
+      ]
+    }
+  ];
+}
+
+/* Extra candidates the ▶ scan button can "discover". */
+function scanBank() {
+  const now = Date.now();
+  return [
+    {
+      id: "underdogdee", name: "Dee “UnderdogDee”", handle: "@underdogdee.bets", platform: "IG",
+      followers: 9700, engagementPct: 10.3,
+      bio: "dogs and unders only 🐶 slips on the story every night · group opens monthly",
+      links: ["https://t.me/underdogdee"],
+      state: "new", touches: [],
+      posts: [
+        { caption: "+340 dog cashed and the story slip proves i had it at open. group reopens friday", likes: 780, comments: 119, at: now - 10 * HOUR }
+      ]
+    },
+    {
+      id: "niksplits", name: "Nik “NikSplits”", handle: "@niksplits", platform: "TT",
+      followers: 13600, engagementPct: 9.8,
+      bio: "i read line movement so you don’t have to · gambly tracked · link in bio",
+      links: ["https://linktr.ee/niksplits", "https://instagram.com/niksplits"],
+      state: "new", touches: [],
+      posts: [
+        { caption: "gambly has me at 58% over 200 bets. that’s the whole pitch. link in bio", likes: 2100, comments: 240, at: now - 8 * HOUR }
+      ]
+    },
+    {
+      id: "lockstressa", name: "Tressa “LockstressA”", handle: "@lockstressa", platform: "IG",
+      followers: 7200, engagementPct: 12.1,
+      bio: "ladies bet too 💅 daily card in the broadcast channel · zelle only rn",
+      links: [],
+      state: "new", touches: [],
+      posts: [
+        { caption: "broadcast channel hit 5-0 today. zelle me for next week’s access while it’s still cheap", likes: 640, comments: 131, at: now - 12 * HOUR }
+      ]
+    }
+  ];
+}
+
+/* =========================================================
+   SYSTEM PROMPT
+   ========================================================= */
+const DEFAULT_SYSTEM_PROMPT = `You are the outreach copilot for a DubClub account executive (AE) hunting sports-betting cappers (pick sellers) on Instagram and TikTok.
+
+ABOUT DUBCLUB
+- DubClub is a creator platform built for cappers: it hosts and sells their paid picks.
+- Network of 1.5M+ sports fans actively looking for picks (the "fan network").
+- Verified track records and verified subscriber reviews (huge trust signal vs. self-reported records).
+- Winner's feed surfaces hot cappers' plays to the whole network, driving organic subscriber growth.
+- DubClub handles all payments, billing, and pick delivery, so cappers stop chasing venmo/cashapp payments or DMing picks manually.
+- Typical result: cappers grow subscribers meaningfully after migrating, often 40%+ in the first months.
+
+WHO WE HUNT (behavior over keywords)
+- People who actually SELL picks: slips posted with receipts, tracker screenshots (Pikkit, Playbook, Gambly), "DM for picks" captions, paid groups (whop/winible/telegram/cashapp).
+- Small accounts with cult followings: engagement high relative to follower count. Big mainstream accounts are handled separately via lead lists — flag them, don't pitch them.
+- NOT: meme/aggregator accounts reposting other people's slips, giveaway farms, or accounts already on DubClub.
+
+YOUR JOB
+Given a candidate's profile (bio, links, stats, recent captions) and outreach history, produce:
+1. behavioral signals: do they sell picks, do they post slip/tracker proof, how do they monetize today
+2. a disqualifier if one applies (aggregator, giveaway farm, already on DubClub, big account better served by lead lists) — empty string if none
+3. the next outreach message (first touch, or a follow-up bump if touches were already sent)
+4. the best send channel from the routes visible in their links
+
+STYLE CONTRACT FOR THE MESSAGE (hard rules)
+- Under 25 words. Count them.
+- lowercase-casual, like texting a friend. no formal capitalization.
+- Must reference one SPECIFIC detail from THEIR recent posts (a pick, a number, a pain they mentioned).
+- First touch: open with genuine credibility about their content, then one line on why you're reaching out. No links.
+- No corporate phrasing ("circle back", "touch base", "value proposition", "solution", "leverage").
+- No em-dashes. No emojis unless their own captions lean on them.
+- Sound like a peer who knows betting, not a salesperson.
+- Never fabricate stats. Only use numbers visible in their profile or captions.
+
+FOLLOW-UP RULES
+- Each bump takes a noticeably different angle than the previous touch.
+- Never guilt-trip ("just following up...", "did you see my last message"). Bring something new.`;
+
+/* =========================================================
+   STATE
+   ========================================================= */
+let candidates = [];
+let selected = null;
+let sentLog = { date: "", count: 0 };
+
+const $ = id => document.getElementById(id);
+const getKey    = () => localStorage.getItem(LS_KEY) || "";
+const getPrompt = () => localStorage.getItem(LS_PROMPT) || DEFAULT_SYSTEM_PROMPT;
+
+function getSettings() {
+  try { return { ...DEFAULT_SETTINGS, ...(JSON.parse(localStorage.getItem(LS_SETTINGS)) || {}) }; }
+  catch { return { ...DEFAULT_SETTINGS }; }
+}
+function suppressedHandles() {
+  return getSettings().suppress.split("\n")
+    .map(s => s.trim().toLowerCase())
+    .filter(Boolean)
+    .map(s => s.startsWith("@") ? s : "@" + s);   // tolerate entries typed without the @
+}
+
+function save() {
+  try {
+    localStorage.setItem(LS_STATE, JSON.stringify({
+      seedVersion: SEED_VERSION,
+      candidates: candidates.map(c => ({ ...c, analyzing: false, aiError: null, rerunAfter: false })),
+      sentLog
+    }));
+  } catch (e) { console.warn("state save failed", e); }
+}
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(LS_STATE);
+    if (raw) {
+      const st = JSON.parse(raw);
+      if (st.seedVersion === SEED_VERSION && Array.isArray(st.candidates) && st.candidates.length) {
+        candidates = st.candidates;
+        candidates.forEach(c => { c.analyzing = false; });
+        sentLog = st.sentLog || { date: "", count: 0 };
+        return;
+      }
+    }
+  } catch (e) { console.warn("state load failed", e); }
+  candidates = seedCandidates();
+  sentLog = { date: "", count: 0 };
+}
+
+function sentToday() {
+  const today = new Date().toDateString();
+  if (sentLog.date !== today) { sentLog = { date: today, count: 0 }; }
+  return sentLog.count;
+}
+
+/* =========================================================
+   DERIVED SIGNALS
+   ========================================================= */
+const bumpRev = c => { c.touchRev = (c.touchRev || 0) + 1; };
+
+function dueForTouch(c) {
+  const s = getSettings();
+  return c.state === "contacted" && c.touches.length < s.maxTouches &&
+         c.nextTouchAt != null && Date.now() >= c.nextTouchAt;
+}
+const actionable = c => c.state === "new" || dueForTouch(c);
+const isDone = c => ["replied", "dead", "suppressed"].includes(c.state);
+
+function score(c) {
+  // Transparent composite: engagement base + behavioral signals from the model.
+  let s = Math.min(c.engagementPct, 15) * 4;                       // 0–60 from engagement
+  if (c.followers >= 3000 && c.followers <= 60000) s += 10;        // the cult-size sweet spot
+  const ai = c.ai;
+  if (ai) {
+    if (ai.sells_picks) s += 15;
+    if (ai.slip_proof) s += 10;
+    if (ai.monetization && !/none/i.test(ai.monetization)) s += 5;
+    if (ai.disqualifier) s *= 0.2;
+  }
+  return Math.round(Math.min(s, 100));
+}
+
+function ago(ts) {
+  const d = Date.now() - ts;
+  if (d < HOUR) return `${Math.max(1, Math.round(d / 60000))}m ago`;
+  if (d < DAY) return `${Math.round(d / HOUR)}h ago`;
+  return `${Math.round(d / DAY)}d ago`;
+}
+function inDays(ts) {
+  const d = Math.max(0, Math.ceil((ts - Date.now()) / DAY));
+  return d <= 0 ? "now" : `in ${d}d`;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+}
+
+function profileUrl(c) {
+  const bare = c.handle.replace(/^@/, "");
+  return c.platform === "IG" ? `https://instagram.com/${bare}` : `https://www.tiktok.com/@${bare}`;
+}
+
+/* =========================================================
+   RENDER
+   ========================================================= */
+function orderedCandidates() {
+  const act = candidates.filter(actionable).sort((a, b) => score(b) - score(a));
+  const waiting = candidates.filter(c => c.state === "contacted" && !dueForTouch(c))
+    .sort((a, b) => (a.nextTouchAt || Infinity) - (b.nextTouchAt || Infinity));
+  const done = candidates.filter(isDone);
+  return [...act, ...waiting, ...done];
+}
+
+function renderCount() {
+  const n = candidates.filter(actionable).length;
+  const s = getSettings();
+  $("countChip").innerHTML = (n ? `<b>${n}</b> to work` : "all caught up") + ` &middot; sent ${sentToday()}/${s.dailyCap} today`;
+}
+
+function renderList() {
+  const list = orderedCandidates();
+  $("list").innerHTML = list.map(c => {
+    const dq = c.ai?.disqualifier;
+    let marker = "";
+    if (actionable(c) && !dq) marker = `<span class="dot" title="${c.state === "new" ? "new candidate" : "follow-up due"}"></span>`;
+    else if (c.state === "contacted" && !dueForTouch(c)) {
+      const maxed = c.touches.length >= getSettings().maxTouches;
+      marker = `<span class="wait-tag">${maxed || !c.nextTouchAt ? "final sent" : inDays(c.nextTouchAt)}</span>`;
+    }
+    else if (isDone(c)) marker = `<span class="state-tag">${c.state}</span>`;
+    else if (dq) marker = `<span class="state-tag" title="${escapeHtml(dq)}">flagged</span>`;
+    return `
+    <div class="cand ${selected?.id === c.id ? "active" : ""} ${isDone(c) ? "done" : ""}" data-id="${c.id}">
+      <div class="row1">
+        <span class="plat ${c.platform}">${c.platform}</span>
+        <span class="name">${escapeHtml(c.name)}</span>
+        <span class="score ${c.ai ? "" : "dim"}" title="${c.ai ? "behavioral score" : "provisional — analyze to confirm"}">${score(c)}</span>
+        ${marker}
+      </div>
+      <div class="handle">${escapeHtml(c.handle)}</div>
+    </div>`;
+  }).join("");
+  $("list").querySelectorAll(".cand").forEach(el =>
+    el.addEventListener("click", () => selectCandidate(el.dataset.id)));
+}
+
+function renderProfile() {
+  if (!selected) return;
+  const c = selected;
+  $("detailHead").textContent = `${c.name} · ${c.handle} · ${c.platform === "IG" ? "Instagram" : "TikTok"}`;
+  $("profile").innerHTML = `
+    <div class="biocard">
+      <div class="stats">${(c.followers / 1000).toFixed(1)}K followers &middot; ${c.engagementPct}% engagement</div>
+      <div class="bio">${escapeHtml(c.bio)}</div>
+      ${c.links.length ? `<div class="linkchips">${c.links.map(l => `<span class="linkchip">${escapeHtml(l.replace(/^https?:\/\//, ""))}</span>`).join("")}</div>` : ""}
+    </div>
+    <div class="posts">
+      ${c.posts.map(p => `
+        <div class="post">
+          <div class="meta"><span>${escapeHtml(c.handle)}</span><span>${p.likes.toLocaleString()} likes &middot; ${p.comments.toLocaleString()} comments &middot; ${ago(p.at)}</span></div>${escapeHtml(p.caption)}
+        </div>`).join("")}
+    </div>`;
+  $("workbench").style.display = "block";
+  $("profile").scrollTop = 0;
+}
+
+function renderAssist() {
+  if (!selected) return;
+  const c = selected;
+  const s = getSettings();
+
+  if (c.analyzing) {
+    $("assist").innerHTML = `<span class="thinking">reading their content</span>`;
+  } else if (c.aiError) {
+    $("assist").innerHTML = `<span class="err">${escapeHtml(c.aiError)}</span>`;
+  } else if (c.ai) {
+    const chips = [];
+    if (c.ai.sells_picks) chips.push(`<span class="sig good">sells picks</span>`);
+    if (c.ai.slip_proof) chips.push(`<span class="sig good">slip proof</span>`);
+    if (c.ai.monetization && !/none/i.test(c.ai.monetization)) chips.push(`<span class="sig info">${escapeHtml(c.ai.monetization)}</span>`);
+    if (c.ai.channel) chips.push(`<span class="sig info">send via ${CHANNEL_LABELS[c.ai.channel] || escapeHtml(c.ai.channel)}</span>`);
+    if (c.ai.disqualifier) chips.push(`<span class="sig bad">${escapeHtml(c.ai.disqualifier)}</span>`);
+    $("assist").innerHTML = `${chips.join("")} ${escapeHtml(c.ai.summary || "")}`;
+  } else {
+    $("assist").innerHTML = "";
+  }
+
+  // touch history / state line
+  let line = "";
+  if (c.state === "contacted" && c.touches.length) {
+    const last = c.touches[c.touches.length - 1];
+    line = `touch ${last.n} sent ${ago(last.at)}`;
+    if (dueForTouch(c)) line += ` · follow-up due`;
+    else if (c.touches.length >= s.maxTouches) line += ` · final touch — no more bumps`;
+    else if (c.nextTouchAt) line += ` · next ${inDays(c.nextTouchAt)}`;
+  } else if (c.state === "replied") {
+    line = `replied ✓ — work the conversation in the Reply Copilot`;
+  } else if (c.state === "dead") {
+    line = `skipped`;
+  } else if (c.state === "suppressed") {
+    line = `suppressed — on the never-pitch list`;
+  }
+  if (sentToday() >= s.dailyCap && actionable(c)) {
+    line = (line ? line + " · " : "") + `daily cap reached (${sentToday()}/${s.dailyCap}) — resumes tomorrow`;
+  }
+  $("touchLine").textContent = line;
+
+  $("draftText").value = c.draftText ?? "";
+  $("draftText").placeholder = c.analyzing ? "drafting…" :
+    c.touches.length ? "Follow-up bump drafts here…" : "First-touch opener drafts here…";
+  updateLint();
+
+  const capped = sentToday() >= s.dailyCap;
+  $("sentBtn").disabled = capped || isDone(c) || c.analyzing;
+  $("copyBtn").disabled = isDone(c) || c.analyzing;
+  $("repliedBtn").disabled = c.state === "suppressed";
+  $("skipBtn").disabled = c.state === "suppressed";
+}
+
+function updateLint() {
+  const v = $("draftText").value.trim();
+  const lint = $("lint");
+  if (!v) { lint.textContent = ""; lint.classList.remove("over"); return; }
+  const words = v.split(/\s+/).filter(Boolean).length;
+  const banned = BANNED_PHRASES.filter(b => v.toLowerCase().includes(b));
+  let msg = `${words} / 25`;
+  if (banned.length) msg += ` · ⚠ ${banned.map(b => b === "—" ? "em-dash" : `"${b}"`).join(", ")}`;
+  lint.textContent = msg;
+  lint.classList.toggle("over", words > 25 || banned.length > 0);
+}
+
+function renderAll() { renderCount(); renderList(); if (selected) { renderProfile(); renderAssist(); } }
+
+/* =========================================================
+   LLM CALL — signals + next message in one structured request.
+   ========================================================= */
+const RADAR_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["sells_picks", "slip_proof", "monetization", "disqualifier", "summary", "opener", "channel"],
+  properties: {
+    sells_picks: { type: "boolean", description: "Actively sells picks — behavioral evidence, not just betting content." },
+    slip_proof: { type: "boolean", description: "Posts bet slips, tracked records, or tracker screenshots (Pikkit/Playbook/Gambly)." },
+    monetization: { type: "string", description: "How they monetize today, e.g. 'whop in bio', 'telegram + venmo', 'none visible'." },
+    disqualifier: { type: "string", description: "Disqualifier if any (aggregator, giveaway farm, already on DubClub, big account for lead lists). Empty string if none." },
+    summary: { type: "string", description: "One line on who this is and why they do/don't fit." },
+    opener: { type: "string", description: "The next outreach message per the style contract (first touch, or bump if touches exist)." },
+    channel: { type: "string", enum: ["ig_dm", "telegram", "email", "tiktok_comment"], description: "Best send channel given their visible routes. TikTok candidates usually route to ig_dm/telegram/email from their links." }
+  }
+};
+
+function buildUserPrompt(c, { regenerate = false } = {}) {
+  const posts = c.posts.map(p => `- (${p.likes.toLocaleString()} likes, ${p.comments.toLocaleString()} comments, ${ago(p.at)}) ${p.caption}`).join("\n");
+  const touches = c.touches.map(t => `touch ${t.n} (${ago(t.at)}): "${t.text}"`).join("\n");
+  let prompt = `CANDIDATE
+Name: ${c.name} (${c.handle}) on ${c.platform === "IG" ? "Instagram" : "TikTok"}
+Followers: ${c.followers.toLocaleString()} | Engagement: ${c.engagementPct}%
+Bio: ${c.bio}
+Links in bio: ${c.links.length ? c.links.join(", ") : "none"}
+
+RECENT POSTS
+${posts}
+
+OUTREACH HISTORY
+${touches || "none — this is the first touch"}
+
+Extract the behavioral signals and draft the next outreach message per the style contract.`;
+  if (c.touches.length) {
+    prompt += `\n\nIMPORTANT: ${c.touches.length} touch${c.touches.length > 1 ? "es" : ""} already sent with no reply. Draft follow-up bump #${c.touches.length + 1} — a noticeably different angle, never "just following up".`;
+  }
+  if (regenerate && c.draftText) {
+    prompt += `\n\nIMPORTANT: A previous draft was rejected. Take a noticeably different angle than this one:\n"${c.draftText}"`;
+  }
+  return prompt;
+}
+
+async function analyze(c, { regenerate = false } = {}) {
+  if (!c) return;
+  if (!getKey()) { openSettings(); return; }
+  if (c.analyzing) { c.rerunAfter = true; return; }
+  c.analyzing = true;
+  c.aiError = null;
+  const rev = c.touchRev || 0;                 // touch snapshot this request is based on
+  const draftBefore = c.draftText || "";       // detect manual edits made while the request runs
+  if (selected === c) renderAssist();
+  try {
+    const client = new Anthropic({ apiKey: getKey(), dangerouslyAllowBrowser: true });
+    const response = await client.messages.create({
+      model: "claude-opus-4-8",
+      max_tokens: 16000,
+      thinking: { type: "adaptive" },
+      system: getPrompt(),
+      output_config: { format: { type: "json_schema", schema: RADAR_SCHEMA } },
+      messages: [{ role: "user", content: buildUserPrompt(c, { regenerate }) }]
+    });
+    if (response.stop_reason === "refusal") {
+      throw new Error("The model declined this request.");
+    }
+    if (response.stop_reason === "max_tokens") {
+      throw new Error("Hit the output token cap before the draft finished. Try again.");
+    }
+    const textBlock = response.content.find(b => b.type === "text");
+    if (!textBlock) throw new Error("No text in response.");
+    const result = JSON.parse(textBlock.text);
+    if ((c.touchRev || 0) === rev && !isDone(c)) {
+      c.ai = result;
+      // never clobber a draft the user typed while the request was in flight
+      if ((c.draftText || "") === draftBefore) c.draftText = result.opener || "";
+    } else {
+      c.rerunAfter = true;                     // a touch or terminal transition landed mid-flight; discard
+    }
+  } catch (err) {
+    console.error(err);
+    c.aiError = friendlyError(err);
+  } finally {
+    c.analyzing = false;
+    const rerun = c.rerunAfter;
+    c.rerunAfter = false;
+    save();
+    if (selected === c) renderAssist();
+    renderList();
+    renderCount();
+    // re-run only if a fresh draft is actually needed right now
+    if (rerun && !isDone(c) && (c.state === "new" || dueForTouch(c))) analyze(c);
+  }
+}
+
+function maybeAutoAnalyze(c) {
+  // aiError blocks auto-retry (no 429/refusal storms on re-select) — ↻ retries manually
+  if (!c || !getKey() || c.analyzing || isDone(c) || c.aiError) return;
+  if (c.state === "new" && !c.ai) analyze(c);
+  else if (dueForTouch(c) && !c.draftText) analyze(c);
+}
+
+function friendlyError(err) {
+  if (err instanceof Anthropic.AuthenticationError) return "Invalid API key. Open settings (⚙) to update it.";
+  if (err instanceof Anthropic.RateLimitError) return "Rate limited. Wait a moment and hit ↻.";
+  if (err instanceof Anthropic.APIConnectionError) return "Couldn't reach the Anthropic API. Check your connection.";
+  if (err instanceof Anthropic.APIError) return `API error ${err.status}: ${err.message}`;
+  return err.message || String(err);
+}
+
+/* =========================================================
+   ACTIONS — the human presses send; the machine does the rest.
+   ========================================================= */
+async function copyAndOpen() {
+  const c = selected;
+  if (!c || isDone(c) || c.analyzing) return;
+  const text = $("draftText").value.trim();
+  if (!text) { toast("No draft yet", "Write or generate the message first."); return; }
+  // open synchronously, before any await — popup blockers (Safari) kill window.open after an await
+  const win = window.open(profileUrl(c), "_blank");
+  if (win) win.opener = null;
+  let copied = true;
+  try { await navigator.clipboard.writeText(text); } catch { copied = false; }
+  const dest = c.ai?.channel ? (CHANNEL_LABELS[c.ai.channel] || "DMs") : "DMs";
+  if (win && copied) toast("Copied — profile opened", `Paste it in their ${dest}, then hit “mark sent ✓”.`);
+  else if (!win) toast(copied ? "Copied — popup blocked" : "Popup blocked", `Open ${profileUrl(c)} yourself${copied ? " — the message is on your clipboard." : " and copy the draft by hand."}`);
+  else toast("Profile opened — copy blocked", "Select the draft text and copy it manually.");
+}
+
+function markSent() {
+  const c = selected;
+  if (!c || isDone(c) || c.analyzing) return;
+  const s = getSettings();
+  if (sentToday() >= s.dailyCap) { toast("Daily cap reached", `${sentLog.count}/${s.dailyCap} sends today. The cap is the QA guardrail — resumes tomorrow.`); return; }
+  const text = $("draftText").value.trim();
+  if (!text) { toast("Nothing to record", "The draft box is empty."); return; }
+
+  c.touches.push({ n: c.touches.length + 1, at: Date.now(), text });
+  bumpRev(c);
+  c.state = "contacted";
+  // always keep the schedule — dueForTouch gates on maxTouches, so raising the
+  // cap in settings later makes maxed candidates due again instead of stranding them
+  c.nextTouchAt = Date.now() + s.gapDays * DAY;
+  c.draftText = "";
+  if (c.ai) c.ai.opener = "";
+  sentToday();               // roll the date if needed
+  sentLog.count += 1;
+  save();
+  renderAll();
+  toast(`Touch ${c.touches.length} recorded ✓`, c.touches.length < s.maxTouches ? `Next bump auto-drafts ${inDays(c.nextTouchAt)} if no reply.` : "That was the final touch for this candidate.");
+}
+
+function markReplied() {
+  const c = selected;
+  if (!c || c.state === "suppressed") return;   // suppressed stays on the never-pitch list
+  c.state = "replied";
+  c.nextTouchAt = null;
+  save();
+  renderAll();
+  toast("Replied 🎉", "Hand the conversation to the Reply Copilot — paste their message there with “log theirs”.");
+}
+
+function markDead() {
+  const c = selected;
+  if (!c || c.state === "suppressed") return;   // suppressed stays on the never-pitch list
+  c.state = "dead";
+  c.nextTouchAt = null;
+  save();
+  renderAll();
+}
+
+/* =========================================================
+   SCAN (demo) + IMPORT
+   ========================================================= */
+function runScan() {
+  const bank = scanBank().filter(b => !candidates.some(c => c.id === b.id));
+  if (!bank.length) { toast("Radar scan", "No new candidates in the demo bank — use ＋ import for real lists."); return; }
+  const found = bank.slice(0, 2);
+  const sup = suppressedHandles();
+  found.forEach(c => { if (sup.includes(c.handle.toLowerCase())) c.state = "suppressed"; });
+  candidates.push(...found);
+  save();
+  renderAll();
+  toast(`\u{1F4E1} Scan found ${found.length} new candidate${found.length > 1 ? "s" : ""}`, found.map(c => `${c.handle} (${c.platform})`).join("\n"));
+}
+
+function importCandidates() {
+  let arr;
+  try {
+    arr = JSON.parse($("importInput").value);
+    if (!Array.isArray(arr)) throw new Error("Expected a JSON array.");
+  } catch (err) {
+    toast("Import failed", String(err.message || err));
+    return;
+  }
+  const sup = suppressedHandles();
+  const now = Date.now();
+  let added = 0, skippedDup = 0, skippedSup = 0;
+  for (const raw of arr) {
+    if (!raw?.handle || !raw?.platform) continue;
+    const handle = raw.handle.startsWith("@") ? raw.handle : "@" + raw.handle;
+    const id = handle.replace(/^@/, "").toLowerCase().replace(/[^a-z0-9._-]/g, "");
+    if (candidates.some(c => c.id === id || c.handle.toLowerCase() === handle.toLowerCase())) { skippedDup++; continue; }
+    const suppressed = sup.includes(handle.toLowerCase());
+    if (suppressed) skippedSup++;
+    candidates.push({
+      id,
+      name: raw.name || handle,
+      handle,
+      platform: raw.platform === "TT" ? "TT" : "IG",
+      followers: Number(raw.followers) || 0,
+      engagementPct: Number(raw.engagementPct) || 0,
+      bio: raw.bio || "",
+      links: Array.isArray(raw.links) ? raw.links : [],
+      state: suppressed ? "suppressed" : "new",
+      touches: [],
+      posts: (Array.isArray(raw.posts) ? raw.posts : []).map(p => ({
+        caption: p.caption || "",
+        likes: Number(p.likes) || 0,
+        comments: Number(p.comments) || 0,
+        at: now - (Number(p.daysAgo) || 0) * DAY
+      }))
+    });
+    added++;
+  }
+  save();
+  renderAll();
+  $("importModal").classList.remove("open");
+  $("importInput").value = "";
+  toast("Import done", `${added} added · ${skippedDup} duplicates skipped · ${skippedSup} suppressed (never-pitch list)`);
+}
+
+/* =========================================================
+   MORNING DIGEST (Hermes-ready)
+   ========================================================= */
+function buildDigest() {
+  const d = new Date();
+  const dateStr = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+  const s = getSettings();
+  const fresh = candidates.filter(c => c.state === "new" && !c.ai?.disqualifier);
+  const due = candidates.filter(dueForTouch);
+  const waiting = candidates.filter(c => c.state === "contacted" && !dueForTouch(c));
+  const replied = candidates.filter(c => c.state === "replied");
+  const top = candidates.filter(actionable).sort((a, b) => score(b) - score(a)).slice(0, 3);
+
+  let out = `☀️ IG/TT outreach — ${dateStr}\n\n`;
+  out += `• ${fresh.length} new candidate${fresh.length === 1 ? "" : "s"} on the radar\n`;
+  out += `• ${due.length} follow-up${due.length === 1 ? "" : "s"} due today\n`;
+  out += `• ${waiting.length} waiting on replies · ${replied.length} replied (in the Reply Copilot)\n`;
+  out += `• sent ${sentToday()}/${s.dailyCap} today\n`;
+  if (top.length) {
+    out += `\nTop of the queue:\n`;
+    top.forEach((c, i) => {
+      const sig = c.ai ? [c.ai.sells_picks && "sells picks", c.ai.slip_proof && "slip proof", c.ai.monetization].filter(Boolean).join(", ") : "unanalyzed";
+      out += `${i + 1}. ${c.handle} (${c.platform}) ${score(c)} — ${sig}\n`;
+    });
+  }
+  out += `\nEvery send is human-tapped from the queue — the machine drafts, you deliver.`;
+  return out;
+}
+
+/* =========================================================
+   NAVIGATION & EVENTS
+   ========================================================= */
+function selectCandidate(id) {
+  selected = candidates.find(c => c.id === id) || null;
+  if (!selected) return;
+  renderList();
+  renderProfile();
+  renderAssist();
+  maybeAutoAnalyze(selected);
+}
+
+$("copyBtn").addEventListener("click", copyAndOpen);
+$("sentBtn").addEventListener("click", markSent);
+$("repliedBtn").addEventListener("click", markReplied);
+$("skipBtn").addEventListener("click", markDead);
+$("regenBtn").addEventListener("click", () => { if (selected && !selected.analyzing) analyze(selected, { regenerate: !!selected.draftText }); });
+$("scanChip").addEventListener("click", runScan);
+
+$("draftText").addEventListener("input", () => {
+  if (!selected) return;
+  selected.draftText = $("draftText").value;
+  save();
+  updateLint();
+});
+
+/* ---------- keyboard shortcuts ---------- */
+document.addEventListener("keydown", e => {
+  const tag = document.activeElement?.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") {
+    if (e.key === "Escape") document.activeElement.blur();
+    return;
+  }
+  if (e.key === "Escape") {
+    document.querySelectorAll(".modal-backdrop.open").forEach(m => m.classList.remove("open"));
+    return;
+  }
+  if (document.querySelector(".modal-backdrop.open")) return;  // shortcuts are dead while a modal is up
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === "j" || e.key === "k") {
+    const list = orderedCandidates();
+    if (!list.length) return;
+    const idx = list.findIndex(c => c.id === selected?.id);
+    const next = e.key === "j" ? Math.min(idx + 1, list.length - 1) : Math.max(idx - 1, 0);
+    selectCandidate(list[idx === -1 ? 0 : next].id);
+  } else if (e.key === "c") {
+    if (selected && !selected.analyzing) copyAndOpen();
+  } else if (e.key === "s") {
+    if (selected && !selected.analyzing) markSent();
+  } else if (e.key === "r") {
+    if (selected && !selected.analyzing) analyze(selected, { regenerate: !!selected.draftText });
+  }
+});
+
+/* ---------- toast ---------- */
+function toast(title, body) {
+  $("toastTitle").textContent = title;
+  $("toastBody").textContent = body;
+  const t = $("toast");
+  t.classList.add("show");
+  clearTimeout(t._t);
+  t._t = setTimeout(() => t.classList.remove("show"), 5000);
+}
+
+/* ---------- settings modal ---------- */
+function openSettings() {
+  const s = getSettings();
+  $("keyInput").value = getKey();
+  $("capInput").value = s.dailyCap;
+  $("gapInput").value = s.gapDays;
+  $("touchesInput").value = s.maxTouches;
+  $("suppressInput").value = s.suppress;
+  $("settingsModal").classList.add("open");
+  $("keyInput").focus();
+}
+function refreshChips() {
+  const hasKey = !!getKey();
+  $("settingsChip").title = hasKey ? "Settings" : "Settings — add your Anthropic API key";
+  $("settingsChip").style.color = hasKey ? "var(--accent)" : "var(--warn)";
+}
+$("settingsChip").addEventListener("click", openSettings);
+$("settingsCancel").addEventListener("click", () => $("settingsModal").classList.remove("open"));
+$("settingsSave").addEventListener("click", () => {
+  localStorage.setItem(LS_KEY, $("keyInput").value.trim());
+  localStorage.setItem(LS_SETTINGS, JSON.stringify({
+    dailyCap: Math.max(1, parseInt($("capInput").value, 10) || DEFAULT_SETTINGS.dailyCap),
+    gapDays: Math.max(1, parseInt($("gapInput").value, 10) || DEFAULT_SETTINGS.gapDays),
+    maxTouches: Math.max(1, parseInt($("touchesInput").value, 10) || DEFAULT_SETTINGS.maxTouches),
+    suppress: $("suppressInput").value
+  }));
+  // apply suppression both ways: list additions suppress, removals restore
+  const sup = suppressedHandles();
+  candidates.forEach(c => {
+    const listed = sup.includes(c.handle.toLowerCase());
+    if (listed && c.state !== "replied" && c.state !== "suppressed") {
+      c.stateBeforeSuppress = c.state;
+      c.state = "suppressed";
+    } else if (!listed && c.state === "suppressed") {
+      c.state = c.stateBeforeSuppress || (c.touches.length ? "contacted" : "new");
+      delete c.stateBeforeSuppress;
+    }
+  });
+  save();
+  $("settingsModal").classList.remove("open");
+  refreshChips();
+  renderAll();
+  if (selected) maybeAutoAnalyze(selected);
+});
+$("resetDemoBtn").addEventListener("click", () => {
+  localStorage.removeItem(LS_STATE);
+  location.reload();
+});
+
+/* ---------- prompt modal (reached from settings) ---------- */
+$("openPromptLink").addEventListener("click", () => {
+  $("settingsModal").classList.remove("open");
+  $("promptInput").value = getPrompt();
+  $("promptModal").classList.add("open");
+});
+$("promptCancel").addEventListener("click", () => $("promptModal").classList.remove("open"));
+$("promptReset").addEventListener("click", () => { $("promptInput").value = DEFAULT_SYSTEM_PROMPT; });
+$("promptSave").addEventListener("click", () => {
+  localStorage.setItem(LS_PROMPT, $("promptInput").value);
+  $("promptModal").classList.remove("open");
+});
+
+/* ---------- import modal ---------- */
+$("importChip").addEventListener("click", () => $("importModal").classList.add("open"));
+$("importCancel").addEventListener("click", () => $("importModal").classList.remove("open"));
+$("importGo").addEventListener("click", importCandidates);
+
+/* ---------- digest modal ---------- */
+$("digestChip").addEventListener("click", () => {
+  $("digestPre").textContent = buildDigest();
+  $("digestModal").classList.add("open");
+});
+$("digestClose").addEventListener("click", () => $("digestModal").classList.remove("open"));
+$("digestCopy").addEventListener("click", async () => {
+  try {
+    await navigator.clipboard.writeText($("digestPre").textContent);
+    toast("Copied", "Digest copied — paste it into Slack.");
+  } catch {
+    toast("Copy failed", "Select the text and copy manually.");
+  }
+});
+
+/* ---------- init ---------- */
+loadState();
+sentToday();          // roll the date if needed
+renderCount();
+renderList();
+refreshChips();
+const first = orderedCandidates().find(actionable) || orderedCandidates()[0];
+if (first) selectCandidate(first.id);
+</script>
+</body>
+</html>
