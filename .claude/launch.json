@@ -15,9 +15,10 @@
     },
     {
       "name": "dc-reply-copilot",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "4173", "-d", "dc-reply-copilot"],
-      "port": 4173
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "python3 -m http.server \"${PORT:-4173}\" -d dc-reply-copilot"],
+      "port": 4173,
+      "autoPort": true
     }
   ]
 }
