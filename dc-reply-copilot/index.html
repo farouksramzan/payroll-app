@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DC Reply Copilot</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel-2: #1c2129;
+    --border: #2d333b;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --accent: #2ea043;
+    --accent-2: #58a6ff;
+    --warn: #d29922;
+    --danger: #f85149;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    height: 100vh; overflow: hidden;
+  }
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 16px; border-bottom: 1px solid var(--border); background: var(--panel);
+  }
+  header h1 { font-size: 16px; font-weight: 700; }
+  header h1 span { color: var(--accent); }
+  header .spacer { flex: 1; }
+  .keychip { font-size: 12px; color: var(--muted); cursor: pointer; border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; }
+  .keychip.ok { color: var(--accent); border-color: var(--accent); }
+  main {
+    display: grid; grid-template-columns: 270px 1fr 380px;
+    height: calc(100vh - 45px);
+  }
+  @media (max-width: 1100px) {
+    main { grid-template-columns: 210px 1fr 300px; }
+  }
+  .col { overflow-y: auto; border-right: 1px solid var(--border); }
+  .col:last-child { border-right: none; }
+  .col-head {
+    position: sticky; top: 0; z-index: 2; background: var(--panel);
+    padding: 10px 14px; font-size: 11px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border);
+  }
+
+  /* ---------- Queue ---------- */
+  .prospect {
+    padding: 12px 14px; border-bottom: 1px solid var(--border); cursor: pointer;
+  }
+  .prospect:hover { background: var(--panel); }
+  .prospect.active { background: var(--panel-2); border-left: 3px solid var(--accent); padding-left: 11px; }
+  .prospect .name { font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+  .prospect .score { font-size: 11px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; color: var(--accent-2); }
+  .prospect .handle { color: var(--accent-2); font-size: 12px; }
+  .prospect .meta { color: var(--muted); font-size: 12px; margin-top: 4px; }
+  .status { display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase; border-radius: 4px; padding: 1px 6px; margin-top: 5px; }
+  .status.hot { background: #3d1e1e; color: #ff7b72; }
+  .status.engaged { background: #1e2f3d; color: #58a6ff; }
+  .status.cold { background: #2a2a2a; color: #8b949e; }
+
+  /* ---------- Conversation ---------- */
+  #thread { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
+  .bubble { max-width: 78%; padding: 9px 13px; border-radius: 14px; white-space: pre-wrap; }
+  .bubble.them { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
+  .bubble.ae { align-self: flex-end; background: #1a3a2a; border: 1px solid #2ea04355; border-bottom-right-radius: 4px; }
+  .bubble .who { font-size: 10px; color: var(--muted); margin-bottom: 3px; text-transform: uppercase; letter-spacing: .05em; }
+  .composer { position: sticky; bottom: 0; background: var(--panel); border-top: 1px solid var(--border); padding: 10px 14px; display: flex; gap: 8px; }
+  .composer textarea {
+    flex: 1; resize: none; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; min-height: 40px;
+  }
+  .empty-hint { color: var(--muted); text-align: center; padding: 60px 20px; }
+
+  /* ---------- Copilot ---------- */
+  .block { margin: 12px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); }
+  .block-head { padding: 9px 12px; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); display: flex; justify-content: space-between; align-items: center; }
+  .block-body { padding: 12px; }
+  .intent-pill { display: inline-block; font-weight: 700; font-size: 12px; border-radius: 6px; padding: 3px 10px; margin-bottom: 8px; }
+  .intent-interested { background: #16321f; color: #3fb950; }
+  .intent-fee_objection { background: #33270f; color: #d29922; }
+  .intent-migration_concern { background: #1a2a3d; color: #58a6ff; }
+  .intent-not_now { background: #2c2c33; color: #a5a5b5; }
+  .intent-dead { background: #3a1518; color: #f85149; }
+  .rationale { color: var(--muted); font-size: 13px; }
+
+  table.earn { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.earn th, table.earn td { padding: 5px 6px; text-align: right; border-bottom: 1px solid var(--border); }
+  table.earn th:first-child, table.earn td:first-child { text-align: left; }
+  table.earn th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; }
+  .delta-pos { color: var(--accent); font-weight: 700; }
+  .delta-neg { color: var(--danger); font-weight: 700; }
+  .assumptions { margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 8px; }
+  .assumptions summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+  .assumptions .row { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 12px; color: var(--muted); }
+  .assumptions input { width: 80px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; font: inherit; text-align: right; }
+
+  #replyText {
+    width: 100%; min-height: 74px; resize: vertical; background: var(--bg); color: var(--text);
+    border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; font: inherit;
+  }
+  .wordcount { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .wordcount.over { color: var(--danger); }
+  .next-step-action { font-weight: 700; font-size: 14px; margin-bottom: 5px; color: var(--accent-2); }
+
+  button {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 7px 13px; font: inherit; font-weight: 600; cursor: pointer;
+  }
+  button:hover { border-color: var(--muted); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #04170a; }
+  button.primary:hover { filter: brightness(1.1); }
+  button.small { font-size: 12px; padding: 4px 10px; }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .btnrow { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+  .loading { color: var(--muted); font-size: 13px; padding: 4px 0; }
+  .loading::after { content: ""; animation: dots 1.2s steps(4) infinite; }
+  @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
+  .error-msg { color: var(--danger); font-size: 13px; white-space: pre-wrap; }
+
+  /* ---------- Modal (settings / system prompt) ---------- */
+  .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 50; }
+  .modal-backdrop.open { display: flex; }
+  .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; width: min(720px, 92vw); max-height: 86vh; display: flex; flex-direction: column; }
+  .modal h2 { font-size: 15px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
+  .modal .modal-body { padding: 14px 16px; overflow-y: auto; }
+  .modal label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  .modal input[type=password], .modal input[type=text] { width: 100%; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; }
+  .modal textarea { width: 100%; min-height: 320px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 10px; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; resize: vertical; }
+  .modal .modal-foot { padding: 12px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; justify-content: flex-end; }
+  .note { font-size: 12px; color: var(--warn); margin-top: 8px; }
+
+  /* ---------- Toast ---------- */
+  #toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(calc(100% + 40px));
+    background: var(--panel-2); border: 1px solid var(--accent); border-radius: 10px;
+    padding: 12px 16px; max-width: 560px; width: 92vw; z-index: 100;
+    transition: transform .25s ease; box-shadow: 0 8px 30px rgba(0,0,0,.5);
+  }
+  #toast.show { transform: translateX(-50%) translateY(0); }
+  #toast .toast-title { font-weight: 700; color: var(--accent); margin-bottom: 6px; font-size: 13px; }
+  #toast pre { font: 11px/1.5 ui-monospace, Menlo, monospace; color: var(--muted); white-space: pre-wrap; word-break: break-word; max-height: 180px; overflow-y: auto; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>DC <span>Reply Copilot</span></h1>
+  <div class="spacer"></div>
+  <div class="keychip" id="promptChip" title="Edit system prompt & few-shot examples">system prompt</div>
+  <div class="keychip" id="keyChip" title="Set Anthropic API key">no api key</div>
+</header>
+
+<main>
+  <!-- ================= LEFT: QUEUE ================= -->
+  <section class="col">
+    <div class="col-head">Queue &middot; by priority</div>
+    <div id="queue"></div>
+  </section>
+
+  <!-- ================= CENTER: CONVERSATION ================= -->
+  <section class="col" style="display:flex; flex-direction:column;">
+    <div class="col-head" id="convoHead">Conversation</div>
+    <div id="thread" style="flex:1;"><div class="empty-hint">Select a prospect from the queue</div></div>
+    <div class="composer" id="composer" style="display:none;">
+      <textarea id="newMsg" placeholder="Paste a new incoming DM from the prospect&hellip;"></textarea>
+      <button id="addMsgBtn" title="Add as incoming message and re-run copilot">Add</button>
+    </div>
+  </section>
+
+  <!-- ================= RIGHT: COPILOT ================= -->
+  <section class="col" style="background:#10141a;">
+    <div class="col-head" style="display:flex; justify-content:space-between; align-items:center;">
+      <span>Copilot</span>
+      <button class="small" id="analyzeBtn" style="display:none;">Analyze</button>
+    </div>
+    <div id="copilot"><div class="empty-hint">Copilot output appears here</div></div>
+  </section>
+</main>
+
+<!-- ================= MODALS ================= -->
+<div class="modal-backdrop" id="keyModal">
+  <div class="modal">
+    <h2>Anthropic API key</h2>
+    <div class="modal-body">
+      <label>API key (stored in this browser's localStorage only)</label>
+      <input type="password" id="keyInput" placeholder="sk-ant-...">
+      <div class="note">&#9888; Browser-only demo: the key is visible to anyone with access to this browser profile. Use a low-limit key, and don't ship this pattern to real users without a backend proxy.</div>
+    </div>
+    <div class="modal-foot">
+      <button id="keyCancel">Cancel</button>
+      <button class="primary" id="keySave">Save</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="promptModal">
+  <div class="modal">
+    <h2>System prompt (DubClub context + style contract + few-shot examples)</h2>
+    <div class="modal-body">
+      <textarea id="promptInput" spellcheck="false"></textarea>
+      <div class="note">The three example exchanges are placeholders. Replace them with your real winning DM exchanges, then Save.</div>
+    </div>
+    <div class="modal-foot">
+      <button id="promptReset">Reset to default</button>
+      <button id="promptCancel">Cancel</button>
+      <button class="primary" id="promptSave">Save</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"><div class="toast-title" id="toastTitle"></div><pre id="toastBody"></pre></div>
+
+<script type="module">
+import Anthropic from "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk/+esm";
+
+/* =========================================================
+   MOCK DATA — 4 prospects. Threads are placeholders: swap in
+   your real DM threads (keep the {from, text} shape).
+   ========================================================= */
+const PROSPECTS = [
+  {
+    id: "lockcity",
+    name: "Marcus “LockCity” Reed",
+    handle: "@LockCityPicks",
+    followers: 48200,
+    engagement: 4.1,               // %
+    platform: "Whop",
+    price: 49.99,                  // monthly
+    platformFeePct: 3,             // editable assumption
+    estSubs: 210,                  // editable assumption
+    lastContacted: "2d ago",
+    status: "engaged",
+    thread: [
+      { from: "ae",   text: "yo marcus, been seeing lockcity everywhere on my TL this week. that bills ML call was filthy" },
+      { from: "them", text: "haha appreciate it man, been on a heater. what's up" },
+      { from: "ae",   text: "i'm with dubclub, we host paid picks for a bunch of the bigger cappers. think your numbers would print with our fan network behind them" },
+      { from: "them", text: "i've heard of you guys. real talk though, whop only takes 3% from me. why would i move for a bigger cut" }
+    ]
+  },
+  {
+    id: "parlayqueen",
+    name: "Dana “ParlayQueen” Ortiz",
+    handle: "@ParlayQueenD",
+    followers: 112000,
+    engagement: 2.3,
+    platform: "Patreon",
+    price: 25,
+    platformFeePct: 8,
+    estSubs: 640,
+    lastContacted: "5h ago",
+    status: "hot",
+    thread: [
+      { from: "ae",   text: "dana your NBA card friday went 6-1?? your community must be eating" },
+      { from: "them", text: "6-1 and the one loss was a bad beat at the buzzer lol" },
+      { from: "ae",   text: "brutal. hey, dubclub side of things, we talked in march about moving your patreon over. your verified record alone would pull from our 1.5M fan network" },
+      { from: "them", text: "i remember. honestly my hesitation is the move itself. i have 600+ patrons, if half of them don't re-sign up somewhere new i just torched my income" },
+      { from: "them", text: "how do other cappers handle switching without losing everyone?" }
+    ]
+  },
+  {
+    id: "tjbooks",
+    name: "TJ Books",
+    handle: "@TJBooksEdges",
+    followers: 18700,
+    engagement: 6.8,
+    platform: "Telegram + Venmo",
+    price: 75,
+    platformFeePct: 2,
+    estSubs: 85,
+    lastContacted: "1d ago",
+    status: "engaged",
+    thread: [
+      { from: "ae",   text: "TJ the CBB unders angle you posted was sharp. you selling that tail anywhere or just free game on the TL?" },
+      { from: "them", text: "got a private telegram, $75/mo, collect thru venmo. it's a grind chasing people down every month tho lol" },
+      { from: "ae",   text: "that's exactly the pain dubclub kills. auto-billing, delivery, verified record, plus our winner's feed puts your plays in front of 1.5M fans" },
+      { from: "them", text: "ok that actually sounds nice. the venmo chasing is the worst part of my month. what would it look like to set up?" }
+    ]
+  },
+  {
+    id: "fadethechalk",
+    name: "Vic “FadeTheChalk”",
+    handle: "@FadeTheChalk",
+    followers: 9400,
+    engagement: 1.2,
+    platform: "Discord (Whop)",
+    price: 20,
+    platformFeePct: 3,
+    estSubs: 40,
+    lastContacted: "12d ago",
+    status: "cold",
+    thread: [
+      { from: "ae",   text: "vic, saw your discord community hit 1k members, congrats man" },
+      { from: "them", text: "thanks" },
+      { from: "ae",   text: "we should talk dubclub whenever you're ready to scale the paid side. verified records move the needle for guys in your range" },
+      { from: "them", text: "appreciate it but football season's over and i'm coaching my kid's little league til june. hit me up before next season maybe" }
+    ]
+  }
+];
+
+// Priority score: audience reach x engagement, boosted by pipeline status.
+const STATUS_WEIGHT = { hot: 1.5, engaged: 1.2, cold: 0.6 };
+function priorityScore(p) {
+  const reach = Math.log10(p.followers) * p.engagement; // log-scaled reach x engagement
+  return Math.round(reach * (STATUS_WEIGHT[p.status] || 1) * 10);
+}
+PROSPECTS.forEach(p => p.score = priorityScore(p));
+PROSPECTS.sort((a, b) => b.score - a.score);
+
+/* =========================================================
+   SYSTEM PROMPT — editable in the UI, persisted to localStorage.
+   The three "winning exchanges" are PLACEHOLDERS to replace.
+   ========================================================= */
+const DEFAULT_SYSTEM_PROMPT = `You are a reply copilot for a DubClub account executive (AE) working DM conversations with sports betting cappers (pick sellers) on X.
+
+ABOUT DUBCLUB
+- DubClub is a creator platform built for cappers: it hosts and sells their paid picks.
+- Network of 1.5M+ sports fans actively looking for picks (the "fan network").
+- Verified track records and verified subscriber reviews (huge trust signal vs. self-reported records).
+- Winner's feed surfaces hot cappers' plays to the whole network, driving organic subscriber growth.
+- DubClub handles all payments, billing, and pick delivery (texts/app/email), so cappers stop chasing payments or DMing picks manually.
+- Typical result: cappers grow subscribers meaningfully after migrating because of network discovery, often 40%+ in the first months.
+
+YOUR JOB
+Given the DM thread and prospect stats, produce:
+1. classification of the prospect's current intent/objection
+2. a suggested next DM reply from the AE
+3. one recommended next step
+
+STYLE CONTRACT FOR THE REPLY (hard rules)
+- Under 25 words. Count them.
+- lowercase-casual, like texting a friend. no formal capitalization.
+- Must reference one SPECIFIC detail from THIS thread (a pick, a number, a pain they mentioned).
+- No corporate phrasing ("circle back", "touch base", "value proposition", "solution", "leverage").
+- No em-dashes. No emojis unless the prospect used them first.
+- Sound like a peer who knows betting, not a salesperson.
+- Never fabricate stats. Only use numbers given in the context or the thread.
+
+EXAMPLE WINNING EXCHANGES (few-shot -- PLACEHOLDERS, replace with real ones)
+
+Example 1 (fee objection -> won):
+capper: "why would i pay you more than whop takes"
+ae: "fee's only bigger if your sub count stays flat. our fan network usually makes that math a rounding error"
+capper: "ok run me the numbers"
+[outcome: booked call, migrated 3 weeks later]
+
+Example 2 (migration concern -> won):
+capper: "i can't risk losing my 400 subs in a move"
+ae: "we migrate them for you, white glove. your guys just tap one link, billing carries over"
+capper: "wait you handle the whole switch?"
+[outcome: sent migration doc, closed same week]
+
+Example 3 (lukewarm -> won):
+capper: "chasing venmo payments is killing me but i'm lazy about switching"
+ae: "setup's like 20 min. you post picks, we bill everybody. never send a venmo reminder again"
+capper: "lol ok that sounds worth 20 minutes"
+[outcome: onboarded next day]`;
+
+/* =========================================================
+   STATE
+   ========================================================= */
+const LS_KEY = "dcrc_api_key";
+const LS_PROMPT = "dcrc_system_prompt";
+let selected = null;          // current prospect
+let lastResult = null;        // last LLM result
+let analyzing = false;
+const assumptionsByProspect = {};   // per-prospect editable assumptions
+
+const $ = id => document.getElementById(id);
+const getKey = () => localStorage.getItem(LS_KEY) || "";
+const getPrompt = () => localStorage.getItem(LS_PROMPT) || DEFAULT_SYSTEM_PROMPT;
+
+/* =========================================================
+   EARNINGS MATH (pure client-side)
+   ========================================================= */
+function getAssumptions(p) {
+  if (!assumptionsByProspect[p.id]) {
+    assumptionsByProspect[p.id] = {
+      price: p.price,
+      subs: p.estSubs,
+      currentFeePct: p.platformFeePct,
+      dubclubFeePct: 10,     // assumption -- editable
+      growthPct: 40
+    };
+  }
+  return assumptionsByProspect[p.id];
+}
+function calcEarnings(a) {
+  const gross = a.subs * a.price;
+  const current = gross * (1 - a.currentFeePct / 100);
+  const dubclub = gross * (1 - a.dubclubFeePct / 100);
+  const grownSubs = Math.round(a.subs * (1 + a.growthPct / 100));
+  const dubclubGrowth = grownSubs * a.price * (1 - a.dubclubFeePct / 100);
+  return { gross, current, dubclub, grownSubs, dubclubGrowth };
+}
+const money = n => "$" + Math.round(n).toLocaleString();
+
+/* =========================================================
+   RENDER: QUEUE
+   ========================================================= */
+function renderQueue() {
+  $("queue").innerHTML = PROSPECTS.map(p => `
+    <div class="prospect ${selected?.id === p.id ? "active" : ""}" data-id="${p.id}">
+      <div class="name">${p.name} <span class="score" title="priority score">${p.score}</span></div>
+      <div class="handle">${p.handle}</div>
+      <div class="meta">${(p.followers/1000).toFixed(1)}K followers &middot; ${p.engagement}% eng</div>
+      <div class="meta">${p.platform} @ $${p.price}/mo &middot; last contact ${p.lastContacted}</div>
+      <span class="status ${p.status}">${p.status}</span>
+    </div>`).join("");
+  document.querySelectorAll(".prospect").forEach(el =>
+    el.addEventListener("click", () => selectProspect(el.dataset.id)));
+}
+
+/* =========================================================
+   RENDER: CONVERSATION
+   ========================================================= */
+function renderThread() {
+  if (!selected) return;
+  $("convoHead").textContent = `Conversation · ${selected.name} (${selected.handle})`;
+  $("thread").innerHTML = selected.thread.map(m => `
+    <div class="bubble ${m.from}">
+      <div class="who">${m.from === "them" ? selected.handle : "you (AE)"}</div>${escapeHtml(m.text)}
+    </div>`).join("");
+  $("composer").style.display = "flex";
+  $("thread").scrollTop = $("thread").scrollHeight;
+}
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+}
+
+/* =========================================================
+   RENDER: COPILOT PANEL
+   ========================================================= */
+const INTENT_LABELS = {
+  interested: "Interested",
+  fee_objection: "Fee objection",
+  migration_concern: "Migration concern",
+  not_now: "Not now",
+  dead: "Dead"
+};
+const STEP_LABELS = {
+  book_call: "\u{1F4DE} Book a call",
+  send_comparison: "\u{1F4CA} Send earnings comparison",
+  set_follow_up_date: "\u{1F4C5} Set follow-up date",
+  close_lost: "\u{1F6AB} Close lost"
+};
+
+function renderCopilot({ loading = false, error = null } = {}) {
+  if (!selected) { $("copilot").innerHTML = `<div class="empty-hint">Copilot output appears here</div>`; return; }
+  const a = getAssumptions(selected);
+  const e = calcEarnings(a);
+  const r = lastResult;
+
+  const classBody = loading
+    ? `<div class="loading">classifying</div>`
+    : error
+      ? `<div class="error-msg">${escapeHtml(error)}</div>`
+      : r
+        ? `<span class="intent-pill intent-${r.intent}">${INTENT_LABELS[r.intent] || r.intent}</span>
+           <div class="rationale">${escapeHtml(r.rationale)}</div>`
+        : `<div class="rationale">Run <b>Analyze</b> to classify this thread.</div>`;
+
+  const replyBody = loading
+    ? `<div class="loading">drafting</div>`
+    : r
+      ? `<textarea id="replyText">${escapeHtml(r.reply)}</textarea>
+         <div class="wordcount" id="wordCount"></div>
+         <div class="btnrow">
+           <button class="small" id="regenBtn">&#8635; Regenerate</button>
+           <button class="small primary" id="sendBtn">Send to InboxApp</button>
+         </div>`
+      : `<div class="rationale">Draft appears after analysis.</div>`;
+
+  const stepBody = loading
+    ? `<div class="loading">thinking</div>`
+    : r
+      ? `<div class="next-step-action">${STEP_LABELS[r.next_step] || r.next_step}</div>
+         <div class="rationale">${escapeHtml(r.next_step_reason)}</div>`
+      : `<div class="rationale">Recommendation appears after analysis.</div>`;
+
+  $("copilot").innerHTML = `
+    <div class="block">
+      <div class="block-head">Classification</div>
+      <div class="block-body">${classBody}</div>
+    </div>
+
+    <div class="block">
+      <div class="block-head">Earnings snapshot <span style="font-weight:400; text-transform:none;">monthly take-home</span></div>
+      <div class="block-body">
+        <table class="earn">
+          <tr><th></th><th>${escapeHtml(selected.platform)}</th><th>DubClub</th><th>DubClub +${a.growthPct}%</th></tr>
+          <tr>
+            <td>Subs</td><td>${a.subs}</td><td>${a.subs}</td><td>${e.grownSubs}</td>
+          </tr>
+          <tr>
+            <td>Take-home</td>
+            <td>${money(e.current)}</td>
+            <td>${money(e.dubclub)}</td>
+            <td class="delta-pos">${money(e.dubclubGrowth)}</td>
+          </tr>
+          <tr>
+            <td>vs. today</td>
+            <td>&mdash;</td>
+            <td class="${e.dubclub >= e.current ? "delta-pos" : "delta-neg"}">${e.dubclub >= e.current ? "+" : "−"}${money(Math.abs(e.dubclub - e.current))}</td>
+            <td class="delta-pos">+${money(e.dubclubGrowth - e.current)}</td>
+          </tr>
+        </table>
+        <details class="assumptions">
+          <summary>Assumptions (editable)</summary>
+          <div class="row"><span>Price / month ($)</span><input type="number" step="0.01" data-assume="price" value="${a.price}"></div>
+          <div class="row"><span>Estimated subs</span><input type="number" data-assume="subs" value="${a.subs}"></div>
+          <div class="row"><span>${escapeHtml(selected.platform)} fee (%)</span><input type="number" step="0.1" data-assume="currentFeePct" value="${a.currentFeePct}"></div>
+          <div class="row"><span>DubClub fee (%)</span><input type="number" step="0.1" data-assume="dubclubFeePct" value="${a.dubclubFeePct}"></div>
+          <div class="row"><span>Growth scenario (%)</span><input type="number" data-assume="growthPct" value="${a.growthPct}"></div>
+        </details>
+      </div>
+    </div>
+
+    <div class="block">
+      <div class="block-head">Suggested reply</div>
+      <div class="block-body">${replyBody}</div>
+    </div>
+
+    <div class="block">
+      <div class="block-head">Next step</div>
+      <div class="block-body">${stepBody}</div>
+    </div>`;
+
+  // wire up
+  document.querySelectorAll("[data-assume]").forEach(inp =>
+    inp.addEventListener("change", () => {
+      a[inp.dataset.assume] = parseFloat(inp.value) || 0;
+      renderCopilot();                          // recompute table
+    }));
+  const replyEl = $("replyText");
+  if (replyEl) {
+    const updateCount = () => {
+      const words = replyEl.value.trim().split(/\s+/).filter(Boolean).length;
+      const wc = $("wordCount");
+      wc.textContent = `${words} / 25 words`;
+      wc.classList.toggle("over", words > 25);
+    };
+    replyEl.addEventListener("input", updateCount);
+    updateCount();
+  }
+  $("regenBtn")?.addEventListener("click", () => analyze({ regenerate: true }));
+  $("sendBtn")?.addEventListener("click", sendToInboxApp);
+}
+
+/* =========================================================
+   LLM CALL — one structured-output request returns
+   classification + reply + next step together.
+   ========================================================= */
+const COPILOT_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["intent", "rationale", "reply", "next_step", "next_step_reason"],
+  properties: {
+    intent: { type: "string", enum: ["interested", "fee_objection", "migration_concern", "not_now", "dead"] },
+    rationale: { type: "string", description: "One line: why this classification, citing the thread." },
+    reply: { type: "string", description: "The suggested AE reply. Under 25 words, per the style contract." },
+    next_step: { type: "string", enum: ["book_call", "send_comparison", "set_follow_up_date", "close_lost"] },
+    next_step_reason: { type: "string", description: "One line: why this next step." }
+  }
+};
+
+function buildUserPrompt(p, { regenerate = false } = {}) {
+  const a = getAssumptions(p);
+  const e = calcEarnings(a);
+  const thread = p.thread.map(m => `${m.from === "them" ? p.handle : "AE"}: ${m.text}`).join("\n");
+  let prompt = `PROSPECT
+Name: ${p.name} (${p.handle})
+Followers: ${p.followers.toLocaleString()} | Engagement: ${p.engagement}%
+Current platform: ${p.platform} at $${a.price}/mo, est. ${a.subs} subs, ~${a.currentFeePct}% platform fee
+Pipeline status: ${p.status} | Last contacted: ${p.lastContacted}
+
+EARNINGS CONTEXT (already computed, you may reference these numbers)
+Current take-home: ${money(e.current)}/mo on ${p.platform}
+On DubClub (same subs): ${money(e.dubclub)}/mo
+On DubClub with +${a.growthPct}% sub growth: ${money(e.dubclubGrowth)}/mo
+
+DM THREAD (most recent last)
+${thread}
+
+Classify the prospect, draft the next AE reply per the style contract, and pick one next step.`;
+  if (regenerate && lastResult?.reply) {
+    prompt += `\n\nIMPORTANT: A previous draft was rejected. Take a noticeably different angle than this one:\n"${lastResult.reply}"`;
+  }
+  return prompt;
+}
+
+async function analyze({ regenerate = false } = {}) {
+  if (!selected || analyzing) return;
+  if (!getKey()) { openKeyModal(); return; }
+  analyzing = true;
+  renderCopilot({ loading: true });
+  try {
+    const client = new Anthropic({ apiKey: getKey(), dangerouslyAllowBrowser: true });
+    const response = await client.messages.create({
+      model: "claude-opus-4-8",
+      max_tokens: 3000,
+      thinking: { type: "adaptive" },
+      system: getPrompt(),
+      output_config: { format: { type: "json_schema", schema: COPILOT_SCHEMA } },
+      messages: [{ role: "user", content: buildUserPrompt(selected, { regenerate }) }]
+    });
+    if (response.stop_reason === "refusal") {
+      throw new Error("The model declined this request.");
+    }
+    const textBlock = response.content.find(b => b.type === "text");
+    if (!textBlock) throw new Error("No text in response.");
+    lastResult = JSON.parse(textBlock.text);
+    renderCopilot();
+  } catch (err) {
+    console.error(err);
+    renderCopilot({ error: friendlyError(err) });
+  } finally {
+    analyzing = false;
+  }
+}
+
+function friendlyError(err) {
+  if (err instanceof Anthropic.AuthenticationError) return "Invalid API key. Click the key chip in the header to update it.";
+  if (err instanceof Anthropic.RateLimitError) return "Rate limited. Wait a moment and try again.";
+  if (err instanceof Anthropic.APIConnectionError) return "Couldn't reach the Anthropic API. Check your connection.";
+  if (err instanceof Anthropic.APIError) return `API error ${err.status}: ${err.message}`;
+  return err.message || String(err);
+}
+
+/* =========================================================
+   MOCKED INTEGRATION — Send to InboxApp
+   ========================================================= */
+function sendToInboxApp() {
+  const payload = {
+    integration: "InboxApp",
+    endpoint: "POST /v1/messages/send (mocked)",
+    prospect_handle: selected.handle,
+    prospect_name: selected.name,
+    channel: "x_dm",
+    body: $("replyText")?.value ?? lastResult?.reply ?? "",
+    classification: lastResult?.intent ?? null,
+    next_step: lastResult?.next_step ?? null,
+    queued_at: new Date().toISOString()
+  };
+  $("toastTitle").textContent = "Mock: would POST to InboxApp";
+  $("toastBody").textContent = JSON.stringify(payload, null, 2);
+  const toast = $("toast");
+  toast.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => toast.classList.remove("show"), 6000);
+}
+
+/* =========================================================
+   NAVIGATION & EVENTS
+   ========================================================= */
+function selectProspect(id) {
+  selected = PROSPECTS.find(p => p.id === id);
+  lastResult = null;
+  renderQueue();
+  renderThread();
+  $("analyzeBtn").style.display = "inline-block";
+  renderCopilot();
+  if (getKey()) analyze();     // auto-analyze when a key is configured
+}
+
+$("analyzeBtn").addEventListener("click", () => analyze());
+$("addMsgBtn").addEventListener("click", () => {
+  const text = $("newMsg").value.trim();
+  if (!text || !selected) return;
+  selected.thread.push({ from: "them", text });
+  $("newMsg").value = "";
+  lastResult = null;
+  renderThread();
+  if (getKey()) analyze(); else renderCopilot();
+});
+$("newMsg").addEventListener("keydown", e => {
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) $("addMsgBtn").click();
+});
+
+/* ---------- key modal ---------- */
+function openKeyModal() { $("keyInput").value = getKey(); $("keyModal").classList.add("open"); $("keyInput").focus(); }
+function refreshKeyChip() {
+  const has = !!getKey();
+  $("keyChip").textContent = has ? "api key set" : "no api key";
+  $("keyChip").classList.toggle("ok", has);
+}
+$("keyChip").addEventListener("click", openKeyModal);
+$("keyCancel").addEventListener("click", () => $("keyModal").classList.remove("open"));
+$("keySave").addEventListener("click", () => {
+  localStorage.setItem(LS_KEY, $("keyInput").value.trim());
+  $("keyModal").classList.remove("open");
+  refreshKeyChip();
+  if (selected && !lastResult) analyze();
+});
+
+/* ---------- prompt modal ---------- */
+$("promptChip").addEventListener("click", () => {
+  $("promptInput").value = getPrompt();
+  $("promptModal").classList.add("open");
+});
+$("promptCancel").addEventListener("click", () => $("promptModal").classList.remove("open"));
+$("promptReset").addEventListener("click", () => { $("promptInput").value = DEFAULT_SYSTEM_PROMPT; });
+$("promptSave").addEventListener("click", () => {
+  localStorage.setItem(LS_PROMPT, $("promptInput").value);
+  $("promptModal").classList.remove("open");
+});
+
+/* ---------- init ---------- */
+renderQueue();
+refreshKeyChip();
+</script>
+</body>
+</html>
