@@ -279,6 +279,7 @@ const BANNED_PHRASES = ["circle back", "touch base", "value proposition", "lever
 
 const CHANNEL_LABELS = {
   ig_dm: "IG DM",
+  tiktok_dm: "TikTok DM",
   telegram: "Telegram",
   email: "email",
   tiktok_comment: "TikTok comment"
@@ -468,7 +469,11 @@ STYLE CONTRACT FOR THE MESSAGE (hard rules)
 
 FOLLOW-UP RULES
 - Each bump takes a noticeably different angle than the previous touch.
-- Never guilt-trip ("just following up...", "did you see my last message"). Bring something new.`;
+- Never guilt-trip ("just following up...", "did you see my last message"). Bring something new.
+
+CHANNEL RULES
+- TikTok DMs deliver ONE message request until the prospect approves. First touches may go there, but make the opener fully self-contained and end with an easy question that earns the approval.
+- If a prior touch went to tiktok_dm and got no reply, route the bump to a DIFFERENT channel from their links (ig_dm/telegram/email) — a second TikTok message cannot be delivered.`;
 
 /* =========================================================
    STATE
@@ -717,7 +722,7 @@ const RADAR_SCHEMA = {
     disqualifier: { type: "string", description: "Disqualifier if any (aggregator, giveaway farm, already on DubClub, big account for lead lists). Empty string if none." },
     summary: { type: "string", description: "One line on who this is and why they do/don't fit." },
     opener: { type: "string", description: "The next outreach message per the style contract (first touch, or bump if touches exist)." },
-    channel: { type: "string", enum: ["ig_dm", "telegram", "email", "tiktok_comment"], description: "Best send channel given their visible routes. TikTok candidates usually route to ig_dm/telegram/email from their links." }
+    channel: { type: "string", enum: ["ig_dm", "tiktok_dm", "telegram", "email", "tiktok_comment"], description: "Best send channel given their visible routes. tiktok_dm allows ONE message until the prospect approves the request — fine for the first touch; follow-up bumps must route to a different channel (ig_dm/telegram/email from their links) until they reply." }
   }
 };
 
