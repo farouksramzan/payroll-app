@@ -1183,9 +1183,17 @@ router.put('/:id', (req, res) => {
   const { quarter, year } = getTaxPeriod(payPeriodEnd || stub.pay_period_end);
 
   if (taxFieldsChanged) {
+    // Overtime must be preserved across edits and stay part of gross. If the
+    // client sends an explicit overtime line item use it; otherwise keep the
+    // stored overtime and re-add it to gross (older payloads omit the OT item,
+    // which previously dropped overtime from gross_wages and net_pay entirely).
+    const otItem = items ? items.find(li => (li.payType || li.pay_type) === 'overtime') : null;
+    const overtimePay   = otItem ? parseFloat(otItem.amount || 0) : (stub.overtime_pay   || 0);
+    const overtimeHours = (otItem && otItem.hours != null) ? parseFloat(otItem.hours) : (stub.overtime_hours || 0);
+
     // If only taxable items changed (no lineItems), adjust gross by the delta from saved values
     const computedGross = items
-      ? items.reduce((s, li) => s + parseFloat(li.amount || 0), 0)
+      ? Math.round((items.reduce((s, li) => s + parseFloat(li.amount || 0), 0) + (otItem ? 0 : (stub.overtime_pay || 0))) * 100) / 100
       : (() => {
           let g = stub.gross_wages;
           if (reportedTipsIn !== undefined) g += parseFloat(reportedTipsIn || 0) - (stub.reported_tips || 0);
@@ -1251,14 +1259,16 @@ router.put('/:id', (req, res) => {
     const effectiveDeduction     = deductionIn     !== undefined ? parseFloat(deductionIn     || 0) : (stub.deduction     || 0);
     const effectiveGarnishment   = garnishmentIn   !== undefined ? parseFloat(garnishmentIn   || 0) : (stub.garnishment   || 0);
     const effectiveReimbursement = reimbursementIn !== undefined ? parseFloat(reimbursementIn || 0) : (stub.reimbursement || 0);
-    taxes.netPay = Math.round((taxes.netPay - effectiveDeduction - effectiveGarnishment + effectiveReimbursement) * 100) / 100;
+    // Never store a negative net pay — it would drive a negative ACH amount.
+    taxes.netPay = Math.max(0, Math.round((taxes.netPay - effectiveDeduction - effectiveGarnishment + effectiveReimbursement) * 100) / 100);
 
     db.prepare(`
       UPDATE paystubs SET
         pay_period_start = ?, pay_period_end = ?, settlement_date = ?, settlement_due_date = ?,
         eftps_settlement_date = ?,
         pay_frequency = ?, filing_status = ?, step2_checkbox = ?, step3_credits = ?, work_state = ?,
-        gross_wages = ?, fit_withholding = ?, employee_ss = ?, employee_medicare = ?,
+        gross_wages = ?, overtime_pay = ?, overtime_hours = ?,
+        fit_withholding = ?, employee_ss = ?, employee_medicare = ?,
         additional_medicare = ?, employer_ss = ?, employer_medicare = ?,
         state_income_tax = ?, futa_tax = ?, suta_tax = ?,
         total_deposit = ?, net_pay = ?, ytd_wages_before = ?,
@@ -1276,7 +1286,8 @@ router.put('/:id', (req, res) => {
       step2Checkbox !== undefined ? (step2Checkbox ? 1 : 0) : stub.step2_checkbox,
       step3Credits,
       effectiveWorkState,
-      taxes.grossWages, taxes.fitWithholding, taxes.employeeSS, taxes.employeeMedicare,
+      taxes.grossWages, overtimePay, overtimeHours,
+      taxes.fitWithholding, taxes.employeeSS, taxes.employeeMedicare,
       taxes.additionalMedicare || 0, taxes.employerSS, taxes.employerMedicare,
       taxes.stateIncomeTax, taxes.futaTax, taxes.sutaTax,
       taxes.totalDeposit, taxes.netPay, ytdBefore,
@@ -1324,7 +1335,7 @@ router.put('/:id', (req, res) => {
     const newReimbursement = reimbursementIn !== undefined ? parseFloat(reimbursementIn || 0) : (stub.reimbursement || 0);
     // Recalculate net_pay when deduction/garnishment/reimbursement changes
     const r2 = n => Math.round(n * 100) / 100;
-    const newNetPay = r2(
+    const newNetPay = Math.max(0, r2(
       (stub.gross_wages || 0)
       - (stub.fit_withholding || 0)
       - (stub.employee_ss || 0)
@@ -1334,7 +1345,7 @@ router.put('/:id', (req, res) => {
       - newDeduction
       - newGarnishment
       + newReimbursement
-    );
+    ));
     db.prepare(`
       UPDATE paystubs SET
         pay_period_start = ?, pay_period_end = ?, settlement_date = ?, settlement_due_date = ?,

@@ -2432,6 +2432,17 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       isSavingRef.current = true;
       setSaveStatus('saving');
       try {
+        // The taxable base (what FIT/SS/Medicare are computed on) changes only when
+        // gross/tips/bonus/commission change. If it didn't change, we preserve the
+        // stored taxes (including any prior manual override) by sending them back;
+        // if it DID change and the user hasn't pinned a value, we let the backend
+        // recompute the tax authoritatively from the new gross.
+        const taxBaseChanged =
+          parseFloat(grossOverride || 0)         !== parseFloat(committed.gross || 0) ||
+          parseFloat(itemForm.reportedTips || 0) !== parseFloat(committed.tips  || 0) ||
+          parseFloat(itemForm.bonus || 0)        !== parseFloat(committed.bonus || 0) ||
+          parseFloat(itemForm.commission || 0)   !== parseFloat(committed.commission || 0);
+
         const payload = { payPeriodStart: dateForm.start, payPeriodEnd: dateForm.end, settlementDate: dateForm.payDate };
         if (parseFloat(grossOverride || 0) !== parseFloat(committed.gross || 0)) {
           const baseType = stub.regular_hours != null ? 'regular' : 'salary';
@@ -2440,6 +2451,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           const commAmt  = parseFloat(itemForm.commission   || 0);
           payload.lineItems = [
             { payType: baseType, amount: parseFloat(grossOverride || 0) },
+            // Preserve overtime as its own line item so the backend keeps it in
+            // gross/net (dropping it here was silently zeroing overtime pay).
+            ...(stub.overtime_pay > 0 ? [{ payType: 'overtime', amount: stub.overtime_pay, hours: stub.overtime_hours || null }] : []),
             ...(tipAmt   > 0 ? [{ payType: 'tips',       amount: tipAmt   }] : []),
             ...(bonusAmt > 0 ? [{ payType: 'bonus',      amount: bonusAmt }] : []),
             ...(commAmt  > 0 ? [{ payType: 'commission', amount: commAmt  }] : []),
@@ -2448,23 +2462,40 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           payload.bonus        = bonusAmt;
           payload.commission   = commAmt;
         }
-        // Always send current tax values — either the user explicitly set them
-        // (fitManual=true) or auto-estimates updated them. Locking in the correct
-        // value is safe here; the backend will use whatever we send.
-        payload.fitWithholdingOverride      = parseFloat(fitOverride || 0);
-        payload.ssWithholdingOverride       = parseFloat(ssOverride  || 0);
-        payload.medicareWithholdingOverride = parseFloat(medOverride || 0);
+        // Send a tax override when the user pinned it, OR when the tax base didn't
+        // change (to preserve the stored value). When the base changed and the user
+        // didn't pin it, omit it so the backend recomputes from the new gross —
+        // this avoids the stale-FIT-estimate race and matches the stored net_pay.
+        if (fitManual || !taxBaseChanged) payload.fitWithholdingOverride      = parseFloat(fitOverride || 0);
+        if (ssManual  || !taxBaseChanged) payload.ssWithholdingOverride       = parseFloat(ssOverride  || 0);
+        if (medManual || !taxBaseChanged) payload.medicareWithholdingOverride = parseFloat(medOverride || 0);
         payload.reportedTips  = parseFloat(itemForm.reportedTips  || 0);
         payload.bonus         = parseFloat(itemForm.bonus         || 0);
         payload.commission    = parseFloat(itemForm.commission    || 0);
         payload.reimbursement = parseFloat(itemForm.reimbursement || 0);
         payload.deduction     = parseFloat(itemForm.deduction     || 0);
         payload.garnishment   = parseFloat(itemForm.garnishment   || 0);
-        await api.updatePaystub(stub.id, payload);
+
+        const resp  = await api.updatePaystub(stub.id, payload);
+        const saved = resp && resp.paystub ? resp.paystub : null;
         await reloadStubs();
-        // Advance the baseline so isDirty resets without closing the modal
+
+        if (saved) {
+          // Snap the modal to the authoritative stored values so its "Check Amount"
+          // (and every read-only row) equals the inline row's net_pay — the two
+          // surfaces now read the same source of truth.
+          setDetailModal(prev => (prev && prev.stub && prev.stub.id === saved.id) ? { ...prev, stub: { ...saved } } : prev);
+          if (!fitManual) setFitOverride(String(r2(saved.fit_withholding   || 0)));
+          if (!ssManual)  setSsOverride (String(r2(saved.employee_ss       || 0)));
+          if (!medManual) setMedOverride(String(r2(saved.employee_medicare || 0)));
+        }
+        // Advance the baseline from what the backend actually stored (not local
+        // estimates), so isDirty settles instead of firing a spurious re-save.
         setCommitted({
-          gross: grossOverride, fit: fitOverride, ss: ssOverride, med: medOverride,
+          gross: grossOverride,
+          fit:  saved && !fitManual ? String(r2(saved.fit_withholding   || 0)) : fitOverride,
+          ss:   saved && !ssManual  ? String(r2(saved.employee_ss       || 0)) : ssOverride,
+          med:  saved && !medManual ? String(r2(saved.employee_medicare || 0)) : medOverride,
           dateStart: dateForm.start, dateEnd: dateForm.end, datePayDate: dateForm.payDate,
           tips: itemForm.reportedTips, bonus: itemForm.bonus, commission: itemForm.commission,
           reimbursement: itemForm.reimbursement, deduction: itemForm.deduction, garnishment: itemForm.garnishment,
@@ -2762,6 +2793,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                 if (parseFloat(committed.garnishment)  > 0) s.add('garnishment');
                 setAddedItems(s);
                 setOtherOpen(false);
+                // Clear manual-tax flags so reverted tax fields re-derive on the
+                // next gross change instead of staying stuck "manual".
+                setFitManual(false); setSsManual(false); setMedManual(false);
                 setSaveStatus('idle');
               }} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-secondary)' }}>Revert</button>
             )}
@@ -3048,17 +3082,20 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                   })()
                 }</td>
                 <td style={{ padding: '14px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, color: '#16a34a', fontSize: 16 }}>
-                  {stub.gross_wages != null ? fmt(r2(
-                    (stub.gross_wages        || 0)
-                    - (stub.fit_withholding   || 0)
-                    - (stub.employee_ss       || 0)
-                    - (stub.employee_medicare || 0)
-                    - (stub.additional_medicare || 0)
-                    - (stub.state_income_tax  || 0)
-                    - (stub.deduction         || 0)
-                    - (stub.garnishment       || 0)
-                    + (stub.reimbursement     || 0)
-                  )) : '—'}
+                  {/* Authoritative net pay computed and stored by the backend — the
+                      same value the detail modal shows after save, so the two agree. */}
+                  {stub.net_pay != null ? fmt(r2(stub.net_pay))
+                    : (stub.gross_wages != null ? fmt(r2(
+                        (stub.gross_wages        || 0)
+                        - (stub.fit_withholding   || 0)
+                        - (stub.employee_ss       || 0)
+                        - (stub.employee_medicare || 0)
+                        - (stub.additional_medicare || 0)
+                        - (stub.state_income_tax  || 0)
+                        - (stub.deduction         || 0)
+                        - (stub.garnishment       || 0)
+                        + (stub.reimbursement     || 0)
+                      )) : '—')}
                 </td>
                 <td style={{ padding: '8px 10px', textAlign: 'right' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
