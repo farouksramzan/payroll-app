@@ -2583,7 +2583,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       }
     }, [liveGross]);
 
-    const liveNetPay = r2(
+    // Clamp at 0 to match the backend — a check can't be written for a negative
+    // amount, so the modal's "Check Amount" never goes below zero either.
+    const liveNetPay = Math.max(0, r2(
       liveGross
       - parseFloat(fitOverride || 0)
       - parseFloat(ssOverride  || 0)
@@ -2593,7 +2595,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       - parseFloat(itemForm.deduction   || 0)
       - parseFloat(itemForm.garnishment || 0)
       + parseFloat(itemForm.reimbursement || 0)
-    );
+    ));
 
     const deductionRows = [
       { label: 'Federal Income Tax', amount: stub.fit_withholding   || 0, ytd: ytd.fit,
