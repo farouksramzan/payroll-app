@@ -2395,6 +2395,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
     const [fitManual,  setFitManual]  = useState(false);
     const [ssManual,   setSsManual]   = useState(false);
     const [medManual,  setMedManual]  = useState(false);
+    // Live state income tax + additional Medicare (recomputed as gross changes) so
+    // the modal's preview matches the backend even before the save round-trips.
+    const [liveStateTax, setLiveStateTax] = useState(r2(stub.state_income_tax   || 0));
+    const [liveAddlMed,  setLiveAddlMed]  = useState(r2(stub.additional_medicare || 0));
 
     // "committed" = the values as of the last successful save (initially = DB values).
     // isDirty compares current form state against committed so autosave resets correctly
@@ -2488,6 +2492,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           if (!fitManual) setFitOverride(String(r2(saved.fit_withholding   || 0)));
           if (!ssManual)  setSsOverride (String(r2(saved.employee_ss       || 0)));
           if (!medManual) setMedOverride(String(r2(saved.employee_medicare || 0)));
+          setLiveStateTax(r2(saved.state_income_tax   || 0));
+          setLiveAddlMed (r2(saved.additional_medicare || 0));
         }
         // Advance the baseline from what the backend actually stored (not local
         // estimates), so isDirty settles instead of firing a spurious re-save.
@@ -2566,7 +2572,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       if (isVoided || liveGross === prev) return; // nothing changed yet
       if (!ssManual)  setSsOverride(String(r2(liveGross * 0.062)));
       if (!medManual) setMedOverride(String(r2(liveGross * 0.0145)));
-      if (!fitManual && liveGross > 0) {
+      if (liveGross > 0) {
+        // Recompute FIT (unless manually pinned) plus state income tax and
+        // additional Medicare from the new gross, so the live preview matches
+        // what the backend will store.
         api.calculate({
           grossWages:    liveGross,
           payFrequency:  stub.pay_frequency   || 'biweekly',
@@ -2579,6 +2588,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           ytdGross:  stub.ytd_wages_before    || 0,
         }).then(res => {
           if (!fitManual) setFitOverride(String(r2(res.fitWithholding || 0)));
+          setLiveStateTax(r2(res.stateIncomeTax   || 0));
+          setLiveAddlMed (r2(res.additionalMedicare || 0));
         }).catch(() => {});
       }
     }, [liveGross]);
@@ -2590,8 +2601,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       - parseFloat(fitOverride || 0)
       - parseFloat(ssOverride  || 0)
       - parseFloat(medOverride || 0)
-      - (stub.additional_medicare || 0)
-      - (stub.state_income_tax  || 0)
+      - liveAddlMed
+      - liveStateTax
       - parseFloat(itemForm.deduction   || 0)
       - parseFloat(itemForm.garnishment || 0)
       + parseFloat(itemForm.reimbursement || 0)
@@ -2607,8 +2618,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       { label: 'Medicare',        amount: stub.employee_medicare || 0, ytd: ytd.eeMed,
         editValue: canEdit ? medOverride : undefined,
         onEditChange: canEdit ? (v => { setMedManual(true); setMedOverride(v); }) : undefined },
-      (stub.additional_medicare || 0) > 0 && { label: 'Addl Medicare', amount: stub.additional_medicare, ytd: 0 },
-      { label: 'State Income Tax',   amount: stub.state_income_tax  || 0, ytd: ytd.stateTax },
+      liveAddlMed > 0 && { label: 'Addl Medicare', amount: liveAddlMed, ytd: 0 },
+      { label: 'State Income Tax',   amount: liveStateTax, ytd: ytd.stateTax },
       ...optionalDeductions
         .filter(x => addedItems.has(x.key))
         .map(x => ({ label: x.label, amount: parseFloat(itemForm[x.key] || 0), editValue: canEdit ? itemForm[x.key] : undefined, onEditChange: set(x.key) })),
