@@ -9,168 +9,105 @@
     --bg: #0d1117;
     --panel: #161b22;
     --panel-2: #1c2129;
-    --border: #2d333b;
+    --border: #262c34;
     --text: #e6edf3;
     --muted: #8b949e;
     --accent: #2ea043;
     --accent-2: #58a6ff;
     --warn: #d29922;
     --danger: #f85149;
-    --radius: 10px;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     background: var(--bg); color: var(--text);
-    font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
     height: 100vh; overflow: hidden;
   }
+
   header {
-    display: flex; align-items: center; gap: 10px;
-    padding: 9px 16px; border-bottom: 1px solid var(--border); background: var(--panel);
+    display: flex; align-items: center; gap: 14px;
+    padding: 12px 18px;
   }
-  header h1 { font-size: 16px; font-weight: 700; white-space: nowrap; }
+  header h1 { font-size: 15px; font-weight: 700; }
   header h1 span { color: var(--accent); }
+  #countChip { font-size: 12px; color: var(--muted); }
+  #countChip b { color: #ff7b72; }
   header .spacer { flex: 1; }
-  .statchip {
-    font-size: 12px; color: var(--muted); border: 1px solid var(--border);
-    border-radius: 999px; padding: 3px 10px; white-space: nowrap;
+  .hbtn {
+    font-size: 12px; color: var(--muted); cursor: pointer;
+    padding: 4px 8px; border-radius: 6px;
   }
-  .statchip b { color: var(--text); }
-  .statchip.alert b { color: #ff7b72; }
-  .statchip.sleep b { color: var(--warn); }
-  .statchip.win b { color: var(--accent); }
-  .keychip {
-    font-size: 12px; color: var(--muted); cursor: pointer; border: 1px solid var(--border);
-    border-radius: 999px; padding: 4px 10px; white-space: nowrap;
-  }
-  .keychip:hover { border-color: var(--muted); }
-  .keychip.ok { color: var(--accent); border-color: var(--accent); }
-  .keychip.action { color: var(--accent-2); }
+  .hbtn:hover { color: var(--text); background: var(--panel); }
 
   main {
-    display: grid; grid-template-columns: 290px 1fr 390px;
-    height: calc(100vh - 44px);
-  }
-  @media (max-width: 1100px) {
-    main { grid-template-columns: 220px 1fr 310px; }
-  }
-  .col { overflow-y: auto; border-right: 1px solid var(--border); }
-  .col:last-child { border-right: none; }
-  .col-head {
-    position: sticky; top: 0; z-index: 2; background: var(--panel);
-    padding: 9px 14px; font-size: 11px; font-weight: 700; letter-spacing: .08em;
-    text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border);
-    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    display: grid; grid-template-columns: 230px 1fr;
+    height: calc(100vh - 46px);
   }
 
-  /* ---------- Queue ---------- */
-  .filtertabs { display: flex; gap: 2px; }
-  .filtertabs button {
-    background: none; border: none; color: var(--muted); font-size: 11px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: .05em; padding: 2px 7px; border-radius: 6px; cursor: pointer;
+  /* ---------- Conversation list ---------- */
+  #list { overflow-y: auto; padding: 0 6px 20px; }
+  .convo {
+    padding: 9px 12px; border-radius: 8px; cursor: pointer; margin-bottom: 2px;
   }
-  .filtertabs button.on { background: var(--panel-2); color: var(--text); }
-  .prospect { padding: 11px 14px; border-bottom: 1px solid var(--border); cursor: pointer; }
-  .prospect:hover { background: var(--panel); }
-  .prospect.active { background: var(--panel-2); border-left: 3px solid var(--accent); padding-left: 11px; }
-  .prospect .name { font-weight: 600; display: flex; justify-content: space-between; align-items: center; gap: 6px; }
-  .prospect .name .who { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .prospect .score { font-size: 11px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; color: var(--accent-2); flex-shrink: 0; }
-  .prospect .handle { color: var(--accent-2); font-size: 12px; }
-  .prospect .meta { color: var(--muted); font-size: 12px; margin-top: 3px; }
-  .badges { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
-  .badge { display: inline-block; font-size: 10px; font-weight: 700; text-transform: uppercase; border-radius: 4px; padding: 1px 6px; }
-  .badge.newreply { background: #3d1e1e; color: #ff7b72; }
-  .badge.needsreply { background: #1e2f3d; color: #58a6ff; }
-  .badge.quiet { background: #33270f; color: #d29922; }
-  .badge.stage-committed { background: #16321f; color: #3fb950; }
-  .badge.stage-won { background: #1a3a2a; color: #3fb950; }
-  .badge.stage-lost { background: #3a1518; color: #f85149; }
-  .badge.channel { background: var(--panel-2); color: var(--muted); border: 1px solid var(--border); }
-  .badge.intent-interested { background: #16321f; color: #3fb950; }
-  .badge.intent-fee_objection { background: #33270f; color: #d29922; }
-  .badge.intent-migration_concern { background: #1a2a3d; color: #58a6ff; }
-  .badge.intent-not_now { background: #2c2c33; color: #a5a5b5; }
-  .badge.intent-dead { background: #3a1518; color: #f85149; }
+  .convo:hover { background: var(--panel); }
+  .convo.active { background: var(--panel-2); }
+  .convo .row1 { display: flex; align-items: center; gap: 8px; }
+  .convo .name { font-weight: 600; font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: #ff7b72; flex-shrink: 0; }
+  .quiet-tag { font-size: 10px; color: var(--warn); flex-shrink: 0; }
+  .convo .handle { color: var(--muted); font-size: 12px; margin-top: 1px; }
 
   /* ---------- Conversation ---------- */
-  .convo-sub {
-    display: flex; align-items: center; gap: 6px; padding: 8px 14px;
-    border-bottom: 1px solid var(--border); background: #10141a; flex-wrap: wrap;
+  #convo { display: flex; flex-direction: column; overflow: hidden; border-left: 1px solid var(--border); }
+  #convoHead {
+    padding: 10px 20px; font-size: 11px; font-weight: 700; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--muted); border-bottom: 1px solid var(--border);
   }
-  .stagebtn {
-    background: none; border: 1px solid var(--border); color: var(--muted);
-    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em;
-    padding: 3px 9px; border-radius: 999px; cursor: pointer;
-  }
-  .stagebtn:hover { border-color: var(--muted); }
-  .stagebtn.on { border-color: var(--accent); color: var(--accent); }
-  .stagebtn.on.lost { border-color: var(--danger); color: var(--danger); }
-  #thread { padding: 14px; display: flex; flex-direction: column; gap: 10px; }
-  .bubble { max-width: 78%; padding: 9px 13px; border-radius: 14px; white-space: pre-wrap; }
-  .bubble.them { align-self: flex-start; background: var(--panel-2); border: 1px solid var(--border); border-bottom-left-radius: 4px; }
-  .bubble.ae { align-self: flex-end; background: #1a3a2a; border: 1px solid #2ea04355; border-bottom-right-radius: 4px; }
+  #thread { flex: 1; overflow-y: auto; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; }
+  .bubble { max-width: 640px; padding: 9px 13px; border-radius: 14px; white-space: pre-wrap; }
+  .bubble.them { align-self: flex-start; background: var(--panel-2); border-bottom-left-radius: 4px; }
+  .bubble.ae { align-self: flex-end; background: #1a3a2a; border-bottom-right-radius: 4px; }
   .bubble .who { font-size: 10px; color: var(--muted); margin-bottom: 3px; text-transform: uppercase; letter-spacing: .05em; display: flex; justify-content: space-between; gap: 14px; }
-  .composer { position: sticky; bottom: 0; background: var(--panel); border-top: 1px solid var(--border); padding: 10px 14px; display: flex; gap: 8px; }
-  .composer textarea {
-    flex: 1; resize: none; background: var(--bg); color: var(--text);
-    border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; font: inherit; min-height: 40px;
+  .empty-hint { color: var(--muted); text-align: center; padding: 80px 20px; }
+
+  /* ---------- Composer / copilot strip ---------- */
+  #composer { border-top: 1px solid var(--border); padding: 12px 20px 14px; }
+  #assist { font-size: 12.5px; color: var(--muted); margin-bottom: 8px; min-height: 18px; }
+  #assist .intent-pill {
+    display: inline-block; font-weight: 700; font-size: 11px; border-radius: 5px;
+    padding: 1px 8px; margin-right: 8px; vertical-align: 1px;
   }
-  .empty-hint { color: var(--muted); text-align: center; padding: 60px 20px; }
-
-  /* ---------- Copilot ---------- */
-  .block { margin: 12px 14px; background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); }
-  .block-head { padding: 9px 12px; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); display: flex; justify-content: space-between; align-items: center; }
-  .block-body { padding: 12px; }
-  .intent-pill { display: inline-block; font-weight: 700; font-size: 12px; border-radius: 6px; padding: 3px 10px; margin-bottom: 8px; }
-  .intent-pill.intent-interested { background: #16321f; color: #3fb950; }
-  .intent-pill.intent-fee_objection { background: #33270f; color: #d29922; }
-  .intent-pill.intent-migration_concern { background: #1a2a3d; color: #58a6ff; }
-  .intent-pill.intent-not_now { background: #2c2c33; color: #a5a5b5; }
-  .intent-pill.intent-dead { background: #3a1518; color: #f85149; }
-  .rationale { color: var(--muted); font-size: 13px; }
-
-  table.earn { width: 100%; border-collapse: collapse; font-size: 13px; }
-  table.earn th, table.earn td { padding: 5px 6px; text-align: right; border-bottom: 1px solid var(--border); }
-  table.earn th:first-child, table.earn td:first-child { text-align: left; }
-  table.earn th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; }
-  .delta-pos { color: var(--accent); font-weight: 700; }
-  .delta-neg { color: var(--danger); font-weight: 700; }
-  .assumptions { margin-top: 10px; border-top: 1px dashed var(--border); padding-top: 8px; }
-  .assumptions summary { cursor: pointer; color: var(--muted); font-size: 12px; }
-  .assumptions .row { display: flex; justify-content: space-between; align-items: center; margin-top: 6px; font-size: 12px; color: var(--muted); }
-  .assumptions input { width: 80px; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 6px; padding: 3px 6px; font: inherit; text-align: right; }
+  .intent-interested { background: #16321f; color: #3fb950; }
+  .intent-fee_objection { background: #33270f; color: #d29922; }
+  .intent-migration_concern { background: #1a2a3d; color: #58a6ff; }
+  .intent-not_now { background: #2c2c33; color: #a5a5b5; }
+  .intent-dead { background: #3a1518; color: #f85149; }
+  #assist .nextstep { color: var(--accent-2); }
+  #assist .err { color: var(--danger); }
+  #assist .thinking::after { content: ""; animation: dots 1.2s steps(4) infinite; }
+  @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
 
   #replyText {
-    width: 100%; min-height: 74px; resize: vertical; background: var(--bg); color: var(--text);
-    border: 1px solid var(--border); border-radius: 8px; padding: 9px 11px; font: inherit;
+    width: 100%; min-height: 64px; resize: vertical; background: var(--panel); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font: inherit;
   }
-  .wordcount { font-size: 11px; color: var(--muted); margin-top: 4px; }
-  .wordcount.over { color: var(--danger); }
-  .next-step-action { font-weight: 700; font-size: 14px; margin-bottom: 5px; color: var(--accent-2); }
-  .bumpnote { font-size: 11px; color: var(--warn); margin-bottom: 6px; }
-
+  #replyText:focus { outline: none; border-color: var(--muted); }
+  .composer-row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  #wordCount { font-size: 11px; color: var(--muted); }
+  #wordCount.over { color: var(--danger); }
+  .composer-row .spacer { flex: 1; }
   button {
-    background: var(--panel-2); color: var(--text); border: 1px solid var(--border);
-    border-radius: 8px; padding: 7px 13px; font: inherit; font-weight: 600; cursor: pointer;
+    background: none; color: var(--muted); border: 1px solid var(--border);
+    border-radius: 8px; padding: 6px 12px; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer;
   }
-  button:hover { border-color: var(--muted); }
+  button:hover { color: var(--text); border-color: var(--muted); }
   button.primary { background: var(--accent); border-color: var(--accent); color: #04170a; }
   button.primary:hover { filter: brightness(1.1); }
-  button.small { font-size: 12px; padding: 4px 10px; }
-  button.danger { border-color: var(--danger); color: var(--danger); background: none; }
-  button:disabled { opacity: .5; cursor: not-allowed; }
-  .btnrow { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-
-  .loading { color: var(--muted); font-size: 13px; padding: 4px 0; }
-  .loading::after { content: ""; animation: dots 1.2s steps(4) infinite; }
-  @keyframes dots { 0% { content: ""; } 25% { content: "."; } 50% { content: ".."; } 75% { content: "..."; } }
-  .error-msg { color: var(--danger); font-size: 13px; white-space: pre-wrap; }
 
   /* ---------- Modals ---------- */
   .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 50; }
   .modal-backdrop.open { display: flex; }
-  .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; width: min(720px, 92vw); max-height: 86vh; display: flex; flex-direction: column; }
+  .modal { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; width: min(680px, 92vw); max-height: 86vh; display: flex; flex-direction: column; }
   .modal h2 { font-size: 15px; padding: 14px 16px; border-bottom: 1px solid var(--border); }
   .modal .modal-body { padding: 14px 16px; overflow-y: auto; }
   .modal label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
@@ -180,73 +117,48 @@
   .modal .modal-foot .foot-left { margin-right: auto; }
   .note { font-size: 12px; color: var(--warn); margin-top: 8px; }
   .subnote { font-size: 12px; color: var(--muted); margin-top: 4px; }
-  #digestPre {
-    font: 12.5px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text);
-    background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
-    padding: 14px; white-space: pre-wrap; word-break: break-word;
-  }
+  .linklike { color: var(--accent-2); cursor: pointer; font-size: 12.5px; }
+  button.danger { border-color: var(--danger); color: var(--danger); }
 
   /* ---------- Toast ---------- */
   #toast {
     position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(calc(100% + 40px));
     background: var(--panel-2); border: 1px solid var(--accent); border-radius: 10px;
-    padding: 12px 16px; max-width: 560px; width: 92vw; z-index: 100;
+    padding: 12px 16px; max-width: 520px; width: 92vw; z-index: 100;
     transition: transform .25s ease; box-shadow: 0 8px 30px rgba(0,0,0,.5);
   }
   #toast.show { transform: translateX(-50%) translateY(0); }
-  #toast .toast-title { font-weight: 700; color: var(--accent); margin-bottom: 6px; font-size: 13px; }
-  #toast pre { font: 11px/1.5 ui-monospace, Menlo, monospace; color: var(--muted); white-space: pre-wrap; word-break: break-word; max-height: 180px; overflow-y: auto; }
-
-  footer {
-    position: fixed; bottom: 0; right: 0; padding: 3px 10px; font-size: 11px; color: #4a5361;
-    background: var(--bg); border-top-left-radius: 8px; pointer-events: none;
-  }
-  footer kbd { border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; font-family: inherit; }
+  #toast .toast-title { font-weight: 700; color: var(--accent); margin-bottom: 4px; font-size: 13px; }
+  #toast pre { font: 11px/1.5 ui-monospace, Menlo, monospace; color: var(--muted); white-space: pre-wrap; word-break: break-word; max-height: 140px; overflow-y: auto; }
 </style>
 </head>
 <body>
 
 <header>
   <h1>DC <span>Reply Copilot</span></h1>
-  <div id="stats" style="display:flex; gap:6px; align-items:center; overflow:hidden;"></div>
+  <span id="countChip"></span>
   <div class="spacer"></div>
-  <div class="keychip action" id="simChip" title="Simulate an inbound DM reply (demo of the InboxApp message.created webhook)">&#9654; simulate inbound</div>
-  <div class="keychip action" id="digestChip" title="Generate the Hermes-style morning digest">&#9728; digest</div>
-  <div class="keychip" id="promptChip" title="Edit system prompt & few-shot examples">system prompt</div>
-  <div class="keychip" id="settingsChip" title="API keys, InboxApp connection, demo data">settings</div>
+  <div class="hbtn" id="simChip" title="Simulate an inbound DM (stands in for the InboxApp webhook)">&#9654; sim</div>
+  <div class="hbtn" id="settingsChip" title="API keys, InboxApp, system prompt">&#9881;</div>
 </header>
 
 <main>
-  <!-- ================= LEFT: QUEUE ================= -->
-  <section class="col">
-    <div class="col-head">
-      <span>Queue</span>
-      <div style="display:flex; align-items:center; gap:8px;">
-        <div class="filtertabs" id="filterTabs"></div>
-        <button class="small" id="analyzeAllBtn" title="Classify every active conversation">&#8635; all</button>
+  <section id="list"></section>
+
+  <section id="convo">
+    <div id="convoHead">Conversation</div>
+    <div id="thread"><div class="empty-hint">Pick a conversation</div></div>
+    <div id="composer" style="display:none;">
+      <div id="assist"></div>
+      <textarea id="replyText" placeholder="Write a reply, or wait for the draft&hellip;"></textarea>
+      <div class="composer-row">
+        <span id="wordCount"></span>
+        <span class="spacer"></span>
+        <button id="logTheirsBtn" title="Log the text above as the prospect's incoming message (IG/TT manual)">log theirs</button>
+        <button id="regenBtn" title="Redraft from a different angle">&#8635;</button>
+        <button class="primary" id="sendBtn">Send &rarr;</button>
       </div>
     </div>
-    <div id="queue"></div>
-  </section>
-
-  <!-- ================= CENTER: CONVERSATION ================= -->
-  <section class="col" style="display:flex; flex-direction:column;">
-    <div class="col-head" id="convoHead"><span>Conversation</span></div>
-    <div class="convo-sub" id="convoSub" style="display:none;"></div>
-    <div id="thread" style="flex:1;"><div class="empty-hint">Select a prospect from the queue</div></div>
-    <div class="composer" id="composer" style="display:none;">
-      <textarea id="newMsg" placeholder="Paste a new incoming DM from the prospect (IG/TT manual, or X while webhook is off)&hellip;"></textarea>
-      <button id="addMsgBtn" title="Add as incoming message and re-run copilot">Add</button>
-    </div>
-  </section>
-
-  <!-- ================= RIGHT: COPILOT ================= -->
-  <section class="col" style="background:#10141a;">
-    <div class="col-head">
-      <span>Copilot</span>
-      <button class="small" id="analyzeBtn" style="display:none;">Analyze</button>
-    </div>
-    <div id="copilot"><div class="empty-hint">Copilot output appears here</div></div>
   </section>
 </main>
 
@@ -257,16 +169,18 @@
     <div class="modal-body">
       <label>Anthropic API key (stored in this browser's localStorage only)</label>
       <input type="password" id="keyInput" placeholder="sk-ant-...">
-      <div class="note">&#9888; Browser-only demo: the key is visible to anyone with access to this browser profile. Use a low-limit key, and don't ship this pattern to real users without a backend proxy.</div>
+      <div class="note">&#9888; Browser-only demo: use a low-limit key, and don't ship this pattern to real users without a backend proxy.</div>
 
       <label style="margin-top:18px;">InboxApp API token (optional &mdash; enables live send)</label>
       <input type="password" id="inboxTokenInput" placeholder="leave empty for demo mode">
       <label>InboxApp API base URL</label>
       <input type="text" id="inboxBaseInput" placeholder="https://api.inboxapp.com">
-      <div class="subnote">With a token set, "Approve &amp; send" POSTs the reply through the Inbox API (Bearer auth). Endpoint paths follow docs.inboxapp.com &mdash; verify against the current reference before the first live send. On any error the app falls back to demo mode for that send.</div>
+      <div class="subnote">With a token set, Send POSTs through the Inbox API (Bearer auth). Verify the endpoint path against docs.inboxapp.com before the first live send. On error, the draft is kept and nothing is recorded.</div>
+
+      <div style="margin-top:18px;"><span class="linklike" id="openPromptLink">Edit system prompt &amp; few-shot examples &rarr;</span></div>
     </div>
     <div class="modal-foot">
-      <button class="danger foot-left" id="resetDemoBtn" title="Clear pipeline state and reload the seeded demo conversations">Reset demo data</button>
+      <button class="danger foot-left" id="resetDemoBtn" title="Clear conversation state and reload the seeded demo">Reset demo data</button>
       <button id="settingsCancel">Cancel</button>
       <button class="primary" id="settingsSave">Save</button>
     </div>
@@ -278,7 +192,7 @@
     <h2>System prompt (DubClub context + style contract + few-shot examples)</h2>
     <div class="modal-body">
       <textarea id="promptInput" spellcheck="false"></textarea>
-      <div class="note">Marking a conversation <b>Won</b> auto-appends it here as a few-shot example &mdash; the copilot learns from every close. Replace the placeholder examples with real winning exchanges.</div>
+      <div class="note">The example exchanges are placeholders. Replace them with real winning DM exchanges, then Save.</div>
     </div>
     <div class="modal-foot">
       <button id="promptReset">Reset to default</button>
@@ -288,22 +202,7 @@
   </div>
 </div>
 
-<div class="modal-backdrop" id="digestModal">
-  <div class="modal">
-    <h2>&#9728; Morning digest (Hermes-ready)</h2>
-    <div class="modal-body">
-      <div id="digestPre"></div>
-      <div class="subnote" style="margin-top:8px;">Paste into Slack, or wire this to Hermes so it posts automatically each morning with approve/edit buttons per conversation.</div>
-    </div>
-    <div class="modal-foot">
-      <button id="digestClose">Close</button>
-      <button class="primary" id="digestCopy">Copy to clipboard</button>
-    </div>
-  </div>
-</div>
-
 <div id="toast"><div class="toast-title" id="toastTitle"></div><pre id="toastBody"></pre></div>
-<footer><kbd>j</kbd>/<kbd>k</kbd> queue &nbsp;<kbd>a</kbd> send &nbsp;<kbd>r</kbd> regenerate</footer>
 
 <script type="module">
 import Anthropic from "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk/+esm";
@@ -311,17 +210,14 @@ import Anthropic from "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk/+esm";
 /* =========================================================
    CONSTANTS
    ========================================================= */
-const LS_KEY    = "dcrc_api_key";          // shared with v1 so saved keys carry over
+const LS_KEY    = "dcrc_api_key";
 const LS_PROMPT = "dcrc_system_prompt";
 const LS_STATE  = "dcrc2_state";
 const LS_INBOX  = "dcrc2_inboxapp";
 const SEED_VERSION = 2;
 
 const HOUR = 3600e3, DAY = 24 * HOUR;
-const QUIET_DAYS = 3;                       // quiet threshold before a bump is suggested
-
-const STAGES = ["in_convo", "committed", "won", "lost"];
-const STAGE_LABELS = { in_convo: "In convo", committed: "Committed", won: "Won", lost: "Lost" };
+const QUIET_DAYS = 3;
 const ACTIVE_STAGES = ["in_convo", "committed"];
 
 const INTENT_LABELS = {
@@ -331,19 +227,16 @@ const INTENT_LABELS = {
   not_now: "Not now",
   dead: "Dead"
 };
-const INTENT_WEIGHT = {
-  interested: 1.6, migration_concern: 1.4, fee_objection: 1.3, not_now: 0.7, dead: 0.3
-};
 const STEP_LABELS = {
-  book_call: "\u{1F4DE} Book a call",
-  send_comparison: "\u{1F4CA} Send earnings comparison",
-  set_follow_up_date: "\u{1F4C5} Set follow-up date",
-  close_lost: "\u{1F6AB} Close lost"
+  book_call: "book a call",
+  send_comparison: "send earnings comparison",
+  set_follow_up_date: "set a follow-up date",
+  close_lost: "close lost"
 };
 
 /* =========================================================
-   SEED DATA — demo pipeline. Threads are placeholders: swap
-   in real DM threads (keep the {from, text, at} shape).
+   SEED DATA — demo conversations. Swap in real DM threads
+   (keep the {from, text, at} shape).
    ========================================================= */
 function seedProspects() {
   const now = Date.now();
@@ -461,7 +354,7 @@ function seedProspects() {
   ];
 }
 
-/* Plausible inbound replies for the demo webhook simulator, keyed by last classification. */
+/* Plausible inbound replies for the demo simulator, keyed by last classification. */
 const SIM_REPLIES = {
   interested: [
     "ok i'm free thursday or friday afternoon, what works",
@@ -543,7 +436,6 @@ capper: "lol ok that sounds worth 20 minutes"
 let prospects = [];
 let assumptionsByProspect = {};
 let selected = null;
-let filter = "active";          // active | won | lost | all
 
 const $ = id => document.getElementById(id);
 const getKey    = () => localStorage.getItem(LS_KEY) || "";
@@ -583,24 +475,14 @@ function loadState() {
 const lastMsg = p => p.thread[p.thread.length - 1];
 const bumpRev = p => { p.threadRev = (p.threadRev || 0) + 1; };
 const isActive = p => ACTIVE_STAGES.includes(p.stage);
-const needsReply = p => isActive(p) && p.thread.length > 0 && lastMsg(p).from === "them";
+const needsReply = p => p.thread.length > 0 && lastMsg(p).from === "them";
 function quietDays(p) {
-  if (!isActive(p) || p.thread.length === 0) return 0;
+  if (p.thread.length === 0) return 0;
   const m = lastMsg(p);
   if (m.from !== "ae") return 0;
   return Math.floor((Date.now() - m.at) / DAY);
 }
 const needsBump = p => quietDays(p) >= QUIET_DAYS;
-
-function priorityScore(p) {
-  const reach = Math.log10(Math.max(p.followers, 10)) * p.engagement;
-  const intentW = p.copilot ? (INTENT_WEIGHT[p.copilot.intent] ?? 1) : 1;
-  let stateW = 1;
-  if (needsReply(p)) stateW = 2;
-  else if (needsBump(p)) stateW = 1.4;
-  if (p.stage === "committed") stateW *= 1.3;
-  return Math.round(reach * intentW * stateW * 10);
-}
 
 function ago(ts) {
   const d = Date.now() - ts;
@@ -609,8 +491,13 @@ function ago(ts) {
   return `${Math.round(d / DAY)}d ago`;
 }
 
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+}
+
 /* =========================================================
-   EARNINGS MATH (pure client-side)
+   EARNINGS MATH — not shown in the UI; feeds the model so
+   drafts can cite real numbers.
    ========================================================= */
 function getAssumptions(p) {
   if (!assumptionsByProspect[p.id]) {
@@ -634,245 +521,88 @@ function calcEarnings(a) {
 }
 const money = n => "$" + Math.round(n).toLocaleString();
 
-function escapeHtml(s) {
-  return String(s).replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
-}
-
 /* =========================================================
-   RENDER: HEADER STATS
+   RENDER
    ========================================================= */
-function renderStats() {
-  const reply = prospects.filter(needsReply).length;
-  const quiet = prospects.filter(needsBump).length;
-  const committed = prospects.filter(p => p.stage === "committed").length;
-  const won = prospects.filter(p => p.stage === "won").length;
-  $("stats").innerHTML = `
-    <span class="statchip ${reply ? "alert" : ""}"><b>${reply}</b> need reply</span>
-    <span class="statchip ${quiet ? "sleep" : ""}"><b>${quiet}</b> quiet ${QUIET_DAYS}d+</span>
-    <span class="statchip"><b>${committed}</b> committed</span>
-    <span class="statchip win"><b>${won}</b> won</span>`;
+function visibleProspects() {
+  // needs-reply first (newest inbound on top), then quiet, then the rest
+  return prospects.filter(isActive).sort((a, b) => {
+    const ra = needsReply(a), rb = needsReply(b);
+    if (ra !== rb) return ra ? -1 : 1;
+    const qa = needsBump(a), qb = needsBump(b);
+    if (qa !== qb) return qa ? -1 : 1;
+    return lastMsg(b).at - lastMsg(a).at;
+  });
 }
 
-/* =========================================================
-   RENDER: QUEUE
-   ========================================================= */
-function filteredProspects() {
-  let list;
-  if (filter === "active") list = prospects.filter(isActive);
-  else if (filter === "won") list = prospects.filter(p => p.stage === "won");
-  else if (filter === "lost") list = prospects.filter(p => p.stage === "lost");
-  else list = prospects.slice();
-  return list.sort((a, b) => priorityScore(b) - priorityScore(a));
+function renderCount() {
+  const n = prospects.filter(p => isActive(p) && needsReply(p)).length;
+  $("countChip").innerHTML = n ? `<b>${n}</b> need a reply` : "all caught up";
 }
 
-function renderFilterTabs() {
-  const tabs = [["active", "Active"], ["won", "Won"], ["lost", "Lost"], ["all", "All"]];
-  $("filterTabs").innerHTML = tabs.map(([k, label]) =>
-    `<button class="${filter === k ? "on" : ""}" data-filter="${k}">${label}</button>`).join("");
-  $("filterTabs").querySelectorAll("button").forEach(b =>
-    b.addEventListener("click", () => { filter = b.dataset.filter; renderQueue(); reconcileSelection(); }));
-}
-
-function badgesFor(p) {
-  const out = [];
-  if (p.unread) out.push(`<span class="badge newreply">new reply</span>`);
-  else if (needsReply(p)) out.push(`<span class="badge needsreply">needs reply</span>`);
-  const q = quietDays(p);
-  if (q >= QUIET_DAYS) out.push(`<span class="badge quiet">quiet ${q}d</span>`);
-  if (p.stage !== "in_convo") out.push(`<span class="badge stage-${p.stage}">${STAGE_LABELS[p.stage]}</span>`);
-  if (p.copilot) out.push(`<span class="badge intent-${p.copilot.intent}">${INTENT_LABELS[p.copilot.intent] || p.copilot.intent}</span>`);
-  if (p.channel !== "X") out.push(`<span class="badge channel">${escapeHtml(p.channel)} &middot; manual</span>`);
-  return out.join("");
-}
-
-function renderQueue() {
-  renderFilterTabs();
-  const list = filteredProspects();
-  if (!list.length) {
-    $("queue").innerHTML = `<div class="empty-hint" style="padding:30px 14px;">Nothing here.</div>`;
-    return;
-  }
-  $("queue").innerHTML = list.map(p => `
-    <div class="prospect ${selected?.id === p.id ? "active" : ""}" data-id="${p.id}">
-      <div class="name"><span class="who">${escapeHtml(p.name)}</span> <span class="score" title="priority score">${priorityScore(p)}</span></div>
-      <div class="handle">${escapeHtml(p.handle)}</div>
-      <div class="meta">${(p.followers / 1000).toFixed(1)}K followers &middot; ${p.engagement}% eng &middot; ${escapeHtml(p.platform)} @ $${p.price}/mo</div>
-      <div class="meta">last msg ${ago(lastMsg(p).at)}</div>
-      <div class="badges">${badgesFor(p)}</div>
-    </div>`).join("");
-  $("queue").querySelectorAll(".prospect").forEach(el =>
+function renderList() {
+  const list = visibleProspects();
+  $("list").innerHTML = list.map(p => {
+    const q = quietDays(p);
+    return `
+    <div class="convo ${selected?.id === p.id ? "active" : ""}" data-id="${p.id}">
+      <div class="row1">
+        <span class="name">${escapeHtml(p.name)}</span>
+        ${needsReply(p) ? `<span class="dot" title="needs a reply"></span>` : q >= QUIET_DAYS ? `<span class="quiet-tag" title="gone quiet">${q}d</span>` : ""}
+      </div>
+      <div class="handle">${escapeHtml(p.handle)}${p.channel !== "X" ? ` &middot; ${escapeHtml(p.channel)}` : ""}</div>
+    </div>`;
+  }).join("");
+  $("list").querySelectorAll(".convo").forEach(el =>
     el.addEventListener("click", () => selectProspect(el.dataset.id)));
 }
 
-/* =========================================================
-   RENDER: CONVERSATION
-   ========================================================= */
 function renderThread() {
   if (!selected) return;
-  $("convoHead").innerHTML = `<span>Conversation &middot; ${escapeHtml(selected.name)} (${escapeHtml(selected.handle)})</span>`;
-
-  const sub = $("convoSub");
-  sub.style.display = "flex";
-  sub.innerHTML = `
-    <span class="badge channel">${escapeHtml(selected.channel)}${selected.channel !== "X" ? " &middot; manual" : ""}</span>
-    <span style="flex:1;"></span>
-    ${STAGES.map(s => `
-      <button class="stagebtn ${selected.stage === s ? "on" : ""} ${s === "lost" ? "lost" : ""}" data-stage="${s}">${STAGE_LABELS[s]}</button>`).join("")}`;
-  sub.querySelectorAll(".stagebtn").forEach(b =>
-    b.addEventListener("click", () => setStage(selected, b.dataset.stage)));
-
+  $("convoHead").textContent = `${selected.name} · ${selected.handle}`;
   $("thread").innerHTML = selected.thread.map(m => `
     <div class="bubble ${m.from}">
-      <div class="who"><span>${m.from === "them" ? escapeHtml(selected.handle) : "you (AE)"}</span><span>${ago(m.at)}</span></div>${escapeHtml(m.text)}
+      <div class="who"><span>${m.from === "them" ? escapeHtml(selected.handle) : "you"}</span><span>${ago(m.at)}</span></div>${escapeHtml(m.text)}
     </div>`).join("");
-  $("composer").style.display = "flex";
+  $("composer").style.display = "block";
   $("thread").scrollTop = $("thread").scrollHeight;
 }
 
-/* =========================================================
-   RENDER: COPILOT PANEL
-   ========================================================= */
-function earningsTableHtml(p, a, e) {
-  return `<table class="earn">
-          <tr><th></th><th>${escapeHtml(p.platform)}</th><th>DubClub</th><th>DubClub +${a.growthPct}%</th></tr>
-          <tr>
-            <td>Subs</td><td>${a.subs}</td><td>${a.subs}</td><td>${e.grownSubs}</td>
-          </tr>
-          <tr>
-            <td>Take-home</td>
-            <td>${money(e.current)}</td>
-            <td>${money(e.dubclub)}</td>
-            <td class="delta-pos">${money(e.dubclubGrowth)}</td>
-          </tr>
-          <tr>
-            <td>vs. today</td>
-            <td>&mdash;</td>
-            <td class="${e.dubclub >= e.current ? "delta-pos" : "delta-neg"}">${e.dubclub >= e.current ? "+" : "−"}${money(Math.abs(e.dubclub - e.current))}</td>
-            <td class="delta-pos">+${money(e.dubclubGrowth - e.current)}</td>
-          </tr>
-        </table>`;
-}
-
-function renderCopilot() {
-  if (!selected) { $("copilot").innerHTML = `<div class="empty-hint">Copilot output appears here</div>`; return; }
+/* The copilot strip + draft box under the thread. */
+function renderAssist() {
+  if (!selected) return;
   const p = selected;
-  const a = getAssumptions(p);
-  const e = calcEarnings(a);
   const r = p.copilot;
-  const loading = p.analyzing;
-  const error = p.copilotError;
-  const bumpable = needsBump(p);
-  const assumptionsOpen = $("copilot").querySelector("details.assumptions")?.open ?? false;
+  const box = $("replyText");
 
-  const classBody = loading
-    ? `<div class="loading">classifying</div>`
-    : error
-      ? `<div class="error-msg">${escapeHtml(error)}</div>`
-      : r
-        ? `<span class="intent-pill intent-${r.intent}">${INTENT_LABELS[r.intent] || r.intent}</span>
-           <div class="rationale">${escapeHtml(r.rationale)}</div>`
-        : `<div class="rationale">Run <b>Analyze</b> to classify this thread.</div>`;
-
-  const replyBody = loading
-    ? `<div class="loading">drafting</div>`
-    : r
-      ? `${r.isBump ? `<div class="bumpnote">follow-up bump &mdash; prospect quiet ${quietDays(p)}d</div>` : ""}
-         <textarea id="replyText">${escapeHtml(r.reply)}</textarea>
-         <div class="wordcount" id="wordCount"></div>
-         <div class="btnrow">
-           <button class="small" id="regenBtn">&#8635; Regenerate</button>
-           ${bumpable && !r.isBump ? `<button class="small" id="bumpBtn" title="Draft a follow-up nudge instead">&#128564; Draft bump</button>` : ""}
-           <button class="small primary" id="sendBtn">Approve &amp; send</button>
-         </div>`
-      : `<div class="rationale">Draft appears after analysis.</div>
-         ${bumpable ? `<div class="btnrow"><button class="small" id="bumpBtn">&#128564; Draft follow-up bump (quiet ${quietDays(p)}d)</button></div>` : ""}`;
-
-  const stepBody = loading
-    ? `<div class="loading">thinking</div>`
-    : r
-      ? `<div class="next-step-action">${STEP_LABELS[r.next_step] || escapeHtml(r.next_step)}</div>
-         <div class="rationale">${escapeHtml(r.next_step_reason)}</div>`
-      : `<div class="rationale">Recommendation appears after analysis.</div>`;
-
-  $("copilot").innerHTML = `
-    <div class="block">
-      <div class="block-head">Classification</div>
-      <div class="block-body">${classBody}</div>
-    </div>
-
-    <div class="block">
-      <div class="block-head">Earnings snapshot <span style="font-weight:400; text-transform:none;">monthly take-home</span></div>
-      <div class="block-body">
-        <div id="earnTable">${earningsTableHtml(p, a, e)}</div>
-        <details class="assumptions"${assumptionsOpen ? " open" : ""}>
-          <summary>Assumptions (editable)</summary>
-          <div class="row"><span>Price / month ($)</span><input type="number" step="0.01" data-assume="price" value="${a.price}"></div>
-          <div class="row"><span>Estimated subs</span><input type="number" data-assume="subs" value="${a.subs}"></div>
-          <div class="row"><span>${escapeHtml(p.platform)} fee (%)</span><input type="number" step="0.1" data-assume="currentFeePct" value="${a.currentFeePct}"></div>
-          <div class="row"><span>DubClub fee (%)</span><input type="number" step="0.1" data-assume="dubclubFeePct" value="${a.dubclubFeePct}"></div>
-          <div class="row"><span>Growth scenario (%)</span><input type="number" data-assume="growthPct" value="${a.growthPct}"></div>
-        </details>
-      </div>
-    </div>
-
-    <div class="block">
-      <div class="block-head">Suggested reply</div>
-      <div class="block-body">${replyBody}</div>
-    </div>
-
-    <div class="block">
-      <div class="block-head">Next step</div>
-      <div class="block-body">${stepBody}</div>
-    </div>`;
-
-  // wire up
-  document.querySelectorAll("[data-assume]").forEach(inp =>
-    inp.addEventListener("change", () => {
-      a[inp.dataset.assume] = parseFloat(inp.value) || 0;
-      save();
-      // update only the table so the details panel stays open and focus survives
-      const et = $("earnTable");
-      if (et) et.innerHTML = earningsTableHtml(p, a, calcEarnings(a));
-    }));
-  const replyEl = $("replyText");
-  if (replyEl) {
-    const updateCount = () => {
-      const words = replyEl.value.trim().split(/\s+/).filter(Boolean).length;
-      const wc = $("wordCount");
-      wc.textContent = `${words} / 25 words`;
-      wc.classList.toggle("over", words > 25);
-    };
-    replyEl.addEventListener("input", () => {
-      if (p.copilot) { p.copilot.reply = replyEl.value; save(); }
-      updateCount();
-    });
-    updateCount();
+  if (p.analyzing) {
+    $("assist").innerHTML = `<span class="thinking">drafting</span>`;
+  } else if (p.copilotError) {
+    $("assist").innerHTML = `<span class="err">${escapeHtml(p.copilotError)}</span>`;
+  } else if (r) {
+    const intent = `<span class="intent-pill intent-${r.intent}">${INTENT_LABELS[r.intent] || r.intent}</span>`;
+    const bump = r.isBump ? `follow-up bump · ` : "";
+    const step = STEP_LABELS[r.next_step] ? ` <span class="nextstep">&middot; next: ${STEP_LABELS[r.next_step]}</span>` : "";
+    $("assist").innerHTML = `${intent}${bump}${escapeHtml(r.rationale)}${step}`;
+  } else {
+    $("assist").innerHTML = "";
   }
-  $("regenBtn")?.addEventListener("click", () => analyze(p, { regenerate: true }));
-  $("bumpBtn")?.addEventListener("click", () => analyze(p, { bump: true }));
-  $("sendBtn")?.addEventListener("click", sendReply);
+
+  box.value = r?.reply ?? p.draft ?? "";
+  box.placeholder = p.analyzing ? "drafting…" : "Write a reply, or wait for the draft…";
+  updateWordCount();
 }
 
-function renderAll() { renderStats(); renderQueue(); if (selected) { renderThread(); renderCopilot(); } }
-
-function clearSelection() {
-  selected = null;
-  $("convoHead").innerHTML = `<span>Conversation</span>`;
-  $("convoSub").style.display = "none";
-  $("thread").innerHTML = `<div class="empty-hint">Select a prospect from the queue</div>`;
-  $("composer").style.display = "none";
-  $("analyzeBtn").style.display = "none";
-  $("copilot").innerHTML = `<div class="empty-hint">Copilot output appears here</div>`;
+function updateWordCount() {
+  const v = $("replyText").value.trim();
+  const wc = $("wordCount");
+  if (!v) { wc.textContent = ""; return; }
+  const words = v.split(/\s+/).filter(Boolean).length;
+  wc.textContent = `${words} / 25`;
+  wc.classList.toggle("over", words > 25);
 }
 
-/* If the selected prospect is no longer visible under the current filter,
-   deselect it so keyboard shortcuts can't act on a hidden conversation. */
-function reconcileSelection() {
-  if (selected && !filteredProspects().some(p => p.id === selected.id)) {
-    clearSelection();
-    renderQueue();
-  }
-}
+function renderAll() { renderCount(); renderList(); if (selected) { renderThread(); renderAssist(); } }
 
 /* =========================================================
    LLM CALL — one structured-output request returns
@@ -899,7 +629,7 @@ function buildUserPrompt(p, { regenerate = false, bump = false } = {}) {
 Name: ${p.name} (${p.handle}) on ${p.channel}
 Followers: ${p.followers.toLocaleString()} | Engagement: ${p.engagement}%
 Current platform: ${p.platform} at $${a.price}/mo, est. ${a.subs} subs, ~${a.currentFeePct}% platform fee
-Pipeline stage: ${STAGE_LABELS[p.stage]} | Last message: ${ago(lastMsg(p).at)}
+Last message: ${ago(lastMsg(p).at)}
 
 EARNINGS CONTEXT (already computed, you may reference these numbers)
 Current take-home: ${money(e.current)}/mo on ${p.platform}
@@ -926,7 +656,7 @@ async function analyze(p, { regenerate = false, bump = false } = {}) {
   p.analyzing = true;
   p.copilotError = null;
   const rev = p.threadRev || 0;                        // thread snapshot this request is based on
-  if (selected === p) renderCopilot();
+  if (selected === p) renderAssist();
   try {
     const client = new Anthropic({ apiKey: getKey(), dangerouslyAllowBrowser: true });
     const response = await client.messages.create({
@@ -941,7 +671,7 @@ async function analyze(p, { regenerate = false, bump = false } = {}) {
       throw new Error("The model declined this request.");
     }
     if (response.stop_reason === "max_tokens") {
-      throw new Error("Hit the output token cap before the draft finished. Run Analyze again.");
+      throw new Error("Hit the output token cap before the draft finished. Try again.");
     }
     const textBlock = response.content.find(b => b.type === "text");
     if (!textBlock) throw new Error("No text in response.");
@@ -960,32 +690,22 @@ async function analyze(p, { regenerate = false, bump = false } = {}) {
     const rerun = p.rerunAfter;
     p.rerunAfter = false;
     save();
-    if (selected === p) renderCopilot();
-    renderQueue();
-    renderStats();
+    if (selected === p) renderAssist();
+    renderList();
+    renderCount();
     if (rerun) analyze(p);
   }
 }
 
-async function analyzeAll() {
-  if (!getKey()) { openSettings(); return; }
-  const targets = prospects.filter(p => isActive(p) && !p.copilot && !p.analyzing);
-  if (!targets.length) { toast("Queue triage", "Every active conversation is already classified."); return; }
-  toast("Queue triage", `Classifying ${targets.length} conversation${targets.length > 1 ? "s" : ""}…`);
-  const pool = 2;
-  let i = 0;
-  await Promise.all(Array.from({ length: Math.min(pool, targets.length) }, async () => {
-    while (i < targets.length) {
-      const p = targets[i++];
-      await analyze(p);
-    }
-  }));
-  toast("Queue triage", "Done. Queue re-sorted by intent × engagement × urgency.");
+function maybeAutoAnalyze(p) {
+  if (!p || !getKey() || p.copilot || p.analyzing) return;
+  if (needsReply(p)) analyze(p);
+  else if (needsBump(p)) analyze(p, { bump: true });
 }
 
 function friendlyError(err) {
-  if (err instanceof Anthropic.AuthenticationError) return "Invalid API key. Open settings to update it.";
-  if (err instanceof Anthropic.RateLimitError) return "Rate limited. Wait a moment and try again.";
+  if (err instanceof Anthropic.AuthenticationError) return "Invalid API key. Open settings (⚙) to update it.";
+  if (err instanceof Anthropic.RateLimitError) return "Rate limited. Wait a moment and hit ↻.";
   if (err instanceof Anthropic.APIConnectionError) return "Couldn't reach the Anthropic API. Check your connection.";
   if (err instanceof Anthropic.APIError) return `API error ${err.status}: ${err.message}`;
   return err.message || String(err);
@@ -999,16 +719,10 @@ async function sendReply() {
   if (sendInFlight) return;                      // no double-send on double-click / key repeat
   const p = selected;
   if (!p) return;
-  const text = ($("replyText")?.value ?? p.copilot?.reply ?? "").trim();
+  const text = $("replyText").value.trim();
   if (!text) return;
 
-  const wireBody = { handle: p.handle, text };   // what actually goes over the wire in live mode
-  const meta = {
-    channel: p.channel === "X" ? "x_dm" : "manual",
-    classification: p.copilot?.intent ?? null,
-    next_step: p.copilot?.next_step ?? null,
-    queued_at: new Date().toISOString()
-  };
+  const wireBody = { handle: p.handle, text };
   const inbox = getInbox();
   const live = !!(inbox.token && p.channel === "X");
 
@@ -1027,7 +741,7 @@ async function sendReply() {
         if (!res.ok) throw new Error(`InboxApp API ${res.status}`);
       } catch (err) {
         console.warn("InboxApp send failed:", err);
-        toast("InboxApp send failed — draft kept, nothing recorded", `${err.message || err}\n\nCheck the connection in settings, then Approve & send again.`);
+        toast("InboxApp send failed — draft kept, nothing recorded", `${err.message || err}\n\nCheck the connection in settings, then send again.`);
         return;
       }
     }
@@ -1037,17 +751,31 @@ async function sendReply() {
     p.unread = false;
     p.copilot = null;
     p.copilotError = null;
+    p.draft = null;
     save();
     renderAll();
 
-    if (live) {
-      toast("Sent via InboxApp ✅", JSON.stringify(wireBody, null, 2));
-    } else {
-      toast("Sent (demo) — live mode would POST to InboxApp", JSON.stringify({ endpoint: "POST /v1/messages", ...wireBody, ...meta }, null, 2));
-    }
+    if (live) toast("Sent via InboxApp ✅", JSON.stringify(wireBody, null, 2));
+    else toast("Sent (demo)", "Live mode would POST this through the InboxApp API.");
   } finally {
     sendInFlight = false;
   }
+}
+
+/* Log the composer text as the prospect's incoming message (IG/TT manual). */
+function logTheirs() {
+  const p = selected;
+  if (!p) return;
+  const text = $("replyText").value.trim();
+  if (!text) { toast("Nothing to log", "Paste their message into the box first."); return; }
+  p.thread.push({ from: "them", at: Date.now(), text });
+  bumpRev(p);
+  p.copilot = null;
+  p.copilotError = null;
+  p.draft = null;
+  save();
+  renderAll();
+  maybeAutoAnalyze(p);
 }
 
 /* =========================================================
@@ -1055,7 +783,6 @@ async function sendReply() {
    message.created webhook until the backend exists.
    ========================================================= */
 function simulateInbound() {
-  // Prefer prospects who owe us a reply (we spoke last), active stages only.
   const waiting = prospects.filter(p => isActive(p) && lastMsg(p).from === "ae");
   const pool = waiting.length ? waiting : prospects.filter(isActive);
   if (!pool.length) { toast("Simulate inbound", "No active conversations to reply into."); return; }
@@ -1069,73 +796,8 @@ function simulateInbound() {
   p.copilotError = null;
   save();
   renderAll();
-  toast(`\u{1F4E5} New reply from ${p.handle}`, `"${text}"\n\n(webhook: message.created → classify → draft → approve)`);
-  if (selected?.id === p.id) {
-    renderThread();
-    if (getKey()) analyze(p);
-  }
-}
-
-/* =========================================================
-   STAGES + LEARNING LOOP
-   ========================================================= */
-function setStage(p, stage) {
-  if (p.stage === stage) return;
-  const prev = p.stage;
-  p.stage = stage;
-  if (stage === "won" && prev !== "won") {
-    if (!p.wonExampleSaved && !getPrompt().includes(`saved from ${p.handle}`)) {
-      appendWonExample(p);
-      p.wonExampleSaved = true;
-      toast("\u{1F3C6} Marked won", "The closing exchange was appended to the system prompt as a few-shot example. Edit it under “system prompt”.");
-    } else {
-      toast("\u{1F3C6} Marked won", "Already saved as a few-shot example — not duplicated.");
-    }
-  }
-  save();
-  renderAll();
-  reconcileSelection();
-}
-
-function appendWonExample(p) {
-  const tail = p.thread.slice(-4);
-  const lines = tail.map(m => `${m.from === "them" ? "capper" : "ae"}: "${m.text}"`).join("\n");
-  const intent = p.copilot ? (INTENT_LABELS[p.copilot.intent] || p.copilot.intent).toLowerCase() : "unclassified";
-  const example = `\n\nExample (${intent} -> won, saved from ${p.handle}):\n${lines}\n[outcome: won]`;
-  localStorage.setItem(LS_PROMPT, getPrompt() + example);
-}
-
-/* =========================================================
-   MORNING DIGEST (Hermes-ready)
-   ========================================================= */
-function buildDigest() {
-  const d = new Date();
-  const dateStr = d.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
-  const reply = prospects.filter(needsReply);
-  const quiet = prospects.filter(needsBump);
-  const committed = prospects.filter(p => p.stage === "committed");
-  const won = prospects.filter(p => p.stage === "won");
-  const inConvo = prospects.filter(p => p.stage === "in_convo");
-  const drafted = prospects.filter(p => isActive(p) && p.copilot?.reply);
-
-  const top = prospects.filter(isActive).sort((a, b) => priorityScore(b) - priorityScore(a)).slice(0, 3);
-
-  let out = `☀️ Morning digest — ${dateStr}\n\n`;
-  out += `• ${reply.length} conversation${reply.length === 1 ? "" : "s"} awaiting your reply\n`;
-  out += `• ${quiet.length} gone quiet ${QUIET_DAYS}d+ (bumps ready to draft)\n`;
-  out += `• pipeline: ${inConvo.length} in convo · ${committed.length} committed · ${won.length} won\n`;
-  out += `• ${drafted.length} draft${drafted.length === 1 ? "" : "s"} ready for one-tap approval\n`;
-  if (top.length) {
-    out += `\nTop of the queue:\n`;
-    top.forEach((p, i) => {
-      const intent = p.copilot ? (INTENT_LABELS[p.copilot.intent] || p.copilot.intent) : "unclassified";
-      const last = lastMsg(p);
-      const preview = last.text.length > 70 ? last.text.slice(0, 70) + "…" : last.text;
-      out += `${i + 1}. ${p.handle} — ${intent} — ${p.estSubs} subs @ $${p.price}/mo — “${preview}”\n`;
-    });
-  }
-  out += `\nReply “approve” to send all drafted replies, or open the console to work the queue.`;
-  return out;
+  toast(`\u{1F4E5} ${p.handle} replied`, `"${text}"`);
+  if (selected?.id === p.id) maybeAutoAnalyze(p);
 }
 
 /* =========================================================
@@ -1145,32 +807,26 @@ function selectProspect(id) {
   selected = prospects.find(p => p.id === id) || null;
   if (!selected) return;
   if (selected.unread) { selected.unread = false; save(); }
-  renderQueue();
+  renderList();
   renderThread();
-  $("analyzeBtn").style.display = "inline-block";
-  renderCopilot();
-  if (getKey() && !selected.copilot && !selected.analyzing && needsReply(selected)) analyze(selected);
+  renderAssist();
+  maybeAutoAnalyze(selected);
 }
 
-$("analyzeBtn").addEventListener("click", () => analyze(selected));
-$("analyzeAllBtn").addEventListener("click", analyzeAll);
+$("sendBtn").addEventListener("click", sendReply);
+$("regenBtn").addEventListener("click", () => { if (selected && !selected.analyzing) analyze(selected, { regenerate: !!selected.copilot }); });
+$("logTheirsBtn").addEventListener("click", logTheirs);
 $("simChip").addEventListener("click", simulateInbound);
 
-$("addMsgBtn").addEventListener("click", () => {
-  const text = $("newMsg").value.trim();
-  if (!text || !selected) return;
-  selected.thread.push({ from: "them", at: Date.now(), text });
-  bumpRev(selected);
-  selected.unread = false;
-  selected.copilot = null;
-  selected.copilotError = null;
-  $("newMsg").value = "";
+$("replyText").addEventListener("input", () => {
+  if (!selected) return;
+  if (selected.copilot) selected.copilot.reply = $("replyText").value;
+  else selected.draft = $("replyText").value;
   save();
-  renderAll();
-  if (getKey()) analyze(selected);
+  updateWordCount();
 });
-$("newMsg").addEventListener("keydown", e => {
-  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) $("addMsgBtn").click();
+$("replyText").addEventListener("keydown", e => {
+  if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) sendReply();
 });
 
 /* ---------- keyboard shortcuts ---------- */
@@ -1187,13 +843,13 @@ document.addEventListener("keydown", e => {
   if (document.querySelector(".modal-backdrop.open")) return;  // shortcuts are dead while a modal is up
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === "j" || e.key === "k") {
-    const list = filteredProspects();
+    const list = visibleProspects();
     if (!list.length) return;
     const idx = list.findIndex(p => p.id === selected?.id);
     const next = e.key === "j" ? Math.min(idx + 1, list.length - 1) : Math.max(idx - 1, 0);
     selectProspect(list[idx === -1 ? 0 : next].id);
   } else if (e.key === "a") {
-    if (selected?.copilot && !selected.analyzing) sendReply();
+    if (selected && !selected.analyzing) sendReply();
   } else if (e.key === "r") {
     if (selected && !selected.analyzing) analyze(selected, { regenerate: !!selected.copilot });
   }
@@ -1206,7 +862,7 @@ function toast(title, body) {
   const t = $("toast");
   t.classList.add("show");
   clearTimeout(t._t);
-  t._t = setTimeout(() => t.classList.remove("show"), 6000);
+  t._t = setTimeout(() => t.classList.remove("show"), 5000);
 }
 
 /* ---------- settings modal ---------- */
@@ -1221,9 +877,8 @@ function openSettings() {
 function refreshChips() {
   const hasKey = !!getKey();
   const live = !!getInbox().token;
-  const chip = $("settingsChip");
-  chip.textContent = hasKey ? (live ? "settings · live" : "settings · demo") : "settings · no api key";
-  chip.classList.toggle("ok", hasKey);
+  $("settingsChip").title = hasKey ? (live ? "Settings — live send enabled" : "Settings — demo mode") : "Settings — add your Anthropic API key";
+  $("settingsChip").style.color = hasKey ? "var(--accent)" : "var(--warn)";
 }
 $("settingsChip").addEventListener("click", openSettings);
 $("settingsCancel").addEventListener("click", () => $("settingsModal").classList.remove("open"));
@@ -1235,15 +890,16 @@ $("settingsSave").addEventListener("click", () => {
   }));
   $("settingsModal").classList.remove("open");
   refreshChips();
-  if (selected && !selected.copilot && getKey()) analyze(selected);
+  if (selected) maybeAutoAnalyze(selected);
 });
 $("resetDemoBtn").addEventListener("click", () => {
   localStorage.removeItem(LS_STATE);
   location.reload();
 });
 
-/* ---------- prompt modal ---------- */
-$("promptChip").addEventListener("click", () => {
+/* ---------- prompt modal (reached from settings) ---------- */
+$("openPromptLink").addEventListener("click", () => {
+  $("settingsModal").classList.remove("open");
   $("promptInput").value = getPrompt();
   $("promptModal").classList.add("open");
 });
@@ -1254,26 +910,13 @@ $("promptSave").addEventListener("click", () => {
   $("promptModal").classList.remove("open");
 });
 
-/* ---------- digest modal ---------- */
-$("digestChip").addEventListener("click", () => {
-  $("digestPre").textContent = buildDigest();
-  $("digestModal").classList.add("open");
-});
-$("digestClose").addEventListener("click", () => $("digestModal").classList.remove("open"));
-$("digestCopy").addEventListener("click", async () => {
-  try {
-    await navigator.clipboard.writeText($("digestPre").textContent);
-    toast("Copied", "Digest copied to clipboard — paste it into Slack.");
-  } catch {
-    toast("Copy failed", "Select the text and copy manually.");
-  }
-});
-
 /* ---------- init ---------- */
 loadState();
-renderStats();
-renderQueue();
+renderCount();
+renderList();
 refreshChips();
+const first = visibleProspects()[0];
+if (first) selectProspect(first.id);
 </script>
 </body>
 </html>
