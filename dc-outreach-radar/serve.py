@@ -34,6 +34,10 @@ class Handler(SimpleHTTPRequestHandler):
             opts = json.loads(self.rfile.read(length) or b"{}") if length else {}
             if opts.get("min"):
                 apify_pull.MIN_FOLLOWERS = int(opts["min"])
+            if isinstance(opts.get("minEng"), dict):
+                for k in ("view", "follower"):
+                    if opts["minEng"].get(k) is not None:
+                        apify_pull.MIN_ENGAGEMENT[k] = float(opts["minEng"][k])
             platforms = opts.get("platforms") or ["tt", "ig"]
 
             candidates = []

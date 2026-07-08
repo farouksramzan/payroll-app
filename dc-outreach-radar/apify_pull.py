@@ -71,9 +71,11 @@ MAX_IG_PROFILES = 60          # cap the profile-details pass to bound cost
 MIN_FOLLOWERS, MAX_FOLLOWERS = 3_000, 60_000   # override floor with --min
 MAX_POSTS_PER_AUTHOR = 5
 # Cult filter: drop weak-engagement accounts at the source. Bases differ —
-# ~2% of viewers engaging is a decent TikTok floor; ~1% of followers is a
-# decent IG floor (small IG accounts with 0.2% medians are dead audiences).
-MIN_ENGAGEMENT = {"view": 2.0, "follower": 1.0}
+# typical TikTok like-rate is 4-8% of viewers, so 3% is a real floor; on IG,
+# 1.5% of followers engaging is solid for small accounts. Engagement is
+# power-law distributed, so candidates pile up just above any floor — raise
+# these (radar ⚙ settings, or scan opts minEng) to trade quantity for heat.
+MIN_ENGAGEMENT = {"view": 3.0, "follower": 1.5}
 
 
 _TOKEN = None

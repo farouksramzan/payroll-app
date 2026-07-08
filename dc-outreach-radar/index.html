@@ -197,6 +197,11 @@
         <div><label>Days between touches</label><input type="number" id="gapInput" min="1"></div>
         <div><label>Max touches</label><input type="number" id="touchesInput" min="1"></div>
       </div>
+      <div class="numrow" style="margin-top: 10px;">
+        <div><label>Scan floor: TT eng/view %</label><input type="number" step="0.5" id="engViewInput" min="0"></div>
+        <div><label>Scan floor: IG eng/follower %</label><input type="number" step="0.5" id="engFolInput" min="0"></div>
+      </div>
+      <div class="subnote">Engagement is power-law distributed — candidates pile up just above any floor. Raise these to trade scan quantity for heat.</div>
 
       <label style="margin-top: 14px;">Suppression list — never pitch these (own cappers, said no, blocked). One handle per line.</label>
       <textarea id="suppressInput" spellcheck="false"></textarea>
@@ -296,7 +301,7 @@ const LS_PROMPT   = "dcor_prompt";
 const SEED_VERSION = 1;
 
 const HOUR = 3600e3, DAY = 24 * HOUR;
-const DEFAULT_SETTINGS = { dailyCap: 30, gapDays: 3, maxTouches: 3, suppress: "@BigTicketRon\n@saidnosam" };
+const DEFAULT_SETTINGS = { dailyCap: 30, gapDays: 3, maxTouches: 3, engFloorView: 3, engFloorFollower: 1.5, suppress: "@BigTicketRon\n@saidnosam" };
 
 const BANNED_PHRASES = ["circle back", "touch base", "value proposition", "leverage", "solution", "—"];
 
@@ -1001,10 +1006,11 @@ async function runScan(platforms) {
   const prevHtml = chip.innerHTML;
   chip.textContent = `⏳ scanning ${platforms.map(p => p.toUpperCase()).join("+")}… (2–5 min)`;
   try {
+    const s = getSettings();
     const res = await fetch("/api/scan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ platforms })
+      body: JSON.stringify({ platforms, minEng: { view: s.engFloorView, follower: s.engFloorFollower } })
     });
     if (res.status === 404 || res.status === 501) { demoScan(); return; }   // plain static server — no scan API
     const data = await res.json();
@@ -1195,6 +1201,8 @@ function openSettings() {
   $("capInput").value = s.dailyCap;
   $("gapInput").value = s.gapDays;
   $("touchesInput").value = s.maxTouches;
+  $("engViewInput").value = s.engFloorView;
+  $("engFolInput").value = s.engFloorFollower;
   $("suppressInput").value = s.suppress;
   $("settingsModal").classList.add("open");
   $("keyInput").focus();
@@ -1212,6 +1220,8 @@ $("settingsSave").addEventListener("click", () => {
     dailyCap: Math.max(1, parseInt($("capInput").value, 10) || DEFAULT_SETTINGS.dailyCap),
     gapDays: Math.max(1, parseInt($("gapInput").value, 10) || DEFAULT_SETTINGS.gapDays),
     maxTouches: Math.max(1, parseInt($("touchesInput").value, 10) || DEFAULT_SETTINGS.maxTouches),
+    engFloorView: Math.max(0, parseFloat($("engViewInput").value) || DEFAULT_SETTINGS.engFloorView),
+    engFloorFollower: Math.max(0, parseFloat($("engFolInput").value) || DEFAULT_SETTINGS.engFloorFollower),
     suppress: $("suppressInput").value
   }));
   // apply suppression both ways: list additions suppress, removals restore
