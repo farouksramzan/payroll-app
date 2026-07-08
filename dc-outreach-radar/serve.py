@@ -43,9 +43,11 @@ class Handler(SimpleHTTPRequestHandler):
                     run_id=opts.get("ttRun"),
                 )
             if "ig" in platforms:
-                candidates += apify_pull.collect_instagram(
-                    opts.get("igHashtags") or apify_pull.DEFAULT_IG_HASHTAGS,
-                )
+                if opts.get("igHashtags"):
+                    candidates += apify_pull.collect_instagram(hashtags=opts["igHashtags"])
+                else:
+                    candidates += apify_pull.collect_instagram(
+                        search_terms=opts.get("igSearch"), hubs=opts.get("igHubs"))
             total, fresh, dropped, _ = apify_pull.merge_into_file(candidates)
             kept = [c for c in candidates if apify_pull.passes_engagement_floor(c)]
             self._json(200, {"candidates": kept, "fresh": fresh, "dropped": dropped, "totalInFile": total})

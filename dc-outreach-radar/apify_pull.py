@@ -4,7 +4,10 @@ DC Outreach Radar import JSON.
 
 Usage:
     python3 apify_pull.py [hashtag ...]              # TikTok sweep (default tags below)
-    python3 apify_pull.py --ig [hashtag ...]         # Instagram two-pass sweep
+    python3 apify_pull.py --ig [search term ...]     # Instagram combo: username search + hub-comment mining
+    python3 apify_pull.py --ig-hashtags [tag ...]    # Instagram legacy hashtag route (weak yield)
+    python3 apify_pull.py --ig-handles a,b,c         # Instagram: profile-scrape specific handles
+    python3 apify_pull.py --hubs a,b --ig            # override comment-mining hub accounts
     python3 apify_pull.py --run <runId>              # re-transform an existing TikTok run (free)
 
 Token: APIFY_TOKEN env var, or ~/.apify_token.
@@ -23,10 +26,12 @@ Instagram ~ $0.50-1.00 (two passes: hashtag posts, then profile details).
 """
 import json
 import os
+import re
 import ssl
 import statistics
 import sys
 import time
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
@@ -39,12 +44,28 @@ except ImportError:
 TT_ACTOR = "clockworks~tiktok-scraper"
 IG_HASHTAG_ACTOR = "apify~instagram-hashtag-scraper"
 IG_PROFILE_ACTOR = "apify~instagram-profile-scraper"
+IG_SEARCH_ACTOR = "apify~instagram-search-scraper"
+IG_SEARCH_FALLBACK_ACTOR = "apify~instagram-scraper"   # search mode on the mega-actor
+IG_COMMENT_ACTOR = "apify~instagram-comment-scraper"
 
 DEFAULT_TT_HASHTAGS = ["sportspicks", "bettingpicks", "parlaypicks"]
-# IG returns only a handful of "top" posts per hashtag, so the net needs many tags
+# Legacy hashtag route (IG shows only a few "top" posts per tag — weak yield)
 DEFAULT_IG_HASHTAGS = ["sportsbettingpicks", "parlaypicks", "dailypicks", "freepicks",
                        "bettingtips", "sportsbettingadvice", "prizepicks", "mlbpicks",
                        "nbapicks", "nflpicks"]
+# IG combo discovery: username keyword search + hub-comment mining.
+# Cappers self-label in handles; small cappers self-promote in hub comments.
+DEFAULT_IG_SEARCH_TERMS = ["picks", "parlay", "locks", "betting picks"]
+DEFAULT_IG_HUBS = ["pikkit", "br_betting", "actionnetworkhq"]
+POSTS_PER_HUB = 2
+COMMENTS_PER_POST = 60
+SEARCH_RESULTS_PER_TERM = 30
+
+CAPPER_NAME_RE = re.compile(
+    r"(pick|parlay|lock|bets?\b|betz|cap+er|prop|odds|wager|slip|moneyline|underdog|degen)", re.I)
+SELF_PROMO_RE = re.compile(
+    r"(my (page|picks|card|group)|full card|link in bio|dm me|check (my|the) (page|profile|bio)"
+    r"|free picks?|telegram|whop|winible|cash ?app)", re.I)
 RESULTS_PER_HASHTAG = 50
 MAX_IG_PROFILES = 60          # cap the profile-details pass to bound cost
 MIN_FOLLOWERS, MAX_FOLLOWERS = 3_000, 60_000   # override floor with --min
@@ -177,12 +198,64 @@ def collect_tiktok(hashtags, run_id=None):
 
 # ------------------------------------------------------------- Instagram ----
 
-def collect_instagram(hashtags, handles=None):
+def ig_search_usernames(terms):
+    """Username keyword search — cappers self-label their handles/names."""
+    users = set()
+    for term in terms:
+        print(f"IG user search: “{term}”…")
+        try:
+            items = run_and_fetch(IG_SEARCH_ACTOR, {
+                "search": term, "searchType": "user", "searchLimit": SEARCH_RESULTS_PER_TERM,
+            })
+        except urllib.error.HTTPError as e:
+            if e.code != 404:
+                raise
+            items = run_and_fetch(IG_SEARCH_FALLBACK_ACTOR, {
+                "search": term, "searchType": "user", "resultsLimit": SEARCH_RESULTS_PER_TERM,
+            })
+        for it in items:
+            u = it.get("username") or it.get("ownerUsername")
+            if u:
+                users.add(u.lower())
+    print(f"  user search found {len(users)} unique accounts")
+    return users
+
+
+def ig_hub_commenters(hubs):
+    """Comment mining — small cappers self-promote in the comments of big
+    betting hub accounts. Keep commenters with capper-flavored usernames or
+    self-promo comment text."""
+    print(f"IG hub comments: pulling recent posts from {', '.join('@' + h for h in hubs)}…")
+    profiles = run_and_fetch(IG_PROFILE_ACTOR, {"usernames": list(hubs)})
+    post_urls = []
+    for pr in profiles:
+        for p in (pr.get("latestPosts") or [])[:POSTS_PER_HUB]:
+            if p.get("url"):
+                post_urls.append(p["url"])
+    if not post_urls:
+        print("  no hub posts found — skipping comment mining")
+        return set()
+    print(f"  scraping comments on {len(post_urls)} hub posts…")
+    items = run_and_fetch(IG_COMMENT_ACTOR, {
+        "directUrls": post_urls, "resultsLimit": COMMENTS_PER_POST,
+    })
+    users = set()
+    for c in items:
+        u = c.get("ownerUsername") or c.get("username")
+        if not u:
+            continue
+        if CAPPER_NAME_RE.search(u) or SELF_PROMO_RE.search(c.get("text") or ""):
+            users.add(u.lower())
+    print(f"  comment mining kept {len(users)} capper-pattern commenters")
+    return users
+
+
+def collect_instagram(handles=None, search_terms=None, hubs=None, hashtags=None):
     posts_by_owner = {}
     if handles:
         owners = [h.lstrip("@") for h in handles][:MAX_IG_PROFILES]
         print(f"Instagram: profile details for {len(owners)} given handles…")
-    else:
+    elif hashtags:
         print(f"Instagram pass 1: scraping #{' #'.join(hashtags)} posts ({RESULTS_PER_HASHTAG} each)…")
         posts = run_and_fetch(IG_HASHTAG_ACTOR, {
             "hashtags": hashtags,
@@ -197,6 +270,16 @@ def collect_instagram(hashtags, handles=None):
         if not owners:
             raise RuntimeError("Instagram pass 1 returned no post authors — try different hashtags")
         print(f"Instagram pass 2: profile details for {len(owners)} unique authors…")
+    else:
+        # combo discovery: username search + hub-comment mining
+        hubs = hubs or DEFAULT_IG_HUBS
+        found = ig_search_usernames(search_terms or DEFAULT_IG_SEARCH_TERMS)
+        found |= ig_hub_commenters(hubs)
+        found -= {h.lower() for h in hubs}
+        if not found:
+            raise RuntimeError("IG combo discovery found no candidates — try different search terms/hubs")
+        owners = sorted(found)[:MAX_IG_PROFILES]
+        print(f"Instagram: profile details for {len(owners)} discovered accounts…")
     profiles = run_and_fetch(IG_PROFILE_ACTOR, {"usernames": owners})
 
     now = time.time()
@@ -287,12 +370,16 @@ def merge_into_file(candidates):
 def main():
     global MIN_FOLLOWERS
     args = sys.argv[1:]
-    mode, run_id, handles = "tt", None, None
+    mode, run_id, handles, hubs = "tt", None, None, None
     while args and args[0].startswith("--"):
-        if args[0] == "--ig":
+        if args[0] == "--ig":                        # combo: username search + hub comments (args = search terms)
             mode, args = "ig", args[1:]
-        elif args[0] == "--ig-handles":              # profile-scrape specific handles (e.g. IG handles from TT bio links)
+        elif args[0] == "--ig-hashtags":             # legacy hashtag route (args = tags)
+            mode, args = "ig-hash", args[1:]
+        elif args[0] == "--ig-handles":              # profile-scrape specific handles
             mode, handles, args = "ig", [h for h in args[1].split(",") if h], args[2:]
+        elif args[0] == "--hubs":                    # override comment-mining hub accounts
+            hubs, args = [h.lstrip("@") for h in args[1].split(",") if h], args[2:]
         elif args[0] == "--run":
             run_id, args = args[1], args[2:]
         elif args[0] == "--min":                     # lower the follower floor (e.g. --min 500 to catch baby cappers)
@@ -302,7 +389,9 @@ def main():
 
     try:
         if mode == "ig":
-            candidates = collect_instagram(args or DEFAULT_IG_HASHTAGS, handles=handles)
+            candidates = collect_instagram(handles=handles, search_terms=(args or None), hubs=hubs)
+        elif mode == "ig-hash":
+            candidates = collect_instagram(hashtags=args or DEFAULT_IG_HASHTAGS)
         else:
             candidates = collect_tiktok(args or DEFAULT_TT_HASHTAGS, run_id=run_id)
     except RuntimeError as e:
