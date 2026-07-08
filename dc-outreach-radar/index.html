@@ -1357,6 +1357,27 @@ renderList();
 refreshChips();
 const first = orderedCandidates().find(actionable) || orderedCandidates()[0];
 if (first) selectCandidate(first.id);
+
+/* Auto-load the collector's file (apify-candidates.json) on open, so the
+   overnight daily_scan.py results appear without a manual import. Only new
+   handles are added (addCandidates dedupes); silent when served statically
+   or the file is absent. */
+(async () => {
+  try {
+    const res = await fetch("apify-candidates.json", { cache: "no-store" });
+    if (!res.ok) return;
+    const arr = await res.json();
+    if (!Array.isArray(arr) || !arr.length) return;
+    const r = addCandidates(arr);
+    if (r.added) {
+      save();
+      renderAll();
+      toast(`\u{1F4E1} ${r.added} new candidate${r.added > 1 ? "s" : ""} from the latest scan`,
+        `${r.skippedDup} already in your radar${getKey() ? " — drafting openers for the new ones…" : ". Add your Anthropic key (⚙) to auto-draft."}`);
+      if (getKey()) analyzeAllNew();
+    }
+  } catch { /* no file / offline — fine */ }
+})();
 </script>
 </body>
 </html>

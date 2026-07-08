@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd job: run the radar's daily capper sweep every morning at 6:00 AM.
+
+  Setup (one time):
+    1. Edit the two REPLACE_ME paths below to your absolute project path.
+    2. Ensure your Apify token is at ~/.apify_token (the job runs without a
+       shell env, so env-var tokens won't be visible — use the file).
+    3. cp this file to ~/Library/LaunchAgents/
+    4. launchctl load ~/Library/LaunchAgents/com.dubclub.radar-dailyscan.plist
+    To stop:   launchctl unload ~/Library/LaunchAgents/com.dubclub.radar-dailyscan.plist
+    To test now: launchctl start com.dubclub.radar-dailyscan
+
+  Caveat: this runs on your Mac, so the Mac must be awake at 6 AM (or the job
+  fires when it next wakes). For a truly always-on daily pipeline, run
+  daily_scan.py on a small cloud box (a $5/mo VPS cron) instead.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.dubclub.radar-dailyscan</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/usr/bin/python3</string>
+        <string>REPLACE_ME/dc-outreach-radar/daily_scan.py</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>RADAR_PLATFORMS</key><string>both</string>
+        <key>RADAR_DEEP</key><string>1</string>
+        <key>RADAR_CHEAP</key><string>1</string>
+    </dict>
+
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key><integer>6</integer>
+        <key>Minute</key><integer>0</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>REPLACE_ME/dc-outreach-radar/daily_scan.log</string>
+    <key>StandardErrorPath</key>
+    <string>REPLACE_ME/dc-outreach-radar/daily_scan.log</string>
+</dict>
+</plist>
