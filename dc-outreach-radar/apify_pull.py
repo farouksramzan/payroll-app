@@ -107,13 +107,33 @@ def get_token():
     return tok
 
 
-def api(path, payload=None):
+RETRYABLE_STATUS = {403, 429, 500, 502, 503, 504}  # Apify throws transient 403s on free tier
+
+def api(path, payload=None, retries=4):
     sep = "&" if "?" in path else "?"
     url = f"https://api.apify.com/v2/{path}{sep}token={get_token()}"
     data = json.dumps(payload).encode() if payload is not None else None
-    req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, context=SSL_CTX) as r:
-        return json.load(r)
+    delay = 3
+    for attempt in range(retries + 1):
+        req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+        try:
+            with urllib.request.urlopen(req, context=SSL_CTX) as r:
+                return json.load(r)
+        except urllib.error.HTTPError as e:
+            # retry transient rejections (esp. Apify's flaky free-tier 403s); re-raise the rest
+            if e.code in RETRYABLE_STATUS and attempt < retries:
+                print(f"  Apify {e.code} — retrying in {delay}s ({attempt + 1}/{retries})")
+                time.sleep(delay)
+                delay = min(delay * 2, 30)
+                continue
+            raise
+        except urllib.error.URLError as e:
+            if attempt < retries:
+                print(f"  network error ({e}) — retrying in {delay}s ({attempt + 1}/{retries})")
+                time.sleep(delay)
+                delay = min(delay * 2, 30)
+                continue
+            raise
 
 
 def wait_for_run(run_id):
