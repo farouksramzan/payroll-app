@@ -248,8 +248,14 @@
 
       <label style="margin-top:12px;">Depth</label>
       <div class="segrow" id="scanDepth">
-        <button class="on" data-v="quick">Quick &middot; ~$1</button>
-        <button data-v="deep">Deep &middot; ~$12 &middot; 300&ndash;600 accts</button>
+        <button class="on" data-v="quick">Quick</button>
+        <button data-v="deep">Deep &middot; 300&ndash;600 accts</button>
+      </div>
+
+      <label style="margin-top:12px;">Scraper</label>
+      <div class="segrow" id="scanCheap">
+        <button class="on" data-v="std">Standard</button>
+        <button data-v="cheap">Cheaper &middot; ~5&times; less &middot; TikTok</button>
       </div>
 
       <div class="numrow" style="margin-top:12px;">
@@ -1016,7 +1022,7 @@ function demoScan() {
 }
 
 let scanInFlight = false;
-async function runScan({ platform, deep, engView, engFol }) {
+async function runScan({ platform, deep, cheap, engView, engFol }) {
   $("scanModal").classList.remove("open");
   if (scanInFlight) return;
   scanInFlight = true;
@@ -1028,7 +1034,7 @@ async function runScan({ platform, deep, engView, engFol }) {
     const res = await fetch("/api/scan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ platforms, deep, minEng: { view: engView, follower: engFol } })
+      body: JSON.stringify({ platforms, deep, cheap, minEng: { view: engView, follower: engFol } })
     });
     if (res.status === 404 || res.status === 501) { demoScan(); return; }   // plain static server — no scan API
     const data = await res.json();
@@ -1188,18 +1194,25 @@ function openScan() {
 }
 function updateScanEstimate() {
   const platform = segValue("scanPlatform"), deep = segValue("scanDepth") === "deep";
-  const cost = { tt: deep ? 4 : 0.25, ig: deep ? 8 : 1, both: deep ? 12 : 1.25 }[platform];
+  const cheap = segValue("scanCheap") === "cheap";
+  let ttCost = deep ? 4 : 0.25;
+  if (cheap) ttCost *= 0.2;   // apidojo TikTok ≈ 5x cheaper; IG unaffected (no cheap IG wired yet)
+  const igCost = deep ? 8 : 1;
+  const cost = { tt: ttCost, ig: igCost, both: ttCost + igCost }[platform];
   const vol = deep
     ? (platform === "tt" ? "~200–400 TikTok" : platform === "ig" ? "~100–250 IG" : "~300–600")
     : (platform === "tt" ? "~25–40 TikTok" : platform === "ig" ? "~5–15 IG" : "~30–55");
-  $("scanEstimate").textContent = `${vol} cult-size accounts · ~$${cost} Apify credits · ${deep ? "5–12" : "2–5"} min`;
+  $("scanEstimate").textContent = `${vol} cult-size accounts · ~$${cost.toFixed(2)} Apify credits · ${deep ? "5–12" : "2–5"} min`
+    + (cheap ? " · cheaper TikTok actor (verify first run)" : "");
 }
 $("scanChip").addEventListener("click", openScan);
 wireSeg("scanPlatform", updateScanEstimate);
 wireSeg("scanDepth", updateScanEstimate);
+wireSeg("scanCheap", updateScanEstimate);
 $("scanGo").addEventListener("click", () => runScan({
   platform: segValue("scanPlatform"),
   deep: segValue("scanDepth") === "deep",
+  cheap: segValue("scanCheap") === "cheap",
   engView: Math.max(0, parseFloat($("scanEngView").value) || 0),
   engFol: Math.max(0, parseFloat($("scanEngFol").value) || 0)
 }));

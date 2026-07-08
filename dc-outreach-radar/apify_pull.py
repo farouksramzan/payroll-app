@@ -41,7 +41,8 @@ try:
 except ImportError:
     SSL_CTX = ssl.create_default_context()
 
-TT_ACTOR = "clockworks~tiktok-scraper"
+TT_ACTOR = "clockworks~tiktok-scraper"          # default, verified working
+TT_ACTOR_CHEAP = "apidojo~tiktok-scraper"       # ~5x cheaper ($0.30 vs $1.70/1k) — verify schema after top-up
 IG_HASHTAG_ACTOR = "apify~instagram-hashtag-scraper"
 IG_PROFILE_ACTOR = "apify~instagram-profile-scraper"
 IG_SEARCH_ACTOR = "apify~instagram-search-scraper"
@@ -133,6 +134,14 @@ def run_and_fetch(actor, payload):
     return items
 
 
+def field(d, *keys, default=None):
+    """First present, non-None key — tolerates differing actor schemas."""
+    for k in keys:
+        if isinstance(d, dict) and d.get(k) is not None:
+            return d[k]
+    return default
+
+
 def median_pct(rates):
     return round(statistics.median(rates), 1) if rates else 0
 
@@ -153,20 +162,22 @@ def days_ago_from_ts(ts, now):
 
 # ---------------------------------------------------------------- TikTok ----
 
-def collect_tiktok(hashtags, run_id=None, results_per_tag=RESULTS_PER_HASHTAG):
+def collect_tiktok(hashtags, run_id=None, results_per_tag=RESULTS_PER_HASHTAG, cheap=False):
     if run_id:
         print(f"re-using existing TikTok run {run_id} (no new scrape)")
         st = wait_for_run(run_id)
         items = api(f"datasets/{st['defaultDatasetId']}/items?clean=true&format=json")
         print(f"  {len(items)} items")
     else:
-        print(f"TikTok: scraping #{' #'.join(hashtags)} ({results_per_tag} results each)…")
-        items = run_and_fetch(TT_ACTOR, {"hashtags": hashtags, "resultsPerPage": results_per_tag})
+        actor = TT_ACTOR_CHEAP if cheap else TT_ACTOR
+        print(f"TikTok: scraping #{' #'.join(hashtags)} ({results_per_tag} each) via {actor}…")
+        items = run_and_fetch(actor, {"hashtags": hashtags, "resultsPerPage": results_per_tag})
 
     by_author = {}
     for it in items:
-        meta = it.get("authorMeta") or {}
-        handle = meta.get("name")
+        # field names differ across actors — accept both clockworks and apidojo shapes
+        meta = it.get("authorMeta") or it.get("author") or {}
+        handle = field(meta, "name", "uniqueId", "userName", "username") or field(it, "authorName")
         if not handle:
             continue
         by_author.setdefault(handle, {"meta": meta, "posts": []})["posts"].append(it)
@@ -174,31 +185,36 @@ def collect_tiktok(hashtags, run_id=None, results_per_tag=RESULTS_PER_HASHTAG):
     now = time.time()
     out = []
     for handle, d in by_author.items():
-        fans = d["meta"].get("fans") or 0
+        fans = field(d["meta"], "fans", "followers", "followerCount", "fansCount", default=0)
         if not (MIN_FOLLOWERS <= fans <= MAX_FOLLOWERS):
             continue
         posts = d["posts"][:MAX_POSTS_PER_AUTHOR]
+
+        def likes(p): return field(p, "diggCount", "likes", "likeCount", default=0)
+        def comments(p): return field(p, "commentCount", "comments", default=0)
+        def plays(p): return field(p, "playCount", "views", "playCount", default=0)
         # TikTok reach is FYP-driven: median per-view engagement measures how
         # many actual viewers cared (outlier-resistant vs one viral hit).
-        view_rates = [(p.get("diggCount", 0) + p.get("commentCount", 0)) / p["playCount"] * 100
-                      for p in posts if p.get("playCount")]
-        fol_rates = [(p.get("diggCount", 0) + p.get("commentCount", 0)) / fans * 100 for p in posts]
+        view_rates = [(likes(p) + comments(p)) / plays(p) * 100
+                      for p in posts if plays(p)]
+        fol_rates = [(likes(p) + comments(p)) / fans * 100 for p in posts]
         eng, basis = (median_pct(view_rates), "view") if view_rates else (median_pct(fol_rates), "follower")
-        links = [d["meta"]["bioLink"]] if d["meta"].get("bioLink") else []
+        bio_link = field(d["meta"], "bioLink", "bioLink")
+        links = [bio_link] if bio_link else []
         out.append({
-            "name": d["meta"].get("nickName") or handle,
+            "name": field(d["meta"], "nickName", "nickname", "fullName", default=handle),
             "handle": "@" + handle,
             "platform": "TT",
             "followers": fans,
             "engagementPct": eng,
             "engBasis": basis,
-            "bio": d["meta"].get("signature") or "",
+            "bio": field(d["meta"], "signature", "bio", "desc", default=""),
             "links": links,
             "posts": [{
-                "caption": p.get("text", ""),
-                "likes": p.get("diggCount", 0),
-                "comments": p.get("commentCount", 0),
-                "daysAgo": days_ago_from_ts(p.get("createTime"), now),
+                "caption": field(p, "text", "desc", "title", default=""),
+                "likes": likes(p),
+                "comments": comments(p),
+                "daysAgo": days_ago_from_ts(field(p, "createTime", "createTimeISO", "created"), now),
             } for p in posts],
         })
     return out
@@ -380,9 +396,11 @@ def merge_into_file(candidates):
 def main():
     global MIN_FOLLOWERS
     args = sys.argv[1:]
-    mode, run_id, handles, hubs = "tt", None, None, None
+    mode, run_id, handles, hubs, cheap = "tt", None, None, None, False
     while args and args[0].startswith("--"):
-        if args[0] == "--ig":                        # combo: username search + hub comments (args = search terms)
+        if args[0] == "--cheap":                     # use apidojo TikTok actor (~5x cheaper; verify schema)
+            cheap, args = True, args[1:]
+        elif args[0] == "--ig":                      # combo: username search + hub comments (args = search terms)
             mode, args = "ig", args[1:]
         elif args[0] == "--ig-hashtags":             # legacy hashtag route (args = tags)
             mode, args = "ig-hash", args[1:]
@@ -403,7 +421,7 @@ def main():
         elif mode == "ig-hash":
             candidates = collect_instagram(hashtags=args or DEFAULT_IG_HASHTAGS)
         else:
-            candidates = collect_tiktok(args or DEFAULT_TT_HASHTAGS, run_id=run_id)
+            candidates = collect_tiktok(args or DEFAULT_TT_HASHTAGS, run_id=run_id, cheap=cheap)
     except RuntimeError as e:
         sys.exit(str(e))
 

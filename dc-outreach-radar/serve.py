@@ -47,6 +47,7 @@ class Handler(SimpleHTTPRequestHandler):
                     opts.get("ttHashtags") or (apify_pull.DEEP_TT_HASHTAGS if deep else apify_pull.DEFAULT_TT_HASHTAGS),
                     run_id=opts.get("ttRun"),
                     results_per_tag=100 if deep else apify_pull.RESULTS_PER_HASHTAG,
+                    cheap=bool(opts.get("cheap")),
                 )
             if "ig" in platforms:
                 if opts.get("igHashtags"):
