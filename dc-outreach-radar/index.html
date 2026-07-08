@@ -703,6 +703,7 @@ function renderList() {
   $("archToggle")?.addEventListener("click", () => { showArchive = !showArchive; clearSelection(); renderList(); });
   $("archFlagged")?.addEventListener("click", archiveFlagged);
   $("delFlagged")?.addEventListener("click", deleteFlagged);
+  $("selWeak")?.addEventListener("click", selectBelowFloor);
   $("batchArchive")?.addEventListener("click", archiveSelected);
   $("batchRestore")?.addEventListener("click", restoreSelected);
   $("batchDelete")?.addEventListener("click", deleteSelected);
@@ -730,11 +731,27 @@ function archFooterHtml() {
   if (showArchive) {
     return `<div class="arch-toggle"><span id="archToggle">&larr; back to radar</span></div>`;
   }
+  const s = getSettings();
+  const weakCount = orderedCandidates().filter(belowFloor).length;
   return `<div class="arch-toggle">
     <span id="archToggle">archive (${archivedCount})</span>
     ${flaggedCount ? ` &middot; <span id="archFlagged" title="Archive every model-disqualified candidate">sweep ${flaggedCount} flagged &rarr; archive</span>
     &middot; <span id="delFlagged" class="danger-link" title="Delete every model-disqualified candidate permanently">delete ${flaggedCount}</span>` : ""}
+    ${weakCount ? ` &middot; <span id="selWeak" title="Select every account below your engagement floor (TT ${s.engFloorView}% / IG ${s.engFloorFollower}%), then Archive or Delete them. Raise the floor in ⚙.">select ${weakCount} below floor</span>` : ""}
   </div>`;
+}
+
+/* A candidate is below the floor for its engagement basis (TT=view, IG=follower). */
+function belowFloor(c) {
+  const s = getSettings();
+  const floor = c.engBasis === "view" ? s.engFloorView : s.engFloorFollower;
+  return (c.engagementPct || 0) < floor;
+}
+function selectBelowFloor() {
+  const s = getSettings();
+  orderedCandidates().forEach(c => { if (belowFloor(c)) selectedIds.add(c.id); });
+  renderList();
+  toast("Selected accounts below floor", `Everything under TT ${s.engFloorView}% / IG ${s.engFloorFollower}% eng. Hit Archive or Delete in the bar — or raise the floor in ⚙ settings so future scans exclude them too.`);
 }
 
 function renderProfile() {
