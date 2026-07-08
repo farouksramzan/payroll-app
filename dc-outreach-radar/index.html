@@ -89,7 +89,9 @@
   .linkchip { font-size: 11px; color: var(--accent-2); background: var(--panel-2); border-radius: 999px; padding: 2px 9px; }
 
   .posts { margin-top: 14px; display: flex; flex-direction: column; gap: 10px; }
-  .post { max-width: 640px; background: var(--panel-2); border-radius: 14px; border-bottom-left-radius: 4px; padding: 9px 13px; white-space: pre-wrap; }
+  .post { max-width: 640px; background: var(--panel-2); border-radius: 14px; border-bottom-left-radius: 4px; padding: 9px 13px; white-space: pre-wrap; display: flex; gap: 10px; }
+  .post .pbody { flex: 1; min-width: 0; }
+  .postcover { width: 56px; height: 74px; object-fit: cover; border-radius: 8px; flex-shrink: 0; }
   .post .meta { font-size: 10px; color: var(--muted); margin-bottom: 3px; text-transform: uppercase; letter-spacing: .05em; display: flex; justify-content: space-between; gap: 14px; }
 
   /* ---------- Assist / draft ---------- */
@@ -248,7 +250,7 @@
   <div class="modal" style="width:min(460px,92vw);">
     <h2>&#9654; Live scan</h2>
     <div class="modal-body">
-      <div class="subnote">TikTok sweep &mdash; discovers cult-size cappers by hashtag, keeps those above the engagement floor, then auto-drafts openers. Each click spends live scraper credits.</div>
+      <div class="subnote">TikTok sweep &mdash; three discovery sources in one click: hashtag sweep + keyword search + hub-comment mining (cappers self-promoting under big betting accounts). Survivors get the engagement floor, then AI triage that also reads video thumbnails for slip proof. Each click spends live scraper credits.</div>
 
       <!-- TikTok-specialized: platform is fixed to TT (hidden control keeps the scan payload shape) -->
       <div id="scanPlatform" style="display:none;"><button class="on" data-v="tt"></button></div>
@@ -515,6 +517,13 @@ Given a candidate's profile (bio, links, stats, recent captions) and outreach hi
 3. the next outreach message (first touch, or a follow-up bump if touches were already sent)
 4. the best send channel from the routes visible in their links
 
+THUMBNAIL VISION
+Video thumbnails may be attached as images. Read them for visual capper evidence: bet-slip
+screenshots, tracker app watermarks (Pikkit, Playbook, Gambly), odds boards, sportsbook app
+UIs, records/units graphics. Report exactly what you see in visual_evidence (empty string if
+nothing relevant). Visual slip proof counts toward slip_proof even when captions never mention
+it — and a thumbnail can also expose a disqualifier (e.g. reposted meme content).
+
 STYLE CONTRACT FOR THE MESSAGE (hard rules)
 - Under 25 words. Count them.
 - lowercase-casual, like texting a friend. no formal capitalization.
@@ -774,7 +783,10 @@ function renderProfile() {
     <div class="posts">
       ${c.posts.map(p => `
         <div class="post">
-          <div class="meta"><span>${escapeHtml(c.handle)}</span><span>${p.likes.toLocaleString()} likes &middot; ${p.comments.toLocaleString()} comments &middot; ${ago(p.at)}</span></div>${escapeHtml(p.caption)}
+          ${p.cover ? `<img class="postcover" src="${escapeHtml(p.cover)}" referrerpolicy="no-referrer" loading="lazy" onerror="this.style.display='none'" alt="">` : ""}
+          <div class="pbody">
+            <div class="meta"><span>${escapeHtml(c.handle)}</span><span>${p.likes.toLocaleString()} likes &middot; ${p.comments.toLocaleString()} comments &middot; ${ago(p.at)}</span></div>${escapeHtml(p.caption)}
+          </div>
         </div>`).join("")}
     </div>`;
   $("workbench").style.display = "block";
@@ -794,6 +806,7 @@ function renderAssist() {
     const chips = [];
     if (c.ai.sells_picks) chips.push(`<span class="sig good">sells picks</span>`);
     if (c.ai.slip_proof) chips.push(`<span class="sig good">slip proof</span>`);
+    if (c.ai.visual_evidence) chips.push(`<span class="sig good" title="${escapeHtml(c.ai.visual_evidence)}">visual proof</span>`);
     if (c.ai.monetization && !/none/i.test(c.ai.monetization)) chips.push(`<span class="sig info">${escapeHtml(c.ai.monetization)}</span>`);
     if (c.ai.channel) chips.push(`<span class="sig info">send via ${CHANNEL_LABELS[c.ai.channel] || escapeHtml(c.ai.channel)}</span>`);
     if (c.ai.disqualifier) chips.push(`<span class="sig bad">${escapeHtml(c.ai.disqualifier)}</span>`);
@@ -856,10 +869,11 @@ function renderAll() { renderCount(); renderList(); if (selected) { renderProfil
 const RADAR_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["sells_picks", "slip_proof", "monetization", "disqualifier", "summary", "opener", "channel"],
+  required: ["sells_picks", "slip_proof", "visual_evidence", "monetization", "disqualifier", "summary", "opener", "channel"],
   properties: {
     sells_picks: { type: "boolean", description: "Actively sells picks — behavioral evidence, not just betting content." },
-    slip_proof: { type: "boolean", description: "Posts bet slips, tracked records, or tracker screenshots (Pikkit/Playbook/Gambly)." },
+    slip_proof: { type: "boolean", description: "Posts bet slips, tracked records, or tracker screenshots (Pikkit/Playbook/Gambly) — from captions, bio, OR the attached thumbnails." },
+    visual_evidence: { type: "string", description: "What the attached video thumbnails show that's capper-relevant: bet-slip screenshots, tracker app watermarks (Pikkit/Playbook/Gambly), odds boards, sportsbook UIs. Empty string if no thumbnails attached or nothing relevant visible." },
     monetization: { type: "string", description: "How they monetize today, e.g. 'whop in bio', 'telegram + venmo', 'none visible'." },
     disqualifier: { type: "string", description: "Disqualifier if any (aggregator, giveaway farm, already on DubClub, big account for lead lists). Empty string if none." },
     summary: { type: "string", description: "One line on who this is and why they do/don't fit." },
@@ -868,9 +882,27 @@ const RADAR_SCHEMA = {
   }
 };
 
+/* Fetch a cover image via the serve.py proxy and return an Anthropic
+   base64 image content block. Throws on failure (caller skips per-image). */
+async function fetchCoverB64(url) {
+  const res = await fetch(`/api/cover?url=${encodeURIComponent(url)}`);
+  if (!res.ok) throw new Error(`cover ${res.status}`);
+  const blob = await res.blob();
+  const b64 = await new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(String(fr.result).split(",")[1]);
+    fr.onerror = () => reject(new Error("read failed"));
+    fr.readAsDataURL(blob);
+  });
+  const ok = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+  const mediaType = ok.includes(blob.type) ? blob.type : "image/jpeg";
+  return { type: "image", source: { type: "base64", media_type: mediaType, data: b64 } };
+}
+
 function buildUserPrompt(c, { regenerate = false } = {}) {
   const posts = c.posts.map(p => `- (${p.likes.toLocaleString()} likes, ${p.comments.toLocaleString()} comments, ${ago(p.at)}) ${p.caption}`).join("\n");
   const touches = c.touches.map(t => `touch ${t.n} (${ago(t.at)}): "${t.text}"`).join("\n");
+  const coverCount = (c.posts || []).filter(p => p.cover).length;
   let prompt = `CANDIDATE
 Name: ${c.name} (${c.handle}) on ${c.platform === "IG" ? "Instagram" : "TikTok"}
 Followers: ${c.followers.toLocaleString()} | Engagement: ${c.engagementPct}%${c.engBasis === "view" ? " (median per-view — TikTok FYP-adjusted)" : " (per-follower)"}
@@ -878,7 +910,7 @@ Bio: ${c.bio}
 Links in bio: ${c.links.length ? c.links.join(", ") : "none"}
 
 RECENT POSTS
-${posts}
+${posts}${coverCount ? `\n\n(Thumbnails of their recent videos are attached as images — read them for visual capper evidence: bet-slip screenshots, tracker watermarks, odds boards.)` : ""}
 
 OUTREACH HISTORY
 ${touches || "none — this is the first touch"}
@@ -904,14 +936,40 @@ async function analyze(c, { regenerate = false } = {}) {
   if (selected === c) renderAssist();
   try {
     const client = new Anthropic({ apiKey: getKey(), dangerouslyAllowBrowser: true });
-    const response = await client.messages.create({
+    const prompt = buildUserPrompt(c, { regenerate });
+    // vision: fetch up to 3 video thumbnails through the serve.py proxy
+    // (TikTok's CDN 403s non-browser fetches) and attach them as base64 so
+    // the model can see bet slips and tracker watermarks directly. Expired
+    // or unreachable covers are skipped per-image.
+    const coverUrls = (c.posts || []).map(p => p.cover).filter(Boolean).slice(0, 3);
+    const settled = await Promise.allSettled(coverUrls.map(fetchCoverB64));
+    const images = settled.filter(s => s.status === "fulfilled").map(s => s.value);
+    const makeReq = (withImages) => client.messages.create({
       model: "claude-opus-4-8",
       max_tokens: 16000,
       thinking: { type: "adaptive" },
       system: getPrompt(),
       output_config: { format: { type: "json_schema", schema: RADAR_SCHEMA } },
-      messages: [{ role: "user", content: buildUserPrompt(c, { regenerate }) }]
+      messages: [{
+        role: "user",
+        content: withImages
+          ? [{ type: "text", text: prompt }, ...images]
+          : prompt
+      }]
     });
+    let response;
+    try {
+      response = await makeReq(images.length > 0);
+    } catch (err) {
+      // belt & suspenders: if the API rejects the images, retry text-only
+      // rather than failing the whole analysis
+      if (images.length) {
+        console.warn("image-attached analysis failed, retrying text-only:", err);
+        response = await makeReq(false);
+      } else {
+        throw err;
+      }
+    }
     if (response.stop_reason === "refusal") {
       throw new Error("The model declined this request.");
     }
@@ -1220,7 +1278,8 @@ function addCandidates(arr) {
         caption: p.caption || "",
         likes: Number(p.likes) || 0,
         comments: Number(p.comments) || 0,
-        at: now - (Number(p.daysAgo) || 0) * DAY
+        at: now - (Number(p.daysAgo) || 0) * DAY,
+        cover: p.cover || ""
       }))
     });
     added++;
@@ -1338,13 +1397,14 @@ function openScan() {
 function updateScanEstimate() {
   const platform = segValue("scanPlatform"), deep = segValue("scanDepth") === "deep";
   const cheap = segValue("scanCheap") === "cheap";
-  let ttCost = deep ? 4 : 0.25;
-  if (cheap) ttCost *= 0.2;   // apidojo TikTok ≈ 5x cheaper; IG unaffected (no cheap IG wired yet)
+  // main sweep (hashtags+search) + hub comments + commenter profiles
+  let ttCost = deep ? 6 : 1;
+  if (cheap) ttCost = deep ? 3 : 0.7;   // apidojo main sweep ≈ 5x cheaper; comment mining stays clockworks
   const igCost = deep ? 8 : 1;
   const cost = { tt: ttCost, ig: igCost, both: ttCost + igCost }[platform];
   const vol = deep
-    ? (platform === "tt" ? "~200–400 TikTok" : platform === "ig" ? "~100–250 IG" : "~300–600")
-    : (platform === "tt" ? "~25–40 TikTok" : platform === "ig" ? "~5–15 IG" : "~30–55");
+    ? (platform === "tt" ? "~250–500 TikTok" : platform === "ig" ? "~100–250 IG" : "~350–700")
+    : (platform === "tt" ? "~40–80 TikTok" : platform === "ig" ? "~5–15 IG" : "~45–90");
   $("scanEstimate").textContent = `${vol} cult-size accounts · ~$${cost.toFixed(2)} Apify credits · ${deep ? "5–12" : "2–5"} min`
     + (cheap ? " · ⚠ apidojo returns nothing on Apify's free tier — use only on a paid plan" : "");
 }

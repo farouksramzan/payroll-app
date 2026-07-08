@@ -16,15 +16,52 @@ Usage: PORT=4174 python3 serve.py
 import json
 import os
 import sys
+import urllib.request
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
 
 DIR = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, DIR)
 import apify_pull  # noqa: E402
 
+# TikTok/IG CDNs 403 plain fetches but accept a browser UA — the radar's
+# vision pass fetches thumbnails through this same-origin proxy, then sends
+# them to Anthropic as base64. Host-restricted so this isn't an open proxy.
+ALLOWED_IMG_HOSTS = (".tiktokcdn.com", ".tiktokcdn-us.com", ".ttwstatic.com",
+                     ".cdninstagram.com", ".fbcdn.net")
+BROWSER_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36")
+
 
 class Handler(SimpleHTTPRequestHandler):
+    def do_GET(self):
+        if self.path.startswith("/api/cover?"):
+            self._proxy_cover()
+            return
+        super().do_GET()
+
+    def _proxy_cover(self):
+        url = (parse_qs(urlparse(self.path).query).get("url") or [""])[0]
+        host = urlparse(url).hostname or ""
+        if not url.startswith("https://") or not any(host.endswith(h) for h in ALLOWED_IMG_HOSTS):
+            self.send_error(400, "unsupported image host")
+            return
+        try:
+            req = urllib.request.Request(url, headers={
+                "User-Agent": BROWSER_UA, "Referer": "https://www.tiktok.com/"})
+            with urllib.request.urlopen(req, context=apify_pull.SSL_CTX, timeout=20) as r:
+                data = r.read()
+                ctype = r.headers.get("Content-Type", "image/jpeg")
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "max-age=3600")
+            self.end_headers()
+            self.wfile.write(data)
+        except Exception as e:
+            self.send_error(502, f"cover fetch failed: {e}")
+
     def do_POST(self):
         if self.path != "/api/scan":
             self.send_error(404)
@@ -48,6 +85,12 @@ class Handler(SimpleHTTPRequestHandler):
                     run_id=opts.get("ttRun"),
                     results_per_tag=100 if deep else apify_pull.RESULTS_PER_HASHTAG,
                     cheap=bool(opts.get("cheap")),
+                    search_terms=opts.get("ttSearch") or (
+                        apify_pull.DEEP_TT_SEARCH_TERMS if deep else apify_pull.DEFAULT_TT_SEARCH_TERMS),
+                    hubs=None if opts.get("noComments") else (opts.get("ttHubs") or apify_pull.DEFAULT_TT_HUBS),
+                    videos_per_hub=3 if deep else 2,
+                    comments_per_video=100 if deep else apify_pull.TT_COMMENTS_PER_VIDEO,
+                    max_commenter_profiles=40 if deep else apify_pull.MAX_TT_COMMENTER_PROFILES,
                 )
             if "ig" in platforms:
                 if opts.get("igHashtags"):

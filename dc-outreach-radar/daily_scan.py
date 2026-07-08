@@ -57,6 +57,11 @@ def main():
                 a.DEEP_TT_HASHTAGS if deep else a.DEFAULT_TT_HASHTAGS,
                 results_per_tag=100 if deep else a.RESULTS_PER_HASHTAG,
                 cheap=cheap,
+                search_terms=a.DEEP_TT_SEARCH_TERMS if deep else a.DEFAULT_TT_SEARCH_TERMS,
+                hubs=a.DEFAULT_TT_HUBS,
+                videos_per_hub=3 if deep else 2,
+                comments_per_video=100 if deep else a.TT_COMMENTS_PER_VIDEO,
+                max_commenter_profiles=40 if deep else a.MAX_TT_COMMENTER_PROFILES,
             )
         if platforms in ("ig", "both"):
             if deep:

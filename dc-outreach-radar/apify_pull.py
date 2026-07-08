@@ -42,6 +42,7 @@ except ImportError:
     SSL_CTX = ssl.create_default_context()
 
 TT_ACTOR = "clockworks~tiktok-scraper"          # default; verified working on the FREE tier
+TT_COMMENTS_ACTOR = "clockworks~tiktok-comments-scraper"
 # apidojo is ~5x cheaper ($0.30 vs $1.70/1k) BUT verified (2026-07) to return
 # {"noResults": true} on Apify's free plan ("subscribe to a paid plan" message).
 # Only usable once on a paid Apify plan — where its schema mapping (channel.*)
@@ -57,6 +58,17 @@ DEFAULT_TT_HASHTAGS = ["sportspicks", "bettingpicks", "parlaypicks"]
 DEEP_TT_HASHTAGS = ["sportspicks", "bettingpicks", "parlaypicks", "sportsbetting", "prizepicks",
                     "mlbpicks", "nbapicks", "nflpicks", "bettingtips", "freepicks",
                     "sportsgambling", "bettingslips", "picksandparlays", "underdogfantasy", "propbets"]
+# TikTok keyword search (clockworks searchQueries) — a second discovery vein
+# beyond hashtags: catches videos/captions that never used the tags.
+DEFAULT_TT_SEARCH_TERMS = ["sports picks", "betting picks"]
+DEEP_TT_SEARCH_TERMS = ["sports picks", "betting picks", "parlay picks", "free picks",
+                        "nba picks", "nfl picks"]
+# TikTok comment mining — big betting hub accounts whose comment sections
+# attract small cappers self-promoting ("full card on my page").
+DEFAULT_TT_HUBS = ["sportsbettingtiktok", "bookitwithtrent", "hoovelocks"]
+TT_HUB_VIDEOS = 2
+TT_COMMENTS_PER_VIDEO = 40
+MAX_TT_COMMENTER_PROFILES = 15
 # Legacy hashtag route (IG shows only a few "top" posts per tag — weak yield)
 DEFAULT_IG_HASHTAGS = ["sportsbettingpicks", "parlaypicks", "dailypicks", "freepicks",
                        "bettingtips", "sportsbettingadvice", "prizepicks", "mlbpicks",
@@ -186,24 +198,72 @@ def days_ago_from_ts(ts, now):
 
 # ---------------------------------------------------------------- TikTok ----
 
-def collect_tiktok(hashtags, run_id=None, results_per_tag=RESULTS_PER_HASHTAG, cheap=False):
+def tt_hub_commenters(hubs, videos_per_hub=TT_HUB_VIDEOS, comments_per_video=TT_COMMENTS_PER_VIDEO):
+    """TikTok comment mining — pull recent videos from big betting hub
+    accounts, scrape their comments, and keep commenters whose username
+    matches capper patterns or whose comment text reads as self-promo."""
+    print(f"TikTok hub comments: recent videos from {', '.join('@' + h for h in hubs)}…")
+    vids = run_and_fetch(TT_ACTOR, {"profiles": list(hubs), "resultsPerPage": videos_per_hub})
+    urls = [v.get("webVideoUrl") for v in vids if v.get("webVideoUrl")]
+    if not urls:
+        print("  no hub videos found — skipping TikTok comment mining")
+        return set()
+    print(f"  scraping comments on {len(urls)} hub videos…")
+    comments = run_and_fetch(TT_COMMENTS_ACTOR, {"postURLs": urls, "commentsPerPost": comments_per_video})
+    users = set()
+    for c in comments:
+        u = field(c, "uniqueId", "username") or field(c.get("user") or {}, "uniqueId", "username")
+        text = field(c, "text", "comment", default="")
+        if not u:
+            continue
+        if CAPPER_NAME_RE.search(u) or SELF_PROMO_RE.search(text):
+            users.add(u.lower().lstrip("@"))
+    users -= {h.lower() for h in hubs}
+    print(f"  comment mining kept {len(users)} capper-pattern commenters")
+    return users
+
+
+def collect_tiktok(hashtags, run_id=None, results_per_tag=RESULTS_PER_HASHTAG, cheap=False,
+                   search_terms=None, hubs=None, videos_per_hub=TT_HUB_VIDEOS,
+                   comments_per_video=TT_COMMENTS_PER_VIDEO,
+                   max_commenter_profiles=MAX_TT_COMMENTER_PROFILES):
+    """Unified TikTok discovery: hashtags + keyword search in one sweep,
+    plus hub-comment mining (commenters get a profile pass). All sources
+    merge into one candidate transform."""
     if run_id:
         print(f"re-using existing TikTok run {run_id} (no new scrape)")
         st = wait_for_run(run_id)
         items = api(f"datasets/{st['defaultDatasetId']}/items?clean=true&format=json")
         print(f"  {len(items)} items")
+        return tiktok_items_to_candidates(items)
+
+    items = []
+    actor = TT_ACTOR_CHEAP if cheap else TT_ACTOR
+    # Sources 1+2: hashtag sweep + keyword search in a single run
+    if cheap:
+        payload = {
+            "startUrls": [f"https://www.tiktok.com/tag/{h.lstrip('#')}" for h in hashtags],
+            "maxItems": results_per_tag * (len(hashtags) + len(search_terms or [])),
+        }
+        if search_terms:
+            payload["keywords"] = list(search_terms)
     else:
-        actor = TT_ACTOR_CHEAP if cheap else TT_ACTOR
-        if cheap:
-            # apidojo: hashtag = tag URLs in startUrls, total cap = maxItems
-            payload = {
-                "startUrls": [f"https://www.tiktok.com/tag/{h.lstrip('#')}" for h in hashtags],
-                "maxItems": results_per_tag * len(hashtags),
-            }
-        else:
-            payload = {"hashtags": hashtags, "resultsPerPage": results_per_tag}
-        print(f"TikTok: scraping #{' #'.join(hashtags)} via {actor}…")
-        items = run_and_fetch(actor, payload)
+        payload = {"hashtags": hashtags, "resultsPerPage": results_per_tag}
+        if search_terms:
+            payload["searchQueries"] = list(search_terms)
+    srcs = f"#{' #'.join(hashtags)}" + (f" + search: {', '.join(search_terms)}" if search_terms else "")
+    print(f"TikTok: scraping {srcs} via {actor}…")
+    items += run_and_fetch(actor, payload)
+
+    # Source 3: hub-comment mining → profile pass on capper-pattern commenters
+    # (uses clockworks actors regardless of cheap mode — the comments actor
+    # has no apidojo equivalent wired here)
+    if hubs:
+        commenters = tt_hub_commenters(hubs, videos_per_hub, comments_per_video)
+        if commenters:
+            profs = sorted(commenters)[:max_commenter_profiles]
+            print(f"  profiling {len(profs)} commenters…")
+            items += run_and_fetch(TT_ACTOR, {"profiles": profs, "resultsPerPage": 3})
 
     return tiktok_items_to_candidates(items)
 
@@ -260,6 +320,10 @@ def tiktok_items_to_candidates(items, now=None):
                 "comments": comments(p),
                 "daysAgo": days_ago_from_ts(
                     field(p, "createTime", "createTimeISO", "uploadedAt", "created"), now),
+                # video thumbnail — the radar's vision pass reads these for
+                # bet-slip screenshots and tracker watermarks
+                "cover": field(p.get("videoMeta") or {}, "coverUrl", "originalCoverUrl")
+                         or field(p, "coverUrl", "cover", "thumbnail", default="") or "",
             } for p in posts],
         })
     return out
