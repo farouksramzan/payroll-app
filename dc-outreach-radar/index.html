@@ -52,6 +52,9 @@
   .cand .del { display: none; color: var(--muted); font-size: 12px; padding: 0 4px; border-radius: 4px; flex-shrink: 0; cursor: pointer; }
   .cand:hover .del { display: inline; }
   .cand .del:hover { color: var(--danger); }
+  .arch-toggle { text-align: center; color: #4a5361; font-size: 11px; padding: 10px 0 4px; }
+  .arch-toggle span { cursor: pointer; }
+  .arch-toggle span:hover { color: var(--muted); }
   .plat { font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 4px; flex-shrink: 0; }
   .plat.IG { background: #2a1a30; color: #d05ce3; }
   .plat.TT { background: #10262b; color: #4dd0e1; }
@@ -229,8 +232,8 @@
       <div class="subnote">Runs a real Apify sweep (2&ndash;5 min), imports cult-size cappers above the engagement floor, then auto-drafts their openers. Each click spends live scraper credits.</div>
       <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
         <button id="scanTT">TikTok &middot; ~$0.25</button>
-        <button id="scanIG">Instagram &middot; ~$0.50</button>
-        <button class="primary" id="scanBoth">Both &middot; ~$0.75</button>
+        <button id="scanIG">Instagram &middot; ~$0.75</button>
+        <button class="primary" id="scanBoth">Both &middot; ~$1</button>
       </div>
     </div>
     <div class="modal-foot">
@@ -501,6 +504,7 @@ CHANNEL RULES
 let candidates = [];
 let selected = null;
 let sentLog = { date: "", count: 0 };
+let showArchive = false;
 
 const $ = id => document.getElementById(id);
 const getKey    = () => localStorage.getItem(LS_KEY) || "";
@@ -561,7 +565,7 @@ function dueForTouch(c) {
          c.nextTouchAt != null && Date.now() >= c.nextTouchAt;
 }
 const actionable = c => c.state === "new" || dueForTouch(c);
-const isDone = c => ["replied", "dead", "suppressed"].includes(c.state);
+const isDone = c => ["replied", "dead", "suppressed", "archived"].includes(c.state);
 
 function score(c) {
   // Transparent composite: engagement base + behavioral signals from the model.
@@ -601,10 +605,12 @@ function profileUrl(c) {
    RENDER
    ========================================================= */
 function orderedCandidates() {
-  const act = candidates.filter(actionable).sort((a, b) => score(b) - score(a));
-  const waiting = candidates.filter(c => c.state === "contacted" && !dueForTouch(c))
+  if (showArchive) return candidates.filter(c => c.state === "archived");
+  const pool = candidates.filter(c => c.state !== "archived");
+  const act = pool.filter(actionable).sort((a, b) => score(b) - score(a));
+  const waiting = pool.filter(c => c.state === "contacted" && !dueForTouch(c))
     .sort((a, b) => (a.nextTouchAt || Infinity) - (b.nextTouchAt || Infinity));
-  const done = candidates.filter(isDone);
+  const done = pool.filter(isDone);
   return [...act, ...waiting, ...done];
 }
 
@@ -633,15 +639,33 @@ function renderList() {
         <span class="name">${escapeHtml(c.name)}</span>
         <span class="score ${c.ai ? "" : "dim"}" title="${c.ai ? "behavioral score" : "provisional — analyze to confirm"}">${score(c)}</span>
         ${marker}
-        <span class="del" data-del="${c.id}" title="Delete from the radar entirely (may re-appear on a future import — use skip if the radar should remember them)">&#10005;</span>
+        ${showArchive
+          ? `<span class="del" data-restore="${c.id}" title="Restore to the radar">&#8634;</span>`
+          : `<span class="del" data-del="${c.id}" title="Archive — leaves the queue but stays remembered, so imports won't re-add them">&#10005;</span>`}
       </div>
       <div class="handle">${escapeHtml(c.handle)}</div>
     </div>`;
-  }).join("");
+  }).join("") + archFooterHtml();
   $("list").querySelectorAll(".cand").forEach(el =>
     el.addEventListener("click", () => selectCandidate(el.dataset.id)));
-  $("list").querySelectorAll(".del").forEach(el =>
-    el.addEventListener("click", e => { e.stopPropagation(); deleteCandidate(el.dataset.del); }));
+  $("list").querySelectorAll("[data-del]").forEach(el =>
+    el.addEventListener("click", e => { e.stopPropagation(); archiveCandidate(el.dataset.del); }));
+  $("list").querySelectorAll("[data-restore]").forEach(el =>
+    el.addEventListener("click", e => { e.stopPropagation(); restoreCandidate(el.dataset.restore); }));
+  $("archToggle")?.addEventListener("click", () => { showArchive = !showArchive; renderList(); });
+  $("archFlagged")?.addEventListener("click", archiveFlagged);
+}
+
+function archFooterHtml() {
+  const archivedCount = candidates.filter(c => c.state === "archived").length;
+  const flaggedCount = candidates.filter(c => c.ai?.disqualifier && !isDone(c)).length;
+  if (showArchive) {
+    return `<div class="arch-toggle"><span id="archToggle">&larr; back to radar</span></div>`;
+  }
+  return `<div class="arch-toggle">
+    <span id="archToggle">archive (${archivedCount})</span>
+    ${flaggedCount ? ` &middot; <span id="archFlagged" title="Archive every model-disqualified candidate in one go">sweep ${flaggedCount} flagged &rarr; archive</span>` : ""}
+  </div>`;
 }
 
 function renderProfile() {
@@ -706,6 +730,8 @@ function renderAssist() {
     line = `skipped`;
   } else if (c.state === "suppressed") {
     line = `suppressed — on the never-pitch list`;
+  } else if (c.state === "archived") {
+    line = `archived — restore it from the archive to work it again`;
   }
   if (sentToday() >= s.dailyCap && actionable(c)) {
     line = (line ? line + " · " : "") + `daily cap reached (${sentToday()}/${s.dailyCap}) — resumes tomorrow`;
@@ -720,8 +746,8 @@ function renderAssist() {
   const capped = sentToday() >= s.dailyCap;
   $("sentBtn").disabled = capped || isDone(c) || c.analyzing;
   $("copyBtn").disabled = isDone(c) || c.analyzing;
-  $("repliedBtn").disabled = c.state === "suppressed";
-  $("skipBtn").disabled = c.state === "suppressed";
+  $("repliedBtn").disabled = c.state === "suppressed" || c.state === "archived";
+  $("skipBtn").disabled = c.state === "suppressed" || c.state === "archived";
 }
 
 function updateLint() {
@@ -908,22 +934,47 @@ function markDead() {
   renderAll();
 }
 
-/* Hard delete — removes the record entirely, so the same handle can re-import
-   as new on a future sweep. Skip (dead) is for "evaluated, not a fit". */
-function deleteCandidate(id) {
-  const idx = candidates.findIndex(c => c.id === id);
-  if (idx === -1) return;
-  const [c] = candidates.splice(idx, 1);
-  if (selected?.id === id) {
-    selected = null;
-    $("detailHead").textContent = "Candidate";
-    $("profile").innerHTML = `<div class="empty-hint">Pick a candidate</div>`;
-    $("workbench").style.display = "none";
-  }
+function resetDetailPane() {
+  selected = null;
+  $("detailHead").textContent = "Candidate";
+  $("profile").innerHTML = `<div class="empty-hint">Pick a candidate</div>`;
+  $("workbench").style.display = "none";
+}
+
+/* Archive — out of the queue and digest, but the record stays, so future
+   imports/scans won't re-add the handle. Restore from the archive view. */
+function archiveCandidate(id) {
+  const c = candidates.find(x => x.id === id);
+  if (!c) return;
+  c.state = "archived";
+  c.nextTouchAt = null;
+  if (selected?.id === id) resetDetailPane();
   save();
   renderCount();
   renderList();
-  toast(`Deleted ${c.handle}`, "Gone from the radar. A future import can bring the handle back as new — use skip instead if the radar should remember them.");
+  toast(`Archived ${c.handle}`, "Out of the queue but remembered — imports won't re-add them. Restore anytime from “archive” at the bottom of the list.");
+}
+
+function restoreCandidate(id) {
+  const c = candidates.find(x => x.id === id);
+  if (!c) return;
+  c.state = c.touches.length ? "contacted" : "new";
+  c.nextTouchAt = c.touches.length ? Date.now() : null;
+  save();
+  renderCount();
+  renderList();
+  toast(`Restored ${c.handle}`, "Back on the radar.");
+}
+
+function archiveFlagged() {
+  const targets = candidates.filter(c => c.ai?.disqualifier && !isDone(c));
+  if (!targets.length) return;
+  targets.forEach(c => { c.state = "archived"; c.nextTouchAt = null; });
+  if (selected && targets.some(c => c.id === selected.id)) resetDetailPane();
+  save();
+  renderCount();
+  renderList();
+  toast(`Archived ${targets.length} flagged candidate${targets.length > 1 ? "s" : ""}`, "All model-disqualified accounts moved to the archive.");
 }
 
 /* =========================================================
@@ -1167,7 +1218,7 @@ $("settingsSave").addEventListener("click", () => {
   const sup = suppressedHandles();
   candidates.forEach(c => {
     const listed = sup.includes(c.handle.toLowerCase());
-    if (listed && c.state !== "replied" && c.state !== "suppressed") {
+    if (listed && c.state !== "replied" && c.state !== "suppressed" && c.state !== "archived") {
       c.stateBeforeSuppress = c.state;
       c.state = "suppressed";
     } else if (!listed && c.state === "suppressed") {

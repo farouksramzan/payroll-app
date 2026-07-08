@@ -41,7 +41,10 @@ IG_HASHTAG_ACTOR = "apify~instagram-hashtag-scraper"
 IG_PROFILE_ACTOR = "apify~instagram-profile-scraper"
 
 DEFAULT_TT_HASHTAGS = ["sportspicks", "bettingpicks", "parlaypicks"]
-DEFAULT_IG_HASHTAGS = ["sportsbettingpicks", "parlaypicks", "dailypicks"]
+# IG returns only a handful of "top" posts per hashtag, so the net needs many tags
+DEFAULT_IG_HASHTAGS = ["sportsbettingpicks", "parlaypicks", "dailypicks", "freepicks",
+                       "bettingtips", "sportsbettingadvice", "prizepicks", "mlbpicks",
+                       "nbapicks", "nflpicks"]
 RESULTS_PER_HASHTAG = 50
 MAX_IG_PROFILES = 60          # cap the profile-details pass to bound cost
 MIN_FOLLOWERS, MAX_FOLLOWERS = 3_000, 60_000   # override floor with --min
