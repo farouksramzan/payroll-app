@@ -55,6 +55,17 @@
   .arch-toggle { text-align: center; color: #4a5361; font-size: 11px; padding: 10px 0 4px; }
   .arch-toggle span { cursor: pointer; }
   .arch-toggle span:hover { color: var(--muted); }
+  .arch-toggle .danger-link:hover { color: var(--danger); }
+  .cand.sel { background: #12233a; }
+  .chk { width: 14px; height: 14px; border: 1px solid var(--border); border-radius: 4px; flex-shrink: 0; cursor: pointer; display: inline-block; }
+  .chk:hover { border-color: var(--muted); }
+  .chk.on { background: var(--accent-2); border-color: var(--accent-2); position: relative; }
+  .chk.on::after { content: "\2713"; color: #04121f; font-size: 11px; font-weight: 700; position: absolute; top: -2px; left: 2px; }
+  .batchbar { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; gap: 8px; background: var(--panel-2); border: 1px solid var(--accent-2); border-radius: 8px; padding: 7px 10px; margin: 2px 2px 6px; font-size: 12px; }
+  .batchbar .count { color: var(--text); font-weight: 600; }
+  .batchbar .spacer { flex: 1; }
+  .batchbar button { padding: 4px 9px; font-size: 12px; }
+  .batchbar button.del:hover { border-color: var(--danger); color: var(--danger); }
   .segrow { display: flex; gap: 6px; margin-top: 4px; }
   .segrow button { flex: 1; font-size: 12px; padding: 7px 6px; }
   .segrow button.on { background: var(--accent-2); border-color: var(--accent-2); color: #04121f; }
@@ -529,6 +540,7 @@ let candidates = [];
 let selected = null;
 let sentLog = { date: "", count: 0 };
 let showArchive = false;
+let selectedIds = new Set();   // batch multi-select
 
 const $ = id => document.getElementById(id);
 const getKey    = () => localStorage.getItem(LS_KEY) || "";
@@ -646,7 +658,11 @@ function renderCount() {
 
 function renderList() {
   const list = orderedCandidates();
-  $("list").innerHTML = list.map(c => {
+  // prune selection to what's currently visible
+  const visible = new Set(list.map(c => c.id));
+  selectedIds.forEach(id => { if (!visible.has(id)) selectedIds.delete(id); });
+
+  $("list").innerHTML = batchBarHtml() + list.map(c => {
     const dq = c.ai?.disqualifier;
     let marker = "";
     if (actionable(c) && !dq) marker = `<span class="dot" title="${c.state === "new" ? "new candidate" : "follow-up due"}"></span>`;
@@ -656,28 +672,56 @@ function renderList() {
     }
     else if (isDone(c)) marker = `<span class="state-tag">${c.state}</span>`;
     else if (dq) marker = `<span class="state-tag" title="${escapeHtml(dq)}">flagged</span>`;
+    const sel = selectedIds.has(c.id);
     return `
-    <div class="cand ${selected?.id === c.id ? "active" : ""} ${isDone(c) ? "done" : ""}" data-id="${c.id}">
+    <div class="cand ${selected?.id === c.id ? "active" : ""} ${sel ? "sel" : ""} ${isDone(c) ? "done" : ""}" data-id="${c.id}">
       <div class="row1">
+        <span class="chk ${sel ? "on" : ""}" data-chk="${c.id}" title="Select for batch action"></span>
         <span class="plat ${c.platform}">${c.platform}</span>
         <span class="name">${escapeHtml(c.name)}</span>
         <span class="score ${c.ai ? "" : "dim"}" title="${c.ai ? "behavioral score" : "provisional — analyze to confirm"}">${score(c)}</span>
         ${marker}
         ${showArchive
-          ? `<span class="del" data-restore="${c.id}" title="Restore to the radar">&#8634;</span>`
-          : `<span class="del" data-del="${c.id}" title="Archive — leaves the queue but stays remembered, so imports won't re-add them">&#10005;</span>`}
+          ? `<span class="del" data-restore="${c.id}" title="Restore to the radar">&#8634;</span>
+             <span class="del" data-del="${c.id}" title="Delete permanently (a future import can re-add the handle)">&#10005;</span>`
+          : `<span class="del" data-arch="${c.id}" title="Archive — leaves the queue but stays remembered, so imports won't re-add them">&#10005;</span>`}
       </div>
       <div class="handle">${escapeHtml(c.handle)}</div>
     </div>`;
   }).join("") + archFooterHtml();
+
   $("list").querySelectorAll(".cand").forEach(el =>
     el.addEventListener("click", () => selectCandidate(el.dataset.id)));
+  $("list").querySelectorAll("[data-chk]").forEach(el =>
+    el.addEventListener("click", e => { e.stopPropagation(); toggleSelect(el.dataset.chk); }));
+  $("list").querySelectorAll("[data-arch]").forEach(el =>
+    el.addEventListener("click", e => { e.stopPropagation(); archiveCandidate(el.dataset.arch); }));
   $("list").querySelectorAll("[data-del]").forEach(el =>
-    el.addEventListener("click", e => { e.stopPropagation(); archiveCandidate(el.dataset.del); }));
+    el.addEventListener("click", e => { e.stopPropagation(); deleteCandidate(el.dataset.del); }));
   $("list").querySelectorAll("[data-restore]").forEach(el =>
     el.addEventListener("click", e => { e.stopPropagation(); restoreCandidate(el.dataset.restore); }));
-  $("archToggle")?.addEventListener("click", () => { showArchive = !showArchive; renderList(); });
+  $("archToggle")?.addEventListener("click", () => { showArchive = !showArchive; clearSelection(); renderList(); });
   $("archFlagged")?.addEventListener("click", archiveFlagged);
+  $("delFlagged")?.addEventListener("click", deleteFlagged);
+  $("batchArchive")?.addEventListener("click", archiveSelected);
+  $("batchRestore")?.addEventListener("click", restoreSelected);
+  $("batchDelete")?.addEventListener("click", deleteSelected);
+  $("batchClear")?.addEventListener("click", () => { clearSelection(); renderList(); });
+}
+
+function batchBarHtml() {
+  const n = selectedIds.size;
+  if (!n) return "";
+  const primary = showArchive
+    ? `<button id="batchRestore">Restore ${n}</button>`
+    : `<button id="batchArchive">Archive ${n}</button>`;
+  return `<div class="batchbar">
+    <span class="count">${n} selected</span>
+    <span class="spacer"></span>
+    ${primary}
+    <button class="del" id="batchDelete">Delete ${n}</button>
+    <button id="batchClear">Clear</button>
+  </div>`;
 }
 
 function archFooterHtml() {
@@ -688,7 +732,8 @@ function archFooterHtml() {
   }
   return `<div class="arch-toggle">
     <span id="archToggle">archive (${archivedCount})</span>
-    ${flaggedCount ? ` &middot; <span id="archFlagged" title="Archive every model-disqualified candidate in one go">sweep ${flaggedCount} flagged &rarr; archive</span>` : ""}
+    ${flaggedCount ? ` &middot; <span id="archFlagged" title="Archive every model-disqualified candidate">sweep ${flaggedCount} flagged &rarr; archive</span>
+    &middot; <span id="delFlagged" class="danger-link" title="Delete every model-disqualified candidate permanently">delete ${flaggedCount}</span>` : ""}
   </div>`;
 }
 
@@ -999,6 +1044,65 @@ function archiveFlagged() {
   renderCount();
   renderList();
   toast(`Archived ${targets.length} flagged candidate${targets.length > 1 ? "s" : ""}`, "All model-disqualified accounts moved to the archive.");
+}
+
+/* Hard delete — removes the record entirely. Unlike archive, a future
+   import/scan can re-add the handle as new (no dedupe memory kept). */
+function deleteCandidate(id) {
+  const c = candidates.find(x => x.id === id);
+  if (!c) return;
+  candidates = candidates.filter(x => x.id !== id);
+  selectedIds.delete(id);
+  if (selected?.id === id) resetDetailPane();
+  save();
+  renderCount();
+  renderList();
+  toast(`Deleted ${c.handle}`, "Removed entirely. A future scan can re-add the handle — use archive if you want it remembered.");
+}
+
+function deleteFlagged() {
+  const targets = candidates.filter(c => c.ai?.disqualifier && !isDone(c));
+  if (!targets.length) return;
+  const ids = new Set(targets.map(c => c.id));
+  candidates = candidates.filter(c => !ids.has(c.id));
+  ids.forEach(id => selectedIds.delete(id));
+  if (selected && ids.has(selected.id)) resetDetailPane();
+  save();
+  renderCount();
+  renderList();
+  toast(`Deleted ${targets.length} flagged candidate${targets.length > 1 ? "s" : ""}`, "All model-disqualified accounts removed permanently.");
+}
+
+/* ---------- batch selection ---------- */
+function toggleSelect(id) {
+  if (selectedIds.has(id)) selectedIds.delete(id);
+  else selectedIds.add(id);
+  renderList();
+}
+function clearSelection() { selectedIds.clear(); }
+
+function archiveSelected() {
+  const ids = new Set(selectedIds);
+  candidates.forEach(c => { if (ids.has(c.id) && c.state !== "suppressed") { c.state = "archived"; c.nextTouchAt = null; } });
+  if (selected && ids.has(selected.id)) resetDetailPane();
+  clearSelection();
+  save(); renderCount(); renderList();
+  toast(`Archived ${ids.size}`, "Moved to the archive — restore anytime.");
+}
+function restoreSelected() {
+  const ids = new Set(selectedIds);
+  candidates.forEach(c => { if (ids.has(c.id) && c.state === "archived") { c.state = c.touches.length ? "contacted" : "new"; c.nextTouchAt = c.touches.length ? Date.now() : null; } });
+  clearSelection();
+  save(); renderCount(); renderList();
+  toast(`Restored ${ids.size}`, "Back on the radar.");
+}
+function deleteSelected() {
+  const ids = new Set(selectedIds);
+  candidates = candidates.filter(c => !ids.has(c.id));
+  if (selected && ids.has(selected.id)) resetDetailPane();
+  clearSelection();
+  save(); renderCount(); renderList();
+  toast(`Deleted ${ids.size}`, "Removed entirely — a future scan can re-add these handles.");
 }
 
 /* =========================================================
