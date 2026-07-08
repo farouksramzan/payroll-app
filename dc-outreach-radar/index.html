@@ -49,6 +49,9 @@
   .wait-tag { font-size: 10px; color: var(--warn); flex-shrink: 0; }
   .state-tag { font-size: 10px; color: var(--muted); flex-shrink: 0; text-transform: uppercase; }
   .cand .handle { color: var(--muted); font-size: 12px; margin-top: 1px; }
+  .cand .del { display: none; color: var(--muted); font-size: 12px; padding: 0 4px; border-radius: 4px; flex-shrink: 0; cursor: pointer; }
+  .cand:hover .del { display: inline; }
+  .cand .del:hover { color: var(--danger); }
   .plat { font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 4px; flex-shrink: 0; }
   .plat.IG { background: #2a1a30; color: #d05ce3; }
   .plat.TT { background: #10262b; color: #4dd0e1; }
@@ -613,12 +616,15 @@ function renderList() {
         <span class="name">${escapeHtml(c.name)}</span>
         <span class="score ${c.ai ? "" : "dim"}" title="${c.ai ? "behavioral score" : "provisional — analyze to confirm"}">${score(c)}</span>
         ${marker}
+        <span class="del" data-del="${c.id}" title="Delete from the radar entirely (may re-appear on a future import — use skip if the radar should remember them)">&#10005;</span>
       </div>
       <div class="handle">${escapeHtml(c.handle)}</div>
     </div>`;
   }).join("");
   $("list").querySelectorAll(".cand").forEach(el =>
     el.addEventListener("click", () => selectCandidate(el.dataset.id)));
+  $("list").querySelectorAll(".del").forEach(el =>
+    el.addEventListener("click", e => { e.stopPropagation(); deleteCandidate(el.dataset.del); }));
 }
 
 function renderProfile() {
@@ -883,6 +889,24 @@ function markDead() {
   c.nextTouchAt = null;
   save();
   renderAll();
+}
+
+/* Hard delete — removes the record entirely, so the same handle can re-import
+   as new on a future sweep. Skip (dead) is for "evaluated, not a fit". */
+function deleteCandidate(id) {
+  const idx = candidates.findIndex(c => c.id === id);
+  if (idx === -1) return;
+  const [c] = candidates.splice(idx, 1);
+  if (selected?.id === id) {
+    selected = null;
+    $("detailHead").textContent = "Candidate";
+    $("profile").innerHTML = `<div class="empty-hint">Pick a candidate</div>`;
+    $("workbench").style.display = "none";
+  }
+  save();
+  renderCount();
+  renderList();
+  toast(`Deleted ${c.handle}`, "Gone from the radar. A future import can bring the handle back as new — use skip instead if the radar should remember them.");
 }
 
 /* =========================================================
