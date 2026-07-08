@@ -170,19 +170,36 @@ def collect_tiktok(hashtags, run_id=None, results_per_tag=RESULTS_PER_HASHTAG, c
         print(f"  {len(items)} items")
     else:
         actor = TT_ACTOR_CHEAP if cheap else TT_ACTOR
-        print(f"TikTok: scraping #{' #'.join(hashtags)} ({results_per_tag} each) via {actor}…")
-        items = run_and_fetch(actor, {"hashtags": hashtags, "resultsPerPage": results_per_tag})
+        if cheap:
+            # apidojo: hashtag = tag URLs in startUrls, total cap = maxItems
+            payload = {
+                "startUrls": [f"https://www.tiktok.com/tag/{h.lstrip('#')}" for h in hashtags],
+                "maxItems": results_per_tag * len(hashtags),
+            }
+        else:
+            payload = {"hashtags": hashtags, "resultsPerPage": results_per_tag}
+        print(f"TikTok: scraping #{' #'.join(hashtags)} via {actor}…")
+        items = run_and_fetch(actor, payload)
 
+    return tiktok_items_to_candidates(items)
+
+
+def tiktok_items_to_candidates(items, now=None):
+    """Transform raw TikTok scrape items (clockworks OR apidojo schema) into
+    radar candidates. Pure function — no network — so it's unit-testable
+    against both actors' documented schemas."""
+    now = now or time.time()
     by_author = {}
     for it in items:
-        # field names differ across actors — accept both clockworks and apidojo shapes
-        meta = it.get("authorMeta") or it.get("author") or {}
-        handle = field(meta, "name", "uniqueId", "userName", "username") or field(it, "authorName")
+        # author object differs by actor: clockworks=authorMeta, apidojo=channel
+        meta = it.get("authorMeta") or it.get("channel") or it.get("author") or {}
+        # handle: apidojo=username, clockworks=name (its unique handle). Prefer
+        # username/uniqueId first so apidojo's channel.name (display) isn't mistaken for the handle.
+        handle = field(meta, "uniqueId", "username", "userName", "name") or field(it, "authorName")
         if not handle:
             continue
         by_author.setdefault(handle, {"meta": meta, "posts": []})["posts"].append(it)
 
-    now = time.time()
     out = []
     for handle, d in by_author.items():
         fans = field(d["meta"], "fans", "followers", "followerCount", "fansCount", default=0)
@@ -192,17 +209,20 @@ def collect_tiktok(hashtags, run_id=None, results_per_tag=RESULTS_PER_HASHTAG, c
 
         def likes(p): return field(p, "diggCount", "likes", "likeCount", default=0)
         def comments(p): return field(p, "commentCount", "comments", default=0)
-        def plays(p): return field(p, "playCount", "views", "playCount", default=0)
+        def plays(p): return field(p, "playCount", "views", default=0)
         # TikTok reach is FYP-driven: median per-view engagement measures how
         # many actual viewers cared (outlier-resistant vs one viral hit).
         view_rates = [(likes(p) + comments(p)) / plays(p) * 100
                       for p in posts if plays(p)]
         fol_rates = [(likes(p) + comments(p)) / fans * 100 for p in posts]
         eng, basis = (median_pct(view_rates), "view") if view_rates else (median_pct(fol_rates), "follower")
-        bio_link = field(d["meta"], "bioLink", "bioLink")
+        # clockworks exposes an external bio link (bioLink); apidojo exposes only
+        # the profile URL (channel.url) — keep a real external link if present.
+        bio_link = field(d["meta"], "bioLink")
         links = [bio_link] if bio_link else []
         out.append({
-            "name": field(d["meta"], "nickName", "nickname", "fullName", default=handle),
+            # display name: apidojo=channel.name, clockworks=authorMeta.nickName
+            "name": field(d["meta"], "nickName", "nickname", "name", "fullName", default=handle),
             "handle": "@" + handle,
             "platform": "TT",
             "followers": fans,
@@ -214,7 +234,8 @@ def collect_tiktok(hashtags, run_id=None, results_per_tag=RESULTS_PER_HASHTAG, c
                 "caption": field(p, "text", "desc", "title", default=""),
                 "likes": likes(p),
                 "comments": comments(p),
-                "daysAgo": days_ago_from_ts(field(p, "createTime", "createTimeISO", "created"), now),
+                "daysAgo": days_ago_from_ts(
+                    field(p, "createTime", "createTimeISO", "uploadedAt", "created"), now),
             } for p in posts],
         })
     return out
