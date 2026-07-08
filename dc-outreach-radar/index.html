@@ -625,9 +625,16 @@ function renderProfile() {
   if (!selected) return;
   const c = selected;
   $("detailHead").textContent = `${c.name} · ${c.handle} · ${c.platform === "IG" ? "Instagram" : "TikTok"}`;
+  const perView = c.engBasis === "view";
+  const engLabel = perView
+    ? `${c.engagementPct}% eng/view`
+    : `${c.engagementPct}% eng/follower`;
+  const engTitle = perView
+    ? "median (likes+comments) ÷ views, recent posts — how many actual viewers cared (TikTok reach is FYP-driven, so per-follower rates measure virality, not devotion)"
+    : "(likes+comments) ÷ followers — follower devotion";
   $("profile").innerHTML = `
     <div class="biocard">
-      <div class="stats">${(c.followers / 1000).toFixed(1)}K followers &middot; ${c.engagementPct}% engagement</div>
+      <div class="stats" title="${engTitle}">${(c.followers / 1000).toFixed(1)}K followers &middot; ${engLabel}</div>
       <div class="bio">${escapeHtml(c.bio)}</div>
       ${c.links.length ? `<div class="linkchips">${c.links.map(l => `<span class="linkchip">${escapeHtml(l.replace(/^https?:\/\//, ""))}</span>`).join("")}</div>` : ""}
     </div>
@@ -731,7 +738,7 @@ function buildUserPrompt(c, { regenerate = false } = {}) {
   const touches = c.touches.map(t => `touch ${t.n} (${ago(t.at)}): "${t.text}"`).join("\n");
   let prompt = `CANDIDATE
 Name: ${c.name} (${c.handle}) on ${c.platform === "IG" ? "Instagram" : "TikTok"}
-Followers: ${c.followers.toLocaleString()} | Engagement: ${c.engagementPct}%
+Followers: ${c.followers.toLocaleString()} | Engagement: ${c.engagementPct}%${c.engBasis === "view" ? " (median per-view — TikTok FYP-adjusted)" : " (per-follower)"}
 Bio: ${c.bio}
 Links in bio: ${c.links.length ? c.links.join(", ") : "none"}
 
@@ -919,6 +926,7 @@ function importCandidates() {
       platform: raw.platform === "TT" ? "TT" : "IG",
       followers: Number(raw.followers) || 0,
       engagementPct: Number(raw.engagementPct) || 0,
+      engBasis: raw.engBasis === "view" ? "view" : "follower",
       bio: raw.bio || "",
       links: Array.isArray(raw.links) ? raw.links : [],
       state: suppressed ? "suppressed" : "new",

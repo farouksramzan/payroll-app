@@ -16,6 +16,7 @@ a default run (3 hashtags x 50 results) is ~$0.25 and fits free credits.
 import json
 import os
 import ssl
+import statistics
 import sys
 import time
 import urllib.request
@@ -56,15 +57,22 @@ def api(path, payload=None):
 
 
 def main():
-    hashtags = sys.argv[1:] or DEFAULT_HASHTAGS
-    print(f"scraping #{' #'.join(hashtags)} ({RESULTS_PER_HASHTAG} results each)…")
+    args = sys.argv[1:]
+    run_id = None
+    if args and args[0] == "--run":            # re-transform an existing run's dataset (free, no new scrape)
+        run_id, args = args[1], args[2:]
+    hashtags = args or DEFAULT_HASHTAGS
 
-    run = api(f"acts/{ACTOR}/runs", {
-        "hashtags": hashtags,
-        "resultsPerPage": RESULTS_PER_HASHTAG,
-    })
-    run_id = run["data"]["id"]
-    print(f"run {run_id} started — polling")
+    if run_id:
+        print(f"re-using existing run {run_id} (no new scrape)")
+    else:
+        print(f"scraping #{' #'.join(hashtags)} ({RESULTS_PER_HASHTAG} results each)…")
+        run = api(f"acts/{ACTOR}/runs", {
+            "hashtags": hashtags,
+            "resultsPerPage": RESULTS_PER_HASHTAG,
+        })
+        run_id = run["data"]["id"]
+        print(f"run {run_id} started — polling")
 
     while True:
         st = api(f"actor-runs/{run_id}")["data"]
@@ -93,14 +101,26 @@ def main():
         if not (MIN_FOLLOWERS <= fans <= MAX_FOLLOWERS):
             continue
         posts = d["posts"][:MAX_POSTS_PER_AUTHOR]
-        rates = [(p.get("diggCount", 0) + p.get("commentCount", 0)) / fans * 100 for p in posts]
+        # TikTok reach is FYP-driven, so likes/followers measures virality, not
+        # follower devotion. Median (likes+comments)/views is the cult-ness
+        # proxy: of the people who saw it, how many cared — outlier-resistant.
+        view_rates = [(p.get("diggCount", 0) + p.get("commentCount", 0)) / p["playCount"] * 100
+                      for p in posts if p.get("playCount")]
+        fol_rates = [(p.get("diggCount", 0) + p.get("commentCount", 0)) / fans * 100 for p in posts]
+        if view_rates:
+            eng, basis = round(statistics.median(view_rates), 1), "view"
+        elif fol_rates:
+            eng, basis = round(statistics.median(fol_rates), 1), "follower"
+        else:
+            eng, basis = 0, "follower"
         links = [d["meta"]["bioLink"]] if d["meta"].get("bioLink") else []
         out.append({
             "name": d["meta"].get("nickName") or handle,
             "handle": "@" + handle,
             "platform": "TT",
             "followers": fans,
-            "engagementPct": round(sum(rates) / len(rates), 1) if rates else 0,
+            "engagementPct": eng,
+            "engBasis": basis,
             "bio": d["meta"].get("signature") or "",
             "links": links,
             "posts": [{
