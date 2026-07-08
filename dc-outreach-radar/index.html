@@ -250,8 +250,8 @@
 
       <label style="margin-top:12px;">Scraper</label>
       <div class="segrow" id="scanCheap">
-        <button class="on" data-v="cheap">Cheaper &middot; ~5&times; less</button>
-        <button data-v="std">Standard</button>
+        <button class="on" data-v="std">Standard &middot; works on free tier</button>
+        <button data-v="cheap">Cheaper &middot; needs paid Apify</button>
       </div>
 
       <label style="margin-top:12px;">Min TikTok engagement / view %</label>
@@ -1198,7 +1198,7 @@ function updateScanEstimate() {
     ? (platform === "tt" ? "~200–400 TikTok" : platform === "ig" ? "~100–250 IG" : "~300–600")
     : (platform === "tt" ? "~25–40 TikTok" : platform === "ig" ? "~5–15 IG" : "~30–55");
   $("scanEstimate").textContent = `${vol} cult-size accounts · ~$${cost.toFixed(2)} Apify credits · ${deep ? "5–12" : "2–5"} min`
-    + (cheap ? " · cheaper TikTok actor (verify first run)" : "");
+    + (cheap ? " · ⚠ apidojo returns nothing on Apify's free tier — use only on a paid plan" : "");
 }
 $("scanChip").addEventListener("click", openScan);
 wireSeg("scanPlatform", updateScanEstimate);

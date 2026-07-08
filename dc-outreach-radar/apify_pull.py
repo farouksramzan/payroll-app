@@ -41,8 +41,12 @@ try:
 except ImportError:
     SSL_CTX = ssl.create_default_context()
 
-TT_ACTOR = "clockworks~tiktok-scraper"          # default, verified working
-TT_ACTOR_CHEAP = "apidojo~tiktok-scraper"       # ~5x cheaper ($0.30 vs $1.70/1k) — verify schema after top-up
+TT_ACTOR = "clockworks~tiktok-scraper"          # default; verified working on the FREE tier
+# apidojo is ~5x cheaper ($0.30 vs $1.70/1k) BUT verified (2026-07) to return
+# {"noResults": true} on Apify's free plan ("subscribe to a paid plan" message).
+# Only usable once on a paid Apify plan — where its schema mapping (channel.*)
+# still needs a first-run field check. Keep clockworks as the free-tier default.
+TT_ACTOR_CHEAP = "apidojo~tiktok-scraper"
 IG_HASHTAG_ACTOR = "apify~instagram-hashtag-scraper"
 IG_PROFILE_ACTOR = "apify~instagram-profile-scraper"
 IG_SEARCH_ACTOR = "apify~instagram-search-scraper"
