@@ -237,32 +237,27 @@
   <div class="modal" style="width:min(460px,92vw);">
     <h2>&#9654; Live scan</h2>
     <div class="modal-body">
-      <div class="subnote">Runs a real Apify sweep, imports cult-size cappers above the engagement floors, then auto-drafts openers. Each click spends live scraper credits.</div>
+      <div class="subnote">TikTok sweep &mdash; discovers cult-size cappers by hashtag, keeps those above the engagement floor, then auto-drafts openers. Each click spends live scraper credits.</div>
 
-      <label style="margin-top:14px;">Platform</label>
-      <div class="segrow" id="scanPlatform">
-        <button data-v="tt">TikTok</button>
-        <button data-v="ig">Instagram</button>
-        <button class="on" data-v="both">Both</button>
-      </div>
+      <!-- TikTok-specialized: platform is fixed to TT (hidden control keeps the scan payload shape) -->
+      <div id="scanPlatform" style="display:none;"><button class="on" data-v="tt"></button></div>
 
-      <label style="margin-top:12px;">Depth</label>
+      <label style="margin-top:14px;">Depth</label>
       <div class="segrow" id="scanDepth">
-        <button class="on" data-v="quick">Quick</button>
-        <button data-v="deep">Deep &middot; 300&ndash;600 accts</button>
+        <button class="on" data-v="quick">Quick &middot; ~25&ndash;40</button>
+        <button data-v="deep">Deep &middot; ~200&ndash;400</button>
       </div>
 
       <label style="margin-top:12px;">Scraper</label>
       <div class="segrow" id="scanCheap">
-        <button class="on" data-v="std">Standard</button>
-        <button data-v="cheap">Cheaper &middot; ~5&times; less &middot; TikTok</button>
+        <button class="on" data-v="cheap">Cheaper &middot; ~5&times; less</button>
+        <button data-v="std">Standard</button>
       </div>
 
-      <div class="numrow" style="margin-top:12px;">
-        <div><label>Min TikTok eng/view %</label><input type="number" step="0.5" id="scanEngView" min="0"></div>
-        <div><label>Min IG eng/follower %</label><input type="number" step="0.5" id="scanEngFol" min="0"></div>
-      </div>
-      <div class="subnote" id="scanEstimate"></div>
+      <label style="margin-top:12px;">Min TikTok engagement / view %</label>
+      <input type="number" step="0.5" id="scanEngView" min="0" style="width:120px;">
+      <input type="hidden" id="scanEngFol" value="1.5">
+      <div class="subnote" id="scanEstimate" style="margin-top:8px;"></div>
     </div>
     <div class="modal-foot">
       <button id="scanCancel">Cancel</button>
