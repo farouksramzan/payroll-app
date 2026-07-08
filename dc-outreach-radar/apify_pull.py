@@ -49,6 +49,9 @@ IG_SEARCH_FALLBACK_ACTOR = "apify~instagram-scraper"   # search mode on the mega
 IG_COMMENT_ACTOR = "apify~instagram-comment-scraper"
 
 DEFAULT_TT_HASHTAGS = ["sportspicks", "bettingpicks", "parlaypicks"]
+DEEP_TT_HASHTAGS = ["sportspicks", "bettingpicks", "parlaypicks", "sportsbetting", "prizepicks",
+                    "mlbpicks", "nbapicks", "nflpicks", "bettingtips", "freepicks",
+                    "sportsgambling", "bettingslips", "picksandparlays", "underdogfantasy", "propbets"]
 # Legacy hashtag route (IG shows only a few "top" posts per tag — weak yield)
 DEFAULT_IG_HASHTAGS = ["sportsbettingpicks", "parlaypicks", "dailypicks", "freepicks",
                        "bettingtips", "sportsbettingadvice", "prizepicks", "mlbpicks",
@@ -56,7 +59,10 @@ DEFAULT_IG_HASHTAGS = ["sportsbettingpicks", "parlaypicks", "dailypicks", "freep
 # IG combo discovery: username keyword search + hub-comment mining.
 # Cappers self-label in handles; small cappers self-promote in hub comments.
 DEFAULT_IG_SEARCH_TERMS = ["picks", "parlay", "locks", "betting picks"]
+DEEP_IG_SEARCH_TERMS = ["picks", "parlay", "locks", "betting picks", "sports picks", "daily picks",
+                        "mlb picks", "nba picks", "nfl picks", "props", "free picks", "lock of the day"]
 DEFAULT_IG_HUBS = ["pikkit", "br_betting", "actionnetworkhq"]
+DEEP_IG_HUBS = ["pikkit", "br_betting", "actionnetworkhq", "prizepicks", "whop"]
 POSTS_PER_HUB = 2
 COMMENTS_PER_POST = 60
 SEARCH_RESULTS_PER_TERM = 30
@@ -147,15 +153,15 @@ def days_ago_from_ts(ts, now):
 
 # ---------------------------------------------------------------- TikTok ----
 
-def collect_tiktok(hashtags, run_id=None):
+def collect_tiktok(hashtags, run_id=None, results_per_tag=RESULTS_PER_HASHTAG):
     if run_id:
         print(f"re-using existing TikTok run {run_id} (no new scrape)")
         st = wait_for_run(run_id)
         items = api(f"datasets/{st['defaultDatasetId']}/items?clean=true&format=json")
         print(f"  {len(items)} items")
     else:
-        print(f"TikTok: scraping #{' #'.join(hashtags)} ({RESULTS_PER_HASHTAG} results each)…")
-        items = run_and_fetch(TT_ACTOR, {"hashtags": hashtags, "resultsPerPage": RESULTS_PER_HASHTAG})
+        print(f"TikTok: scraping #{' #'.join(hashtags)} ({results_per_tag} results each)…")
+        items = run_and_fetch(TT_ACTOR, {"hashtags": hashtags, "resultsPerPage": results_per_tag})
 
     by_author = {}
     for it in items:
@@ -200,20 +206,20 @@ def collect_tiktok(hashtags, run_id=None):
 
 # ------------------------------------------------------------- Instagram ----
 
-def ig_search_usernames(terms):
+def ig_search_usernames(terms, search_limit=SEARCH_RESULTS_PER_TERM):
     """Username keyword search — cappers self-label their handles/names."""
     users = set()
     for term in terms:
         print(f"IG user search: “{term}”…")
         try:
             items = run_and_fetch(IG_SEARCH_ACTOR, {
-                "search": term, "searchType": "user", "searchLimit": SEARCH_RESULTS_PER_TERM,
+                "search": term, "searchType": "user", "searchLimit": search_limit,
             })
         except urllib.error.HTTPError as e:
             if e.code != 404:
                 raise
             items = run_and_fetch(IG_SEARCH_FALLBACK_ACTOR, {
-                "search": term, "searchType": "user", "resultsLimit": SEARCH_RESULTS_PER_TERM,
+                "search": term, "searchType": "user", "resultsLimit": search_limit,
             })
         for it in items:
             u = it.get("username") or it.get("ownerUsername")
@@ -223,7 +229,7 @@ def ig_search_usernames(terms):
     return users
 
 
-def ig_hub_commenters(hubs):
+def ig_hub_commenters(hubs, posts_per_hub=POSTS_PER_HUB, comments_per_post=COMMENTS_PER_POST):
     """Comment mining — small cappers self-promote in the comments of big
     betting hub accounts. Keep commenters with capper-flavored usernames or
     self-promo comment text."""
@@ -231,7 +237,7 @@ def ig_hub_commenters(hubs):
     profiles = run_and_fetch(IG_PROFILE_ACTOR, {"usernames": list(hubs)})
     post_urls = []
     for pr in profiles:
-        for p in (pr.get("latestPosts") or [])[:POSTS_PER_HUB]:
+        for p in (pr.get("latestPosts") or [])[:posts_per_hub]:
             if p.get("url"):
                 post_urls.append(p["url"])
     if not post_urls:
@@ -239,7 +245,7 @@ def ig_hub_commenters(hubs):
         return set()
     print(f"  scraping comments on {len(post_urls)} hub posts…")
     items = run_and_fetch(IG_COMMENT_ACTOR, {
-        "directUrls": post_urls, "resultsLimit": COMMENTS_PER_POST,
+        "directUrls": post_urls, "resultsLimit": comments_per_post,
     })
     users = set()
     for c in items:
@@ -252,10 +258,12 @@ def ig_hub_commenters(hubs):
     return users
 
 
-def collect_instagram(handles=None, search_terms=None, hubs=None, hashtags=None):
+def collect_instagram(handles=None, search_terms=None, hubs=None, hashtags=None,
+                      search_limit=SEARCH_RESULTS_PER_TERM, posts_per_hub=POSTS_PER_HUB,
+                      comments_per_post=COMMENTS_PER_POST, max_profiles=MAX_IG_PROFILES):
     posts_by_owner = {}
     if handles:
-        owners = [h.lstrip("@") for h in handles][:MAX_IG_PROFILES]
+        owners = [h.lstrip("@") for h in handles][:max_profiles]
         print(f"Instagram: profile details for {len(owners)} given handles…")
     elif hashtags:
         print(f"Instagram pass 1: scraping #{' #'.join(hashtags)} posts ({RESULTS_PER_HASHTAG} each)…")
@@ -268,19 +276,19 @@ def collect_instagram(handles=None, search_terms=None, hubs=None, hashtags=None)
             owner = p.get("ownerUsername") or (p.get("owner") or {}).get("username")
             if owner:
                 posts_by_owner.setdefault(owner, []).append(p)
-        owners = list(posts_by_owner.keys())[:MAX_IG_PROFILES]
+        owners = list(posts_by_owner.keys())[:max_profiles]
         if not owners:
             raise RuntimeError("Instagram pass 1 returned no post authors — try different hashtags")
         print(f"Instagram pass 2: profile details for {len(owners)} unique authors…")
     else:
         # combo discovery: username search + hub-comment mining
         hubs = hubs or DEFAULT_IG_HUBS
-        found = ig_search_usernames(search_terms or DEFAULT_IG_SEARCH_TERMS)
-        found |= ig_hub_commenters(hubs)
+        found = ig_search_usernames(search_terms or DEFAULT_IG_SEARCH_TERMS, search_limit=search_limit)
+        found |= ig_hub_commenters(hubs, posts_per_hub=posts_per_hub, comments_per_post=comments_per_post)
         found -= {h.lower() for h in hubs}
         if not found:
             raise RuntimeError("IG combo discovery found no candidates — try different search terms/hubs")
-        owners = sorted(found)[:MAX_IG_PROFILES]
+        owners = sorted(found)[:max_profiles]
         print(f"Instagram: profile details for {len(owners)} discovered accounts…")
     profiles = run_and_fetch(IG_PROFILE_ACTOR, {"usernames": owners})
 

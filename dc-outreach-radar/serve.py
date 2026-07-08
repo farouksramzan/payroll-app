@@ -39,16 +39,23 @@ class Handler(SimpleHTTPRequestHandler):
                     if opts["minEng"].get(k) is not None:
                         apify_pull.MIN_ENGAGEMENT[k] = float(opts["minEng"][k])
             platforms = opts.get("platforms") or ["tt", "ig"]
+            deep = bool(opts.get("deep"))
 
             candidates = []
             if "tt" in platforms:
                 candidates += apify_pull.collect_tiktok(
-                    opts.get("ttHashtags") or apify_pull.DEFAULT_TT_HASHTAGS,
+                    opts.get("ttHashtags") or (apify_pull.DEEP_TT_HASHTAGS if deep else apify_pull.DEFAULT_TT_HASHTAGS),
                     run_id=opts.get("ttRun"),
+                    results_per_tag=100 if deep else apify_pull.RESULTS_PER_HASHTAG,
                 )
             if "ig" in platforms:
                 if opts.get("igHashtags"):
                     candidates += apify_pull.collect_instagram(hashtags=opts["igHashtags"])
+                elif deep:
+                    candidates += apify_pull.collect_instagram(
+                        search_terms=opts.get("igSearch") or apify_pull.DEEP_IG_SEARCH_TERMS,
+                        hubs=opts.get("igHubs") or apify_pull.DEEP_IG_HUBS,
+                        search_limit=80, posts_per_hub=4, comments_per_post=120, max_profiles=400)
                 else:
                     candidates += apify_pull.collect_instagram(
                         search_terms=opts.get("igSearch"), hubs=opts.get("igHubs"))

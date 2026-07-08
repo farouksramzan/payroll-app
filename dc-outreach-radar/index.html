@@ -55,6 +55,9 @@
   .arch-toggle { text-align: center; color: #4a5361; font-size: 11px; padding: 10px 0 4px; }
   .arch-toggle span { cursor: pointer; }
   .arch-toggle span:hover { color: var(--muted); }
+  .segrow { display: flex; gap: 6px; margin-top: 4px; }
+  .segrow button { flex: 1; font-size: 12px; padding: 7px 6px; }
+  .segrow button.on { background: var(--accent-2); border-color: var(--accent-2); color: #04121f; }
   .plat { font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 4px; flex-shrink: 0; }
   .plat.IG { background: #2a1a30; color: #d05ce3; }
   .plat.TT { background: #10262b; color: #4dd0e1; }
@@ -231,18 +234,33 @@
 </div>
 
 <div class="modal-backdrop" id="scanModal">
-  <div class="modal" style="width:min(440px,92vw);">
+  <div class="modal" style="width:min(460px,92vw);">
     <h2>&#9654; Live scan</h2>
     <div class="modal-body">
-      <div class="subnote">Runs a real Apify sweep (2&ndash;5 min), imports cult-size cappers above the engagement floor, then auto-drafts their openers. Each click spends live scraper credits.</div>
-      <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
-        <button id="scanTT">TikTok &middot; ~$0.25</button>
-        <button id="scanIG">Instagram &middot; ~$1</button>
-        <button class="primary" id="scanBoth">Both &middot; ~$1.25</button>
+      <div class="subnote">Runs a real Apify sweep, imports cult-size cappers above the engagement floors, then auto-drafts openers. Each click spends live scraper credits.</div>
+
+      <label style="margin-top:14px;">Platform</label>
+      <div class="segrow" id="scanPlatform">
+        <button data-v="tt">TikTok</button>
+        <button data-v="ig">Instagram</button>
+        <button class="on" data-v="both">Both</button>
       </div>
+
+      <label style="margin-top:12px;">Depth</label>
+      <div class="segrow" id="scanDepth">
+        <button class="on" data-v="quick">Quick &middot; ~$1</button>
+        <button data-v="deep">Deep &middot; ~$12 &middot; 300&ndash;600 accts</button>
+      </div>
+
+      <div class="numrow" style="margin-top:12px;">
+        <div><label>Min TikTok eng/view %</label><input type="number" step="0.5" id="scanEngView" min="0"></div>
+        <div><label>Min IG eng/follower %</label><input type="number" step="0.5" id="scanEngFol" min="0"></div>
+      </div>
+      <div class="subnote" id="scanEstimate"></div>
     </div>
     <div class="modal-foot">
       <button id="scanCancel">Cancel</button>
+      <button class="primary" id="scanGo">Run scan</button>
     </div>
   </div>
 </div>
@@ -998,19 +1016,19 @@ function demoScan() {
 }
 
 let scanInFlight = false;
-async function runScan(platforms) {
+async function runScan({ platform, deep, engView, engFol }) {
   $("scanModal").classList.remove("open");
   if (scanInFlight) return;
   scanInFlight = true;
+  const platforms = platform === "both" ? ["tt", "ig"] : [platform];
   const chip = $("scanChip");
   const prevHtml = chip.innerHTML;
-  chip.textContent = `⏳ scanning ${platforms.map(p => p.toUpperCase()).join("+")}… (2–5 min)`;
+  chip.textContent = `⏳ ${deep ? "deep " : ""}scanning ${platforms.map(p => p.toUpperCase()).join("+")}… (${deep ? "5–12" : "2–5"} min)`;
   try {
-    const s = getSettings();
     const res = await fetch("/api/scan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ platforms, minEng: { view: s.engFloorView, follower: s.engFloorFollower } })
+      body: JSON.stringify({ platforms, deep, minEng: { view: engView, follower: engFol } })
     });
     if (res.status === 404 || res.status === 501) { demoScan(); return; }   // plain static server — no scan API
     const data = await res.json();
@@ -1030,19 +1048,27 @@ async function runScan(platforms) {
   }
 }
 
-/* After a scan lands, classify + draft every actionable new candidate (2 at a time). */
+/* After a scan lands, classify + draft the most promising new candidates.
+   Capped so a deep scan of hundreds doesn't fire hundreds of LLM calls at
+   once — the rest analyze on click (or via another pass). */
+const AUTO_TRIAGE_CAP = 60;
 async function analyzeAllNew() {
   if (!getKey()) { toast("Add your Anthropic key", "Open ⚙ and add the key so new candidates get classified and drafted automatically."); return; }
-  const targets = candidates.filter(c => actionable(c) && !c.ai && !c.analyzing && !c.aiError);
+  const all = candidates.filter(c => actionable(c) && !c.ai && !c.analyzing && !c.aiError)
+    .sort((a, b) => score(b) - score(a));   // provisional score → triage the hottest first
+  const targets = all.slice(0, AUTO_TRIAGE_CAP);
   if (!targets.length) return;
+  if (all.length > AUTO_TRIAGE_CAP) {
+    toast("Triaging top candidates", `Auto-drafting the top ${AUTO_TRIAGE_CAP} of ${all.length} by provisional score. Click any other candidate to draft it on demand.`);
+  }
   let i = 0;
-  await Promise.all(Array.from({ length: Math.min(2, targets.length) }, async () => {
+  await Promise.all(Array.from({ length: Math.min(3, targets.length) }, async () => {
     while (i < targets.length) {
       const c = targets[i++];
       await analyze(c);
     }
   }));
-  toast("Triage complete", "New candidates classified and openers drafted — queue re-ranked.");
+  toast("Triage complete", "Top candidates classified and openers drafted — queue re-ranked.");
 }
 
 function addCandidates(arr) {
@@ -1143,10 +1169,40 @@ $("sentBtn").addEventListener("click", markSent);
 $("repliedBtn").addEventListener("click", markReplied);
 $("skipBtn").addEventListener("click", markDead);
 $("regenBtn").addEventListener("click", () => { if (selected && !selected.analyzing) analyze(selected, { regenerate: !!selected.draftText }); });
-$("scanChip").addEventListener("click", () => { if (!scanInFlight) $("scanModal").classList.add("open"); });
-$("scanTT").addEventListener("click", () => runScan(["tt"]));
-$("scanIG").addEventListener("click", () => runScan(["ig"]));
-$("scanBoth").addEventListener("click", () => runScan(["tt", "ig"]));
+function segValue(id) { return $(id).querySelector("button.on")?.dataset.v; }
+function wireSeg(id, onChange) {
+  $(id).querySelectorAll("button").forEach(b =>
+    b.addEventListener("click", () => {
+      $(id).querySelectorAll("button").forEach(x => x.classList.remove("on"));
+      b.classList.add("on");
+      onChange?.();
+    }));
+}
+function openScan() {
+  if (scanInFlight) return;
+  const s = getSettings();
+  $("scanEngView").value = s.engFloorView;
+  $("scanEngFol").value = s.engFloorFollower;
+  updateScanEstimate();
+  $("scanModal").classList.add("open");
+}
+function updateScanEstimate() {
+  const platform = segValue("scanPlatform"), deep = segValue("scanDepth") === "deep";
+  const cost = { tt: deep ? 4 : 0.25, ig: deep ? 8 : 1, both: deep ? 12 : 1.25 }[platform];
+  const vol = deep
+    ? (platform === "tt" ? "~200–400 TikTok" : platform === "ig" ? "~100–250 IG" : "~300–600")
+    : (platform === "tt" ? "~25–40 TikTok" : platform === "ig" ? "~5–15 IG" : "~30–55");
+  $("scanEstimate").textContent = `${vol} cult-size accounts · ~$${cost} Apify credits · ${deep ? "5–12" : "2–5"} min`;
+}
+$("scanChip").addEventListener("click", openScan);
+wireSeg("scanPlatform", updateScanEstimate);
+wireSeg("scanDepth", updateScanEstimate);
+$("scanGo").addEventListener("click", () => runScan({
+  platform: segValue("scanPlatform"),
+  deep: segValue("scanDepth") === "deep",
+  engView: Math.max(0, parseFloat($("scanEngView").value) || 0),
+  engFol: Math.max(0, parseFloat($("scanEngFol").value) || 0)
+}));
 $("scanCancel").addEventListener("click", () => $("scanModal").classList.remove("open"));
 
 $("draftText").addEventListener("input", () => {
