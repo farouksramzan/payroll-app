@@ -48,22 +48,27 @@ MIN_FOLLOWERS, MAX_FOLLOWERS = 3_000, 60_000   # override floor with --min
 MAX_POSTS_PER_AUTHOR = 5
 
 
-def load_token():
+_TOKEN = None
+
+
+def get_token():
+    global _TOKEN
+    if _TOKEN:
+        return _TOKEN
     tok = os.environ.get("APIFY_TOKEN", "").strip()
-    if tok:
-        return tok
-    path = os.path.expanduser("~/.apify_token")
-    if os.path.exists(path):
-        return open(path).read().strip()
-    sys.exit("No token. Set APIFY_TOKEN or save it to ~/.apify_token")
-
-
-TOKEN = load_token()
+    if not tok:
+        path = os.path.expanduser("~/.apify_token")
+        if os.path.exists(path):
+            tok = open(path).read().strip()
+    if not tok:
+        raise RuntimeError("No Apify token. Set APIFY_TOKEN or save it to ~/.apify_token")
+    _TOKEN = tok
+    return tok
 
 
 def api(path, payload=None):
     sep = "&" if "?" in path else "?"
-    url = f"https://api.apify.com/v2/{path}{sep}token={TOKEN}"
+    url = f"https://api.apify.com/v2/{path}{sep}token={get_token()}"
     data = json.dumps(payload).encode() if payload is not None else None
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
     with urllib.request.urlopen(req, context=SSL_CTX) as r:
@@ -78,7 +83,7 @@ def wait_for_run(run_id):
             break
         time.sleep(10)
     if st["status"] != "SUCCEEDED":
-        sys.exit(f"run ended: {st['status']} — check the run in the Apify console")
+        raise RuntimeError(f"run ended: {st['status']} — check the run in the Apify console")
     return st
 
 
@@ -183,7 +188,7 @@ def collect_instagram(hashtags, handles=None):
                 posts_by_owner.setdefault(owner, []).append(p)
         owners = list(posts_by_owner.keys())[:MAX_IG_PROFILES]
         if not owners:
-            sys.exit("Instagram pass 1 returned no post authors — try different hashtags")
+            raise RuntimeError("Instagram pass 1 returned no post authors — try different hashtags")
         print(f"Instagram pass 2: profile details for {len(owners)} unique authors…")
     profiles = run_and_fetch(IG_PROFILE_ACTOR, {"usernames": owners})
 
@@ -239,27 +244,8 @@ def collect_instagram(hashtags, handles=None):
 
 # ------------------------------------------------------------------ main ----
 
-def main():
-    global MIN_FOLLOWERS
-    args = sys.argv[1:]
-    mode, run_id, handles = "tt", None, None
-    while args and args[0].startswith("--"):
-        if args[0] == "--ig":
-            mode, args = "ig", args[1:]
-        elif args[0] == "--ig-handles":              # profile-scrape specific handles (e.g. IG handles from TT bio links)
-            mode, handles, args = "ig", [h for h in args[1].split(",") if h], args[2:]
-        elif args[0] == "--run":
-            run_id, args = args[1], args[2:]
-        elif args[0] == "--min":                     # lower the follower floor (e.g. --min 500 to catch baby cappers)
-            MIN_FOLLOWERS, args = int(args[1]), args[2:]
-        else:
-            sys.exit(f"unknown flag {args[0]}")
-
-    if mode == "ig":
-        candidates = collect_instagram(args or DEFAULT_IG_HASHTAGS, handles=handles)
-    else:
-        candidates = collect_tiktok(args or DEFAULT_TT_HASHTAGS, run_id=run_id)
-
+def merge_into_file(candidates):
+    """Merge candidates into apify-candidates.json by handle. Returns (total, fresh, dest)."""
     dest = os.path.join(os.path.dirname(os.path.abspath(__file__)), "apify-candidates.json")
     merged = {}
     if os.path.exists(dest):
@@ -276,9 +262,36 @@ def main():
     result = sorted(merged.values(), key=lambda c: -c["engagementPct"])
     with open(dest, "w") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
+    return len(result), fresh, dest
 
+
+def main():
+    global MIN_FOLLOWERS
+    args = sys.argv[1:]
+    mode, run_id, handles = "tt", None, None
+    while args and args[0].startswith("--"):
+        if args[0] == "--ig":
+            mode, args = "ig", args[1:]
+        elif args[0] == "--ig-handles":              # profile-scrape specific handles (e.g. IG handles from TT bio links)
+            mode, handles, args = "ig", [h for h in args[1].split(",") if h], args[2:]
+        elif args[0] == "--run":
+            run_id, args = args[1], args[2:]
+        elif args[0] == "--min":                     # lower the follower floor (e.g. --min 500 to catch baby cappers)
+            MIN_FOLLOWERS, args = int(args[1]), args[2:]
+        else:
+            sys.exit(f"unknown flag {args[0]}")
+
+    try:
+        if mode == "ig":
+            candidates = collect_instagram(args or DEFAULT_IG_HASHTAGS, handles=handles)
+        else:
+            candidates = collect_tiktok(args or DEFAULT_TT_HASHTAGS, run_id=run_id)
+    except RuntimeError as e:
+        sys.exit(str(e))
+
+    total, fresh, dest = merge_into_file(candidates)
     print(f"\n{len(candidates)} cult-size candidates this sweep ({fresh} new) — "
-          f"{len(result)} total in {os.path.basename(dest)}")
+          f"{total} total in {os.path.basename(dest)}")
     print("paste its contents into the radar's ＋ import")
 
 

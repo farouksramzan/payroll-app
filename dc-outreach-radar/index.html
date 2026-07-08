@@ -912,27 +912,63 @@ function deleteCandidate(id) {
 /* =========================================================
    SCAN (demo) + IMPORT
    ========================================================= */
-function runScan() {
+function demoScan() {
   const bank = scanBank().filter(b => !candidates.some(c => c.id === b.id));
-  if (!bank.length) { toast("Radar scan", "No new candidates in the demo bank — use ＋ import for real lists."); return; }
+  if (!bank.length) { toast("Radar scan", "No new candidates in the demo bank — run the app via serve.py to make this button do live Apify sweeps."); return; }
   const found = bank.slice(0, 2);
   const sup = suppressedHandles();
   found.forEach(c => { if (sup.includes(c.handle.toLowerCase())) c.state = "suppressed"; });
   candidates.push(...found);
   save();
   renderAll();
-  toast(`\u{1F4E1} Scan found ${found.length} new candidate${found.length > 1 ? "s" : ""}`, found.map(c => `${c.handle} (${c.platform})`).join("\n"));
+  toast(`\u{1F4E1} Demo scan found ${found.length}`, found.map(c => `${c.handle} (${c.platform})`).join("\n") + "\n\n(Run via serve.py to turn this into a live TikTok + Instagram sweep.)");
 }
 
-function importCandidates() {
-  let arr;
+let scanInFlight = false;
+async function runScan() {
+  if (scanInFlight) return;
+  scanInFlight = true;
+  const chip = $("scanChip");
+  const prevHtml = chip.innerHTML;
+  chip.textContent = "⏳ scanning… (2–5 min)";
   try {
-    arr = JSON.parse($("importInput").value);
-    if (!Array.isArray(arr)) throw new Error("Expected a JSON array.");
+    const res = await fetch("/api/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({})
+    });
+    if (res.status === 404 || res.status === 501) { demoScan(); return; }   // plain static server — no scan API
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    const r = addCandidates(data.candidates || []);
+    save();
+    renderAll();
+    toast(`\u{1F4E1} Live scan complete — ${r.added} new candidates`, `${r.skippedDup} already known · ${r.skippedSup} suppressed. Auto-drafting openers for the new ones…`);
+    analyzeAllNew();
   } catch (err) {
-    toast("Import failed", String(err.message || err));
-    return;
+    toast("Scan failed", String(err.message || err));
+  } finally {
+    scanInFlight = false;
+    chip.innerHTML = prevHtml;
   }
+}
+
+/* After a scan lands, classify + draft every actionable new candidate (2 at a time). */
+async function analyzeAllNew() {
+  if (!getKey()) { toast("Add your Anthropic key", "Open ⚙ and add the key so new candidates get classified and drafted automatically."); return; }
+  const targets = candidates.filter(c => actionable(c) && !c.ai && !c.analyzing && !c.aiError);
+  if (!targets.length) return;
+  let i = 0;
+  await Promise.all(Array.from({ length: Math.min(2, targets.length) }, async () => {
+    while (i < targets.length) {
+      const c = targets[i++];
+      await analyze(c);
+    }
+  }));
+  toast("Triage complete", "New candidates classified and openers drafted — queue re-ranked.");
+}
+
+function addCandidates(arr) {
   const sup = suppressedHandles();
   const now = Date.now();
   let added = 0, skippedDup = 0, skippedSup = 0;
@@ -964,11 +1000,24 @@ function importCandidates() {
     });
     added++;
   }
+  return { added, skippedDup, skippedSup };
+}
+
+function importCandidates() {
+  let arr;
+  try {
+    arr = JSON.parse($("importInput").value);
+    if (!Array.isArray(arr)) throw new Error("Expected a JSON array.");
+  } catch (err) {
+    toast("Import failed", String(err.message || err));
+    return;
+  }
+  const r = addCandidates(arr);
   save();
   renderAll();
   $("importModal").classList.remove("open");
   $("importInput").value = "";
-  toast("Import done", `${added} added · ${skippedDup} duplicates skipped · ${skippedSup} suppressed (never-pitch list)`);
+  toast("Import done", `${r.added} added · ${r.skippedDup} duplicates skipped · ${r.skippedSup} suppressed (never-pitch list)`);
 }
 
 /* =========================================================

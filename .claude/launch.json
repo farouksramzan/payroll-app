@@ -23,7 +23,7 @@
     {
       "name": "dc-outreach-radar",
       "runtimeExecutable": "sh",
-      "runtimeArgs": ["-c", "python3 -m http.server \"${PORT:-4174}\" -d dc-outreach-radar"],
+      "runtimeArgs": ["-c", "python3 dc-outreach-radar/serve.py"],
       "port": 4174,
       "autoPort": true
     }
