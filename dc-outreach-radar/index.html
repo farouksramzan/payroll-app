@@ -1270,7 +1270,34 @@ function buildDigest() {
       out += `${i + 1}. ${c.handle} (${c.platform}) ${score(c)} — ${sig}\n`;
     });
   }
+  out += engagementBreakdown();
   out += `\nEvery send is human-tapped from the queue — the machine drafts, you deliver.`;
+  return out;
+}
+
+/* Engagement distribution across ALL leads (active + archived), split by basis. */
+function engagementBreakdown() {
+  const bucketize = (arr) => {
+    const b = { "<3%": 0, "3-5%": 0, "5-8%": 0, "8-10%": 0, "10-15%": 0, "15%+": 0 };
+    arr.forEach(e => {
+      if (e < 3) b["<3%"]++; else if (e < 5) b["3-5%"]++; else if (e < 8) b["5-8%"]++;
+      else if (e < 10) b["8-10%"]++; else if (e < 15) b["10-15%"]++; else b["15%+"]++;
+    });
+    return b;
+  };
+  const med = (arr) => { if (!arr.length) return 0; const g=[...arr].sort((a,b)=>a-b); return g[Math.floor(g.length/2)]; };
+  const line = (label, list) => {
+    if (!list.length) return "";
+    const engs = list.map(c => c.engagementPct || 0);
+    const b = bucketize(engs);
+    const parts = Object.entries(b).filter(([, n]) => n).map(([k, n]) => `${k}: ${n}`).join("  ");
+    return `\n${label} (${list.length}, median ${med(engs)}%)\n  ${parts}\n`;
+  };
+  const tt = candidates.filter(c => c.platform === "TT");
+  const ig = candidates.filter(c => c.platform === "IG");
+  let out = `\n— engagement breakdown (all ${candidates.length} leads) —\n`;
+  out += line("TikTok · eng/view", tt);
+  out += line("Instagram · eng/follower", ig);
   return out;
 }
 
