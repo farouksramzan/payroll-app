@@ -15,9 +15,16 @@ a default run (3 hashtags x 50 results) is ~$0.25 and fits free credits.
 """
 import json
 import os
+import ssl
 import sys
 import time
 import urllib.request
+
+try:
+    import certifi  # macOS python.org builds ship without CA certs
+    SSL_CTX = ssl.create_default_context(cafile=certifi.where())
+except ImportError:
+    SSL_CTX = ssl.create_default_context()
 
 ACTOR = "clockworks~tiktok-scraper"
 DEFAULT_HASHTAGS = ["sportspicks", "bettingpicks", "capper"]
@@ -44,7 +51,7 @@ def api(path, payload=None):
     url = f"https://api.apify.com/v2/{path}{sep}token={TOKEN}"
     data = json.dumps(payload).encode() if payload is not None else None
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req) as r:
+    with urllib.request.urlopen(req, context=SSL_CTX) as r:
         return json.load(r)
 
 
