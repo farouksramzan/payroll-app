@@ -222,6 +222,23 @@
   </div>
 </div>
 
+<div class="modal-backdrop" id="scanModal">
+  <div class="modal" style="width:min(440px,92vw);">
+    <h2>&#9654; Live scan</h2>
+    <div class="modal-body">
+      <div class="subnote">Runs a real Apify sweep (2&ndash;5 min), imports cult-size cappers above the engagement floor, then auto-drafts their openers. Each click spends live scraper credits.</div>
+      <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
+        <button id="scanTT">TikTok &middot; ~$0.25</button>
+        <button id="scanIG">Instagram &middot; ~$0.50</button>
+        <button class="primary" id="scanBoth">Both &middot; ~$0.75</button>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button id="scanCancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-backdrop" id="importModal">
   <div class="modal">
     <h2>Import candidates (JSON)</h2>
@@ -925,17 +942,18 @@ function demoScan() {
 }
 
 let scanInFlight = false;
-async function runScan() {
+async function runScan(platforms) {
+  $("scanModal").classList.remove("open");
   if (scanInFlight) return;
   scanInFlight = true;
   const chip = $("scanChip");
   const prevHtml = chip.innerHTML;
-  chip.textContent = "⏳ scanning… (2–5 min)";
+  chip.textContent = `⏳ scanning ${platforms.map(p => p.toUpperCase()).join("+")}… (2–5 min)`;
   try {
     const res = await fetch("/api/scan", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({})
+      body: JSON.stringify({ platforms })
     });
     if (res.status === 404 || res.status === 501) { demoScan(); return; }   // plain static server — no scan API
     const data = await res.json();
@@ -943,8 +961,10 @@ async function runScan() {
     const r = addCandidates(data.candidates || []);
     save();
     renderAll();
-    toast(`\u{1F4E1} Live scan complete — ${r.added} new candidates`, `${r.skippedDup} already known · ${r.skippedSup} suppressed. Auto-drafting openers for the new ones…`);
-    analyzeAllNew();
+    toast(`\u{1F4E1} Live scan complete — ${r.added} new candidates`,
+      `${r.skippedDup} already known · ${r.skippedSup} suppressed · ${data.dropped || 0} below the engagement floor.` +
+      (getKey() ? " Auto-drafting openers for the new ones…" : " Add your Anthropic key (⚙) to auto-draft openers."));
+    if (getKey()) analyzeAllNew();
   } catch (err) {
     toast("Scan failed", String(err.message || err));
   } finally {
@@ -1066,7 +1086,11 @@ $("sentBtn").addEventListener("click", markSent);
 $("repliedBtn").addEventListener("click", markReplied);
 $("skipBtn").addEventListener("click", markDead);
 $("regenBtn").addEventListener("click", () => { if (selected && !selected.analyzing) analyze(selected, { regenerate: !!selected.draftText }); });
-$("scanChip").addEventListener("click", runScan);
+$("scanChip").addEventListener("click", () => { if (!scanInFlight) $("scanModal").classList.add("open"); });
+$("scanTT").addEventListener("click", () => runScan(["tt"]));
+$("scanIG").addEventListener("click", () => runScan(["ig"]));
+$("scanBoth").addEventListener("click", () => runScan(["tt", "ig"]));
+$("scanCancel").addEventListener("click", () => $("scanModal").classList.remove("open"));
 
 $("draftText").addEventListener("input", () => {
   if (!selected) return;

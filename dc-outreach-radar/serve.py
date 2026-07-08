@@ -46,8 +46,9 @@ class Handler(SimpleHTTPRequestHandler):
                 candidates += apify_pull.collect_instagram(
                     opts.get("igHashtags") or apify_pull.DEFAULT_IG_HASHTAGS,
                 )
-            total, fresh, _ = apify_pull.merge_into_file(candidates)
-            self._json(200, {"candidates": candidates, "fresh": fresh, "totalInFile": total})
+            total, fresh, dropped, _ = apify_pull.merge_into_file(candidates)
+            kept = [c for c in candidates if apify_pull.passes_engagement_floor(c)]
+            self._json(200, {"candidates": kept, "fresh": fresh, "dropped": dropped, "totalInFile": total})
         except RuntimeError as e:
             self._json(500, {"error": str(e)})
         except Exception as e:  # keep the server alive on unexpected failures

@@ -46,6 +46,10 @@ RESULTS_PER_HASHTAG = 50
 MAX_IG_PROFILES = 60          # cap the profile-details pass to bound cost
 MIN_FOLLOWERS, MAX_FOLLOWERS = 3_000, 60_000   # override floor with --min
 MAX_POSTS_PER_AUTHOR = 5
+# Cult filter: drop weak-engagement accounts at the source. Bases differ —
+# ~2% of viewers engaging is a decent TikTok floor; ~1% of followers is a
+# decent IG floor (small IG accounts with 0.2% medians are dead audiences).
+MIN_ENGAGEMENT = {"view": 2.0, "follower": 1.0}
 
 
 _TOKEN = None
@@ -244,25 +248,37 @@ def collect_instagram(hashtags, handles=None):
 
 # ------------------------------------------------------------------ main ----
 
+def passes_engagement_floor(c):
+    return c.get("engagementPct", 0) >= MIN_ENGAGEMENT.get(c.get("engBasis", "follower"), 0)
+
+
 def merge_into_file(candidates):
-    """Merge candidates into apify-candidates.json by handle. Returns (total, fresh, dest)."""
+    """Merge candidates into apify-candidates.json by handle, applying the
+    engagement floor to new and existing entries. Returns (total, fresh, dropped, dest)."""
+    kept = [c for c in candidates if passes_engagement_floor(c)]
+    dropped = len(candidates) - len(kept)
+    if dropped:
+        print(f"engagement floor dropped {dropped} weak candidate{'s' if dropped != 1 else ''} "
+              f"(view<{MIN_ENGAGEMENT['view']}% / follower<{MIN_ENGAGEMENT['follower']}%)")
+
     dest = os.path.join(os.path.dirname(os.path.abspath(__file__)), "apify-candidates.json")
     merged = {}
     if os.path.exists(dest):
         try:
             for c in json.load(open(dest)):
-                merged[c["handle"].lower()] = c
+                if passes_engagement_floor(c):     # retroactive cleanup of old entries
+                    merged[c["handle"].lower()] = c
         except (ValueError, KeyError):
             pass
     fresh = 0
-    for c in candidates:
+    for c in kept:
         if c["handle"].lower() not in merged:
             fresh += 1
         merged[c["handle"].lower()] = c
     result = sorted(merged.values(), key=lambda c: -c["engagementPct"])
     with open(dest, "w") as f:
         json.dump(result, f, indent=2, ensure_ascii=False)
-    return len(result), fresh, dest
+    return len(result), fresh, dropped, dest
 
 
 def main():
@@ -289,8 +305,8 @@ def main():
     except RuntimeError as e:
         sys.exit(str(e))
 
-    total, fresh, dest = merge_into_file(candidates)
-    print(f"\n{len(candidates)} cult-size candidates this sweep ({fresh} new) — "
+    total, fresh, dropped, dest = merge_into_file(candidates)
+    print(f"\n{len(candidates) - dropped} cult candidates this sweep ({fresh} new, {dropped} below engagement floor) — "
           f"{total} total in {os.path.basename(dest)}")
     print("paste its contents into the radar's ＋ import")
 
