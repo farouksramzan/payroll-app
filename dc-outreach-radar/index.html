@@ -1209,7 +1209,7 @@ async function runScan({ platform, deep, cheap, engView, engFol }) {
   const platforms = platform === "both" ? ["tt", "ig"] : [platform];
   const chip = $("scanChip");
   const prevHtml = chip.innerHTML;
-  chip.textContent = `⏳ ${deep ? "deep " : ""}scanning ${platforms.map(p => p.toUpperCase()).join("+")}… (${deep ? "5–12" : "2–5"} min)`;
+  chip.textContent = `⏳ ${deep ? "deep " : ""}scanning ${platforms.map(p => p.toUpperCase()).join("+")}… (${deep ? "10–20" : "5–10"} min — runs up to 4 scraper stages)`;
   try {
     const res = await fetch("/api/scan", {
       method: "POST",
@@ -1412,7 +1412,7 @@ function updateScanEstimate() {
   const vol = deep
     ? (platform === "tt" ? "~250–500 TikTok" : platform === "ig" ? "~100–250 IG" : "~350–700")
     : (platform === "tt" ? "~40–80 TikTok" : platform === "ig" ? "~5–15 IG" : "~45–90");
-  $("scanEstimate").textContent = `${vol} cult-size accounts · ~$${cost.toFixed(2)} Apify credits · ${deep ? "5–12" : "2–5"} min`
+  $("scanEstimate").textContent = `${vol} cult-size accounts · ~$${cost.toFixed(2)} Apify credits · ${deep ? "10–20" : "5–10"} min (4 scraper stages)`
     + (cheap ? " · ⚠ apidojo returns nothing on Apify's free tier — use only on a paid plan" : "");
 }
 $("scanChip").addEventListener("click", openScan);
