@@ -622,38 +622,98 @@ function dueForTouch(c) {
 const actionable = c => c.state === "new" || dueForTouch(c);
 const isDone = c => ["replied", "dead", "suppressed", "archived"].includes(c.state);
 
-function score(c) {
-  // Transparent composite: engagement base + behavioral signals from the model.
-  let s = Math.min(c.engagementPct, 15) * 4;                       // 0–60 from engagement
-  if (c.followers >= 3000 && c.followers <= 60000) s += 10;        // the cult-size sweet spot
-  const ai = c.ai;
-  if (ai) {
-    if (ai.sells_picks) s += 15;
-    if (ai.slip_proof) s += 10;
-    if (ai.monetization && !/none/i.test(ai.monetization)) s += 5;
-    if (ai.disqualifier) s *= 0.2;
-  }
-  return Math.round(Math.min(s, 100));
-}
+/* Scoring: one source of truth. scoreParts() computes every component with a
+   human-readable line; score() sums it, scoreBreakdown() prints it — the
+   ranking and its explanation can never drift apart.
 
-/* Per-candidate score explanation — must mirror score() exactly. */
-function scoreBreakdown(c) {
-  const lines = [];
-  const engPts = Math.min(c.engagementPct, 15) * 4;
-  lines.push(`Audience devotion: ${c.engagementPct}% engagement ${c.engBasis === "view" ? "per view" : "per follower"} × 4 (capped at 15%)  →  +${Math.round(engPts)}`);
-  const inBand = c.followers >= 3000 && c.followers <= 60000;
-  lines.push(`Size: ${c.followers.toLocaleString()} followers — ${inBand ? "in the 3k–60k cult band  →  +10" : "outside the 3k–60k cult band  →  +0"}`);
+   Weights (max 100 · provisional max 60 before the AI pass):
+     25 audience engagement (tiered, thin-sample capped, bot-suspicion tier)
+     15 cult factor (median comments per 100 likes — buyers talk)
+     10 activity (days since newest captured video — dormant leads sink)
+     10 size fit (3k–60k band, half credit on the shoulders)
+     30 seller behavior (AI: sells picks 20 + slip proof 10)
+     10 money already moving (AI: monetizing via rails DubClub replaces)
+   Disqualified → hard floor at 5. */
+const medianOf = a => { const s = [...a].sort((x, y) => x - y); return s.length ? (s[(s.length - 1) >> 1] + s[s.length >> 1]) / 2 : 0; };
+const postDaysAgo = p => typeof p.daysAgo === "number" ? p.daysAgo
+  : (p.at ? Math.max(0, Math.floor((Date.now() - p.at) / 86400000)) : null);
+
+function scoreParts(c) {
+  const parts = [];
+  const posts = c.posts || [];
+  const n = posts.length;
+
+  // 1. audience engagement (max 25) — tiers per basis; extreme numbers are a
+  // bot/pod red flag, not a jackpot; 1–2 captured videos can't earn full trust
+  const e = c.engagementPct || 0;
+  const view = c.engBasis !== "follower";
+  const tiers = view
+    ? [[15, 12, "suspiciously high — often botted, eyeball it"], [8, 25, "exceptional"], [6, 18, "strong"], [4, 12, "typical"], [2, 6, "weak"], [0, 0, "dead"]]
+    : [[12, 12, "suspiciously high — often botted, eyeball it"], [6, 25, "exceptional"], [4, 18, "strong"], [2.5, 12, "typical"], [1, 6, "weak"], [0, 0, "dead"]];
+  let [, engPts, engLabel] = tiers.find(([th]) => e >= th) || [0, 0, "dead"];
+  let thin = "";
+  if (n > 0 && n <= 2 && engPts > 12) { engPts = 12; thin = ` · capped — only ${n} video${n > 1 ? "s" : ""} captured, small sample`; }
+  parts.push({ pts: engPts, max: 25, line: `Engagement: ${e}% of ${view ? "viewers" : "followers"} engage, median of the ${n || 0} video${n === 1 ? "" : "s"} we captured — ${engLabel}${thin}` });
+
+  // 2. cult factor (max 15) — median per-video ratio so one viral post can't
+  // drown the everyday audience; per-video 20-like floor so noise can't fake it
+  const rated = posts.filter(p => (p.likes || 0) >= 20).map(p => (p.comments || 0) / p.likes * 100);
+  if (!rated.length) {
+    parts.push({ pts: 0, max: 15, line: n ? "Cult factor: too few likes per video to judge the comment ratio" : "Cult factor: no videos captured" });
+  } else {
+    const r = medianOf(rated);
+    const devPts = r >= 5 ? 15 : r >= 2 ? 10 : r >= 1 ? 5 : 0;
+    const devLabel = devPts === 15 ? "cult — the audience talks to them" : devPts === 10 ? "chatty audience" : devPts === 5 ? "some conversation" : "silent audience";
+    parts.push({ pts: devPts, max: 15, line: `Cult factor: ${r.toFixed(1)} comments per 100 likes (median per video) — ${devLabel}` });
+  }
+
+  // 3. activity (max 10) — a capper you can't reach today is worth less
+  const ages = posts.map(postDaysAgo).filter(d => d !== null);
+  if (!ages.length) {
+    parts.push({ pts: 0, max: 10, line: "Activity: no dated videos captured" });
+  } else {
+    const newest = Math.min(...ages);
+    const actPts = newest <= 3 ? 10 : newest <= 7 ? 8 : newest <= 14 ? 5 : newest <= 30 ? 2 : 0;
+    parts.push({ pts: actPts, max: 10, line: `Activity: newest video ${newest === 0 ? "today" : `${newest}d ago`}${actPts === 0 ? " — dormant" : ""}` });
+  }
+
+  // 4. size fit (max 10) — half credit on the shoulders instead of a cliff
+  const f = c.followers || 0;
+  const sizePts = (f >= 3000 && f <= 60000) ? 10 : ((f >= 1000 && f < 3000) || (f > 60000 && f <= 120000)) ? 5 : 0;
+  parts.push({ pts: sizePts, max: 10, line: `Size: ${f.toLocaleString()} followers — ${sizePts === 10 ? "in the 3k–60k cult band" : sizePts === 5 ? "just outside the band (half credit)" : "outside the band"}` });
+
+  // 5+6. AI-judged behavior (max 40)
   const ai = c.ai;
   if (!ai) {
-    lines.push(`Behavioral signals: not yet AI-analyzed  →  pending`);
-    lines.push(`  (after analysis: sells picks +15 · slip proof +10 · already monetizing +5 · disqualifier ×0.2)`);
+    parts.push({ pts: 0, max: 40, line: "Behavior: pending AI review — sells picks +20 · slip proof +10 · monetizing +10" });
   } else {
-    lines.push(`Sells picks: ${ai.sells_picks ? "yes  →  +15" : "no  →  +0"}`);
-    lines.push(`Slip / tracker proof: ${ai.slip_proof ? "yes  →  +10" : "no  →  +0"}`);
-    lines.push(`Already monetizing: ${ai.monetization && !/none/i.test(ai.monetization) ? `yes (${ai.monetization})  →  +5` : "no  →  +0"}`);
-    if (ai.disqualifier) lines.push(`DISQUALIFIER: ${ai.disqualifier}  →  score × 0.2`);
+    parts.push({ pts: ai.sells_picks ? 20 : 0, max: 20, line: `Sells picks: ${ai.sells_picks ? "yes" : "no"}` });
+    parts.push({ pts: ai.slip_proof ? 10 : 0, max: 10, line: `Slip / tracker proof: ${ai.slip_proof ? "yes" : "no"}` });
+    const mon = (ai.monetization || "").trim();
+    const monReal = mon && !/none|nothing|n\/a/i.test(mon);
+    const onDubclub = /dubclub/i.test(mon);
+    parts.push({
+      pts: monReal && !onDubclub ? 10 : 0, max: 10,
+      line: onDubclub ? "Money moving: already on DubClub — nothing to sell them"
+        : monReal ? `Money moving: yes (${mon}) — the clunky setup DubClub replaces`
+        : "Money moving: none visible"
+    });
   }
-  lines.push(`\nTotal: ${score(c)} / 100 ${ai ? "" : "(provisional — dim until analyzed)"}`);
+
+  const raw = parts.reduce((s, p) => s + p.pts, 0);
+  const dq = ai && ai.disqualifier;
+  return { parts, dq, total: dq ? Math.min(5, Math.round(raw * 0.05)) : raw };
+}
+
+function score(c) {
+  return scoreParts(c).total;
+}
+
+function scoreBreakdown(c) {
+  const { parts, dq, total } = scoreParts(c);
+  const lines = parts.map(p => `${p.line}  →  +${p.pts} of ${p.max}`);
+  if (dq) lines.push(`\nDISQUALIFIED: ${dq}  →  score floored at ${total}`);
+  lines.push(`\nTotal: ${total} / 100${c.ai ? "" : "  (provisional — max 60 until the AI pass)"}`);
   return lines.join("\n");
 }
 
