@@ -2430,9 +2430,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
     const autoSaveTimerRef = useRef(null);
     const savedStatusTimerRef = useRef(null);
     const isSavingRef = useRef(false);
+    const needsResaveRef = useRef(false); // edits arrived while a save was in flight
 
     async function saveEdits() {
-      if (isSavingRef.current) return;
+      // If a save is already running, remember that more edits came in and
+      // re-save once it finishes — otherwise the concurrent edit is lost.
+      if (isSavingRef.current) { needsResaveRef.current = true; return; }
       isSavingRef.current = true;
       setSaveStatus('saving');
       try {
@@ -2515,6 +2518,13 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
         alert('Save failed: ' + e.message);
       } finally {
         isSavingRef.current = false;
+        // A save was requested while this one was running — run it now so the
+        // later edits (e.g. a field changed mid-save) aren't dropped.
+        if (needsResaveRef.current) {
+          needsResaveRef.current = false;
+          if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+          autoSaveTimerRef.current = setTimeout(() => saveEdits(), 150);
+        }
       }
     }
 
