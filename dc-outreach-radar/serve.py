@@ -79,15 +79,22 @@ class Handler(SimpleHTTPRequestHandler):
             deep = bool(opts.get("deep"))
 
             candidates = []
+            sources = None
             if "tt" in platforms:
+                # each scan fishes the next slice of the source pools — all
+                # three veins rotate (hashtags, keyword search, comment hubs)
+                rot = apify_pull.rotating_tt_sources(deep)
+                tags = opts.get("ttHashtags") or rot["hashtags"]
+                terms = opts.get("ttSearch") or rot["search_terms"]
+                hubs = None if opts.get("noComments") else (opts.get("ttHubs") or rot["hubs"])
+                sources = {"hashtags": tags, "searchTerms": terms, "hubs": hubs or []}
                 candidates += apify_pull.collect_tiktok(
-                    opts.get("ttHashtags") or (apify_pull.DEEP_TT_HASHTAGS if deep else apify_pull.DEFAULT_TT_HASHTAGS),
+                    tags,
                     run_id=opts.get("ttRun"),
                     results_per_tag=100 if deep else apify_pull.RESULTS_PER_HASHTAG,
                     cheap=bool(opts.get("cheap")),
-                    search_terms=opts.get("ttSearch") or (
-                        apify_pull.DEEP_TT_SEARCH_TERMS if deep else apify_pull.DEFAULT_TT_SEARCH_TERMS),
-                    hubs=None if opts.get("noComments") else (opts.get("ttHubs") or apify_pull.DEFAULT_TT_HUBS),
+                    search_terms=terms,
+                    hubs=hubs,
                     videos_per_hub=3 if deep else 2,
                     comments_per_video=100 if deep else apify_pull.TT_COMMENTS_PER_VIDEO,
                     max_commenter_profiles=40 if deep else apify_pull.MAX_TT_COMMENTER_PROFILES,
@@ -105,7 +112,8 @@ class Handler(SimpleHTTPRequestHandler):
                         search_terms=opts.get("igSearch"), hubs=opts.get("igHubs"))
             total, fresh, dropped, _ = apify_pull.merge_into_file(candidates)
             kept = [c for c in candidates if apify_pull.passes_engagement_floor(c)]
-            self._json(200, {"candidates": kept, "fresh": fresh, "dropped": dropped, "totalInFile": total})
+            self._json(200, {"candidates": kept, "fresh": fresh, "dropped": dropped,
+                             "totalInFile": total, "sources": sources})
         except RuntimeError as e:
             self._json(500, {"error": str(e)})
         except Exception as e:  # keep the server alive on unexpected failures

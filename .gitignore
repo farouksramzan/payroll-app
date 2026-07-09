@@ -10,3 +10,7 @@ dist/
 *.db-wal
 data/screenshots/
 .DS_Store
+dc-outreach-radar/rotation-state.json
+dc-outreach-radar/apify-candidates.json
+dc-outreach-radar/__pycache__/
+dc-outreach-radar/*.log

@@ -1231,9 +1231,12 @@ async function runScan({ platform, deep, cheap, engView, engFol }) {
     const r = addCandidates(data.candidates || []);
     save();
     renderAll();
+    const s = data.sources;
+    const fished = s ? `\nFished: ${(s.hashtags || []).map(h => "#" + h).join(" ")} · search "${(s.searchTerms || []).join('", "')}"` +
+      `${(s.hubs || []).length ? ` · hubs ${s.hubs.map(h => "@" + h).join(", ")}` : ""}\n(next scan rotates to fresh sources)` : "";
     toast(`\u{1F4E1} Live scan complete — ${r.added} new candidates`,
       `${r.skippedDup} already known · ${r.skippedSup} suppressed · ${data.dropped || 0} below the engagement floor${r.skippedDeleted ? ` · ${r.skippedDeleted} previously deleted` : ""}.` +
-      (getKey() ? " Auto-drafting openers for the new ones…" : " Add your Anthropic key (⚙) to auto-draft openers."));
+      (getKey() ? " Auto-drafting openers for the new ones…" : " Add your Anthropic key (⚙) to auto-draft openers.") + fished);
     if (getKey()) analyzeAllNew();
   } catch (err) {
     toast("Scan failed", String(err.message || err));

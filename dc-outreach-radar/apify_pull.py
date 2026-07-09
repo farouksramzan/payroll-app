@@ -69,6 +69,26 @@ DEFAULT_TT_HUBS = ["sportsbettingtiktok", "bookitwithtrent", "hoovelocks"]
 TT_HUB_VIDEOS = 2
 TT_COMMENTS_PER_VIDEO = 40
 MAX_TT_COMMENTER_PROFILES = 15
+
+# --- Source rotation ---------------------------------------------------------
+# Repeated scans over identical sources mostly re-catch known accounts (dedupe
+# absorbs them → low fresh yield). Each scan instead takes the next slice of
+# these pools — all three discovery veins rotate: hashtag pages, keyword
+# search, and comment-mining hubs. Cursors persist in rotation-state.json so
+# consecutive scans fish different water until the pool wraps.
+POOL_TT_HASHTAGS = DEEP_TT_HASHTAGS + [
+    "playerprops", "parlay", "lockoftheday", "nhlpicks", "ufcpicks",
+    "soccerpicks", "sportsbettingpicks", "dailypicks", "fanduel", "draftkings",
+    "sportsbettor", "bettingadvice", "plusev", "handicapper", "pikkit"]
+POOL_TT_SEARCH_TERMS = DEEP_TT_SEARCH_TERMS + [
+    "lock of the day", "player props", "prizepicks locks", "mlb picks",
+    "betting slips", "sports handicapper"]
+# Hubs can't be invented (fake handles waste a scraper stage), so the hub pool
+# grows itself: accounts the net catches that are too BIG to pitch (>=100k)
+# are exactly the aggregators whose comment sections small cappers promote in.
+MIN_HUB_FANS = 100_000
+MAX_DISCOVERED_HUBS = 40
+ROTATION_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "rotation-state.json")
 # Legacy hashtag route (IG shows only a few "top" posts per tag — weak yield)
 DEFAULT_IG_HASHTAGS = ["sportsbettingpicks", "parlaypicks", "dailypicks", "freepicks",
                        "bettingtips", "sportsbettingadvice", "prizepicks", "mlbpicks",
@@ -178,6 +198,79 @@ def field(d, *keys, default=None):
     return default
 
 
+def _load_rotation():
+    try:
+        with open(ROTATION_FILE) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_rotation(rot):
+    try:
+        with open(ROTATION_FILE, "w") as f:
+            json.dump(rot, f, indent=1)
+    except OSError:
+        pass
+
+
+def rotate_slice(key, pool, n):
+    """Next n items of pool, resuming where the last scan left off (wraps)."""
+    if not pool:
+        return []
+    if n >= len(pool):
+        return list(pool)
+    rot = _load_rotation()
+    cur = int(rot.get("cursors", {}).get(key, 0)) % len(pool)
+    picked = [pool[(cur + i) % len(pool)] for i in range(n)]
+    rot.setdefault("cursors", {})[key] = (cur + n) % len(pool)
+    _save_rotation(rot)
+    return picked
+
+
+def rotating_tt_sources(deep=False):
+    """One scan's slice of all three TikTok discovery veins."""
+    discovered = _load_rotation().get("discoveredHubs", [])
+    known = {h.lower() for h in DEFAULT_TT_HUBS}
+    hub_pool = DEFAULT_TT_HUBS + [h for h in discovered if h.lower() not in known]
+    return {
+        "hashtags": rotate_slice("tt_hashtags", POOL_TT_HASHTAGS, 8 if deep else 3),
+        "search_terms": rotate_slice("tt_search", POOL_TT_SEARCH_TERMS, 4 if deep else 2),
+        "hubs": rotate_slice("tt_hubs", hub_pool, 5 if deep else 3),
+    }
+
+
+def record_hub_prospects(items):
+    """Harvest future comment-mining hubs from a scrape's oversized catches.
+
+    Accounts above MIN_HUB_FANS are too big to pitch, but if their name/bio
+    reads betting-flavored they're aggregators — the water small cappers
+    self-promote in. Returns how many new hubs were added to the rotation."""
+    names = []
+    for it in items or []:
+        a = it.get("authorMeta") or it.get("channel") or {}
+        fans = int(field(a, "fans", "followers", default=0) or 0)
+        name = str(field(a, "name", "username", default="") or "").strip().lstrip("@")
+        bio = str(field(a, "signature", "bio", default="") or "")
+        if fans >= MIN_HUB_FANS and name and CAPPER_NAME_RE.search(f"{name} {bio}"):
+            names.append(name)
+    if not names:
+        return 0
+    rot = _load_rotation()
+    hubs = rot.get("discoveredHubs", [])
+    known = {h.lower() for h in hubs} | {h.lower() for h in DEFAULT_TT_HUBS}
+    added = 0
+    for n in names:
+        if n.lower() not in known:
+            hubs.append(n)
+            known.add(n.lower())
+            added += 1
+    if added:
+        rot["discoveredHubs"] = hubs[-MAX_DISCOVERED_HUBS:]
+        _save_rotation(rot)
+    return added
+
+
 def median_pct(rates):
     return round(statistics.median(rates), 1) if rates else 0
 
@@ -254,6 +347,9 @@ def collect_tiktok(hashtags, run_id=None, results_per_tag=RESULTS_PER_HASHTAG, c
     srcs = f"#{' #'.join(hashtags)}" + (f" + search: {', '.join(search_terms)}" if search_terms else "")
     print(f"TikTok: scraping {srcs} via {actor}…")
     items += run_and_fetch(actor, payload)
+    harvested = record_hub_prospects(items)
+    if harvested:
+        print(f"  hub harvest: +{harvested} big betting accounts added to the comment-mining rotation")
 
     # Source 3: hub-comment mining → profile pass on capper-pattern commenters
     # (uses clockworks actors regardless of cheap mode — the comments actor

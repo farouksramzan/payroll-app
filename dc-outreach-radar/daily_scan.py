@@ -53,12 +53,14 @@ def main():
     candidates = []
     try:
         if platforms in ("tt", "both"):
+            rot = a.rotating_tt_sources(deep)
+            log(f"tt sources — tags: {rot['hashtags']} · search: {rot['search_terms']} · hubs: {rot['hubs']}")
             candidates += a.collect_tiktok(
-                a.DEEP_TT_HASHTAGS if deep else a.DEFAULT_TT_HASHTAGS,
+                rot["hashtags"],
                 results_per_tag=100 if deep else a.RESULTS_PER_HASHTAG,
                 cheap=cheap,
-                search_terms=a.DEEP_TT_SEARCH_TERMS if deep else a.DEFAULT_TT_SEARCH_TERMS,
-                hubs=a.DEFAULT_TT_HUBS,
+                search_terms=rot["search_terms"],
+                hubs=rot["hubs"],
                 videos_per_hub=3 if deep else 2,
                 comments_per_video=100 if deep else a.TT_COMMENTS_PER_VIDEO,
                 max_commenter_profiles=40 if deep else a.MAX_TT_COMMENTER_PROFILES,
