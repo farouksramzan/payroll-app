@@ -2341,7 +2341,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
     }
 
     // ── History (printed/deposited) row ──────────────────────────────────────────
-    const { stub } = rowData;
+    // stub is LOCAL state: after an autosave we update it here (setStub) instead of
+    // reloading the parent's paystub list — reloading re-renders PayEmployeesTab,
+    // which remounts this modal and steals input focus. The parent table is
+    // refreshed once, on close, via onClose (which calls reloadStubs).
+    const [stub, setStub] = useState(rowData.stub);
+    const savedSinceOpenRef = useRef(false);
     const isVoided = stub.check_status === 'voided';
     const [checkDesign, setCheckDesign] = useState(() => localStorage.getItem('checkDesign') || 'classic');
     const ytd = calcEmpYTD(stub.employee_id, stub.pay_period_end);
@@ -2485,13 +2490,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
 
         const resp  = await api.updatePaystub(stub.id, payload);
         const saved = resp && resp.paystub ? resp.paystub : null;
-        await reloadStubs();
+        savedSinceOpenRef.current = true;
 
         if (saved) {
-          // Snap the modal to the authoritative stored values so its "Check Amount"
-          // (and every read-only row) equals the inline row's net_pay — the two
-          // surfaces now read the same source of truth.
-          setDetailModal(prev => (prev && prev.stub && prev.stub.id === saved.id) ? { ...prev, stub: { ...saved } } : prev);
+          // Update this modal's LOCAL stub (no parent re-render → no remount → the
+          // input keeps focus). The inline table row is refreshed on close.
+          setStub(saved);
           if (!fitManual) setFitOverride(String(r2(saved.fit_withholding   || 0)));
           if (!ssManual)  setSsOverride (String(r2(saved.employee_ss       || 0)));
           if (!medManual) setMedOverride(String(r2(saved.employee_medicare || 0)));
@@ -3401,7 +3405,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       )}
 
       {/* Check detail modal */}
-      {detailModal && <CheckDetailModal rowData={detailModal} onClose={() => setDetailModal(null)} />}
+      {detailModal && <CheckDetailModal rowData={detailModal} onClose={() => { reloadStubs(); setDetailModal(null); }} />}
 
       {/* Rate change confirmation */}
       {rateUpdatePrompt && (
