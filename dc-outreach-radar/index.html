@@ -43,7 +43,8 @@
   .cand.done { opacity: .45; }
   .cand .row1 { display: flex; align-items: center; gap: 8px; }
   .cand .name { font-weight: 600; font-size: 13px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .cand .score { font-size: 11px; color: var(--accent-2); flex-shrink: 0; }
+  .cand .score { font-size: 11px; color: var(--accent-2); flex-shrink: 0; cursor: pointer; text-decoration: underline dotted transparent; text-underline-offset: 2px; }
+  .cand .score:hover { text-decoration-color: currentColor; }
   .cand .score.dim { color: var(--muted); }
   .dot { width: 7px; height: 7px; border-radius: 50%; background: #ff7b72; flex-shrink: 0; }
   .wait-tag { font-size: 10px; color: var(--warn); flex-shrink: 0; }
@@ -633,6 +634,33 @@ function score(c) {
   return Math.round(Math.min(s, 100));
 }
 
+/* Per-candidate score explanation — must mirror score() exactly. */
+function scoreBreakdown(c) {
+  const lines = [];
+  const engPts = Math.min(c.engagementPct, 15) * 4;
+  lines.push(`Audience devotion: ${c.engagementPct}% engagement ${c.engBasis === "view" ? "per view" : "per follower"} × 4 (capped at 15%)  →  +${Math.round(engPts)}`);
+  const inBand = c.followers >= 3000 && c.followers <= 60000;
+  lines.push(`Size: ${c.followers.toLocaleString()} followers — ${inBand ? "in the 3k–60k cult band  →  +10" : "outside the 3k–60k cult band  →  +0"}`);
+  const ai = c.ai;
+  if (!ai) {
+    lines.push(`Behavioral signals: not yet AI-analyzed  →  pending`);
+    lines.push(`  (after analysis: sells picks +15 · slip proof +10 · already monetizing +5 · disqualifier ×0.2)`);
+  } else {
+    lines.push(`Sells picks: ${ai.sells_picks ? "yes  →  +15" : "no  →  +0"}`);
+    lines.push(`Slip / tracker proof: ${ai.slip_proof ? "yes  →  +10" : "no  →  +0"}`);
+    lines.push(`Already monetizing: ${ai.monetization && !/none/i.test(ai.monetization) ? `yes (${ai.monetization})  →  +5` : "no  →  +0"}`);
+    if (ai.disqualifier) lines.push(`DISQUALIFIER: ${ai.disqualifier}  →  score × 0.2`);
+  }
+  lines.push(`\nTotal: ${score(c)} / 100 ${ai ? "" : "(provisional — dim until analyzed)"}`);
+  return lines.join("\n");
+}
+
+function explainScore(id) {
+  const c = candidates.find(x => x.id === id);
+  if (!c) return;
+  toast(`How ${c.handle} scored ${score(c)}`, scoreBreakdown(c));
+}
+
 function ago(ts) {
   const d = Date.now() - ts;
   if (d < HOUR) return `${Math.max(1, Math.round(d / 60000))}m ago`;
@@ -695,7 +723,7 @@ function renderList() {
         <span class="chk ${sel ? "on" : ""}" data-chk="${c.id}" title="Select for batch action"></span>
         <span class="plat ${c.platform}">${c.platform}</span>
         <span class="name">${escapeHtml(c.name)}</span>
-        <span class="score ${c.ai ? "" : "dim"}" title="${c.ai ? "behavioral score" : "provisional — analyze to confirm"}">${score(c)}</span>
+        <span class="score ${c.ai ? "" : "dim"}" data-score="${c.id}" title="${c.ai ? "behavioral score — click for the point breakdown" : "provisional — click for the point breakdown"}">${score(c)}</span>
         ${marker}
         ${showArchive
           ? `<span class="del" data-restore="${c.id}" title="Restore to the radar">&#8634;</span>
@@ -710,6 +738,8 @@ function renderList() {
     el.addEventListener("click", () => selectCandidate(el.dataset.id)));
   $("list").querySelectorAll("[data-chk]").forEach(el =>
     el.addEventListener("click", e => { e.stopPropagation(); toggleSelect(el.dataset.chk); }));
+  $("list").querySelectorAll("[data-score]").forEach(el =>
+    el.addEventListener("click", e => { e.stopPropagation(); explainScore(el.dataset.score); }));
   $("list").querySelectorAll("[data-arch]").forEach(el =>
     el.addEventListener("click", e => { e.stopPropagation(); archiveCandidate(el.dataset.arch); }));
   $("list").querySelectorAll("[data-del]").forEach(el =>
