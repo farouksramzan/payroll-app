@@ -161,7 +161,9 @@
     transition: transform .25s ease; box-shadow: 0 8px 30px rgba(0,0,0,.5);
   }
   #toast.show { transform: translateX(-50%) translateY(0); }
-  #toast .toast-title { font-weight: 700; color: var(--accent); margin-bottom: 4px; font-size: 13px; }
+  #toast .toast-title { font-weight: 700; color: var(--accent); margin-bottom: 4px; font-size: 13px; padding-right: 20px; }
+  #toast .toast-close { position: absolute; top: 10px; right: 12px; cursor: pointer; color: var(--muted); font-size: 13px; line-height: 1; }
+  #toast .toast-close:hover { color: var(--text); }
   #toast pre { font: 11px/1.5 ui-monospace, Menlo, monospace; color: var(--muted); white-space: pre-wrap; word-break: break-word; max-height: 140px; overflow-y: auto; }
 </style>
 </head>
@@ -323,7 +325,7 @@
   </div>
 </div>
 
-<div id="toast"><div class="toast-title" id="toastTitle"></div><pre id="toastBody"></pre></div>
+<div id="toast"><span class="toast-close" id="toastClose" title="Dismiss">&#10005;</span><div class="toast-title" id="toastTitle"></div><pre id="toastBody"></pre></div>
 
 <script type="module">
 import Anthropic from "https://cdn.jsdelivr.net/npm/@anthropic-ai/sdk/+esm";
@@ -658,7 +660,7 @@ function scoreBreakdown(c) {
 function explainScore(id) {
   const c = candidates.find(x => x.id === id);
   if (!c) return;
-  toast(`How ${c.handle} scored ${score(c)}`, scoreBreakdown(c));
+  toast(`How ${c.handle} scored ${score(c)}`, scoreBreakdown(c), { sticky: true });
 }
 
 function ago(ts) {
@@ -1509,14 +1511,19 @@ document.addEventListener("keydown", e => {
 });
 
 /* ---------- toast ---------- */
-function toast(title, body) {
+function toast(title, body, { sticky = false } = {}) {
   $("toastTitle").textContent = title;
   $("toastBody").textContent = body;
   const t = $("toast");
   t.classList.add("show");
   clearTimeout(t._t);
-  t._t = setTimeout(() => t.classList.remove("show"), 5000);
+  if (!sticky) t._t = setTimeout(() => t.classList.remove("show"), 5000);
 }
+$("toastClose").addEventListener("click", () => {
+  const t = $("toast");
+  clearTimeout(t._t);
+  t.classList.remove("show");
+});
 
 /* ---------- settings modal ---------- */
 function openSettings() {
