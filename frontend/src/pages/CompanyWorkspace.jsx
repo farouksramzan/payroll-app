@@ -2027,7 +2027,21 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
     // ── Pending row ──────────────────────────────────────────────────────────────
     if (rowData.type === 'pending') {
       const { period, emp } = rowData;
-      const row      = getRow(period.end, emp.id);
+      // Buffer edits in LOCAL state and flush to the shared pendingRows on
+      // save/close. Writing to pendingRows on every keystroke re-renders the
+      // parent table, which remounts this modal and steals input focus — and it
+      // also made the Save button unable to track tax edits. `row` now points at
+      // the local buffer so all existing reads work unchanged.
+      const savedRow = getRow(period.end, emp.id);
+      const [localRow, setLocalRow] = useState(() => ({ ...savedRow }));
+      const initialRowRef = useRef(savedRow);
+      const row = localRow;
+      const setField = (field, v) => setLocalRow(r => ({ ...r, [field]: v }));
+      const flushLocal = () => setPendingRows(prev => ({
+        ...prev,
+        [period.end]: { ...(prev[period.end] || {}), [emp.id]: { ...((prev[period.end] || {})[emp.id] || {}), ...localRow } },
+      }));
+      const closeWithFlush = () => { flushLocal(); onClose(); };
       const isSalary = emp.payType === 'salary';
       const salAmt   = r2((emp.annualSalary || 0) / ppy);
       const rate     = parseFloat(row.rate) || emp.hourlyRate || 0;
@@ -2041,7 +2055,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       // Editable dates for pending rows (stored as overrides, used when payroll is run)
       const ov = periodOverrides[period.end] || {};
       const [dateForm, setDateForm] = useState({ start: ov.start || period.start || '', end: ov.end || period.end || '', payDate: ov.payDate || period.payDate || '' });
-      const pendingDirty = dateForm.start !== period.start || dateForm.end !== period.end || dateForm.payDate !== period.payDate;
+      const dateDirty = dateForm.start !== period.start || dateForm.end !== period.end || dateForm.payDate !== period.payDate;
+      const overridesDirty = JSON.stringify(localRow) !== JSON.stringify(initialRowRef.current);
+      const pendingDirty = dateDirty || overridesDirty;
 
       const pendingItemDefs = [
         { field: 'tips',        label: 'Reported Tips',           hint: 'taxable',     isDeduction: false },
@@ -2186,7 +2202,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       };
 
       return (
-        <ModalOverlay onClose={onClose}>
+        <ModalOverlay onClose={closeWithFlush}>
           <div className="card" style={{ width: 640, maxWidth: '95vw', maxHeight: '92vh', overflowY: 'auto', padding: 0, borderRadius: 12 }}>
             {/* Header */}
             <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)' }}>
@@ -2197,7 +2213,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                     {isSalary ? 'Salary' : 'Hourly'} · {period.isLate ? <span style={{ color: '#dc2626', fontWeight: 700 }}>LATE</span> : 'Pending'}
                   </div>
                 </div>
-                <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+                <button onClick={closeWithFlush} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
               </div>
               {/* Pay period strip — editable */}
               <div style={{ display: 'flex', marginTop: 14, borderRadius: 8, overflow: 'hidden', border: `1px solid ${pendingDirty ? 'var(--accent)' : 'var(--border)'}`, background: 'var(--bg-secondary)', transition: 'border-color 0.15s' }}>
@@ -2234,7 +2250,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                     : <>
                         <TR label="Hourly Rate" amount={rate} ytdAmount={null} color="var(--accent)"
                           editValue={row.rate !== undefined ? String(row.rate) : String(emp.hourlyRate || '')}
-                          onEditChange={v => setRow(period.end, emp.id, 'rate', v)}
+                          onEditChange={v => setField('rate', v)}
                           editSuffix="/hr" noDollarSign={false} />
                         <TR label={`Reg Hours @ $${rate % 1 === 0 ? rate : rate.toFixed(2)} /hr`} amount={regPay} ytdAmount={ytdWithCurrent.regPay} color="var(--accent)" />
                         {otPay > 0 && <TR label={`OT Hours @ $${(rate * 1.5) % 1 === 0 ? (rate * 1.5) : (rate * 1.5).toFixed(2)} /hr`} amount={otPay} ytdAmount={ytdWithCurrent.otPay} color="var(--accent)" />}
@@ -2243,21 +2259,21 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                   {addedPendingEarnings.map(item => (
                     <TR key={item.field} label={item.label} amount={parseFloat(row[item.field] || 0)}
                       ytdAmount={ytdWithCurrent[item.field] ?? null} color="var(--accent)"
-                      editValue={row[item.field] || ''} onEditChange={v => setRow(period.end, emp.id, item.field, v)} />
+                      editValue={row[item.field] || ''} onEditChange={v => setField(item.field, v)} />
                   ))}
                   <TR label="Gross Pay"            amount={liveGross}    ytdAmount={ytdWithCurrent.gross}    color="var(--accent)" bold borderTop />
                   {addedPendingItems.has('cashAdvance') && (
                     <TR label="Cash Advance"       amount={parseFloat(row.cashAdvance || 0)} ytdAmount={null} negative color="#dc2626"
-                      editValue={row.cashAdvance || ''} onEditChange={v => setRow(period.end, emp.id, 'cashAdvance', v)} />
+                      editValue={row.cashAdvance || ''} onEditChange={v => setField('cashAdvance', v)} />
                   )}
                   <TR label="Social Security (est.)" amount={dispSS}  ytdAmount={ytdWithCurrent.eeSS}     negative color="#dc2626"
-                    editValue={row.ssOverride !== undefined ? row.ssOverride : String(estSSCalc)} onEditChange={v => setRow(period.end, emp.id, 'ssOverride', v)} />
+                    editValue={row.ssOverride !== undefined ? row.ssOverride : String(estSSCalc)} onEditChange={v => setField('ssOverride', v)} />
                   <TR label="Medicare (est.)"        amount={dispMed} ytdAmount={ytdWithCurrent.eeMed}    negative color="#dc2626"
-                    editValue={row.medOverride !== undefined ? row.medOverride : String(estMedCalc)} onEditChange={v => setRow(period.end, emp.id, 'medOverride', v)} />
+                    editValue={row.medOverride !== undefined ? row.medOverride : String(estMedCalc)} onEditChange={v => setField('medOverride', v)} />
                   <TR label="Federal Income Tax"     amount={dispFIT      ?? 'calculating…'} ytdAmount={ytdWithCurrent.fit}      negative={dispFIT != null}      color={dispFIT != null && dispFIT > 0 ? '#dc2626' : 'var(--text-muted)'}
-                    editValue={row.fitOverride !== undefined ? row.fitOverride : (estFITCalc != null ? String(estFITCalc) : '')} onEditChange={v => setRow(period.end, emp.id, 'fitOverride', v)} />
+                    editValue={row.fitOverride !== undefined ? row.fitOverride : (estFITCalc != null ? String(estFITCalc) : '')} onEditChange={v => setField('fitOverride', v)} />
                   <TR label="State Income Tax"       amount={dispStateTax ?? '—'}            ytdAmount={ytdWithCurrent.stateTax} negative={dispStateTax != null} color={dispStateTax != null && dispStateTax > 0 ? '#dc2626' : 'var(--text-muted)'}
-                    editValue={row.stateOverride !== undefined ? row.stateOverride : (estStateTaxCalc != null ? String(estStateTaxCalc) : '')} onEditChange={v => setRow(period.end, emp.id, 'stateOverride', v)} />
+                    editValue={row.stateOverride !== undefined ? row.stateOverride : (estStateTaxCalc != null ? String(estStateTaxCalc) : '')} onEditChange={v => setField('stateOverride', v)} />
                   <TR label="Net Pay (est.)"         amount={estNetFull} ytdAmount={ytdWithCurrent.netPay}   color="#16a34a" bold borderTop />
                 </tbody>
               </table>
@@ -2274,13 +2290,13 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                 </thead>
                 <tbody>
                   <TR label="SS Match (est.)"              amount={dispErSS}  ytdAmount={ytdWithCurrent.erSS}  color="var(--text-secondary)"
-                    editValue={row.erSsOverride !== undefined ? row.erSsOverride : String(r2(liveGross * EE_SS_RATE))} onEditChange={v => setRow(period.end, emp.id, 'erSsOverride', v)} />
+                    editValue={row.erSsOverride !== undefined ? row.erSsOverride : String(r2(liveGross * EE_SS_RATE))} onEditChange={v => setField('erSsOverride', v)} />
                   <TR label="Medicare Match (est.)"        amount={dispErMed} ytdAmount={ytdWithCurrent.erMed} color="var(--text-secondary)"
-                    editValue={row.erMedOverride !== undefined ? row.erMedOverride : String(r2(liveGross * EE_MEDICARE_RATE))} onEditChange={v => setRow(period.end, emp.id, 'erMedOverride', v)} />
+                    editValue={row.erMedOverride !== undefined ? row.erMedOverride : String(r2(liveGross * EE_MEDICARE_RATE))} onEditChange={v => setField('erMedOverride', v)} />
                   <TR label="Federal Unemployment (est.)"  amount={dispFuta}  ytdAmount={ytdWithCurrent.futa}  color="var(--text-secondary)"
-                    editValue={row.futaOverride !== undefined ? row.futaOverride : String(estFutaCalc)} onEditChange={v => setRow(period.end, emp.id, 'futaOverride', v)} />
+                    editValue={row.futaOverride !== undefined ? row.futaOverride : String(estFutaCalc)} onEditChange={v => setField('futaOverride', v)} />
                   <TR label="State Unemployment (est.)"    amount={dispSuta}  ytdAmount={ytdWithCurrent.suta}  color="var(--text-secondary)"
-                    editValue={row.suiOverride !== undefined ? row.suiOverride : String(estSutaCalc)} onEditChange={v => setRow(period.end, emp.id, 'suiOverride', v)} />
+                    editValue={row.suiOverride !== undefined ? row.suiOverride : String(estSutaCalc)} onEditChange={v => setField('suiOverride', v)} />
                 </tbody>
               </table>
             </div>
@@ -2316,10 +2332,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                 style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', marginRight: 'auto' }}>
                 🗑 Remove
               </button>
-              <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: 13 }}>Close</button>
+              <button className="btn btn-ghost" onClick={closeWithFlush} style={{ fontSize: 13 }}>Close</button>
               <button
                 disabled={!pendingDirty}
-                onClick={() => { setPeriodOverrides(prev => ({ ...prev, [period.end]: { start: dateForm.start, end: dateForm.end, payDate: dateForm.payDate } })); onClose(); }}
+                onClick={() => { flushLocal(); setPeriodOverrides(prev => ({ ...prev, [period.end]: { start: dateForm.start, end: dateForm.end, payDate: dateForm.payDate } })); onClose(); }}
                 style={{
                   background: pendingDirty ? '#16a34a' : '#94a3b8',
                   color: '#fff',
