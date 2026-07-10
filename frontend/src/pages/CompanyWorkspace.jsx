@@ -2968,7 +2968,15 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
               const cached     = calcCache[cacheKey];
               const estFIT     = cached != null ? (cached.fitWithholding || 0) : Math.round(((taxAnn => taxAnn <= 12225 ? taxAnn * 0.10 : 1222.5 + (Math.min(taxAnn, 49675) - 12225) * 0.12 + Math.max(0, taxAnn - 49675) * 0.22)(Math.max(0, grossPreview * ppy - 16100))) / ppy);
               const estStateTax = cached != null ? (cached.stateIncomeTax || 0) : 0;
-              const estNetPay  = r2(grossPreview - estEeSS - estEeMed - estFIT - estStateTax);
+              // Respect the manual overrides the detail modal writes to the row, so
+              // this inline net pay equals the modal's "Net Pay (est.)" instead of
+              // ignoring an edited FIT/SS/Medicare/state value.
+              const dispEeSS    = row.ssOverride    !== undefined ? parseFloat(row.ssOverride    || 0) : estEeSS;
+              const dispEeMed   = row.medOverride   !== undefined ? parseFloat(row.medOverride   || 0) : estEeMed;
+              const dispFITest  = row.fitOverride   !== undefined ? parseFloat(row.fitOverride   || 0) : estFIT;
+              const dispStateEst= row.stateOverride !== undefined ? parseFloat(row.stateOverride || 0) : estStateTax;
+              const cashAdvEst  = parseFloat(row.cashAdvance || 0);
+              const estNetPay  = r2(grossPreview - dispEeSS - dispEeMed - dispFITest - dispStateEst - cashAdvEst);
               const daysToPayDate = daysUntil(period.payDate);
               const isLate   = period.payDate < new Date().toISOString().slice(0, 10);
               const status   = isLate ? 'late' : (daysToPayDate !== null && daysToPayDate <= 5 ? 'due-soon' : 'upcoming');
