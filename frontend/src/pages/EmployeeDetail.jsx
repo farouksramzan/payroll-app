@@ -144,7 +144,7 @@ export default function EmployeeDetail() {
                 <input
                   readOnly
                   value={inviteUrl}
-                  style={{ flex: 1, minWidth: 200, fontSize: 12, padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 4, fontFamily: 'monospace' }}
+                  style={{ flex: 1, minWidth: 200, fontSize: 12, padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 0, fontFamily: 'monospace' }}
                   onFocus={e => e.target.select()}
                 />
                 <button

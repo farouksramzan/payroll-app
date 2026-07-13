@@ -41,7 +41,7 @@ const ROLE_TABS = [
 
 const INPUT_STYLE = {
   width: '100%', boxSizing: 'border-box',
-  padding: '11px 14px', borderRadius: 9,
+  padding: '11px 14px', borderRadius: 0,
   border: '1.5px solid #e2e8f0',
   fontSize: 14, color: '#0f172a',
   background: '#fff', outline: 'none',

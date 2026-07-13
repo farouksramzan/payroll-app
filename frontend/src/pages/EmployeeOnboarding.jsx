@@ -5,7 +5,7 @@ import api from '../api/client';
 
 const INPUT = {
   width: '100%', boxSizing: 'border-box',
-  padding: '10px 13px', borderRadius: 8,
+  padding: '10px 13px', borderRadius: 0,
   border: '1.5px solid var(--border)',
   fontSize: 14, color: 'var(--text-primary)',
   background: 'var(--bg)', outline: 'none',

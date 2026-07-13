@@ -38,7 +38,7 @@ const TR = ({ label, amount, ytdAmount, color, bold, borderTop, negative, editVa
                 value={editValue}
                 onChange={e => onEditChange(e.target.value)}
                 placeholder="0.00"
-                style={{ ...MONO, background: '#fff', border: '1px solid var(--border)', borderRadius: 4, outline: 'none', width: 80, textAlign: 'right', fontSize: 13, fontWeight: bold ? 700 : 500, color: 'var(--text-primary)', padding: '1px 5px', cursor: 'text', boxSizing: 'border-box' }} />
+                style={{ ...MONO, background: '#fff', border: '1px solid var(--border)', borderRadius: 0, outline: 'none', width: 80, textAlign: 'right', fontSize: 13, fontWeight: bold ? 700 : 500, color: 'var(--text-primary)', padding: '1px 5px', cursor: 'text', boxSizing: 'border-box' }} />
             </span>
           : typeof display === 'number' ? fmt(display) : display
         }
@@ -271,7 +271,7 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
                   ? <div style={{ ...MONO, fontSize: 13, fontWeight: 600 }}>{fmtDate(raw)}</div>
                   : <input type="date" value={dateForm[key]}
                       onChange={e => setDateForm(f => ({ ...f, [key]: e.target.value }))}
-                      style={{ ...MONO, fontSize: 13, fontWeight: 600, background: 'transparent', border: 'none', outline: 'none', width: '100%', color: dateForm[key] !== (raw || '') ? 'var(--accent)' : 'var(--text-primary)', cursor: 'pointer' }} />
+                      style={{ ...MONO, fontSize: 13, fontWeight: 600, background: 'transparent', border: 'none', borderRadius: 0, outline: 'none', width: '100%', color: dateForm[key] !== (raw || '') ? 'var(--accent)' : 'var(--text-primary)', cursor: 'pointer' }} />
                 }
               </div>
             ))}

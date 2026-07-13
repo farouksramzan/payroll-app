@@ -934,7 +934,7 @@ function PayGroupEditorModal({ group, clientId, allGroups, hasIssuedChecks, onSa
                   <div style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{emp.firstName} {emp.lastName}</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Move to:</span>
-                    <select style={{ fontSize: 12, padding: '3px 6px', borderRadius: 4, border: '1px solid var(--border)', background: '#fff' }}
+                    <select style={{ fontSize: 12, padding: '3px 6px', borderRadius: 0, border: '1px solid var(--border)', background: '#fff' }}
                       defaultValue=""
                       onChange={e => { if (e.target.value) handleMoveEmployee(emp, e.target.value === '__none__' ? null : e.target.value); }}>
                       <option value="">— select —</option>
@@ -1348,7 +1348,7 @@ function ModalTR({ label, amount, ytdAmount, color, bold, borderTop, negative, e
                 value={editValue}
                 onChange={e => onEditChange(e.target.value)}
                 placeholder="0.00"
-                style={{ ...MODAL_MONO, background: '#fff', border: '1px solid var(--border)', borderRadius: 4, outline: 'none', width: 80, textAlign: 'right', fontSize: 13, fontWeight: bold ? 700 : 500, color: 'var(--text-primary)', padding: '1px 5px', cursor: 'text', boxSizing: 'border-box' }} />
+                style={{ ...MODAL_MONO, background: '#fff', border: '1px solid var(--border)', borderRadius: 0, outline: 'none', width: 80, textAlign: 'right', fontSize: 13, fontWeight: bold ? 700 : 500, color: 'var(--text-primary)', padding: '1px 5px', cursor: 'text', boxSizing: 'border-box' }} />
               {editSuffix && <span style={{ ...MODAL_MONO, fontSize: 12, color: 'var(--text-muted)', marginLeft: 4 }}>{editSuffix}</span>}
             </span>
           : typeof display === 'number' ? fmt(display) : display
@@ -2278,7 +2278,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
               <select
                 value={checkDesign}
                 onChange={e => { setCheckDesign(e.target.value); localStorage.setItem('checkDesign', e.target.value); }}
-                style={{ fontSize: 12, border: '1px solid var(--border)', borderRadius: '0 6px 6px 0', padding: '6px 4px', background: 'var(--bg-primary)', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                style={{ fontSize: 12, border: '1px solid var(--border)', borderRadius: 0, padding: '6px 4px', background: 'var(--bg-primary)', cursor: 'pointer', color: 'var(--text-secondary)' }}
               >
                 <option value="classic">Classic</option>
                 <option value="micr">MICR (Check Printer)</option>
@@ -3152,13 +3152,13 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                         <input className="form-input mono" type="text" inputMode="decimal" value={row.regHours} placeholder="0"
                           onChange={ev => setRow(rawPeriod.end, emp.id, 'regHours', ev.target.value)}
                           onFocus={ev => ev.target.select()}
-                          style={{ width: '100%', height: 46, fontSize: 16, textAlign: 'right', padding: '0 8px', borderRadius: 3, border: '2px solid #b0bec5', fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
+                          style={{ width: '100%', height: 46, fontSize: 16, textAlign: 'right', padding: '0 8px', borderRadius: 0, border: '2px solid #b0bec5', fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
                       </td>
                       <td style={{ padding: '4px 6px' }}>
                         <input className="form-input mono" type="text" inputMode="decimal" value={row.otHours} placeholder="0"
                           onChange={ev => setRow(rawPeriod.end, emp.id, 'otHours', ev.target.value)}
                           onFocus={ev => ev.target.select()}
-                          style={{ width: '100%', height: 46, fontSize: 16, textAlign: 'right', padding: '0 8px', borderRadius: 3, border: '2px solid #b0bec5', fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
+                          style={{ width: '100%', height: 46, fontSize: 16, textAlign: 'right', padding: '0 8px', borderRadius: 0, border: '2px solid #b0bec5', fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
                       </td>
                       <td style={{ padding: '4px 6px' }}>
                         <input className="form-input mono" type="text" inputMode="decimal"
@@ -3176,7 +3176,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                               }
                             }
                           }}
-                          style={{ width: '100%', height: 46, fontSize: 16, textAlign: 'right', padding: '0 8px', borderRadius: 3, border: '2px solid #b0bec5', fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
+                          style={{ width: '100%', height: 46, fontSize: 16, textAlign: 'right', padding: '0 8px', borderRadius: 0, border: '2px solid #b0bec5', fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
                       </td>
                     </>
                   )}
@@ -3235,15 +3235,15 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
                       <input type="date" value={periodEdit.start}
                         onChange={e => setPeriodEdit(p => ({ ...p, start: e.target.value }))}
-                        style={{ height: 36, fontSize: 13, border: '1px solid var(--border)', borderRadius: 4, padding: '0 4px' }} />
+                        style={{ height: 36, fontSize: 13, border: '1px solid var(--border)', borderRadius: 0, padding: '0 4px' }} />
                       <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>–</span>
                       <input type="date" value={periodEdit.end}
                         onChange={e => { const end = e.target.value; setPeriodEdit(p => ({ ...p, end, payDate: end ? calcDefaultPayDate(end) : p.payDate })); }}
-                        style={{ height: 36, fontSize: 13, border: '1px solid var(--border)', borderRadius: 4, padding: '0 4px' }} />
+                        style={{ height: 36, fontSize: 13, border: '1px solid var(--border)', borderRadius: 0, padding: '0 4px' }} />
                       <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>Pay:</span>
                       <input type="date" value={periodEdit.payDate}
                         onChange={e => setPeriodEdit(p => ({ ...p, payDate: e.target.value }))}
-                        style={{ height: 36, fontSize: 13, border: '1px solid var(--border)', borderRadius: 4, padding: '0 4px' }} />
+                        style={{ height: 36, fontSize: 13, border: '1px solid var(--border)', borderRadius: 0, padding: '0 4px' }} />
                       <button className="btn btn-primary btn-sm" style={{ fontSize: 10, padding: '0 8px', height: 26 }}
                         onClick={() => handleSavePeriod(stub.id)} disabled={savingPeriod}>
                         {savingPeriod ? <span className="spinner" style={{ width: 10, height: 10 }} /> : 'Save'}
@@ -3494,7 +3494,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                 <select
                   defaultValue={localStorage.getItem('checkDesign') || 'classic'}
                   onChange={e => localStorage.setItem('checkDesign', e.target.value)}
-                  style={{ fontSize: 11, border: '1px solid rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.15)', color: '#fff', borderRadius: '0 6px 6px 0', padding: '4px 6px', cursor: 'pointer', height: 28 }}>
+                  style={{ fontSize: 11, border: '1px solid rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.15)', color: '#fff', borderRadius: 0, padding: '4px 6px', cursor: 'pointer', height: 28 }}>
                   <option value="classic" style={{ color: '#000' }}>Classic</option>
                   <option value="micr" style={{ color: '#000' }}>MICR (Check Printer)</option>
                   <option value="top" style={{ color: '#000' }}>Top Check</option>
@@ -3723,7 +3723,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                 <select
                   defaultValue={localStorage.getItem('checkDesign') || 'classic'}
                   onChange={e => localStorage.setItem('checkDesign', e.target.value)}
-                  style={{ fontSize: 11, border: '1px solid var(--border)', borderRadius: '0 6px 6px 0', padding: '4px 6px', cursor: 'pointer', height: 32 }}>
+                  style={{ fontSize: 11, border: '1px solid var(--border)', borderRadius: 0, padding: '4px 6px', cursor: 'pointer', height: 32 }}>
                   <option value="classic">Classic</option>
                   <option value="micr">MICR (Check Printer)</option>
                   <option value="top">Top Check</option>
@@ -4409,7 +4409,7 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
               <select
                 defaultValue={localStorage.getItem('checkDesign') || 'classic'}
                 onChange={e => localStorage.setItem('checkDesign', e.target.value)}
-                style={{ fontSize: 11, border: '1px solid var(--border)', borderRadius: '0 6px 6px 0', padding: '4px 6px', cursor: 'pointer', height: 28 }}>
+                style={{ fontSize: 11, border: '1px solid var(--border)', borderRadius: 0, padding: '4px 6px', cursor: 'pointer', height: 28 }}>
                 <option value="classic">Classic</option>
                 <option value="micr">MICR (Check Printer)</option>
                 <option value="top">Top Check</option>

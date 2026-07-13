@@ -9,7 +9,7 @@ function fmt(n) {
 
 const INPUT_STYLE = {
   width: '100%', boxSizing: 'border-box',
-  padding: '9px 12px', borderRadius: 6,
+  padding: '9px 12px', borderRadius: 0,
   border: '1.5px solid var(--border)',
   fontSize: 13, color: 'var(--text-primary)',
   background: 'var(--bg)', outline: 'none',

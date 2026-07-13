@@ -43,7 +43,7 @@ function calcStartFromEnd(endDate, freq) {
 
 // ── Styles ───────────────────────────────────────────────────────────────────
 const inputStyle = {
-  width: '100%', padding: '10px 12px', borderRadius: 8,
+  width: '100%', padding: '10px 12px', borderRadius: 0,
   border: '1.5px solid var(--border)', fontSize: 14,
   color: 'var(--text-primary)', background: 'var(--bg)',
   outline: 'none', boxSizing: 'border-box',

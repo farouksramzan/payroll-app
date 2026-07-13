@@ -188,7 +188,7 @@ export default function ImportPaychecksModal({ clientId, onClose, onImported }) 
 }
 
 const selectStyle = {
-  fontSize: 12, padding: '4px 8px', borderRadius: 6,
+  fontSize: 12, padding: '4px 8px', borderRadius: 0,
   border: '1px solid var(--border)', background: 'var(--bg-card)',
   color: 'var(--text-primary)', cursor: 'pointer',
 };

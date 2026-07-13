@@ -1045,7 +1045,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                             {isHourly
                               ? r._isPending
                                 ? <input type="number" min="0" step="0.5" value={hoursEdits[r.id]?.reg ?? ''} placeholder="0"
-                                    style={{ width: 54, fontSize: 11, padding: '2px 4px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 3 }}
+                                    style={{ width: 54, fontSize: 11, padding: '2px 4px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 0 }}
                                     disabled={savingHours.has(r.id)}
                                     onChange={e => setHours(r.id, 'reg', e.target.value)}
                                   />
@@ -1057,7 +1057,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                             {isHourly
                               ? r._isPending
                                 ? <input type="number" min="0" step="0.5" value={hoursEdits[r.id]?.ot ?? ''} placeholder="0"
-                                    style={{ width: 54, fontSize: 11, padding: '2px 4px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 3 }}
+                                    style={{ width: 54, fontSize: 11, padding: '2px 4px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 0 }}
                                     disabled={savingHours.has(r.id)}
                                     onChange={e => setHours(r.id, 'ot', e.target.value)}
                                   />
@@ -1218,7 +1218,7 @@ export default function Dashboard() {
                   onChange={e => setSearch(e.target.value)}
                   placeholder="Search companies…"
                   aria-label="Search companies by name or EIN"
-                  style={{ fontSize: 13, padding: '6px 28px 6px 30px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', width: 220, outline: 'none' }} />
+                  style={{ fontSize: 13, padding: '6px 28px 6px 30px', borderRadius: 0, border: '1px solid var(--border)', background: '#fff', width: 220, outline: 'none' }} />
                 {search && (
                   <button onClick={() => setSearch('')} aria-label="Clear search"
                     style={{ position: 'absolute', right: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14, lineHeight: 1, padding: 4 }}>×</button>

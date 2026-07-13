@@ -264,15 +264,15 @@ export default function PayrollRun() {
           <div style={{ padding: '16px 20px', display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, maxWidth: 640 }}>
             <div className="form-group">
               <label className="form-label">Pay Period Start <span>*</span></label>
-              <input className="form-input" type="date" value={payPeriodStart} onChange={(e) => setPayPeriodStart(e.target.value)} />
+              <input className="form-input" type="date" value={payPeriodStart} onChange={(e) => setPayPeriodStart(e.target.value)} style={{ borderRadius: 0 }} />
             </div>
             <div className="form-group">
               <label className="form-label">Pay Period End <span>*</span></label>
-              <input className="form-input" type="date" value={payPeriodEnd} onChange={(e) => setPayPeriodEnd(e.target.value)} />
+              <input className="form-input" type="date" value={payPeriodEnd} onChange={(e) => setPayPeriodEnd(e.target.value)} style={{ borderRadius: 0 }} />
             </div>
             <div className="form-group">
               <label className="form-label">Settlement Date</label>
-              <input className="form-input" type="date" value={settlementDate} onChange={(e) => setSettlementDate(e.target.value)} />
+              <input className="form-input" type="date" value={settlementDate} onChange={(e) => setSettlementDate(e.target.value)} style={{ borderRadius: 0 }} />
               <p className="form-hint">EFTPS debit date</p>
             </div>
           </div>
@@ -333,7 +333,7 @@ export default function PayrollRun() {
                       {(data.lineItems || []).map((li, idx) => (
                         <tr key={idx} style={{ borderBottom: '1px solid var(--border-light)' }}>
                           <td style={{ padding: '6px 8px', width: 130 }}>
-                            <select className="form-select" style={{ fontSize: 12, padding: '4px 6px' }} value={li.payType}
+                            <select className="form-select" style={{ fontSize: 12, padding: '4px 6px', borderRadius: 0 }} value={li.payType}
                               onChange={(e) => updateItem(emp.id, idx, 'payType', e.target.value)}>
                               {PAY_TYPES.map((pt) => <option key={pt.value} value={pt.value}>{pt.label}</option>)}
                             </select>
@@ -341,7 +341,7 @@ export default function PayrollRun() {
                           <td style={{ padding: '6px 8px', width: 90 }}>
                             {!isSalary && (
                               <input className="form-input mono" type="number" min="0" step="0.25" placeholder="0"
-                                value={li.hours} style={{ fontSize: 12, padding: '4px 7px' }}
+                                value={li.hours} style={{ fontSize: 12, padding: '4px 7px', borderRadius: 0 }}
                                 onChange={(e) => updateItem(emp.id, idx, 'hours', e.target.value)} />
                             )}
                           </td>
@@ -350,7 +350,7 @@ export default function PayrollRun() {
                               <div style={{ position: 'relative' }}>
                                 <span style={{ position: 'absolute', left: 7, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 12 }}>$</span>
                                 <input className="form-input mono" type="number" min="0" step="0.01" placeholder="0.00"
-                                  value={li.rate} style={{ fontSize: 12, padding: '4px 7px 4px 18px' }}
+                                  value={li.rate} style={{ fontSize: 12, padding: '4px 7px 4px 18px', borderRadius: 0 }}
                                   onChange={(e) => updateItem(emp.id, idx, 'rate', e.target.value)} />
                               </div>
                             )}
@@ -359,7 +359,7 @@ export default function PayrollRun() {
                             <div style={{ position: 'relative' }}>
                               <span style={{ position: 'absolute', left: 7, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 12 }}>$</span>
                               <input className="form-input mono" type="number" min="0" step="0.01" placeholder="0.00"
-                                value={li.amount} style={{ fontSize: 12, padding: '4px 7px 4px 18px', fontWeight: 600 }}
+                                value={li.amount} style={{ fontSize: 12, padding: '4px 7px 4px 18px', fontWeight: 600, borderRadius: 0 }}
                                 onChange={(e) => updateItem(emp.id, idx, 'amount', e.target.value)} />
                             </div>
                           </td>

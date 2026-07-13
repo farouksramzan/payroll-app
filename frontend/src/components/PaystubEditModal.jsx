@@ -38,7 +38,7 @@ function Field({ label, hint, value, onChange, readOnly }) {
         ? <div style={{ ...MONO, fontSize: 13, fontWeight: 700, color: 'var(--accent)', minWidth: 100, textAlign: 'right' }}>{fmt(parseFloat(value) || 0)}</div>
         : <input type="number" min="0" step="0.01" value={value}
             onChange={e => onChange(e.target.value)}
-            style={{ ...MONO, width: 110, textAlign: 'right', fontSize: 13, fontWeight: 600, border: '1px solid var(--border)', borderRadius: 6, padding: '4px 8px', background: 'var(--bg-secondary)', outline: 'none' }}
+            style={{ ...MONO, width: 110, textAlign: 'right', fontSize: 13, fontWeight: 600, border: '1px solid var(--border)', borderRadius: 0, padding: '4px 8px', background: 'var(--bg-secondary)', outline: 'none' }}
           />
       }
     </div>

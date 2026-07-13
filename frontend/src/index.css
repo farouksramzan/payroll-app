@@ -519,7 +519,7 @@ html, body, #root {
   width: 100%;
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: 0;
   padding: 10px 13px;
   color: var(--text-primary);
   font-size: 14.5px;
