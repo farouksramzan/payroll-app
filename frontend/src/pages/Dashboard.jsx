@@ -117,6 +117,25 @@ function LiabStatusBadge({ status }) {
   return <span className={`badge ${cfg.cls}`} style={{ fontSize: 10 }} title={cfg.title}>{cfg.label}</span>;
 }
 
+// Soft status pill for the company list — a light tint + colored dot, so two
+// stacked flags read as two distinct signals instead of one heavy red blob.
+// Tax and payroll get different hues (both stay "alert"-warm) so you can tell
+// them apart at a glance.
+const STATUS_TONES = {
+  payroll: { bg: '#fdecec', color: '#b4241f', dot: '#e24b4a', title: 'Payroll has not been run for a due pay period' },
+  tax:     { bg: '#fdefdd', color: '#a05a06', dot: '#ef9f27', title: 'Tax deposits or filings are past due' },
+  ok:      { bg: '#e9f5ec', color: '#1a7a3a', dot: '#2fb457', title: 'No overdue payroll or taxes' },
+};
+function StatusPill({ tone, label }) {
+  const t = STATUS_TONES[tone];
+  return (
+    <span title={t.title} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: t.bg, color: t.color, fontSize: 10.5, fontWeight: 700, padding: '3px 9px', borderRadius: 999, whiteSpace: 'nowrap', lineHeight: 1.35 }}>
+      <span style={{ width: 5, height: 5, borderRadius: 999, background: t.dot, flexShrink: 0 }} />
+      {label}
+    </span>
+  );
+}
+
 const ISSUED = new Set(['printed', 'deposited']);
 
 
@@ -1313,9 +1332,20 @@ export default function Dashboard() {
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{client.depositSchedule || '—'}</div>
                   <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{client.state || 'TX'}</div>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'flex-start' }}>
-                    {client.liabilityStatus === 'overdue' && <span className="badge badge-error" style={{ fontSize: 10 }}>Tax Overdue</span>}
-                    {ps && ps.cls === 'badge-error' && <span className="badge badge-error" style={{ fontSize: 10 }}>Payroll Overdue</span>}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'flex-start' }}>
+                    {(() => {
+                      const payrollOverdue = !!(ps && ps.cls === 'badge-error');
+                      const taxOverdue = client.liabilityStatus === 'overdue';
+                      if (payrollOverdue || taxOverdue) {
+                        return <>
+                          {payrollOverdue && <StatusPill tone="payroll" label="Payroll overdue" />}
+                          {taxOverdue     && <StatusPill tone="tax"     label="Tax overdue" />}
+                        </>;
+                      }
+                      return client.nextPayDate
+                        ? <StatusPill tone="ok" label="On track" />
+                        : <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>—</span>;
+                    })()}
                   </div>
 
                   {/* Delete */}
