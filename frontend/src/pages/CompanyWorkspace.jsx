@@ -787,7 +787,7 @@ function CheckHistory({ clientId, employeeId, employeeName, selectedChecks, onTo
 }
 
 // ── Pay Group Editor Modal ────────────────────────────────────────────────────
-function PayGroupEditorModal({ group, clientId, allGroups, onSaved, onClose, onDeleted, onMoved }) {
+function PayGroupEditorModal({ group, clientId, allGroups, hasIssuedChecks, onSaved, onClose, onDeleted, onMoved }) {
   const [form, setForm] = useState({
     name: group.name,
     frequency: group.frequency,
@@ -840,9 +840,10 @@ function PayGroupEditorModal({ group, clientId, allGroups, onSaved, onClose, onD
   }
 
   async function handleDeleteGroup() {
-    if (!window.confirm(
-      `Deleting this pay group will unassign all employees from it. Their paycheck history will be preserved. Continue?`
-    )) return;
+    const msg = hasIssuedChecks
+      ? `"${group.name}" has printed/deposited checks, so it will be ARCHIVED: employees are unassigned and the group becomes non-functional, but its check history stays available in the Archived menu. Continue?`
+      : `"${group.name}" has no printed or deposited checks, so it will be PERMANENTLY DELETED and cannot be recovered. Continue?`;
+    if (!window.confirm(msg)) return;
     setDeleting(true); setErr('');
     try {
       await api.deletePayGroup(group.id);
@@ -2337,6 +2338,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
   const [showPaycheckImport, setShowPaycheckImport] = useState(false);
   const [payGroups, setPayGroups]     = useState([]);
   const [currentGroupId, setCurrentGroupId] = useState(null);
+  const [archiveMenuOpen, setArchiveMenuOpen] = useState(false);
   const [groupsLoading, setGroupsLoading]   = useState(true);
   const [editGroup, setEditGroup]     = useState(null);
   const [paystubs, setPaystubs]                   = useState([]);
@@ -2418,8 +2420,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
     : activeEmps.filter(e => e.payGroupId === currentGroupId);
   const isGroupDeleted = currentGroup ? !!currentGroup.deletedAt : false;
 
+  // Active groups get real tabs; archived (soft-deleted) groups are tucked into a
+  // small "Archived" menu so their check history stays reachable without clutter.
+  const activeGroups   = payGroups.filter(g => !g.deletedAt);
+  const archivedGroups = payGroups.filter(g => g.deletedAt);
   const tabs = [
-    ...payGroups,
+    ...activeGroups,
     ...(unassignedEmps.length > 0 ? [{ id: UNASSIGNED_ID, name: `Unassigned (${unassignedEmps.length})`, frequency: 'biweekly' }] : []),
   ];
 
@@ -3311,23 +3317,54 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
   return (
     <div>
       {/* Tab strip */}
-      {tabs.length > 0 && (
-        <div className="pay-subtabs" style={{ marginBottom: 12 }}>
-          {tabs.map(g => {
-            const deleted = !!g.deletedAt;
-            return (
-              <button key={g.id} className={`pay-subtab${currentGroupId === g.id ? ' active' : ''}`}
-                onClick={() => { setCurrentGroupId(g.id); setRunErr(''); setRunSuccess(''); setSelectedLateStubs(new Set()); setSelectedHistoryStubs(new Set()); }}
-                style={deleted ? { opacity: 0.5, fontStyle: 'italic' } : {}}>
-                {g.name}{deleted ? ' (Deleted)' : ''}
-                {g.id !== UNASSIGNED_ID && !deleted && (
-                  <span style={{ opacity: 0.6, fontSize: 11, marginLeft: 4 }}>
-                    ({activeEmps.filter(e => e.payGroupId === g.id).length})
-                  </span>
-                )}
+      {(tabs.length > 0 || archivedGroups.length > 0) && (
+        <div className="pay-subtabs" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          {tabs.map(g => (
+            <button key={g.id} className={`pay-subtab${currentGroupId === g.id ? ' active' : ''}`}
+              onClick={() => { setCurrentGroupId(g.id); setRunErr(''); setRunSuccess(''); setSelectedLateStubs(new Set()); setSelectedHistoryStubs(new Set()); }}>
+              {g.name}
+              {g.id !== UNASSIGNED_ID && (
+                <span style={{ opacity: 0.6, fontSize: 11, marginLeft: 4 }}>
+                  ({activeEmps.filter(e => e.payGroupId === g.id).length})
+                </span>
+              )}
+            </button>
+          ))}
+
+          {/* Archived groups — compact, non-intrusive dropdown at the end */}
+          {archivedGroups.length > 0 && (
+            <div style={{ position: 'relative', marginLeft: 'auto' }}>
+              <button
+                onClick={() => setArchiveMenuOpen(o => !o)}
+                title="Archived pay groups — check history preserved, group non-functional"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5,
+                  background: isGroupDeleted ? 'var(--accent-light)' : 'transparent',
+                  border: `1px solid ${isGroupDeleted ? 'var(--accent)' : 'var(--border)'}`,
+                  borderRadius: 7, padding: '5px 10px', cursor: 'pointer',
+                  fontSize: 12, fontWeight: 600, color: isGroupDeleted ? 'var(--accent)' : 'var(--text-muted)',
+                }}>
+                🗄 Archived <span style={{ opacity: 0.7 }}>({archivedGroups.length})</span>
+                <span style={{ fontSize: 9, opacity: 0.7 }}>▾</span>
               </button>
-            );
-          })}
+              {archiveMenuOpen && (
+                <>
+                  <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setArchiveMenuOpen(false)} />
+                  <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 5, background: 'var(--bg-primary, #fff)', border: '1px solid var(--border)', borderRadius: 9, boxShadow: '0 8px 24px rgba(0,0,0,0.14)', zIndex: 50, minWidth: 220, padding: 5 }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '4px 10px 6px' }}>Archived Groups</div>
+                    {archivedGroups.map(g => (
+                      <button key={g.id}
+                        onClick={() => { setCurrentGroupId(g.id); setArchiveMenuOpen(false); setRunErr(''); setRunSuccess(''); setSelectedLateStubs(new Set()); setSelectedHistoryStubs(new Set()); }}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, width: '100%', textAlign: 'left', padding: '8px 10px', background: currentGroupId === g.id ? 'var(--accent-light)' : 'transparent', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                        <span>{g.name}</span>
+                        <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 500 }}>{FREQ_LABEL[g.frequency] || g.frequency}</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -3338,7 +3375,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
             <span style={{ fontWeight: 700, fontSize: 14, fontStyle: isGroupDeleted ? 'italic' : 'normal', opacity: isGroupDeleted ? 0.6 : 1 }}>{currentGroup.name}</span>
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{FREQ_LABEL[currentGroup.frequency] || currentGroup.frequency}</span>
             {!isGroupDeleted && <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} onClick={() => setEditGroup(currentGroup)}>Edit Group</button>}
-            {isGroupDeleted && <span className="badge badge-error" style={{ fontSize: 10 }}>Deleted</span>}
+            {isGroupDeleted && <span className="badge badge-warning" style={{ fontSize: 10 }}>Archived</span>}
             <div style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 4px' }} />
           </>
         )}
@@ -3346,9 +3383,11 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={handleSelectAllDue}>Select All Due</button>
         )}
         <div style={{ flex: 1 }} />
-        <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} onClick={() => setShowPaycheckImport(true)}>
-          ↑ Import from QB
-        </button>
+        {!isGroupDeleted && (
+          <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} onClick={() => setShowPaycheckImport(true)}>
+            ↑ Import from QB
+          </button>
+        )}
         {!isGroupDeleted && (
           <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} onClick={() => setUngroupedModal(true)}>
             + Ungrouped Check
@@ -3512,8 +3551,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       })()}
 
       {isGroupDeleted && (
-        <div className="alert alert-error" style={{ marginBottom: 12, fontSize: 12 }}>
-          <span>⚠</span> This pay group has been deleted. Historical checks are shown below for reference.
+        <div className="alert alert-warning" style={{ marginBottom: 12, fontSize: 12 }}>
+          <span>🗄</span> This pay group is archived — it's non-functional, but its check history is kept below for reference.
         </div>
       )}
       {runErr     && <div className="alert alert-error"   style={{ marginBottom: 10 }}><span>⚠</span>{runErr}<button onClick={() => setRunErr('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button></div>}
@@ -3627,8 +3666,14 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       )}
 
       {/* Pay Group Editor */}
-      {editGroup && editGroup.id !== UNASSIGNED_ID && (
-        <PayGroupEditorModal group={editGroup} clientId={clientId} allGroups={payGroups}
+      {editGroup && editGroup.id !== UNASSIGNED_ID && (() => {
+        // Mirror the backend rule: a group has "history worth keeping" if any
+        // non-draft check is linked to it directly or via one of its employees.
+        const grpEmpIds = new Set(activeEmps.filter(e => e.payGroupId === editGroup.id).map(e => e.id));
+        const editGroupHasChecks = paystubs.some(s =>
+          s.check_status !== 'draft' && (s.pay_group_id === editGroup.id || grpEmpIds.has(s.employee_id)));
+        return (
+        <PayGroupEditorModal group={editGroup} clientId={clientId} allGroups={payGroups} hasIssuedChecks={editGroupHasChecks}
           onSaved={() => { setEditGroup(null); api.getPayGroups(clientId).then(setPayGroups); }}
           onClose={() => setEditGroup(null)}
           onMoved={() => { onRefresh?.(); }}
@@ -3642,7 +3687,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
               setCurrentGroupId(next ? next.id : (unassignedEmps.length > 0 ? UNASSIGNED_ID : null));
             });
           }} />
-      )}
+        );
+      })()}
 
       {/* Print Checks Modal */}
       {printModal && (

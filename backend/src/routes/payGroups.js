@@ -117,17 +117,43 @@ router.put('/:id', (req, res) => {
   res.json(sanitizeGroup(db.prepare('SELECT * FROM pay_groups WHERE id = ?').get(g.id)));
 });
 
-// DELETE /api/pay-groups/:id  (soft delete — sets deleted_at, unassigns employees)
+// DELETE /api/pay-groups/:id
+// If the group has any ISSUED checks (anything beyond a draft), it is ARCHIVED
+// (soft delete: deleted_at set, employees unassigned) so the check history is
+// preserved but the group is non-functional. If it has no issued checks, it is
+// removed FOREVER (its only paystubs, if any, are drafts, which are pruned).
 router.delete('/:id', (req, res) => {
   const db = getDb();
   const g = db.prepare('SELECT * FROM pay_groups WHERE id = ?').get(req.params.id);
   if (!g || !canAccessClient(db, g.client_id, req.user)) return res.status(404).json({ error: 'Pay group not found' });
   if (g.deleted_at) return res.status(400).json({ error: 'Pay group already deleted' });
+
+  // Count issued (non-draft) checks tied to this group — by the direct
+  // pay_group_id link OR via the group's employees (older stubs may predate the
+  // pay_group_id column). Counted BEFORE employees are unassigned below.
+  const issued = db.prepare(`
+    SELECT COUNT(*) AS n FROM paystubs
+    WHERE check_status != 'draft'
+      AND (pay_group_id = ? OR employee_id IN (SELECT id FROM employees WHERE pay_group_id = ?))
+  `).get(g.id, g.id).n;
+
+  const archived = issued > 0;
   db.transaction(() => {
     db.prepare('UPDATE employees SET pay_group_id = NULL WHERE pay_group_id = ?').run(g.id);
-    db.prepare("UPDATE pay_groups SET deleted_at = datetime('now') WHERE id = ?").run(g.id);
+    if (archived) {
+      db.prepare("UPDATE pay_groups SET deleted_at = datetime('now') WHERE id = ?").run(g.id);
+    } else {
+      // No history worth keeping — drop any leftover drafts and the group itself.
+      db.prepare("DELETE FROM paystubs WHERE pay_group_id = ? AND check_status = 'draft'").run(g.id);
+      db.prepare('DELETE FROM pay_groups WHERE id = ?').run(g.id);
+    }
   })();
-  res.json(sanitizeGroup(db.prepare('SELECT * FROM pay_groups WHERE id = ?').get(g.id)));
+
+  if (archived) {
+    res.json({ ...sanitizeGroup(db.prepare('SELECT * FROM pay_groups WHERE id = ?').get(g.id)), archived: true });
+  } else {
+    res.json({ id: Number(g.id), deleted: true, archived: false });
+  }
 });
 
 module.exports = router;
