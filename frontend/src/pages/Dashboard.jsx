@@ -117,13 +117,13 @@ function LiabStatusBadge({ status }) {
   return <span className={`badge ${cfg.cls}`} style={{ fontSize: 10 }} title={cfg.title}>{cfg.label}</span>;
 }
 
-// Soft status pill for the company list — a light tint + colored dot, so two
-// stacked flags read as two distinct signals instead of one heavy red blob.
-// Tax and payroll get different hues (both stay "alert"-warm) so you can tell
-// them apart at a glance.
+// Soft status pill for the company list. Colour = severity, not category:
+// overdue is always red (matching the red "past due" pay date), on-track green.
+// Only one status pill ever shows per company (see the list cell), so the label
+// carries the payroll-vs-tax distinction — colour doesn't need to.
 const STATUS_TONES = {
   payroll: { bg: '#fdecec', color: '#b4241f', dot: '#e24b4a', title: 'Payroll has not been run for a due pay period' },
-  tax:     { bg: '#fdefdd', color: '#a05a06', dot: '#ef9f27', title: 'Tax deposits or filings are past due' },
+  tax:     { bg: '#fdecec', color: '#b4241f', dot: '#e24b4a', title: 'Payroll is current, but a tax deposit or filing is past due' },
   ok:      { bg: '#e9f5ec', color: '#1a7a3a', dot: '#2fb457', title: 'No overdue payroll or taxes' },
 };
 function StatusPill({ tone, label }) {
@@ -1327,7 +1327,7 @@ export default function Dashboard() {
                     </div>
                   </div>
 
-                  <div style={{ fontSize: 13, color: ps ? '#d97706' : 'var(--text-secondary)', fontWeight: ps ? 600 : 400 }}>
+                  <div style={{ fontSize: 13, color: ps ? (ps.cls === 'badge-error' ? '#b4241f' : '#d97706') : 'var(--text-secondary)', fontWeight: ps ? 600 : 400 }} title={ps ? (ps.cls === 'badge-error' ? 'Pay date is past — payroll overdue' : 'Pay date is coming up soon') : undefined}>
                     {client.nextPayDate ? fmtDate(client.nextPayDate) : '—'}
                   </div>
                   <div style={{ fontSize: 13, color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{client.depositSchedule || '—'}</div>
@@ -1336,12 +1336,11 @@ export default function Dashboard() {
                     {(() => {
                       const payrollOverdue = !!(ps && ps.cls === 'badge-error');
                       const taxOverdue = client.liabilityStatus === 'overdue';
-                      if (payrollOverdue || taxOverdue) {
-                        return <>
-                          {payrollOverdue && <StatusPill tone="payroll" label="Payroll overdue" />}
-                          {taxOverdue     && <StatusPill tone="tax"     label="Tax overdue" />}
-                        </>;
-                      }
+                      // Payroll must be run before its taxes can be deposited, so an
+                      // overdue payroll makes the tax flag redundant — show only the
+                      // upstream signal. Tax overdue surfaces once payroll is current.
+                      if (payrollOverdue) return <StatusPill tone="payroll" label="Payroll overdue" />;
+                      if (taxOverdue)     return <StatusPill tone="tax"     label="Tax overdue" />;
                       return client.nextPayDate
                         ? <StatusPill tone="ok" label="On track" />
                         : <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>—</span>;
