@@ -1162,6 +1162,7 @@ router.put('/:id', (req, res) => {
     bonus: bonusIn, commission: commissionIn, reimbursement: reimbursementIn,
     deduction: deductionIn, garnishment: garnishmentIn, reportedTips: reportedTipsIn,
     fitWithholdingOverride, ssWithholdingOverride, medicareWithholdingOverride,
+    employerSsOverride, employerMedicareOverride, futaOverride, sutaOverride,
   } = req.body;
 
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(stub.client_id);
@@ -1178,7 +1179,11 @@ router.put('/:id', (req, res) => {
     step4a !== undefined || step4b !== undefined || step4c !== undefined ||
     fitWithholdingOverride !== undefined ||
     ssWithholdingOverride !== undefined ||
-    medicareWithholdingOverride !== undefined;
+    medicareWithholdingOverride !== undefined ||
+    employerSsOverride !== undefined ||
+    employerMedicareOverride !== undefined ||
+    futaOverride !== undefined ||
+    sutaOverride !== undefined;
 
   const { quarter, year } = getTaxPeriod(payPeriodEnd || stub.pay_period_end);
 
@@ -1249,6 +1254,25 @@ router.put('/:id', (req, res) => {
       taxes.totalDeposit     = Math.round((taxes.totalDeposit + medDelta) * 100) / 100;
       taxes.netPay           = Math.round((taxes.netPay       - medDelta) * 100) / 100;
     }
+
+    // Employer-side (Company Summary) overrides. Employer FICA is part of the 941
+    // deposit but NOT the employee's net pay, so we adjust total_deposit only.
+    if (employerSsOverride !== undefined) {
+      const overrideErSS = parseFloat(employerSsOverride || 0);
+      const erSsDelta    = overrideErSS - taxes.employerSS;
+      taxes.employerSS   = overrideErSS;
+      taxes.totalDeposit = Math.round((taxes.totalDeposit + erSsDelta) * 100) / 100;
+    }
+    if (employerMedicareOverride !== undefined) {
+      const overrideErMed = parseFloat(employerMedicareOverride || 0);
+      const erMedDelta    = overrideErMed - taxes.employerMedicare;
+      taxes.employerMedicare = overrideErMed;
+      taxes.totalDeposit     = Math.round((taxes.totalDeposit + erMedDelta) * 100) / 100;
+    }
+    // FUTA (940) and SUTA (state) are separate filings — set directly, no deposit
+    // or net-pay impact.
+    if (futaOverride !== undefined) taxes.futaTax = parseFloat(futaOverride || 0);
+    if (sutaOverride !== undefined) taxes.sutaTax = parseFloat(sutaOverride || 0);
 
     const step3Credits =
       (parseInt(step3Children ?? stub.step3_children ?? 0, 10) * 2200) +

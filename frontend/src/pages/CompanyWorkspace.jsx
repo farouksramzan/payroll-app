@@ -1584,7 +1584,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
 
       return (
         <ModalOverlay onClose={closeWithFlush}>
-          <div className="card" style={{ width: 640, maxWidth: '95vw', maxHeight: '92vh', overflowY: 'auto', padding: 0, borderRadius: 12 }}>
+          <div className="card" style={{ width: 740, maxWidth: '96vw', maxHeight: '92vh', overflowY: 'auto', padding: 0, borderRadius: 12 }}>
             {/* Header */}
             <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
@@ -1612,12 +1612,13 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
               </div>
             </div>
 
-            {/* Body: Employee Summary + Company Summary, each with YTD column */}
-            <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--border)' }}>
+            {/* Body: Employee Summary | Company Summary side-by-side (matches the printed-check "Ali Faisal" format) */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
 
-              {/* Employee Summary */}
+              {/* Left — Employee Summary */}
+              <div style={{ padding: '18px 20px 0 24px', borderRight: '1px solid var(--border)' }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Employee Summary</div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 22 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
                     <th style={{ padding: '0 0 6px 0', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Item Name</th>
@@ -1655,11 +1656,12 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
                     editValue={row.fitOverride !== undefined ? row.fitOverride : (estFITCalc != null ? String(estFITCalc) : '')} onEditChange={v => setField('fitOverride', v)} />
                   <TR label="State Income Tax"       amount={dispStateTax ?? '—'}            ytdAmount={ytdWithCurrent.stateTax} negative={dispStateTax != null} color={dispStateTax != null && dispStateTax > 0 ? '#dc2626' : 'var(--text-muted)'}
                     editValue={row.stateOverride !== undefined ? row.stateOverride : (estStateTaxCalc != null ? String(estStateTaxCalc) : '')} onEditChange={v => setField('stateOverride', v)} />
-                  <TR label="Net Pay (est.)"         amount={estNetFull} ytdAmount={ytdWithCurrent.netPay}   color="#16a34a" bold borderTop />
                 </tbody>
               </table>
+              </div>
 
-              {/* Company Summary */}
+              {/* Right — Company Summary */}
+              <div style={{ padding: '18px 24px 0 20px' }}>
               <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Company Summary</div>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
@@ -1678,8 +1680,19 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
                     editValue={row.futaOverride !== undefined ? row.futaOverride : String(estFutaCalc)} onEditChange={v => setField('futaOverride', v)} />
                   <TR label="State Unemployment (est.)"    amount={dispSuta}  ytdAmount={ytdWithCurrent.suta}  color="var(--text-secondary)"
                     editValue={row.suiOverride !== undefined ? row.suiOverride : String(estSutaCalc)} onEditChange={v => setField('suiOverride', v)} />
+                  <TR label="Total Company Cost" amount={r2(dispErSS + dispErMed + dispFuta + dispSuta)}
+                    ytdAmount={r2((ytdWithCurrent.erSS||0)+(ytdWithCurrent.erMed||0)+(ytdWithCurrent.futa||0)+(ytdWithCurrent.suta||0))}
+                    bold borderTop color="var(--text-primary)" />
                 </tbody>
               </table>
+              </div>
+            </div>
+
+            {/* Check Amount (est.) — full-width banner, matches the printed-check modal */}
+            <div style={{ margin: '16px 24px 0', borderTop: '2px solid var(--border)' }} />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px 8px' }}>
+              <div style={{ fontSize: 15, fontWeight: 700 }}>Check Amount (est.)</div>
+              <div style={{ ...MODAL_MONO, fontSize: 22, fontWeight: 800, color: '#16a34a' }}>{fmt(estNetFull)}</div>
             </div>
             {/* Other Payroll Items */}
             {hiddenPendingItems.length > 0 && (
@@ -1770,6 +1783,11 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
     const [fitOverride, setFitOverride]     = useState(String(initialFit));
     const [ssOverride,  setSsOverride]      = useState(String(initialSS));
     const [medOverride, setMedOverride]     = useState(String(initialMed));
+    // Company Summary (employer taxes) are editable too — "all items ought to be editable".
+    const [erSsOverride,  setErSsOverride]  = useState(String(r2(stub.employer_ss       || 0)));
+    const [erMedOverride, setErMedOverride] = useState(String(r2(stub.employer_medicare || 0)));
+    const [futaOverride,  setFutaOverride]  = useState(String(r2(stub.futa_tax          || 0)));
+    const [sutaOverride,  setSutaOverride]  = useState(String(r2(stub.suta_tax          || 0)));
     const [itemForm, setItemForm]   = useState({
       reportedTips:  String(displayedTips       || ''),
       bonus:         String(stub.bonus          || ''),
@@ -1794,6 +1812,12 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
     const [fitManual,  setFitManual]  = useState(false);
     const [ssManual,   setSsManual]   = useState(false);
     const [medManual,  setMedManual]  = useState(false);
+    // Employer-tax manual pins — once the user edits a Company Summary field we
+    // stop auto-recomputing it from gross and always send it back on save.
+    const [erSsManual,  setErSsManual]  = useState(false);
+    const [erMedManual, setErMedManual] = useState(false);
+    const [futaManual,  setFutaManual]  = useState(false);
+    const [sutaManual,  setSutaManual]  = useState(false);
     // Live state income tax + additional Medicare (recomputed as gross changes) so
     // the modal's preview matches the backend even before the save round-trips.
     const [liveStateTax, setLiveStateTax] = useState(r2(stub.state_income_tax   || 0));
@@ -1804,6 +1828,8 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
     // after each save without needing to close/reopen the modal.
     const [committed, setCommitted] = useState({
       gross: String(initialGross), fit: String(initialFit), ss: String(initialSS), med: String(initialMed),
+      erSs: String(r2(stub.employer_ss || 0)), erMed: String(r2(stub.employer_medicare || 0)),
+      futa: String(r2(stub.futa_tax || 0)), suta: String(r2(stub.suta_tax || 0)),
       dateStart: stub.pay_period_start || '', dateEnd: stub.pay_period_end || '', datePayDate: stub.settlement_date || '',
       tips: String(displayedTips || ''), bonus: String(stub.bonus || ''), commission: String(stub.commission || ''),
       reimbursement: String(stub.reimbursement || ''), deduction: String(stub.deduction || ''), garnishment: String(stub.garnishment || ''),
@@ -1814,6 +1840,10 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
       parseFloat(fitOverride   || 0) !== parseFloat(committed.fit   || 0) ||
       parseFloat(ssOverride    || 0) !== parseFloat(committed.ss    || 0) ||
       parseFloat(medOverride   || 0) !== parseFloat(committed.med   || 0) ||
+      parseFloat(erSsOverride  || 0) !== parseFloat(committed.erSs  || 0) ||
+      parseFloat(erMedOverride || 0) !== parseFloat(committed.erMed || 0) ||
+      parseFloat(futaOverride  || 0) !== parseFloat(committed.futa  || 0) ||
+      parseFloat(sutaOverride  || 0) !== parseFloat(committed.suta  || 0) ||
       dateForm.start   !== committed.dateStart ||
       dateForm.end     !== committed.dateEnd   ||
       dateForm.payDate !== committed.datePayDate ||
@@ -1875,6 +1905,12 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
         if (fitManual || !taxBaseChanged) payload.fitWithholdingOverride      = parseFloat(fitOverride || 0);
         if (ssManual  || !taxBaseChanged) payload.ssWithholdingOverride       = parseFloat(ssOverride  || 0);
         if (medManual || !taxBaseChanged) payload.medicareWithholdingOverride = parseFloat(medOverride || 0);
+        // Employer-tax (Company Summary) overrides: same rule — send when the
+        // user pinned the field, or when the tax base didn't change (preserve).
+        if (erSsManual  || !taxBaseChanged) payload.employerSsOverride       = parseFloat(erSsOverride  || 0);
+        if (erMedManual || !taxBaseChanged) payload.employerMedicareOverride = parseFloat(erMedOverride || 0);
+        if (futaManual  || !taxBaseChanged) payload.futaOverride             = parseFloat(futaOverride  || 0);
+        if (sutaManual  || !taxBaseChanged) payload.sutaOverride             = parseFloat(sutaOverride  || 0);
         payload.reportedTips  = parseFloat(itemForm.reportedTips  || 0);
         payload.bonus         = parseFloat(itemForm.bonus         || 0);
         payload.commission    = parseFloat(itemForm.commission    || 0);
@@ -1893,6 +1929,10 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
           if (!fitManual) setFitOverride(String(r2(saved.fit_withholding   || 0)));
           if (!ssManual)  setSsOverride (String(r2(saved.employee_ss       || 0)));
           if (!medManual) setMedOverride(String(r2(saved.employee_medicare || 0)));
+          if (!erSsManual)  setErSsOverride (String(r2(saved.employer_ss       || 0)));
+          if (!erMedManual) setErMedOverride(String(r2(saved.employer_medicare || 0)));
+          if (!futaManual)  setFutaOverride (String(r2(saved.futa_tax          || 0)));
+          if (!sutaManual)  setSutaOverride (String(r2(saved.suta_tax          || 0)));
           setLiveStateTax(r2(saved.state_income_tax   || 0));
           setLiveAddlMed (r2(saved.additional_medicare || 0));
         }
@@ -1903,6 +1943,10 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
           fit:  saved && !fitManual ? String(r2(saved.fit_withholding   || 0)) : fitOverride,
           ss:   saved && !ssManual  ? String(r2(saved.employee_ss       || 0)) : ssOverride,
           med:  saved && !medManual ? String(r2(saved.employee_medicare || 0)) : medOverride,
+          erSs:  saved && !erSsManual  ? String(r2(saved.employer_ss       || 0)) : erSsOverride,
+          erMed: saved && !erMedManual ? String(r2(saved.employer_medicare || 0)) : erMedOverride,
+          futa:  saved && !futaManual  ? String(r2(saved.futa_tax          || 0)) : futaOverride,
+          suta:  saved && !sutaManual  ? String(r2(saved.suta_tax          || 0)) : sutaOverride,
           dateStart: dateForm.start, dateEnd: dateForm.end, datePayDate: dateForm.payDate,
           tips: itemForm.reportedTips, bonus: itemForm.bonus, commission: itemForm.commission,
           reimbursement: itemForm.reimbursement, deduction: itemForm.deduction, garnishment: itemForm.garnishment,
@@ -1934,6 +1978,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
       return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [grossOverride, fitOverride, ssOverride, medOverride,
+        erSsOverride, erMedOverride, futaOverride, sutaOverride,
         dateForm.start, dateForm.end, dateForm.payDate,
         itemForm.reportedTips, itemForm.bonus, itemForm.commission,
         itemForm.reimbursement, itemForm.deduction, itemForm.garnishment]);
@@ -1980,6 +2025,10 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
       if (isVoided || liveGross === prev) return; // nothing changed yet
       if (!ssManual)  setSsOverride(String(r2(liveGross * 0.062)));
       if (!medManual) setMedOverride(String(r2(liveGross * 0.0145)));
+      // Employer SS/Medicare match the employee side (same rate). FUTA/SUTA
+      // depend on wage-base caps, so the backend recomputes those on save.
+      if (!erSsManual)  setErSsOverride(String(r2(liveGross * 0.062)));
+      if (!erMedManual) setErMedOverride(String(r2(liveGross * 0.0145)));
       if (liveGross > 0) {
         // Recompute FIT (unless manually pinned) plus state income tax and
         // additional Medicare from the new gross, so the live preview matches
@@ -2036,10 +2085,18 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
     const hiddenItems = [...optionalEarnings, ...optionalDeductions].filter(x => !addedItems.has(x.key));
 
     const employerRows = [
-      { label: 'SS Match (Company)',       amount: stub.employer_ss      || 0, ytd: ytd.erSS   ?? 0 },
-      { label: 'Medicare Match (Company)', amount: stub.employer_medicare || 0, ytd: ytd.erMed  ?? 0 },
-      { label: 'Federal Unemployment',     amount: stub.futa_tax         || 0, ytd: ytd.futa },
-      { label: `${stub.work_state || 'State'} Unemployment`, amount: stub.suta_tax || 0, ytd: ytd.suta },
+      { label: 'SS Match (Company)',       amount: parseFloat(erSsOverride  || 0), ytd: ytd.erSS   ?? 0,
+        editValue: canEdit ? erSsOverride  : undefined,
+        onEditChange: canEdit ? (v => { setErSsManual(true);  setErSsOverride(v);  }) : undefined },
+      { label: 'Medicare Match (Company)', amount: parseFloat(erMedOverride || 0), ytd: ytd.erMed  ?? 0,
+        editValue: canEdit ? erMedOverride : undefined,
+        onEditChange: canEdit ? (v => { setErMedManual(true); setErMedOverride(v); }) : undefined },
+      { label: 'Federal Unemployment',     amount: parseFloat(futaOverride  || 0), ytd: ytd.futa,
+        editValue: canEdit ? futaOverride  : undefined,
+        onEditChange: canEdit ? (v => { setFutaManual(true);  setFutaOverride(v);  }) : undefined },
+      { label: `${stub.work_state || 'State'} Unemployment`, amount: parseFloat(sutaOverride || 0), ytd: ytd.suta,
+        editValue: canEdit ? sutaOverride : undefined,
+        onEditChange: canEdit ? (v => { setSutaManual(true); setSutaOverride(v); }) : undefined },
     ];
     const employerTotal = r2(employerRows.reduce((s, r) => s + r.amount, 0));
     const employerYTD   = r2(employerRows.reduce((s, r) => s + (r.ytd || 0), 0));
@@ -2109,7 +2166,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <ColHeader hasYTD={true} />
                 <tbody>
-                  {employerRows.map(r => <TR key={r.label} label={r.label} amount={r.amount} ytdAmount={r.ytd} />)}
+                  {employerRows.map(r => <TR key={r.label} label={r.label} amount={r.amount} ytdAmount={r.ytd} editValue={r.editValue} onEditChange={r.onEditChange} />)}
                   <TR label="Total Company Cost" amount={employerTotal} ytdAmount={employerYTD} bold borderTop color="var(--text-primary)" />
                 </tbody>
               </table>
@@ -2123,12 +2180,23 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
             <div style={{ ...MODAL_MONO, fontSize: 22, fontWeight: 800, color: '#16a34a' }}>{fmt(liveNetPay)}</div>
           </div>
           <div style={{ display: 'flex', gap: 0, margin: '12px 24px 0', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
-            {[
-              { label: '941 Tax Deposit', value: fmt(stub.total_deposit || 0) },
-              { label: '940 FUTA',        value: fmt(stub.futa_tax      || 0) },
-              { label: 'State SUI',       value: fmt(stub.suta_tax      || 0) },
-              { label: 'Total Tax Costs', value: fmt(r2((stub.total_deposit || 0) + (stub.futa_tax || 0) + (stub.suta_tax || 0))), accent: true },
-            ].map(({ label, value, accent }, i, arr) => (
+            {(() => {
+              // 941 deposit = employee FIT + SS + Med (+ addl med) + employer SS + Med,
+              // computed live from the current overrides so the bar matches the
+              // Company Summary edits before the autosave round-trips.
+              const live941 = r2(
+                parseFloat(fitOverride || 0) + parseFloat(ssOverride || 0) + parseFloat(medOverride || 0)
+                + liveAddlMed + parseFloat(erSsOverride || 0) + parseFloat(erMedOverride || 0)
+              );
+              const liveFuta = parseFloat(futaOverride || 0);
+              const liveSuta = parseFloat(sutaOverride || 0);
+              return [
+                { label: '941 Tax Deposit', value: fmt(live941) },
+                { label: '940 FUTA',        value: fmt(liveFuta) },
+                { label: 'State SUI',       value: fmt(liveSuta) },
+                { label: 'Total Tax Costs', value: fmt(r2(live941 + liveFuta + liveSuta)), accent: true },
+              ];
+            })().map(({ label, value, accent }, i, arr) => (
               <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none', background: accent ? 'var(--accent-light)' : undefined }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
                 <div style={{ ...MODAL_MONO, fontSize: 14, fontWeight: 800, color: accent ? 'var(--accent)' : 'var(--text-primary)' }}>{value}</div>
