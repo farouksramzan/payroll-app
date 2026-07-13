@@ -1370,6 +1370,878 @@ function ModalOverlay({ children, onClose }) {
 }
 
 // ── Pay Employees Tab ─────────────────────────────────────────────────────────
+
+function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, calcEmpYTD, ppy, pendingRows, setPendingRows, getRow, skipPending, periodOverrides, setPeriodOverrides }) {
+    if (!rowData) return null;
+
+    // Use module-scope stable components (ModalTR, ModalColHeader, ModalOverlay)
+    // so React never remounts inputs on re-renders (which would kill focus).
+    const TR = ModalTR;
+    const ColHeader = ModalColHeader;
+
+    // ── Pending row ──────────────────────────────────────────────────────────────
+    if (rowData.type === 'pending') {
+      const { period, emp } = rowData;
+      // Buffer edits in LOCAL state and flush to the shared pendingRows on
+      // save/close. Writing to pendingRows on every keystroke re-renders the
+      // parent table, which remounts this modal and steals input focus — and it
+      // also made the Save button unable to track tax edits. `row` now points at
+      // the local buffer so all existing reads work unchanged.
+      const savedRow = getRow(period.end, emp.id);
+      const [localRow, setLocalRow] = useState(() => ({ ...savedRow }));
+      const initialRowRef = useRef(savedRow);
+      const row = localRow;
+      const setField = (field, v) => setLocalRow(r => ({ ...r, [field]: v }));
+      const flushLocal = () => setPendingRows(prev => ({
+        ...prev,
+        [period.end]: { ...(prev[period.end] || {}), [emp.id]: { ...((prev[period.end] || {})[emp.id] || {}), ...localRow } },
+      }));
+      const closeWithFlush = () => { flushLocal(); onClose(); };
+      const isSalary = emp.payType === 'salary';
+      const salAmt   = r2((emp.annualSalary || 0) / ppy);
+      const rate     = parseFloat(row.rate) || emp.hourlyRate || 0;
+      const regH     = parseFloat(row.regHours || 0);
+      const otH      = parseFloat(row.otHours  || 0);
+      const regPay   = isSalary ? salAmt : r2(regH * rate);
+      const otPay    = isSalary ? 0 : r2(otH * rate * 1.5);
+      const gross    = r2(regPay + otPay);
+      const ytd      = calcEmpYTD(emp.id, null);
+
+      // Editable dates for pending rows (stored as overrides, used when payroll is run)
+      const ov = periodOverrides[period.end] || {};
+      const [dateForm, setDateForm] = useState({ start: ov.start || period.start || '', end: ov.end || period.end || '', payDate: ov.payDate || period.payDate || '' });
+      const committedDateRef = useRef({ start: ov.start || period.start || '', end: ov.end || period.end || '', payDate: ov.payDate || period.payDate || '' });
+      const dateDirty = JSON.stringify(dateForm) !== JSON.stringify(committedDateRef.current);
+      const overridesDirty = JSON.stringify(localRow) !== JSON.stringify(initialRowRef.current);
+      const pendingDirty = dateDirty || overridesDirty;
+
+      // Autosave pending edits (tax/earning overrides + dates) — flush to the shared
+      // pending state on a debounce so they persist like the printed-check modal.
+      // Safe because CheckDetailModal is now a top-level component that doesn't
+      // remount when the parent re-renders on flush.
+      const [pendSaveStatus, setPendSaveStatus] = useState('idle');
+      const pendSaveTimerRef = useRef(null);
+      const pendStatusTimerRef = useRef(null);
+      function savePending() {
+        flushLocal();
+        setPeriodOverrides(prev => ({ ...prev, [period.end]: { start: dateForm.start, end: dateForm.end, payDate: dateForm.payDate } }));
+        initialRowRef.current = { ...localRow };
+        committedDateRef.current = { ...dateForm };
+        setPendSaveStatus('saved');
+        if (pendStatusTimerRef.current) clearTimeout(pendStatusTimerRef.current);
+        pendStatusTimerRef.current = setTimeout(() => setPendSaveStatus('idle'), 2000);
+      }
+      useEffect(() => {
+        if (!pendingDirty) return;
+        if (pendSaveTimerRef.current) clearTimeout(pendSaveTimerRef.current);
+        setPendSaveStatus('saving');
+        pendSaveTimerRef.current = setTimeout(() => savePending(), 800);
+        return () => { if (pendSaveTimerRef.current) clearTimeout(pendSaveTimerRef.current); };
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [JSON.stringify(localRow), JSON.stringify(dateForm)]);
+
+      const pendingItemDefs = [
+        { field: 'tips',        label: 'Reported Tips',           hint: 'taxable',     isDeduction: false },
+        { field: 'bonus',       label: 'Bonus',                   hint: 'taxable',     isDeduction: false },
+        { field: 'commission',  label: 'Commission',              hint: 'taxable',     isDeduction: false },
+        { field: 'mileage',     label: 'Mileage / Reimbursement', hint: 'non-taxable', isDeduction: false },
+        { field: 'cashAdvance', label: 'Cash Advance',            hint: 'deduction',   isDeduction: true  },
+      ];
+      const [addedPendingItems, setAddedPendingItems] = useState(() => {
+        const s = new Set();
+        if (parseFloat(row.tips        || 0) > 0) s.add('tips');
+        if (parseFloat(row.bonus       || 0) > 0) s.add('bonus');
+        if (parseFloat(row.commission  || 0) > 0) s.add('commission');
+        if (parseFloat(row.mileage     || 0) > 0) s.add('mileage');
+        if (parseFloat(row.cashAdvance || 0) > 0) s.add('cashAdvance');
+        return s;
+      });
+      const [pendingOtherOpen, setPendingOtherOpen] = useState(false);
+      const addedPendingEarnings  = pendingItemDefs.filter(x => !x.isDeduction && addedPendingItems.has(x.field));
+      const hiddenPendingItems    = pendingItemDefs.filter(x => !addedPendingItems.has(x.field));
+      const liveGross  = r2(regPay + otPay + addedPendingEarnings.reduce((s, x) => s + parseFloat(row[x.field] || 0), 0));
+      const estSSCalc  = r2(liveGross * EE_SS_RATE);
+      const estMedCalc = r2(liveGross * EE_MEDICARE_RATE);
+      const estCashAdv = addedPendingItems.has('cashAdvance') ? parseFloat(row.cashAdvance || 0) : 0;
+      // Override values (user-editable) — fall back to calculated estimates
+      const dispSS     = row.ssOverride    !== undefined ? parseFloat(row.ssOverride    || 0) : estSSCalc;
+      const dispMed    = row.medOverride   !== undefined ? parseFloat(row.medOverride   || 0) : estMedCalc;
+      const dispErSS   = row.erSsOverride  !== undefined ? parseFloat(row.erSsOverride  || 0) : r2(liveGross * EE_SS_RATE);
+      const dispErMed  = row.erMedOverride !== undefined ? parseFloat(row.erMedOverride || 0) : r2(liveGross * EE_MEDICARE_RATE);
+      const estNet     = r2(liveGross - dispSS - dispMed - estCashAdv);
+      // Employer estimates
+      const estFutaTaxable = Math.max(0, Math.min(liveGross, 7000 - ytd.gross));
+      const estFutaCalc= r2(estFutaTaxable * 0.006);
+      const curQtr     = Math.ceil((new Date().getMonth() + 1) / 3);
+      const suiRateEst = [client?.suiRateQ1, client?.suiRateQ2, client?.suiRateQ3, client?.suiRateQ4][curQtr - 1] ?? 0.027;
+      const estSutaTaxable = Math.max(0, Math.min(liveGross, 9000 - ytd.gross));
+      const estSutaCalc= r2(estSutaTaxable * suiRateEst);
+      const dispFuta   = row.futaOverride !== undefined ? parseFloat(row.futaOverride || 0) : estFutaCalc;
+      const dispSuta   = row.suiOverride  !== undefined ? parseFloat(row.suiOverride  || 0) : estSutaCalc;
+
+      // Live federal + state tax estimate via calculate API
+      const [liveCalc, setLiveCalc] = useState(null);
+      useEffect(() => {
+        if (liveGross <= 0) { setLiveCalc(null); return; }
+        const payFreqStr = ppy === 52 ? 'weekly' : ppy === 26 ? 'biweekly' : ppy === 24 ? 'semimonthly' : 'monthly';
+        api.calculate({
+          grossWages: liveGross,
+          payFrequency: payFreqStr,
+          filingStatus: emp.filingStatus || 'single',
+          step2Checkbox: emp.step2Checkbox || false,
+          step3Children: emp.step3Children || 0,
+          step3Other: emp.step3Other || 0,
+          step4a: emp.step4a || 0,
+          step4b: emp.step4b || 0,
+          step4c: emp.step4c || 0,
+          workState: emp.workState || 'TX',
+          ytdGross: ytd.gross,
+          sutaRate: suiRateEst,
+        }).then(r => setLiveCalc(r)).catch(() => setLiveCalc(null));
+      }, [liveGross]);
+
+      const estFITCalc   = liveCalc?.fitWithholding  ?? null;
+      const estStateTaxCalc = liveCalc?.stateIncomeTax  ?? null;
+      const dispFIT      = row.fitOverride   !== undefined ? parseFloat(row.fitOverride   || 0) : estFITCalc;
+      const dispStateTax = row.stateOverride !== undefined ? parseFloat(row.stateOverride || 0) : estStateTaxCalc;
+      const estNetFull  = (dispFIT != null && dispStateTax != null)
+        ? r2(liveGross - dispFIT - dispSS - dispMed - dispStateTax - estCashAdv)
+        : (liveCalc != null
+          ? r2(liveGross - (liveCalc.fitWithholding || 0) - dispSS - dispMed - (liveCalc.stateIncomeTax || 0) - estCashAdv)
+          : estNet);
+
+      // Sum estimates from ALL OTHER pending periods for this employee
+      // (current period is added separately below via liveGross / disp* values)
+      const otherPendingTotals = Object.entries(pendingRows).reduce((acc, [pEnd, empMap]) => {
+        if (pEnd === period.end) return acc; // skip current period — handled by liveGross
+        const r2emp = empMap[String(emp.id)] || empMap[emp.id];
+        if (!r2emp) return acc;
+        const eIsSalary = emp.payType === 'salary';
+        const eRate     = parseFloat(r2emp.rate) || emp.hourlyRate || 0;
+        const eRegH     = parseFloat(r2emp.regHours || 0);
+        const eOtH      = parseFloat(r2emp.otHours  || 0);
+        const eReg      = eIsSalary ? r2((emp.annualSalary || 0) / ppy) : r2(eRegH * eRate);
+        const eOt       = eIsSalary ? 0 : r2(eOtH * eRate * 1.5);
+        const eTips     = parseFloat(r2emp.tips       || 0);
+        const eBonus    = parseFloat(r2emp.bonus      || 0);
+        const eComm     = parseFloat(r2emp.commission || 0);
+        const eGross    = r2(eReg + eOt + eTips + eBonus + eComm);
+        const eSS       = r2emp.ssOverride    !== undefined ? parseFloat(r2emp.ssOverride    || 0) : r2(eGross * EE_SS_RATE);
+        const eMed      = r2emp.medOverride   !== undefined ? parseFloat(r2emp.medOverride   || 0) : r2(eGross * EE_MEDICARE_RATE);
+        const eFIT      = r2emp.fitOverride   !== undefined ? parseFloat(r2emp.fitOverride   || 0) : 0;
+        const eState    = r2emp.stateOverride !== undefined ? parseFloat(r2emp.stateOverride || 0) : 0;
+        const eCashAdv  = parseFloat(r2emp.cashAdvance  || 0);
+        const eErSS     = r2emp.erSsOverride  !== undefined ? parseFloat(r2emp.erSsOverride  || 0) : r2(eGross * EE_SS_RATE);
+        const eErMed    = r2emp.erMedOverride !== undefined ? parseFloat(r2emp.erMedOverride || 0) : r2(eGross * EE_MEDICARE_RATE);
+        const eRunningGross = acc.gross + ytd.gross;
+        const eFutaTaxable  = Math.max(0, Math.min(eGross, 7000 - eRunningGross));
+        const eSutaTaxable  = Math.max(0, Math.min(eGross, 9000 - eRunningGross));
+        const eFuta     = r2emp.futaOverride !== undefined ? parseFloat(r2emp.futaOverride || 0) : r2(eFutaTaxable * 0.006);
+        const eSuta     = r2emp.suiOverride  !== undefined ? parseFloat(r2emp.suiOverride  || 0) : r2(eSutaTaxable * suiRateEst);
+        const eNet      = r2(eGross - eSS - eMed - eFIT - eState - eCashAdv);
+        return {
+          gross:      r2(acc.gross      + eGross),
+          eeSS:       r2(acc.eeSS      + eSS),
+          eeMed:      r2(acc.eeMed     + eMed),
+          fit:        r2(acc.fit       + eFIT),
+          stateTax:   r2(acc.stateTax  + eState),
+          netPay:     r2(acc.netPay    + eNet),
+          erSS:       r2(acc.erSS      + eErSS),
+          erMed:      r2(acc.erMed     + eErMed),
+          futa:       r2(acc.futa      + eFuta),
+          suta:       r2(acc.suta      + eSuta),
+          regPay:     r2(acc.regPay    + eReg),
+          otPay:      r2(acc.otPay     + eOt),
+          tips:       r2(acc.tips      + eTips),
+          bonus:      r2(acc.bonus     + eBonus),
+          commission: r2(acc.commission + eComm),
+        };
+      }, { gross: 0, eeSS: 0, eeMed: 0, fit: 0, stateTax: 0, netPay: 0, erSS: 0, erMed: 0, futa: 0, suta: 0, regPay: 0, otPay: 0, tips: 0, bonus: 0, commission: 0 });
+
+      // Current-period per-type values
+      const curTips     = parseFloat(row.tips       || 0);
+      const curBonus    = parseFloat(row.bonus      || 0);
+      const curComm     = parseFloat(row.commission || 0);
+
+      // YTD = printed checks + all other pending periods + this period
+      const ytdWithCurrent = {
+        gross:      r2(ytd.gross      + otherPendingTotals.gross      + liveGross),
+        eeSS:       r2(ytd.eeSS      + otherPendingTotals.eeSS      + dispSS),
+        eeMed:      r2(ytd.eeMed     + otherPendingTotals.eeMed     + dispMed),
+        fit:        r2(ytd.fit       + otherPendingTotals.fit       + (dispFIT      ?? 0)),
+        stateTax:   r2(ytd.stateTax  + otherPendingTotals.stateTax  + (dispStateTax ?? 0)),
+        netPay:     r2(ytd.netPay    + otherPendingTotals.netPay    + estNetFull),
+        erSS:       r2(ytd.erSS      + otherPendingTotals.erSS      + dispErSS),
+        erMed:      r2(ytd.erMed     + otherPendingTotals.erMed     + dispErMed),
+        futa:       r2(ytd.futa      + otherPendingTotals.futa      + dispFuta),
+        suta:       r2(ytd.suta      + otherPendingTotals.suta      + dispSuta),
+        regPay:     r2(ytd.regPay    + otherPendingTotals.regPay    + regPay),
+        otPay:      r2(ytd.otPay     + otherPendingTotals.otPay     + otPay),
+        tips:       r2(ytd.tips      + otherPendingTotals.tips      + curTips),
+        bonus:      r2(ytd.bonus     + otherPendingTotals.bonus     + curBonus),
+        commission: r2(ytd.commission + otherPendingTotals.commission + curComm),
+      };
+
+      return (
+        <ModalOverlay onClose={closeWithFlush}>
+          <div className="card" style={{ width: 640, maxWidth: '95vw', maxHeight: '92vh', overflowY: 'auto', padding: 0, borderRadius: 12 }}>
+            {/* Header */}
+            <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                <div>
+                  <div style={{ fontWeight: 800, fontSize: 20 }}>{emp.firstName} {emp.lastName}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                    {isSalary ? 'Salary' : 'Hourly'} · {period.isLate ? <span style={{ color: '#dc2626', fontWeight: 700 }}>LATE</span> : 'Pending'}
+                  </div>
+                </div>
+                <button onClick={closeWithFlush} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+              </div>
+              {/* Pay period strip — editable */}
+              <div style={{ display: 'flex', marginTop: 14, borderRadius: 8, overflow: 'hidden', border: `1px solid ${pendingDirty ? 'var(--accent)' : 'var(--border)'}`, background: 'var(--bg-secondary)', transition: 'border-color 0.15s' }}>
+                {[
+                  { label: 'Period Start', key: 'start' },
+                  { label: 'Period End',   key: 'end'   },
+                  { label: 'Pay Date',     key: 'payDate' },
+                ].map(({ label, key }, i, arr) => (
+                  <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
+                    <input type="date" value={dateForm[key]} onChange={e => setDateForm(f => ({ ...f, [key]: e.target.value }))}
+                      style={{ ...MODAL_MONO, fontSize: 13, fontWeight: 600, background: 'transparent', border: 'none', outline: 'none', width: '100%', color: dateForm[key] !== (key === 'start' ? period.start : key === 'end' ? period.end : period.payDate) ? 'var(--accent)' : period.isLate && key === 'payDate' ? '#dc2626' : 'var(--text-primary)', cursor: 'pointer' }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Body: Employee Summary + Company Summary, each with YTD column */}
+            <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--border)' }}>
+
+              {/* Employee Summary */}
+              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Employee Summary</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 22 }}>
+                <thead>
+                  <tr>
+                    <th style={{ padding: '0 0 6px 0', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Item Name</th>
+                    <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Amount</th>
+                    <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>YTD</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {isSalary
+                    ? <TR label="Salary / Period" amount={salAmt} ytdAmount={ytdWithCurrent.regPay} color="var(--accent)" />
+                    : <>
+                        <TR label="Hourly Rate" amount={rate} ytdAmount={null} color="var(--accent)"
+                          editValue={row.rate !== undefined ? String(row.rate) : String(emp.hourlyRate || '')}
+                          onEditChange={v => setField('rate', v)}
+                          editSuffix="/hr" noDollarSign={false} />
+                        <TR label={`Reg Hours @ $${rate % 1 === 0 ? rate : rate.toFixed(2)} /hr`} amount={regPay} ytdAmount={ytdWithCurrent.regPay} color="var(--accent)" />
+                        {otPay > 0 && <TR label={`OT Hours @ $${(rate * 1.5) % 1 === 0 ? (rate * 1.5) : (rate * 1.5).toFixed(2)} /hr`} amount={otPay} ytdAmount={ytdWithCurrent.otPay} color="var(--accent)" />}
+                      </>
+                  }
+                  {addedPendingEarnings.map(item => (
+                    <TR key={item.field} label={item.label} amount={parseFloat(row[item.field] || 0)}
+                      ytdAmount={ytdWithCurrent[item.field] ?? null} color="var(--accent)"
+                      editValue={row[item.field] || ''} onEditChange={v => setField(item.field, v)} />
+                  ))}
+                  <TR label="Gross Pay"            amount={liveGross}    ytdAmount={ytdWithCurrent.gross}    color="var(--accent)" bold borderTop />
+                  {addedPendingItems.has('cashAdvance') && (
+                    <TR label="Cash Advance"       amount={parseFloat(row.cashAdvance || 0)} ytdAmount={null} negative color="#dc2626"
+                      editValue={row.cashAdvance || ''} onEditChange={v => setField('cashAdvance', v)} />
+                  )}
+                  <TR label="Social Security (est.)" amount={dispSS}  ytdAmount={ytdWithCurrent.eeSS}     negative color="#dc2626"
+                    editValue={row.ssOverride !== undefined ? row.ssOverride : String(estSSCalc)} onEditChange={v => setField('ssOverride', v)} />
+                  <TR label="Medicare (est.)"        amount={dispMed} ytdAmount={ytdWithCurrent.eeMed}    negative color="#dc2626"
+                    editValue={row.medOverride !== undefined ? row.medOverride : String(estMedCalc)} onEditChange={v => setField('medOverride', v)} />
+                  <TR label="Federal Income Tax"     amount={dispFIT      ?? 'calculating…'} ytdAmount={ytdWithCurrent.fit}      negative={dispFIT != null}      color={dispFIT != null && dispFIT > 0 ? '#dc2626' : 'var(--text-muted)'}
+                    editValue={row.fitOverride !== undefined ? row.fitOverride : (estFITCalc != null ? String(estFITCalc) : '')} onEditChange={v => setField('fitOverride', v)} />
+                  <TR label="State Income Tax"       amount={dispStateTax ?? '—'}            ytdAmount={ytdWithCurrent.stateTax} negative={dispStateTax != null} color={dispStateTax != null && dispStateTax > 0 ? '#dc2626' : 'var(--text-muted)'}
+                    editValue={row.stateOverride !== undefined ? row.stateOverride : (estStateTaxCalc != null ? String(estStateTaxCalc) : '')} onEditChange={v => setField('stateOverride', v)} />
+                  <TR label="Net Pay (est.)"         amount={estNetFull} ytdAmount={ytdWithCurrent.netPay}   color="#16a34a" bold borderTop />
+                </tbody>
+              </table>
+
+              {/* Company Summary */}
+              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Company Summary</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <thead>
+                  <tr>
+                    <th style={{ padding: '0 0 6px 0', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Item Name</th>
+                    <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Amount</th>
+                    <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>YTD</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <TR label="SS Match (est.)"              amount={dispErSS}  ytdAmount={ytdWithCurrent.erSS}  color="var(--text-secondary)"
+                    editValue={row.erSsOverride !== undefined ? row.erSsOverride : String(r2(liveGross * EE_SS_RATE))} onEditChange={v => setField('erSsOverride', v)} />
+                  <TR label="Medicare Match (est.)"        amount={dispErMed} ytdAmount={ytdWithCurrent.erMed} color="var(--text-secondary)"
+                    editValue={row.erMedOverride !== undefined ? row.erMedOverride : String(r2(liveGross * EE_MEDICARE_RATE))} onEditChange={v => setField('erMedOverride', v)} />
+                  <TR label="Federal Unemployment (est.)"  amount={dispFuta}  ytdAmount={ytdWithCurrent.futa}  color="var(--text-secondary)"
+                    editValue={row.futaOverride !== undefined ? row.futaOverride : String(estFutaCalc)} onEditChange={v => setField('futaOverride', v)} />
+                  <TR label="State Unemployment (est.)"    amount={dispSuta}  ytdAmount={ytdWithCurrent.suta}  color="var(--text-secondary)"
+                    editValue={row.suiOverride !== undefined ? row.suiOverride : String(estSutaCalc)} onEditChange={v => setField('suiOverride', v)} />
+                </tbody>
+              </table>
+            </div>
+            {/* Other Payroll Items */}
+            {hiddenPendingItems.length > 0 && (
+              <div style={{ margin: '0 24px', borderTop: '1px solid var(--border)', paddingTop: 10, paddingBottom: 6 }}>
+                <button type="button" onClick={() => setPendingOtherOpen(o => !o)}
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {pendingOtherOpen ? '▴' : '▾'} Other Payroll Items
+                </button>
+                {pendingOtherOpen && (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                    {hiddenPendingItems.map(item => (
+                      <button key={item.field} type="button"
+                        onClick={() => { setAddedPendingItems(prev => new Set([...prev, item.field])); setPendingOtherOpen(false); }}
+                        style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-secondary)', cursor: 'pointer', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                        + {item.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Save date overrides footer */}
+            <div style={{ position: 'sticky', bottom: 0, background: '#fff', borderTop: '2px solid var(--border)', padding: '12px 24px', display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'center', boxShadow: '0 -2px 10px rgba(0,0,0,0.07)', zIndex: 10 }}>
+              <button
+                onClick={() => {
+                  if (!window.confirm(`Remove ${emp.fullName} from this pay run? They can be added back by refreshing.`)) return;
+                  skipPending(period.end, emp.id);
+                  onClose();
+                }}
+                style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', marginRight: 'auto' }}>
+                🗑 Remove
+              </button>
+              <button className="btn btn-ghost" onClick={closeWithFlush} style={{ fontSize: 13 }}>Close</button>
+              {/* Autosave status — pending edits save automatically */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 110, justifyContent: 'flex-end' }}>
+                {pendSaveStatus === 'saving' && (
+                  <span style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span className="spinner" style={{ width: 13, height: 13 }} /> Saving…
+                  </span>
+                )}
+                {pendSaveStatus === 'saved' && (
+                  <span style={{ fontSize: 13, color: '#16a34a', fontWeight: 600 }}>✓ Saved</span>
+                )}
+                {pendSaveStatus === 'idle' && pendingDirty && (
+                  <span style={{ fontSize: 12, color: '#f59e0b', fontWeight: 500 }}>Unsaved…</span>
+                )}
+              </div>
+            </div>
+          </div>
+        </ModalOverlay>
+      );
+    }
+
+    // ── History (printed/deposited) row ──────────────────────────────────────────
+    // stub is LOCAL state: after an autosave we update it here (setStub) instead of
+    // reloading the parent's paystub list — reloading re-renders PayEmployeesTab,
+    // which remounts this modal and steals input focus. The parent table is
+    // refreshed once, on close, via onClose (which calls reloadStubs).
+    const [stub, setStub] = useState(rowData.stub);
+    const savedSinceOpenRef = useRef(false);
+    const isVoided = stub.check_status === 'voided';
+    const [checkDesign, setCheckDesign] = useState(() => localStorage.getItem('checkDesign') || 'classic');
+    const ytd = calcEmpYTD(stub.employee_id, stub.pay_period_end);
+
+    // Editable date / gross / other payroll items state (hooks must be at top of history branch)
+    const lineItemsList = stub.lineItems || [];
+    const displayedTips = stub.reported_tips || lineItemsList.filter(li => li.pay_type === 'tips').reduce((s, li) => s + (li.amount || 0), 0);
+    // initialGross = base compensation derived ALWAYS from stub.gross_wages so that
+    // liveGross = initialGross + OT + tips + bonus + commission = stub.gross_wages exactly.
+    // This is the only formula that guarantees the modal's Check Amount matches the
+    // inline net pay cell (both computed from the same gross_wages).
+    const initialGross  = r2(
+      Math.max(0,
+        (stub.gross_wages    || 0)
+        - (stub.overtime_pay || 0)
+        - (displayedTips     || 0)
+        - (stub.bonus        || 0)
+        - (stub.commission   || 0)
+      )
+    );
+    const initialFit    = r2(stub.fit_withholding    || 0);
+    const initialSS     = r2(stub.employee_ss        || 0);
+    const initialMed    = r2(stub.employee_medicare  || 0);
+
+    const [dateForm, setDateForm]     = useState({ start: stub.pay_period_start || '', end: stub.pay_period_end || '', payDate: stub.settlement_date || '' });
+    const [grossOverride, setGrossOverride] = useState(String(initialGross));
+    const [fitOverride, setFitOverride]     = useState(String(initialFit));
+    const [ssOverride,  setSsOverride]      = useState(String(initialSS));
+    const [medOverride, setMedOverride]     = useState(String(initialMed));
+    const [itemForm, setItemForm]   = useState({
+      reportedTips:  String(displayedTips       || ''),
+      bonus:         String(stub.bonus          || ''),
+      commission:    String(stub.commission     || ''),
+      reimbursement: String(stub.reimbursement  || ''),
+      deduction:     String(stub.deduction      || ''),
+      garnishment:   String(stub.garnishment    || ''),
+    });
+    const [addedItems, setAddedItems] = useState(() => {
+      const s = new Set();
+      if (displayedTips      > 0) s.add('reportedTips');
+      if (stub.bonus         > 0) s.add('bonus');
+      if (stub.commission    > 0) s.add('commission');
+      if (stub.reimbursement > 0) s.add('reimbursement');
+      if (stub.deduction     > 0) s.add('deduction');
+      if (stub.garnishment   > 0) s.add('garnishment');
+      return s;
+    });
+    const [otherOpen, setOtherOpen] = useState(false);
+    // Track whether user has manually overridden each tax field so auto-estimates
+    // don't overwrite explicit user input (and so we know when to pin to the DB).
+    const [fitManual,  setFitManual]  = useState(false);
+    const [ssManual,   setSsManual]   = useState(false);
+    const [medManual,  setMedManual]  = useState(false);
+    // Live state income tax + additional Medicare (recomputed as gross changes) so
+    // the modal's preview matches the backend even before the save round-trips.
+    const [liveStateTax, setLiveStateTax] = useState(r2(stub.state_income_tax   || 0));
+    const [liveAddlMed,  setLiveAddlMed]  = useState(r2(stub.additional_medicare || 0));
+
+    // "committed" = the values as of the last successful save (initially = DB values).
+    // isDirty compares current form state against committed so autosave resets correctly
+    // after each save without needing to close/reopen the modal.
+    const [committed, setCommitted] = useState({
+      gross: String(initialGross), fit: String(initialFit), ss: String(initialSS), med: String(initialMed),
+      dateStart: stub.pay_period_start || '', dateEnd: stub.pay_period_end || '', datePayDate: stub.settlement_date || '',
+      tips: String(displayedTips || ''), bonus: String(stub.bonus || ''), commission: String(stub.commission || ''),
+      reimbursement: String(stub.reimbursement || ''), deduction: String(stub.deduction || ''), garnishment: String(stub.garnishment || ''),
+    });
+
+    const isDirty = !isVoided && (
+      parseFloat(grossOverride || 0) !== parseFloat(committed.gross || 0) ||
+      parseFloat(fitOverride   || 0) !== parseFloat(committed.fit   || 0) ||
+      parseFloat(ssOverride    || 0) !== parseFloat(committed.ss    || 0) ||
+      parseFloat(medOverride   || 0) !== parseFloat(committed.med   || 0) ||
+      dateForm.start   !== committed.dateStart ||
+      dateForm.end     !== committed.dateEnd   ||
+      dateForm.payDate !== committed.datePayDate ||
+      parseFloat(itemForm.reportedTips  || 0) !== parseFloat(committed.tips         || 0) ||
+      parseFloat(itemForm.bonus         || 0) !== parseFloat(committed.bonus        || 0) ||
+      parseFloat(itemForm.commission    || 0) !== parseFloat(committed.commission   || 0) ||
+      parseFloat(itemForm.reimbursement || 0) !== parseFloat(committed.reimbursement|| 0) ||
+      parseFloat(itemForm.deduction     || 0) !== parseFloat(committed.deduction    || 0) ||
+      parseFloat(itemForm.garnishment   || 0) !== parseFloat(committed.garnishment  || 0)
+    );
+
+    const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
+    const autoSaveTimerRef = useRef(null);
+    const savedStatusTimerRef = useRef(null);
+    const isSavingRef = useRef(false);
+    const needsResaveRef = useRef(false); // edits arrived while a save was in flight
+
+    async function saveEdits() {
+      // If a save is already running, remember that more edits came in and
+      // re-save once it finishes — otherwise the concurrent edit is lost.
+      if (isSavingRef.current) { needsResaveRef.current = true; return; }
+      isSavingRef.current = true;
+      setSaveStatus('saving');
+      try {
+        // The taxable base (what FIT/SS/Medicare are computed on) changes only when
+        // gross/tips/bonus/commission change. If it didn't change, we preserve the
+        // stored taxes (including any prior manual override) by sending them back;
+        // if it DID change and the user hasn't pinned a value, we let the backend
+        // recompute the tax authoritatively from the new gross.
+        const taxBaseChanged =
+          parseFloat(grossOverride || 0)         !== parseFloat(committed.gross || 0) ||
+          parseFloat(itemForm.reportedTips || 0) !== parseFloat(committed.tips  || 0) ||
+          parseFloat(itemForm.bonus || 0)        !== parseFloat(committed.bonus || 0) ||
+          parseFloat(itemForm.commission || 0)   !== parseFloat(committed.commission || 0);
+
+        const payload = { payPeriodStart: dateForm.start, payPeriodEnd: dateForm.end, settlementDate: dateForm.payDate };
+        if (parseFloat(grossOverride || 0) !== parseFloat(committed.gross || 0)) {
+          const baseType = stub.regular_hours != null ? 'regular' : 'salary';
+          const tipAmt   = parseFloat(itemForm.reportedTips || 0);
+          const bonusAmt = parseFloat(itemForm.bonus        || 0);
+          const commAmt  = parseFloat(itemForm.commission   || 0);
+          payload.lineItems = [
+            { payType: baseType, amount: parseFloat(grossOverride || 0) },
+            // Preserve overtime as its own line item so the backend keeps it in
+            // gross/net (dropping it here was silently zeroing overtime pay).
+            ...(stub.overtime_pay > 0 ? [{ payType: 'overtime', amount: stub.overtime_pay, hours: stub.overtime_hours || null }] : []),
+            ...(tipAmt   > 0 ? [{ payType: 'tips',       amount: tipAmt   }] : []),
+            ...(bonusAmt > 0 ? [{ payType: 'bonus',      amount: bonusAmt }] : []),
+            ...(commAmt  > 0 ? [{ payType: 'commission', amount: commAmt  }] : []),
+          ];
+          payload.reportedTips = tipAmt;
+          payload.bonus        = bonusAmt;
+          payload.commission   = commAmt;
+        }
+        // Send a tax override when the user pinned it, OR when the tax base didn't
+        // change (to preserve the stored value). When the base changed and the user
+        // didn't pin it, omit it so the backend recomputes from the new gross —
+        // this avoids the stale-FIT-estimate race and matches the stored net_pay.
+        if (fitManual || !taxBaseChanged) payload.fitWithholdingOverride      = parseFloat(fitOverride || 0);
+        if (ssManual  || !taxBaseChanged) payload.ssWithholdingOverride       = parseFloat(ssOverride  || 0);
+        if (medManual || !taxBaseChanged) payload.medicareWithholdingOverride = parseFloat(medOverride || 0);
+        payload.reportedTips  = parseFloat(itemForm.reportedTips  || 0);
+        payload.bonus         = parseFloat(itemForm.bonus         || 0);
+        payload.commission    = parseFloat(itemForm.commission    || 0);
+        payload.reimbursement = parseFloat(itemForm.reimbursement || 0);
+        payload.deduction     = parseFloat(itemForm.deduction     || 0);
+        payload.garnishment   = parseFloat(itemForm.garnishment   || 0);
+
+        const resp  = await api.updatePaystub(stub.id, payload);
+        const saved = resp && resp.paystub ? resp.paystub : null;
+        savedSinceOpenRef.current = true;
+
+        if (saved) {
+          // Update this modal's LOCAL stub (no parent re-render → no remount → the
+          // input keeps focus). The inline table row is refreshed on close.
+          setStub(saved);
+          if (!fitManual) setFitOverride(String(r2(saved.fit_withholding   || 0)));
+          if (!ssManual)  setSsOverride (String(r2(saved.employee_ss       || 0)));
+          if (!medManual) setMedOverride(String(r2(saved.employee_medicare || 0)));
+          setLiveStateTax(r2(saved.state_income_tax   || 0));
+          setLiveAddlMed (r2(saved.additional_medicare || 0));
+        }
+        // Advance the baseline from what the backend actually stored (not local
+        // estimates), so isDirty settles instead of firing a spurious re-save.
+        setCommitted({
+          gross: grossOverride,
+          fit:  saved && !fitManual ? String(r2(saved.fit_withholding   || 0)) : fitOverride,
+          ss:   saved && !ssManual  ? String(r2(saved.employee_ss       || 0)) : ssOverride,
+          med:  saved && !medManual ? String(r2(saved.employee_medicare || 0)) : medOverride,
+          dateStart: dateForm.start, dateEnd: dateForm.end, datePayDate: dateForm.payDate,
+          tips: itemForm.reportedTips, bonus: itemForm.bonus, commission: itemForm.commission,
+          reimbursement: itemForm.reimbursement, deduction: itemForm.deduction, garnishment: itemForm.garnishment,
+        });
+        setSaveStatus('saved');
+        if (savedStatusTimerRef.current) clearTimeout(savedStatusTimerRef.current);
+        savedStatusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
+      } catch (e) {
+        setSaveStatus('error');
+        setTimeout(() => setSaveStatus('idle'), 3000);
+        alert('Save failed: ' + e.message);
+      } finally {
+        isSavingRef.current = false;
+        // A save was requested while this one was running — run it now so the
+        // later edits (e.g. a field changed mid-save) aren't dropped.
+        if (needsResaveRef.current) {
+          needsResaveRef.current = false;
+          if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+          autoSaveTimerRef.current = setTimeout(() => saveEdits(), 150);
+        }
+      }
+    }
+
+    // Autosave: debounce 900ms after any form value changes
+    useEffect(() => {
+      if (!isDirty) return;
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = setTimeout(() => saveEdits(), 900);
+      return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [grossOverride, fitOverride, ssOverride, medOverride,
+        dateForm.start, dateForm.end, dateForm.payDate,
+        itemForm.reportedTips, itemForm.bonus, itemForm.commission,
+        itemForm.reimbursement, itemForm.deduction, itemForm.garnishment]);
+
+    const canEdit = !isVoided;
+    const set = field => canEdit ? (v => setItemForm(p => ({ ...p, [field]: v }))) : undefined;
+
+    const mainPayRow = stub.regular_hours != null && stub.regular_pay != null
+      ? { label: `Hourly  (${stub.regular_hours} hrs)`, amount: stub.regular_pay, editValue: canEdit ? grossOverride : undefined, onEditChange: canEdit ? setGrossOverride : undefined }
+      : { label: 'Compensation', amount: initialGross, editValue: canEdit ? grossOverride : undefined, onEditChange: canEdit ? setGrossOverride : undefined };
+
+    const optionalEarnings = [
+      { key: 'reportedTips',  label: 'Reported Tips'  },
+      { key: 'bonus',         label: 'Bonus'           },
+      { key: 'commission',    label: 'Commission'      },
+      { key: 'reimbursement', label: 'Reimbursement'  },
+    ];
+    const optionalDeductions = [
+      { key: 'deduction',   label: 'Deduction'   },
+      { key: 'garnishment', label: 'Garnishment' },
+    ];
+
+    const earningRows = [
+      mainPayRow,
+      stub.overtime_hours > 0 && stub.overtime_pay > 0 && { label: `Overtime  (${stub.overtime_hours} hrs)`, amount: stub.overtime_pay },
+      ...optionalEarnings
+        .filter(x => addedItems.has(x.key))
+        .map(x => ({ label: x.label, amount: parseFloat(itemForm[x.key] || 0), editValue: canEdit ? itemForm[x.key] : undefined, onEditChange: set(x.key) })),
+    ].filter(Boolean);
+
+    const liveGross = r2(
+      parseFloat(grossOverride || 0) +
+      (stub.overtime_pay || 0) +
+      optionalEarnings.filter(x => addedItems.has(x.key) && x.key !== 'reimbursement').reduce((s, x) => s + parseFloat(itemForm[x.key] || 0), 0)
+    );
+
+    // Auto-update SS/Medicare/FIT estimates when gross changes due to tip/bonus/commission edits.
+    // IMPORTANT: skip the very first render — the saved values from the DB are authoritative on open.
+    // Only recalculate when liveGross actually changes after the modal is mounted.
+    const prevLiveGross = useRef(liveGross); // initialised to mount-time value
+    useEffect(() => {
+      const prev = prevLiveGross.current;
+      prevLiveGross.current = liveGross;
+      if (isVoided || liveGross === prev) return; // nothing changed yet
+      if (!ssManual)  setSsOverride(String(r2(liveGross * 0.062)));
+      if (!medManual) setMedOverride(String(r2(liveGross * 0.0145)));
+      if (liveGross > 0) {
+        // Recompute FIT (unless manually pinned) plus state income tax and
+        // additional Medicare from the new gross, so the live preview matches
+        // what the backend will store.
+        api.calculate({
+          grossWages:    liveGross,
+          payFrequency:  stub.pay_frequency   || 'biweekly',
+          filingStatus:  stub.filing_status   || 'single',
+          step2Checkbox: !!stub.step2_checkbox,
+          step3Children: stub.step3_children  || 0,
+          step3Other:    stub.step3_other     || 0,
+          step4a: 0, step4b: 0, step4c: 0,
+          workState: stub.work_state || 'TX',
+          ytdGross:  stub.ytd_wages_before    || 0,
+        }).then(res => {
+          if (!fitManual) setFitOverride(String(r2(res.fitWithholding || 0)));
+          setLiveStateTax(r2(res.stateIncomeTax   || 0));
+          setLiveAddlMed (r2(res.additionalMedicare || 0));
+        }).catch(() => {});
+      }
+    }, [liveGross]);
+
+    // Clamp at 0 to match the backend — a check can't be written for a negative
+    // amount, so the modal's "Check Amount" never goes below zero either.
+    const liveNetPay = Math.max(0, r2(
+      liveGross
+      - parseFloat(fitOverride || 0)
+      - parseFloat(ssOverride  || 0)
+      - parseFloat(medOverride || 0)
+      - liveAddlMed
+      - liveStateTax
+      - parseFloat(itemForm.deduction   || 0)
+      - parseFloat(itemForm.garnishment || 0)
+      + parseFloat(itemForm.reimbursement || 0)
+    ));
+
+    const deductionRows = [
+      { label: 'Federal Income Tax', amount: stub.fit_withholding   || 0, ytd: ytd.fit,
+        editValue: canEdit ? fitOverride : undefined,
+        onEditChange: canEdit ? (v => { setFitManual(true); setFitOverride(v); }) : undefined },
+      { label: 'Social Security', amount: stub.employee_ss       || 0, ytd: ytd.eeSS,
+        editValue: canEdit ? ssOverride  : undefined,
+        onEditChange: canEdit ? (v => { setSsManual(true);  setSsOverride(v);  }) : undefined },
+      { label: 'Medicare',        amount: stub.employee_medicare || 0, ytd: ytd.eeMed,
+        editValue: canEdit ? medOverride : undefined,
+        onEditChange: canEdit ? (v => { setMedManual(true); setMedOverride(v); }) : undefined },
+      liveAddlMed > 0 && { label: 'Addl Medicare', amount: liveAddlMed, ytd: 0 },
+      { label: 'State Income Tax',   amount: liveStateTax, ytd: ytd.stateTax },
+      ...optionalDeductions
+        .filter(x => addedItems.has(x.key))
+        .map(x => ({ label: x.label, amount: parseFloat(itemForm[x.key] || 0), editValue: canEdit ? itemForm[x.key] : undefined, onEditChange: set(x.key) })),
+    ].filter(Boolean);
+
+    const hiddenItems = [...optionalEarnings, ...optionalDeductions].filter(x => !addedItems.has(x.key));
+
+    const employerRows = [
+      { label: 'SS Match (Company)',       amount: stub.employer_ss      || 0, ytd: ytd.erSS   ?? 0 },
+      { label: 'Medicare Match (Company)', amount: stub.employer_medicare || 0, ytd: ytd.erMed  ?? 0 },
+      { label: 'Federal Unemployment',     amount: stub.futa_tax         || 0, ytd: ytd.futa },
+      { label: `${stub.work_state || 'State'} Unemployment`, amount: stub.suta_tax || 0, ytd: ytd.suta },
+    ];
+    const employerTotal = r2(employerRows.reduce((s, r) => s + r.amount, 0));
+    const employerYTD   = r2(employerRows.reduce((s, r) => s + (r.ytd || 0), 0));
+
+    return (
+      <ModalOverlay onClose={onClose}>
+        <div className="card" style={{ width: 740, maxWidth: '96vw', maxHeight: '92vh', overflowY: 'auto', padding: 0, borderRadius: 12 }}>
+
+          {/* Header */}
+          <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+              <div>
+                <div style={{ fontWeight: 800, fontSize: 20, textDecoration: isVoided ? 'line-through' : 'none' }}>{stub.employee_name}</div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
+                  <StatusBadge status={stub.check_status || 'draft'} />
+                  {stub.check_number && <span style={{ ...MODAL_MONO, fontSize: 13, color: 'var(--accent)', fontWeight: 700 }}>Check #{stub.check_number}</span>}
+                </div>
+              </div>
+              <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+            </div>
+            {/* Pay period strip — editable for non-voided checks */}
+            <div style={{ display: 'flex', marginTop: 14, borderRadius: 8, overflow: 'hidden', border: `1px solid ${isDirty ? 'var(--accent)' : 'var(--border)'}`, background: 'var(--bg-secondary)', transition: 'border-color 0.15s' }}>
+              {[
+                { label: 'Period Start', key: 'start',   raw: stub.pay_period_start },
+                { label: 'Period End',   key: 'end',     raw: stub.pay_period_end   },
+                { label: 'Pay Date',     key: 'payDate', raw: stub.settlement_date  },
+              ].map(({ label, key, raw }, i, arr) => (
+                <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
+                  {isVoided
+                    ? <div style={{ ...MODAL_MONO, fontSize: 13, fontWeight: 600 }}>{fmtDate(raw)}</div>
+                    : <input type="date" value={dateForm[key]}
+                        onChange={e => setDateForm(f => ({ ...f, [key]: e.target.value }))}
+                        style={{ ...MODAL_MONO, fontSize: 13, fontWeight: 600, background: 'transparent', border: 'none', outline: 'none', width: '100%', color: dateForm[key] !== (raw || '') ? 'var(--accent)' : 'var(--text-primary)', cursor: 'pointer' }} />
+                  }
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Two-column body */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+
+            {/* Left — Employee Summary */}
+            <div style={{ padding: '18px 20px 0 24px', borderRight: '1px solid var(--border)' }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Employee Summary</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <ColHeader hasYTD={true} />
+                <tbody>
+                  {earningRows.map(r => (
+                    <TR key={r.label} label={r.label} amount={r.amount} color="var(--accent)"
+                      editValue={r.editValue} onEditChange={r.onEditChange} />
+                  ))}
+                  <TR label="Gross Pay" amount={liveGross} ytdAmount={ytd.gross} color="var(--accent)" bold borderTop />
+                  {deductionRows.map(r => (
+                    <TR key={r.label} label={r.label} amount={r.amount} ytdAmount={r.ytd} negative
+                      color={r.amount > 0 ? '#dc2626' : 'var(--text-muted)'}
+                      editValue={r.editValue} onEditChange={r.onEditChange} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Right — Company Summary */}
+            <div style={{ padding: '18px 24px 0 20px' }}>
+              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Company Summary</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <ColHeader hasYTD={true} />
+                <tbody>
+                  {employerRows.map(r => <TR key={r.label} label={r.label} amount={r.amount} ytdAmount={r.ytd} />)}
+                  <TR label="Total Company Cost" amount={employerTotal} ytdAmount={employerYTD} bold borderTop color="var(--text-primary)" />
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Check Amount + tax bar */}
+          <div style={{ margin: '16px 24px 0', borderTop: '2px solid var(--border)' }} />
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px 4px' }}>
+            <div style={{ fontSize: 15, fontWeight: 700 }}>Check Amount</div>
+            <div style={{ ...MODAL_MONO, fontSize: 22, fontWeight: 800, color: '#16a34a' }}>{fmt(liveNetPay)}</div>
+          </div>
+          <div style={{ display: 'flex', gap: 0, margin: '12px 24px 0', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
+            {[
+              { label: '941 Tax Deposit', value: fmt(stub.total_deposit || 0) },
+              { label: '940 FUTA',        value: fmt(stub.futa_tax      || 0) },
+              { label: 'State SUI',       value: fmt(stub.suta_tax      || 0) },
+              { label: 'Total Tax Costs', value: fmt(r2((stub.total_deposit || 0) + (stub.futa_tax || 0) + (stub.suta_tax || 0))), accent: true },
+            ].map(({ label, value, accent }, i, arr) => (
+              <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none', background: accent ? 'var(--accent-light)' : undefined }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
+                <div style={{ ...MODAL_MONO, fontSize: 14, fontWeight: 800, color: accent ? 'var(--accent)' : 'var(--text-primary)' }}>{value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Other Payroll Items */}
+          {canEdit && hiddenItems.length > 0 && (
+            <div style={{ margin: '0 24px', borderTop: '1px solid var(--border)', paddingTop: 10, paddingBottom: 6 }}>
+              <button type="button" onClick={() => setOtherOpen(o => !o)}
+                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                {otherOpen ? '▴' : '▾'} Other Payroll Items
+              </button>
+              {otherOpen && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                  {hiddenItems.map(item => (
+                    <button key={item.key} type="button"
+                      onClick={() => { setAddedItems(prev => new Set([...prev, item.key])); setOtherOpen(false); }}
+                      style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-secondary)', cursor: 'pointer', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                      + {item.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Footer: always-visible sticky bar */}
+          <div style={{ position: 'sticky', bottom: 0, background: '#fff', borderTop: '2px solid var(--border)', padding: '14px 24px', display: 'flex', gap: 8, alignItems: 'center', zIndex: 10, boxShadow: '0 -2px 10px rgba(0,0,0,0.07)' }}>
+            {!isVoided && (
+              <button onClick={async () => {
+                if (!window.confirm('Delete this check? This cannot be undone.')) return;
+                try { await api.deletePaystub(stub.id); onClose(); reloadStubs(); } catch (e) { alert(e.message); }
+              }} style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 18px', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+                🗑 Delete
+              </button>
+            )}
+            <div style={{ flex: 1 }} />
+            <button className="btn btn-ghost" onClick={async () => {
+              if (autoSaveTimerRef.current) {
+                clearTimeout(autoSaveTimerRef.current);
+                autoSaveTimerRef.current = null;
+                if (isDirty) await saveEdits();
+              }
+              onClose();
+            }} style={{ fontSize: 13 }}>Close</button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
+              <button className="btn btn-ghost" style={{ fontSize: 13, borderRadius: '6px 0 0 6px', borderRight: 'none' }}
+                onClick={async () => {
+                  try { await api.printSelectedChecks(clientId, [stub.id], checkDesign); } catch (e) { alert(e.message); }
+                }}>
+                ↓ Paycheck
+              </button>
+              <select
+                value={checkDesign}
+                onChange={e => { setCheckDesign(e.target.value); localStorage.setItem('checkDesign', e.target.value); }}
+                style={{ fontSize: 12, border: '1px solid var(--border)', borderRadius: '0 6px 6px 0', padding: '6px 4px', background: 'var(--bg-primary)', cursor: 'pointer', color: 'var(--text-secondary)' }}
+              >
+                <option value="classic">Classic</option>
+                <option value="micr">MICR (Check Printer)</option>
+                <option value="top">Top Check</option>
+              </select>
+            </div>
+            <button className="btn btn-ghost" style={{ fontSize: 13 }} onClick={async () => {
+              try { await api.printSelectedPaystubs(clientId, [stub.id]); } catch (e) { alert(e.message); }
+            }}>↓ Paystub</button>
+            {isDirty && (
+              <button onClick={() => {
+                if (autoSaveTimerRef.current) { clearTimeout(autoSaveTimerRef.current); autoSaveTimerRef.current = null; }
+                setGrossOverride(committed.gross);
+                setFitOverride(committed.fit);
+                setSsOverride(committed.ss);
+                setMedOverride(committed.med);
+                setItemForm({ reportedTips: committed.tips, bonus: committed.bonus, commission: committed.commission, reimbursement: committed.reimbursement, deduction: committed.deduction, garnishment: committed.garnishment });
+                setDateForm({ start: committed.dateStart, end: committed.dateEnd, payDate: committed.datePayDate });
+                const s = new Set();
+                if (parseFloat(committed.tips)         > 0) s.add('reportedTips');
+                if (parseFloat(committed.bonus)        > 0) s.add('bonus');
+                if (parseFloat(committed.commission)   > 0) s.add('commission');
+                if (parseFloat(committed.reimbursement)> 0) s.add('reimbursement');
+                if (parseFloat(committed.deduction)    > 0) s.add('deduction');
+                if (parseFloat(committed.garnishment)  > 0) s.add('garnishment');
+                setAddedItems(s);
+                setOtherOpen(false);
+                // Clear manual-tax flags so reverted tax fields re-derive on the
+                // next gross change instead of staying stuck "manual".
+                setFitManual(false); setSsManual(false); setMedManual(false);
+                setSaveStatus('idle');
+              }} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-secondary)' }}>Revert</button>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 110, justifyContent: 'flex-end' }}>
+              {saveStatus === 'saving' && (
+                <span style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span className="spinner" style={{ width: 13, height: 13 }} /> Saving…
+                </span>
+              )}
+              {saveStatus === 'saved' && (
+                <span style={{ fontSize: 13, color: '#16a34a', fontWeight: 600 }}>✓ Saved</span>
+              )}
+              {saveStatus === 'error' && (
+                <span style={{ fontSize: 13, color: '#dc2626', fontWeight: 600 }}>✗ Error</span>
+              )}
+              {saveStatus === 'idle' && isDirty && (
+                <span style={{ fontSize: 12, color: '#f59e0b', fontWeight: 500 }}>Unsaved…</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </ModalOverlay>
+    );
+  }
+
 function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick = 0 }) {
   const [showPaycheckImport, setShowPaycheckImport] = useState(false);
   const [payGroups, setPayGroups]     = useState([]);
@@ -2016,853 +2888,6 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
   }
 
   // Check detail modal — shows full breakdown for pending or history rows, with editable dates and gross
-  function CheckDetailModal({ rowData, onClose }) {
-    if (!rowData) return null;
-
-    // Use module-scope stable components (ModalTR, ModalColHeader, ModalOverlay)
-    // so React never remounts inputs on re-renders (which would kill focus).
-    const TR = ModalTR;
-    const ColHeader = ModalColHeader;
-
-    // ── Pending row ──────────────────────────────────────────────────────────────
-    if (rowData.type === 'pending') {
-      const { period, emp } = rowData;
-      // Buffer edits in LOCAL state and flush to the shared pendingRows on
-      // save/close. Writing to pendingRows on every keystroke re-renders the
-      // parent table, which remounts this modal and steals input focus — and it
-      // also made the Save button unable to track tax edits. `row` now points at
-      // the local buffer so all existing reads work unchanged.
-      const savedRow = getRow(period.end, emp.id);
-      const [localRow, setLocalRow] = useState(() => ({ ...savedRow }));
-      const initialRowRef = useRef(savedRow);
-      const row = localRow;
-      const setField = (field, v) => setLocalRow(r => ({ ...r, [field]: v }));
-      const flushLocal = () => setPendingRows(prev => ({
-        ...prev,
-        [period.end]: { ...(prev[period.end] || {}), [emp.id]: { ...((prev[period.end] || {})[emp.id] || {}), ...localRow } },
-      }));
-      const closeWithFlush = () => { flushLocal(); onClose(); };
-      const isSalary = emp.payType === 'salary';
-      const salAmt   = r2((emp.annualSalary || 0) / ppy);
-      const rate     = parseFloat(row.rate) || emp.hourlyRate || 0;
-      const regH     = parseFloat(row.regHours || 0);
-      const otH      = parseFloat(row.otHours  || 0);
-      const regPay   = isSalary ? salAmt : r2(regH * rate);
-      const otPay    = isSalary ? 0 : r2(otH * rate * 1.5);
-      const gross    = r2(regPay + otPay);
-      const ytd      = calcEmpYTD(emp.id, null);
-
-      // Editable dates for pending rows (stored as overrides, used when payroll is run)
-      const ov = periodOverrides[period.end] || {};
-      const [dateForm, setDateForm] = useState({ start: ov.start || period.start || '', end: ov.end || period.end || '', payDate: ov.payDate || period.payDate || '' });
-      const dateDirty = dateForm.start !== period.start || dateForm.end !== period.end || dateForm.payDate !== period.payDate;
-      const overridesDirty = JSON.stringify(localRow) !== JSON.stringify(initialRowRef.current);
-      const pendingDirty = dateDirty || overridesDirty;
-
-      const pendingItemDefs = [
-        { field: 'tips',        label: 'Reported Tips',           hint: 'taxable',     isDeduction: false },
-        { field: 'bonus',       label: 'Bonus',                   hint: 'taxable',     isDeduction: false },
-        { field: 'commission',  label: 'Commission',              hint: 'taxable',     isDeduction: false },
-        { field: 'mileage',     label: 'Mileage / Reimbursement', hint: 'non-taxable', isDeduction: false },
-        { field: 'cashAdvance', label: 'Cash Advance',            hint: 'deduction',   isDeduction: true  },
-      ];
-      const [addedPendingItems, setAddedPendingItems] = useState(() => {
-        const s = new Set();
-        if (parseFloat(row.tips        || 0) > 0) s.add('tips');
-        if (parseFloat(row.bonus       || 0) > 0) s.add('bonus');
-        if (parseFloat(row.commission  || 0) > 0) s.add('commission');
-        if (parseFloat(row.mileage     || 0) > 0) s.add('mileage');
-        if (parseFloat(row.cashAdvance || 0) > 0) s.add('cashAdvance');
-        return s;
-      });
-      const [pendingOtherOpen, setPendingOtherOpen] = useState(false);
-      const addedPendingEarnings  = pendingItemDefs.filter(x => !x.isDeduction && addedPendingItems.has(x.field));
-      const hiddenPendingItems    = pendingItemDefs.filter(x => !addedPendingItems.has(x.field));
-      const liveGross  = r2(regPay + otPay + addedPendingEarnings.reduce((s, x) => s + parseFloat(row[x.field] || 0), 0));
-      const estSSCalc  = r2(liveGross * EE_SS_RATE);
-      const estMedCalc = r2(liveGross * EE_MEDICARE_RATE);
-      const estCashAdv = addedPendingItems.has('cashAdvance') ? parseFloat(row.cashAdvance || 0) : 0;
-      // Override values (user-editable) — fall back to calculated estimates
-      const dispSS     = row.ssOverride    !== undefined ? parseFloat(row.ssOverride    || 0) : estSSCalc;
-      const dispMed    = row.medOverride   !== undefined ? parseFloat(row.medOverride   || 0) : estMedCalc;
-      const dispErSS   = row.erSsOverride  !== undefined ? parseFloat(row.erSsOverride  || 0) : r2(liveGross * EE_SS_RATE);
-      const dispErMed  = row.erMedOverride !== undefined ? parseFloat(row.erMedOverride || 0) : r2(liveGross * EE_MEDICARE_RATE);
-      const estNet     = r2(liveGross - dispSS - dispMed - estCashAdv);
-      // Employer estimates
-      const estFutaTaxable = Math.max(0, Math.min(liveGross, 7000 - ytd.gross));
-      const estFutaCalc= r2(estFutaTaxable * 0.006);
-      const curQtr     = Math.ceil((new Date().getMonth() + 1) / 3);
-      const suiRateEst = [client?.suiRateQ1, client?.suiRateQ2, client?.suiRateQ3, client?.suiRateQ4][curQtr - 1] ?? 0.027;
-      const estSutaTaxable = Math.max(0, Math.min(liveGross, 9000 - ytd.gross));
-      const estSutaCalc= r2(estSutaTaxable * suiRateEst);
-      const dispFuta   = row.futaOverride !== undefined ? parseFloat(row.futaOverride || 0) : estFutaCalc;
-      const dispSuta   = row.suiOverride  !== undefined ? parseFloat(row.suiOverride  || 0) : estSutaCalc;
-
-      // Live federal + state tax estimate via calculate API
-      const [liveCalc, setLiveCalc] = useState(null);
-      useEffect(() => {
-        if (liveGross <= 0) { setLiveCalc(null); return; }
-        const payFreqStr = ppy === 52 ? 'weekly' : ppy === 26 ? 'biweekly' : ppy === 24 ? 'semimonthly' : 'monthly';
-        api.calculate({
-          grossWages: liveGross,
-          payFrequency: payFreqStr,
-          filingStatus: emp.filingStatus || 'single',
-          step2Checkbox: emp.step2Checkbox || false,
-          step3Children: emp.step3Children || 0,
-          step3Other: emp.step3Other || 0,
-          step4a: emp.step4a || 0,
-          step4b: emp.step4b || 0,
-          step4c: emp.step4c || 0,
-          workState: emp.workState || 'TX',
-          ytdGross: ytd.gross,
-          sutaRate: suiRateEst,
-        }).then(r => setLiveCalc(r)).catch(() => setLiveCalc(null));
-      }, [liveGross]);
-
-      const estFITCalc   = liveCalc?.fitWithholding  ?? null;
-      const estStateTaxCalc = liveCalc?.stateIncomeTax  ?? null;
-      const dispFIT      = row.fitOverride   !== undefined ? parseFloat(row.fitOverride   || 0) : estFITCalc;
-      const dispStateTax = row.stateOverride !== undefined ? parseFloat(row.stateOverride || 0) : estStateTaxCalc;
-      const estNetFull  = (dispFIT != null && dispStateTax != null)
-        ? r2(liveGross - dispFIT - dispSS - dispMed - dispStateTax - estCashAdv)
-        : (liveCalc != null
-          ? r2(liveGross - (liveCalc.fitWithholding || 0) - dispSS - dispMed - (liveCalc.stateIncomeTax || 0) - estCashAdv)
-          : estNet);
-
-      // Sum estimates from ALL OTHER pending periods for this employee
-      // (current period is added separately below via liveGross / disp* values)
-      const otherPendingTotals = Object.entries(pendingRows).reduce((acc, [pEnd, empMap]) => {
-        if (pEnd === period.end) return acc; // skip current period — handled by liveGross
-        const r2emp = empMap[String(emp.id)] || empMap[emp.id];
-        if (!r2emp) return acc;
-        const eIsSalary = emp.payType === 'salary';
-        const eRate     = parseFloat(r2emp.rate) || emp.hourlyRate || 0;
-        const eRegH     = parseFloat(r2emp.regHours || 0);
-        const eOtH      = parseFloat(r2emp.otHours  || 0);
-        const eReg      = eIsSalary ? r2((emp.annualSalary || 0) / ppy) : r2(eRegH * eRate);
-        const eOt       = eIsSalary ? 0 : r2(eOtH * eRate * 1.5);
-        const eTips     = parseFloat(r2emp.tips       || 0);
-        const eBonus    = parseFloat(r2emp.bonus      || 0);
-        const eComm     = parseFloat(r2emp.commission || 0);
-        const eGross    = r2(eReg + eOt + eTips + eBonus + eComm);
-        const eSS       = r2emp.ssOverride    !== undefined ? parseFloat(r2emp.ssOverride    || 0) : r2(eGross * EE_SS_RATE);
-        const eMed      = r2emp.medOverride   !== undefined ? parseFloat(r2emp.medOverride   || 0) : r2(eGross * EE_MEDICARE_RATE);
-        const eFIT      = r2emp.fitOverride   !== undefined ? parseFloat(r2emp.fitOverride   || 0) : 0;
-        const eState    = r2emp.stateOverride !== undefined ? parseFloat(r2emp.stateOverride || 0) : 0;
-        const eCashAdv  = parseFloat(r2emp.cashAdvance  || 0);
-        const eErSS     = r2emp.erSsOverride  !== undefined ? parseFloat(r2emp.erSsOverride  || 0) : r2(eGross * EE_SS_RATE);
-        const eErMed    = r2emp.erMedOverride !== undefined ? parseFloat(r2emp.erMedOverride || 0) : r2(eGross * EE_MEDICARE_RATE);
-        const eRunningGross = acc.gross + ytd.gross;
-        const eFutaTaxable  = Math.max(0, Math.min(eGross, 7000 - eRunningGross));
-        const eSutaTaxable  = Math.max(0, Math.min(eGross, 9000 - eRunningGross));
-        const eFuta     = r2emp.futaOverride !== undefined ? parseFloat(r2emp.futaOverride || 0) : r2(eFutaTaxable * 0.006);
-        const eSuta     = r2emp.suiOverride  !== undefined ? parseFloat(r2emp.suiOverride  || 0) : r2(eSutaTaxable * suiRateEst);
-        const eNet      = r2(eGross - eSS - eMed - eFIT - eState - eCashAdv);
-        return {
-          gross:      r2(acc.gross      + eGross),
-          eeSS:       r2(acc.eeSS      + eSS),
-          eeMed:      r2(acc.eeMed     + eMed),
-          fit:        r2(acc.fit       + eFIT),
-          stateTax:   r2(acc.stateTax  + eState),
-          netPay:     r2(acc.netPay    + eNet),
-          erSS:       r2(acc.erSS      + eErSS),
-          erMed:      r2(acc.erMed     + eErMed),
-          futa:       r2(acc.futa      + eFuta),
-          suta:       r2(acc.suta      + eSuta),
-          regPay:     r2(acc.regPay    + eReg),
-          otPay:      r2(acc.otPay     + eOt),
-          tips:       r2(acc.tips      + eTips),
-          bonus:      r2(acc.bonus     + eBonus),
-          commission: r2(acc.commission + eComm),
-        };
-      }, { gross: 0, eeSS: 0, eeMed: 0, fit: 0, stateTax: 0, netPay: 0, erSS: 0, erMed: 0, futa: 0, suta: 0, regPay: 0, otPay: 0, tips: 0, bonus: 0, commission: 0 });
-
-      // Current-period per-type values
-      const curTips     = parseFloat(row.tips       || 0);
-      const curBonus    = parseFloat(row.bonus      || 0);
-      const curComm     = parseFloat(row.commission || 0);
-
-      // YTD = printed checks + all other pending periods + this period
-      const ytdWithCurrent = {
-        gross:      r2(ytd.gross      + otherPendingTotals.gross      + liveGross),
-        eeSS:       r2(ytd.eeSS      + otherPendingTotals.eeSS      + dispSS),
-        eeMed:      r2(ytd.eeMed     + otherPendingTotals.eeMed     + dispMed),
-        fit:        r2(ytd.fit       + otherPendingTotals.fit       + (dispFIT      ?? 0)),
-        stateTax:   r2(ytd.stateTax  + otherPendingTotals.stateTax  + (dispStateTax ?? 0)),
-        netPay:     r2(ytd.netPay    + otherPendingTotals.netPay    + estNetFull),
-        erSS:       r2(ytd.erSS      + otherPendingTotals.erSS      + dispErSS),
-        erMed:      r2(ytd.erMed     + otherPendingTotals.erMed     + dispErMed),
-        futa:       r2(ytd.futa      + otherPendingTotals.futa      + dispFuta),
-        suta:       r2(ytd.suta      + otherPendingTotals.suta      + dispSuta),
-        regPay:     r2(ytd.regPay    + otherPendingTotals.regPay    + regPay),
-        otPay:      r2(ytd.otPay     + otherPendingTotals.otPay     + otPay),
-        tips:       r2(ytd.tips      + otherPendingTotals.tips      + curTips),
-        bonus:      r2(ytd.bonus     + otherPendingTotals.bonus     + curBonus),
-        commission: r2(ytd.commission + otherPendingTotals.commission + curComm),
-      };
-
-      return (
-        <ModalOverlay onClose={closeWithFlush}>
-          <div className="card" style={{ width: 640, maxWidth: '95vw', maxHeight: '92vh', overflowY: 'auto', padding: 0, borderRadius: 12 }}>
-            {/* Header */}
-            <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)' }}>
-              <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-                <div>
-                  <div style={{ fontWeight: 800, fontSize: 20 }}>{emp.firstName} {emp.lastName}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                    {isSalary ? 'Salary' : 'Hourly'} · {period.isLate ? <span style={{ color: '#dc2626', fontWeight: 700 }}>LATE</span> : 'Pending'}
-                  </div>
-                </div>
-                <button onClick={closeWithFlush} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
-              </div>
-              {/* Pay period strip — editable */}
-              <div style={{ display: 'flex', marginTop: 14, borderRadius: 8, overflow: 'hidden', border: `1px solid ${pendingDirty ? 'var(--accent)' : 'var(--border)'}`, background: 'var(--bg-secondary)', transition: 'border-color 0.15s' }}>
-                {[
-                  { label: 'Period Start', key: 'start' },
-                  { label: 'Period End',   key: 'end'   },
-                  { label: 'Pay Date',     key: 'payDate' },
-                ].map(({ label, key }, i, arr) => (
-                  <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
-                    <input type="date" value={dateForm[key]} onChange={e => setDateForm(f => ({ ...f, [key]: e.target.value }))}
-                      style={{ ...MODAL_MONO, fontSize: 13, fontWeight: 600, background: 'transparent', border: 'none', outline: 'none', width: '100%', color: dateForm[key] !== (key === 'start' ? period.start : key === 'end' ? period.end : period.payDate) ? 'var(--accent)' : period.isLate && key === 'payDate' ? '#dc2626' : 'var(--text-primary)', cursor: 'pointer' }} />
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Body: Employee Summary + Company Summary, each with YTD column */}
-            <div style={{ padding: '18px 24px', borderBottom: '1px solid var(--border)' }}>
-
-              {/* Employee Summary */}
-              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Employee Summary</div>
-              <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: 22 }}>
-                <thead>
-                  <tr>
-                    <th style={{ padding: '0 0 6px 0', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Item Name</th>
-                    <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Amount</th>
-                    <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>YTD</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {isSalary
-                    ? <TR label="Salary / Period" amount={salAmt} ytdAmount={ytdWithCurrent.regPay} color="var(--accent)" />
-                    : <>
-                        <TR label="Hourly Rate" amount={rate} ytdAmount={null} color="var(--accent)"
-                          editValue={row.rate !== undefined ? String(row.rate) : String(emp.hourlyRate || '')}
-                          onEditChange={v => setField('rate', v)}
-                          editSuffix="/hr" noDollarSign={false} />
-                        <TR label={`Reg Hours @ $${rate % 1 === 0 ? rate : rate.toFixed(2)} /hr`} amount={regPay} ytdAmount={ytdWithCurrent.regPay} color="var(--accent)" />
-                        {otPay > 0 && <TR label={`OT Hours @ $${(rate * 1.5) % 1 === 0 ? (rate * 1.5) : (rate * 1.5).toFixed(2)} /hr`} amount={otPay} ytdAmount={ytdWithCurrent.otPay} color="var(--accent)" />}
-                      </>
-                  }
-                  {addedPendingEarnings.map(item => (
-                    <TR key={item.field} label={item.label} amount={parseFloat(row[item.field] || 0)}
-                      ytdAmount={ytdWithCurrent[item.field] ?? null} color="var(--accent)"
-                      editValue={row[item.field] || ''} onEditChange={v => setField(item.field, v)} />
-                  ))}
-                  <TR label="Gross Pay"            amount={liveGross}    ytdAmount={ytdWithCurrent.gross}    color="var(--accent)" bold borderTop />
-                  {addedPendingItems.has('cashAdvance') && (
-                    <TR label="Cash Advance"       amount={parseFloat(row.cashAdvance || 0)} ytdAmount={null} negative color="#dc2626"
-                      editValue={row.cashAdvance || ''} onEditChange={v => setField('cashAdvance', v)} />
-                  )}
-                  <TR label="Social Security (est.)" amount={dispSS}  ytdAmount={ytdWithCurrent.eeSS}     negative color="#dc2626"
-                    editValue={row.ssOverride !== undefined ? row.ssOverride : String(estSSCalc)} onEditChange={v => setField('ssOverride', v)} />
-                  <TR label="Medicare (est.)"        amount={dispMed} ytdAmount={ytdWithCurrent.eeMed}    negative color="#dc2626"
-                    editValue={row.medOverride !== undefined ? row.medOverride : String(estMedCalc)} onEditChange={v => setField('medOverride', v)} />
-                  <TR label="Federal Income Tax"     amount={dispFIT      ?? 'calculating…'} ytdAmount={ytdWithCurrent.fit}      negative={dispFIT != null}      color={dispFIT != null && dispFIT > 0 ? '#dc2626' : 'var(--text-muted)'}
-                    editValue={row.fitOverride !== undefined ? row.fitOverride : (estFITCalc != null ? String(estFITCalc) : '')} onEditChange={v => setField('fitOverride', v)} />
-                  <TR label="State Income Tax"       amount={dispStateTax ?? '—'}            ytdAmount={ytdWithCurrent.stateTax} negative={dispStateTax != null} color={dispStateTax != null && dispStateTax > 0 ? '#dc2626' : 'var(--text-muted)'}
-                    editValue={row.stateOverride !== undefined ? row.stateOverride : (estStateTaxCalc != null ? String(estStateTaxCalc) : '')} onEditChange={v => setField('stateOverride', v)} />
-                  <TR label="Net Pay (est.)"         amount={estNetFull} ytdAmount={ytdWithCurrent.netPay}   color="#16a34a" bold borderTop />
-                </tbody>
-              </table>
-
-              {/* Company Summary */}
-              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Company Summary</div>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <thead>
-                  <tr>
-                    <th style={{ padding: '0 0 6px 0', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Item Name</th>
-                    <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Amount</th>
-                    <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>YTD</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <TR label="SS Match (est.)"              amount={dispErSS}  ytdAmount={ytdWithCurrent.erSS}  color="var(--text-secondary)"
-                    editValue={row.erSsOverride !== undefined ? row.erSsOverride : String(r2(liveGross * EE_SS_RATE))} onEditChange={v => setField('erSsOverride', v)} />
-                  <TR label="Medicare Match (est.)"        amount={dispErMed} ytdAmount={ytdWithCurrent.erMed} color="var(--text-secondary)"
-                    editValue={row.erMedOverride !== undefined ? row.erMedOverride : String(r2(liveGross * EE_MEDICARE_RATE))} onEditChange={v => setField('erMedOverride', v)} />
-                  <TR label="Federal Unemployment (est.)"  amount={dispFuta}  ytdAmount={ytdWithCurrent.futa}  color="var(--text-secondary)"
-                    editValue={row.futaOverride !== undefined ? row.futaOverride : String(estFutaCalc)} onEditChange={v => setField('futaOverride', v)} />
-                  <TR label="State Unemployment (est.)"    amount={dispSuta}  ytdAmount={ytdWithCurrent.suta}  color="var(--text-secondary)"
-                    editValue={row.suiOverride !== undefined ? row.suiOverride : String(estSutaCalc)} onEditChange={v => setField('suiOverride', v)} />
-                </tbody>
-              </table>
-            </div>
-            {/* Other Payroll Items */}
-            {hiddenPendingItems.length > 0 && (
-              <div style={{ margin: '0 24px', borderTop: '1px solid var(--border)', paddingTop: 10, paddingBottom: 6 }}>
-                <button type="button" onClick={() => setPendingOtherOpen(o => !o)}
-                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                  {pendingOtherOpen ? '▴' : '▾'} Other Payroll Items
-                </button>
-                {pendingOtherOpen && (
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-                    {hiddenPendingItems.map(item => (
-                      <button key={item.field} type="button"
-                        onClick={() => { setAddedPendingItems(prev => new Set([...prev, item.field])); setPendingOtherOpen(false); }}
-                        style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-secondary)', cursor: 'pointer', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                        + {item.label}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Save date overrides footer */}
-            <div style={{ position: 'sticky', bottom: 0, background: '#fff', borderTop: '2px solid var(--border)', padding: '12px 24px', display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'center', boxShadow: '0 -2px 10px rgba(0,0,0,0.07)', zIndex: 10 }}>
-              <button
-                onClick={() => {
-                  if (!window.confirm(`Remove ${emp.fullName} from this pay run? They can be added back by refreshing.`)) return;
-                  skipPending(period.end, emp.id);
-                  onClose();
-                }}
-                style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', marginRight: 'auto' }}>
-                🗑 Remove
-              </button>
-              <button className="btn btn-ghost" onClick={closeWithFlush} style={{ fontSize: 13 }}>Close</button>
-              <button
-                disabled={!pendingDirty}
-                onClick={() => { flushLocal(); setPeriodOverrides(prev => ({ ...prev, [period.end]: { start: dateForm.start, end: dateForm.end, payDate: dateForm.payDate } })); onClose(); }}
-                style={{
-                  background: pendingDirty ? '#16a34a' : '#94a3b8',
-                  color: '#fff',
-                  border: 'none', borderRadius: 7,
-                  padding: '9px 24px',
-                  fontSize: 15, fontWeight: 700,
-                  cursor: pendingDirty ? 'pointer' : 'default',
-                  transition: 'background 0.15s',
-                  minWidth: 130,
-                  opacity: pendingDirty ? 1 : 0.45,
-                }}
-              >
-                💾 Save Changes
-              </button>
-            </div>
-          </div>
-        </ModalOverlay>
-      );
-    }
-
-    // ── History (printed/deposited) row ──────────────────────────────────────────
-    // stub is LOCAL state: after an autosave we update it here (setStub) instead of
-    // reloading the parent's paystub list — reloading re-renders PayEmployeesTab,
-    // which remounts this modal and steals input focus. The parent table is
-    // refreshed once, on close, via onClose (which calls reloadStubs).
-    const [stub, setStub] = useState(rowData.stub);
-    const savedSinceOpenRef = useRef(false);
-    const isVoided = stub.check_status === 'voided';
-    const [checkDesign, setCheckDesign] = useState(() => localStorage.getItem('checkDesign') || 'classic');
-    const ytd = calcEmpYTD(stub.employee_id, stub.pay_period_end);
-
-    // Editable date / gross / other payroll items state (hooks must be at top of history branch)
-    const lineItemsList = stub.lineItems || [];
-    const displayedTips = stub.reported_tips || lineItemsList.filter(li => li.pay_type === 'tips').reduce((s, li) => s + (li.amount || 0), 0);
-    // initialGross = base compensation derived ALWAYS from stub.gross_wages so that
-    // liveGross = initialGross + OT + tips + bonus + commission = stub.gross_wages exactly.
-    // This is the only formula that guarantees the modal's Check Amount matches the
-    // inline net pay cell (both computed from the same gross_wages).
-    const initialGross  = r2(
-      Math.max(0,
-        (stub.gross_wages    || 0)
-        - (stub.overtime_pay || 0)
-        - (displayedTips     || 0)
-        - (stub.bonus        || 0)
-        - (stub.commission   || 0)
-      )
-    );
-    const initialFit    = r2(stub.fit_withholding    || 0);
-    const initialSS     = r2(stub.employee_ss        || 0);
-    const initialMed    = r2(stub.employee_medicare  || 0);
-
-    const [dateForm, setDateForm]     = useState({ start: stub.pay_period_start || '', end: stub.pay_period_end || '', payDate: stub.settlement_date || '' });
-    const [grossOverride, setGrossOverride] = useState(String(initialGross));
-    const [fitOverride, setFitOverride]     = useState(String(initialFit));
-    const [ssOverride,  setSsOverride]      = useState(String(initialSS));
-    const [medOverride, setMedOverride]     = useState(String(initialMed));
-    const [itemForm, setItemForm]   = useState({
-      reportedTips:  String(displayedTips       || ''),
-      bonus:         String(stub.bonus          || ''),
-      commission:    String(stub.commission     || ''),
-      reimbursement: String(stub.reimbursement  || ''),
-      deduction:     String(stub.deduction      || ''),
-      garnishment:   String(stub.garnishment    || ''),
-    });
-    const [addedItems, setAddedItems] = useState(() => {
-      const s = new Set();
-      if (displayedTips      > 0) s.add('reportedTips');
-      if (stub.bonus         > 0) s.add('bonus');
-      if (stub.commission    > 0) s.add('commission');
-      if (stub.reimbursement > 0) s.add('reimbursement');
-      if (stub.deduction     > 0) s.add('deduction');
-      if (stub.garnishment   > 0) s.add('garnishment');
-      return s;
-    });
-    const [otherOpen, setOtherOpen] = useState(false);
-    // Track whether user has manually overridden each tax field so auto-estimates
-    // don't overwrite explicit user input (and so we know when to pin to the DB).
-    const [fitManual,  setFitManual]  = useState(false);
-    const [ssManual,   setSsManual]   = useState(false);
-    const [medManual,  setMedManual]  = useState(false);
-    // Live state income tax + additional Medicare (recomputed as gross changes) so
-    // the modal's preview matches the backend even before the save round-trips.
-    const [liveStateTax, setLiveStateTax] = useState(r2(stub.state_income_tax   || 0));
-    const [liveAddlMed,  setLiveAddlMed]  = useState(r2(stub.additional_medicare || 0));
-
-    // "committed" = the values as of the last successful save (initially = DB values).
-    // isDirty compares current form state against committed so autosave resets correctly
-    // after each save without needing to close/reopen the modal.
-    const [committed, setCommitted] = useState({
-      gross: String(initialGross), fit: String(initialFit), ss: String(initialSS), med: String(initialMed),
-      dateStart: stub.pay_period_start || '', dateEnd: stub.pay_period_end || '', datePayDate: stub.settlement_date || '',
-      tips: String(displayedTips || ''), bonus: String(stub.bonus || ''), commission: String(stub.commission || ''),
-      reimbursement: String(stub.reimbursement || ''), deduction: String(stub.deduction || ''), garnishment: String(stub.garnishment || ''),
-    });
-
-    const isDirty = !isVoided && (
-      parseFloat(grossOverride || 0) !== parseFloat(committed.gross || 0) ||
-      parseFloat(fitOverride   || 0) !== parseFloat(committed.fit   || 0) ||
-      parseFloat(ssOverride    || 0) !== parseFloat(committed.ss    || 0) ||
-      parseFloat(medOverride   || 0) !== parseFloat(committed.med   || 0) ||
-      dateForm.start   !== committed.dateStart ||
-      dateForm.end     !== committed.dateEnd   ||
-      dateForm.payDate !== committed.datePayDate ||
-      parseFloat(itemForm.reportedTips  || 0) !== parseFloat(committed.tips         || 0) ||
-      parseFloat(itemForm.bonus         || 0) !== parseFloat(committed.bonus        || 0) ||
-      parseFloat(itemForm.commission    || 0) !== parseFloat(committed.commission   || 0) ||
-      parseFloat(itemForm.reimbursement || 0) !== parseFloat(committed.reimbursement|| 0) ||
-      parseFloat(itemForm.deduction     || 0) !== parseFloat(committed.deduction    || 0) ||
-      parseFloat(itemForm.garnishment   || 0) !== parseFloat(committed.garnishment  || 0)
-    );
-
-    const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
-    const autoSaveTimerRef = useRef(null);
-    const savedStatusTimerRef = useRef(null);
-    const isSavingRef = useRef(false);
-    const needsResaveRef = useRef(false); // edits arrived while a save was in flight
-
-    async function saveEdits() {
-      // If a save is already running, remember that more edits came in and
-      // re-save once it finishes — otherwise the concurrent edit is lost.
-      if (isSavingRef.current) { needsResaveRef.current = true; return; }
-      isSavingRef.current = true;
-      setSaveStatus('saving');
-      try {
-        // The taxable base (what FIT/SS/Medicare are computed on) changes only when
-        // gross/tips/bonus/commission change. If it didn't change, we preserve the
-        // stored taxes (including any prior manual override) by sending them back;
-        // if it DID change and the user hasn't pinned a value, we let the backend
-        // recompute the tax authoritatively from the new gross.
-        const taxBaseChanged =
-          parseFloat(grossOverride || 0)         !== parseFloat(committed.gross || 0) ||
-          parseFloat(itemForm.reportedTips || 0) !== parseFloat(committed.tips  || 0) ||
-          parseFloat(itemForm.bonus || 0)        !== parseFloat(committed.bonus || 0) ||
-          parseFloat(itemForm.commission || 0)   !== parseFloat(committed.commission || 0);
-
-        const payload = { payPeriodStart: dateForm.start, payPeriodEnd: dateForm.end, settlementDate: dateForm.payDate };
-        if (parseFloat(grossOverride || 0) !== parseFloat(committed.gross || 0)) {
-          const baseType = stub.regular_hours != null ? 'regular' : 'salary';
-          const tipAmt   = parseFloat(itemForm.reportedTips || 0);
-          const bonusAmt = parseFloat(itemForm.bonus        || 0);
-          const commAmt  = parseFloat(itemForm.commission   || 0);
-          payload.lineItems = [
-            { payType: baseType, amount: parseFloat(grossOverride || 0) },
-            // Preserve overtime as its own line item so the backend keeps it in
-            // gross/net (dropping it here was silently zeroing overtime pay).
-            ...(stub.overtime_pay > 0 ? [{ payType: 'overtime', amount: stub.overtime_pay, hours: stub.overtime_hours || null }] : []),
-            ...(tipAmt   > 0 ? [{ payType: 'tips',       amount: tipAmt   }] : []),
-            ...(bonusAmt > 0 ? [{ payType: 'bonus',      amount: bonusAmt }] : []),
-            ...(commAmt  > 0 ? [{ payType: 'commission', amount: commAmt  }] : []),
-          ];
-          payload.reportedTips = tipAmt;
-          payload.bonus        = bonusAmt;
-          payload.commission   = commAmt;
-        }
-        // Send a tax override when the user pinned it, OR when the tax base didn't
-        // change (to preserve the stored value). When the base changed and the user
-        // didn't pin it, omit it so the backend recomputes from the new gross —
-        // this avoids the stale-FIT-estimate race and matches the stored net_pay.
-        if (fitManual || !taxBaseChanged) payload.fitWithholdingOverride      = parseFloat(fitOverride || 0);
-        if (ssManual  || !taxBaseChanged) payload.ssWithholdingOverride       = parseFloat(ssOverride  || 0);
-        if (medManual || !taxBaseChanged) payload.medicareWithholdingOverride = parseFloat(medOverride || 0);
-        payload.reportedTips  = parseFloat(itemForm.reportedTips  || 0);
-        payload.bonus         = parseFloat(itemForm.bonus         || 0);
-        payload.commission    = parseFloat(itemForm.commission    || 0);
-        payload.reimbursement = parseFloat(itemForm.reimbursement || 0);
-        payload.deduction     = parseFloat(itemForm.deduction     || 0);
-        payload.garnishment   = parseFloat(itemForm.garnishment   || 0);
-
-        const resp  = await api.updatePaystub(stub.id, payload);
-        const saved = resp && resp.paystub ? resp.paystub : null;
-        savedSinceOpenRef.current = true;
-
-        if (saved) {
-          // Update this modal's LOCAL stub (no parent re-render → no remount → the
-          // input keeps focus). The inline table row is refreshed on close.
-          setStub(saved);
-          if (!fitManual) setFitOverride(String(r2(saved.fit_withholding   || 0)));
-          if (!ssManual)  setSsOverride (String(r2(saved.employee_ss       || 0)));
-          if (!medManual) setMedOverride(String(r2(saved.employee_medicare || 0)));
-          setLiveStateTax(r2(saved.state_income_tax   || 0));
-          setLiveAddlMed (r2(saved.additional_medicare || 0));
-        }
-        // Advance the baseline from what the backend actually stored (not local
-        // estimates), so isDirty settles instead of firing a spurious re-save.
-        setCommitted({
-          gross: grossOverride,
-          fit:  saved && !fitManual ? String(r2(saved.fit_withholding   || 0)) : fitOverride,
-          ss:   saved && !ssManual  ? String(r2(saved.employee_ss       || 0)) : ssOverride,
-          med:  saved && !medManual ? String(r2(saved.employee_medicare || 0)) : medOverride,
-          dateStart: dateForm.start, dateEnd: dateForm.end, datePayDate: dateForm.payDate,
-          tips: itemForm.reportedTips, bonus: itemForm.bonus, commission: itemForm.commission,
-          reimbursement: itemForm.reimbursement, deduction: itemForm.deduction, garnishment: itemForm.garnishment,
-        });
-        setSaveStatus('saved');
-        if (savedStatusTimerRef.current) clearTimeout(savedStatusTimerRef.current);
-        savedStatusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
-      } catch (e) {
-        setSaveStatus('error');
-        setTimeout(() => setSaveStatus('idle'), 3000);
-        alert('Save failed: ' + e.message);
-      } finally {
-        isSavingRef.current = false;
-        // A save was requested while this one was running — run it now so the
-        // later edits (e.g. a field changed mid-save) aren't dropped.
-        if (needsResaveRef.current) {
-          needsResaveRef.current = false;
-          if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-          autoSaveTimerRef.current = setTimeout(() => saveEdits(), 150);
-        }
-      }
-    }
-
-    // Autosave: debounce 900ms after any form value changes
-    useEffect(() => {
-      if (!isDirty) return;
-      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
-      autoSaveTimerRef.current = setTimeout(() => saveEdits(), 900);
-      return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [grossOverride, fitOverride, ssOverride, medOverride,
-        dateForm.start, dateForm.end, dateForm.payDate,
-        itemForm.reportedTips, itemForm.bonus, itemForm.commission,
-        itemForm.reimbursement, itemForm.deduction, itemForm.garnishment]);
-
-    const canEdit = !isVoided;
-    const set = field => canEdit ? (v => setItemForm(p => ({ ...p, [field]: v }))) : undefined;
-
-    const mainPayRow = stub.regular_hours != null && stub.regular_pay != null
-      ? { label: `Hourly  (${stub.regular_hours} hrs)`, amount: stub.regular_pay, editValue: canEdit ? grossOverride : undefined, onEditChange: canEdit ? setGrossOverride : undefined }
-      : { label: 'Compensation', amount: initialGross, editValue: canEdit ? grossOverride : undefined, onEditChange: canEdit ? setGrossOverride : undefined };
-
-    const optionalEarnings = [
-      { key: 'reportedTips',  label: 'Reported Tips'  },
-      { key: 'bonus',         label: 'Bonus'           },
-      { key: 'commission',    label: 'Commission'      },
-      { key: 'reimbursement', label: 'Reimbursement'  },
-    ];
-    const optionalDeductions = [
-      { key: 'deduction',   label: 'Deduction'   },
-      { key: 'garnishment', label: 'Garnishment' },
-    ];
-
-    const earningRows = [
-      mainPayRow,
-      stub.overtime_hours > 0 && stub.overtime_pay > 0 && { label: `Overtime  (${stub.overtime_hours} hrs)`, amount: stub.overtime_pay },
-      ...optionalEarnings
-        .filter(x => addedItems.has(x.key))
-        .map(x => ({ label: x.label, amount: parseFloat(itemForm[x.key] || 0), editValue: canEdit ? itemForm[x.key] : undefined, onEditChange: set(x.key) })),
-    ].filter(Boolean);
-
-    const liveGross = r2(
-      parseFloat(grossOverride || 0) +
-      (stub.overtime_pay || 0) +
-      optionalEarnings.filter(x => addedItems.has(x.key) && x.key !== 'reimbursement').reduce((s, x) => s + parseFloat(itemForm[x.key] || 0), 0)
-    );
-
-    // Auto-update SS/Medicare/FIT estimates when gross changes due to tip/bonus/commission edits.
-    // IMPORTANT: skip the very first render — the saved values from the DB are authoritative on open.
-    // Only recalculate when liveGross actually changes after the modal is mounted.
-    const prevLiveGross = useRef(liveGross); // initialised to mount-time value
-    useEffect(() => {
-      const prev = prevLiveGross.current;
-      prevLiveGross.current = liveGross;
-      if (isVoided || liveGross === prev) return; // nothing changed yet
-      if (!ssManual)  setSsOverride(String(r2(liveGross * 0.062)));
-      if (!medManual) setMedOverride(String(r2(liveGross * 0.0145)));
-      if (liveGross > 0) {
-        // Recompute FIT (unless manually pinned) plus state income tax and
-        // additional Medicare from the new gross, so the live preview matches
-        // what the backend will store.
-        api.calculate({
-          grossWages:    liveGross,
-          payFrequency:  stub.pay_frequency   || 'biweekly',
-          filingStatus:  stub.filing_status   || 'single',
-          step2Checkbox: !!stub.step2_checkbox,
-          step3Children: stub.step3_children  || 0,
-          step3Other:    stub.step3_other     || 0,
-          step4a: 0, step4b: 0, step4c: 0,
-          workState: stub.work_state || 'TX',
-          ytdGross:  stub.ytd_wages_before    || 0,
-        }).then(res => {
-          if (!fitManual) setFitOverride(String(r2(res.fitWithholding || 0)));
-          setLiveStateTax(r2(res.stateIncomeTax   || 0));
-          setLiveAddlMed (r2(res.additionalMedicare || 0));
-        }).catch(() => {});
-      }
-    }, [liveGross]);
-
-    // Clamp at 0 to match the backend — a check can't be written for a negative
-    // amount, so the modal's "Check Amount" never goes below zero either.
-    const liveNetPay = Math.max(0, r2(
-      liveGross
-      - parseFloat(fitOverride || 0)
-      - parseFloat(ssOverride  || 0)
-      - parseFloat(medOverride || 0)
-      - liveAddlMed
-      - liveStateTax
-      - parseFloat(itemForm.deduction   || 0)
-      - parseFloat(itemForm.garnishment || 0)
-      + parseFloat(itemForm.reimbursement || 0)
-    ));
-
-    const deductionRows = [
-      { label: 'Federal Income Tax', amount: stub.fit_withholding   || 0, ytd: ytd.fit,
-        editValue: canEdit ? fitOverride : undefined,
-        onEditChange: canEdit ? (v => { setFitManual(true); setFitOverride(v); }) : undefined },
-      { label: 'Social Security', amount: stub.employee_ss       || 0, ytd: ytd.eeSS,
-        editValue: canEdit ? ssOverride  : undefined,
-        onEditChange: canEdit ? (v => { setSsManual(true);  setSsOverride(v);  }) : undefined },
-      { label: 'Medicare',        amount: stub.employee_medicare || 0, ytd: ytd.eeMed,
-        editValue: canEdit ? medOverride : undefined,
-        onEditChange: canEdit ? (v => { setMedManual(true); setMedOverride(v); }) : undefined },
-      liveAddlMed > 0 && { label: 'Addl Medicare', amount: liveAddlMed, ytd: 0 },
-      { label: 'State Income Tax',   amount: liveStateTax, ytd: ytd.stateTax },
-      ...optionalDeductions
-        .filter(x => addedItems.has(x.key))
-        .map(x => ({ label: x.label, amount: parseFloat(itemForm[x.key] || 0), editValue: canEdit ? itemForm[x.key] : undefined, onEditChange: set(x.key) })),
-    ].filter(Boolean);
-
-    const hiddenItems = [...optionalEarnings, ...optionalDeductions].filter(x => !addedItems.has(x.key));
-
-    const employerRows = [
-      { label: 'SS Match (Company)',       amount: stub.employer_ss      || 0, ytd: ytd.erSS   ?? 0 },
-      { label: 'Medicare Match (Company)', amount: stub.employer_medicare || 0, ytd: ytd.erMed  ?? 0 },
-      { label: 'Federal Unemployment',     amount: stub.futa_tax         || 0, ytd: ytd.futa },
-      { label: `${stub.work_state || 'State'} Unemployment`, amount: stub.suta_tax || 0, ytd: ytd.suta },
-    ];
-    const employerTotal = r2(employerRows.reduce((s, r) => s + r.amount, 0));
-    const employerYTD   = r2(employerRows.reduce((s, r) => s + (r.ytd || 0), 0));
-
-    return (
-      <ModalOverlay onClose={onClose}>
-        <div className="card" style={{ width: 740, maxWidth: '96vw', maxHeight: '92vh', overflowY: 'auto', padding: 0, borderRadius: 12 }}>
-
-          {/* Header */}
-          <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)' }}>
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
-              <div>
-                <div style={{ fontWeight: 800, fontSize: 20, textDecoration: isVoided ? 'line-through' : 'none' }}>{stub.employee_name}</div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
-                  <StatusBadge status={stub.check_status || 'draft'} />
-                  {stub.check_number && <span style={{ ...MODAL_MONO, fontSize: 13, color: 'var(--accent)', fontWeight: 700 }}>Check #{stub.check_number}</span>}
-                </div>
-              </div>
-              <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
-            </div>
-            {/* Pay period strip — editable for non-voided checks */}
-            <div style={{ display: 'flex', marginTop: 14, borderRadius: 8, overflow: 'hidden', border: `1px solid ${isDirty ? 'var(--accent)' : 'var(--border)'}`, background: 'var(--bg-secondary)', transition: 'border-color 0.15s' }}>
-              {[
-                { label: 'Period Start', key: 'start',   raw: stub.pay_period_start },
-                { label: 'Period End',   key: 'end',     raw: stub.pay_period_end   },
-                { label: 'Pay Date',     key: 'payDate', raw: stub.settlement_date  },
-              ].map(({ label, key, raw }, i, arr) => (
-                <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
-                  {isVoided
-                    ? <div style={{ ...MODAL_MONO, fontSize: 13, fontWeight: 600 }}>{fmtDate(raw)}</div>
-                    : <input type="date" value={dateForm[key]}
-                        onChange={e => setDateForm(f => ({ ...f, [key]: e.target.value }))}
-                        style={{ ...MODAL_MONO, fontSize: 13, fontWeight: 600, background: 'transparent', border: 'none', outline: 'none', width: '100%', color: dateForm[key] !== (raw || '') ? 'var(--accent)' : 'var(--text-primary)', cursor: 'pointer' }} />
-                  }
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Two-column body */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
-
-            {/* Left — Employee Summary */}
-            <div style={{ padding: '18px 20px 0 24px', borderRight: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Employee Summary</div>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <ColHeader hasYTD={true} />
-                <tbody>
-                  {earningRows.map(r => (
-                    <TR key={r.label} label={r.label} amount={r.amount} color="var(--accent)"
-                      editValue={r.editValue} onEditChange={r.onEditChange} />
-                  ))}
-                  <TR label="Gross Pay" amount={liveGross} ytdAmount={ytd.gross} color="var(--accent)" bold borderTop />
-                  {deductionRows.map(r => (
-                    <TR key={r.label} label={r.label} amount={r.amount} ytdAmount={r.ytd} negative
-                      color={r.amount > 0 ? '#dc2626' : 'var(--text-muted)'}
-                      editValue={r.editValue} onEditChange={r.onEditChange} />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Right — Company Summary */}
-            <div style={{ padding: '18px 24px 0 20px' }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Company Summary</div>
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                <ColHeader hasYTD={true} />
-                <tbody>
-                  {employerRows.map(r => <TR key={r.label} label={r.label} amount={r.amount} ytdAmount={r.ytd} />)}
-                  <TR label="Total Company Cost" amount={employerTotal} ytdAmount={employerYTD} bold borderTop color="var(--text-primary)" />
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Check Amount + tax bar */}
-          <div style={{ margin: '16px 24px 0', borderTop: '2px solid var(--border)' }} />
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px 4px' }}>
-            <div style={{ fontSize: 15, fontWeight: 700 }}>Check Amount</div>
-            <div style={{ ...MODAL_MONO, fontSize: 22, fontWeight: 800, color: '#16a34a' }}>{fmt(liveNetPay)}</div>
-          </div>
-          <div style={{ display: 'flex', gap: 0, margin: '12px 24px 0', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
-            {[
-              { label: '941 Tax Deposit', value: fmt(stub.total_deposit || 0) },
-              { label: '940 FUTA',        value: fmt(stub.futa_tax      || 0) },
-              { label: 'State SUI',       value: fmt(stub.suta_tax      || 0) },
-              { label: 'Total Tax Costs', value: fmt(r2((stub.total_deposit || 0) + (stub.futa_tax || 0) + (stub.suta_tax || 0))), accent: true },
-            ].map(({ label, value, accent }, i, arr) => (
-              <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none', background: accent ? 'var(--accent-light)' : undefined }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
-                <div style={{ ...MODAL_MONO, fontSize: 14, fontWeight: 800, color: accent ? 'var(--accent)' : 'var(--text-primary)' }}>{value}</div>
-              </div>
-            ))}
-          </div>
-
-          {/* Other Payroll Items */}
-          {canEdit && hiddenItems.length > 0 && (
-            <div style={{ margin: '0 24px', borderTop: '1px solid var(--border)', paddingTop: 10, paddingBottom: 6 }}>
-              <button type="button" onClick={() => setOtherOpen(o => !o)}
-                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
-                {otherOpen ? '▴' : '▾'} Other Payroll Items
-              </button>
-              {otherOpen && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
-                  {hiddenItems.map(item => (
-                    <button key={item.key} type="button"
-                      onClick={() => { setAddedItems(prev => new Set([...prev, item.key])); setOtherOpen(false); }}
-                      style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-secondary)', cursor: 'pointer', color: 'var(--text-secondary)', fontWeight: 500 }}>
-                      + {item.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* Footer: always-visible sticky bar */}
-          <div style={{ position: 'sticky', bottom: 0, background: '#fff', borderTop: '2px solid var(--border)', padding: '14px 24px', display: 'flex', gap: 8, alignItems: 'center', zIndex: 10, boxShadow: '0 -2px 10px rgba(0,0,0,0.07)' }}>
-            {!isVoided && (
-              <button onClick={async () => {
-                if (!window.confirm('Delete this check? This cannot be undone.')) return;
-                try { await api.deletePaystub(stub.id); onClose(); reloadStubs(); } catch (e) { alert(e.message); }
-              }} style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 18px', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
-                🗑 Delete
-              </button>
-            )}
-            <div style={{ flex: 1 }} />
-            <button className="btn btn-ghost" onClick={async () => {
-              if (autoSaveTimerRef.current) {
-                clearTimeout(autoSaveTimerRef.current);
-                autoSaveTimerRef.current = null;
-                if (isDirty) await saveEdits();
-              }
-              onClose();
-            }} style={{ fontSize: 13 }}>Close</button>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
-              <button className="btn btn-ghost" style={{ fontSize: 13, borderRadius: '6px 0 0 6px', borderRight: 'none' }}
-                onClick={async () => {
-                  try { await api.printSelectedChecks(clientId, [stub.id], checkDesign); } catch (e) { alert(e.message); }
-                }}>
-                ↓ Paycheck
-              </button>
-              <select
-                value={checkDesign}
-                onChange={e => { setCheckDesign(e.target.value); localStorage.setItem('checkDesign', e.target.value); }}
-                style={{ fontSize: 12, border: '1px solid var(--border)', borderRadius: '0 6px 6px 0', padding: '6px 4px', background: 'var(--bg-primary)', cursor: 'pointer', color: 'var(--text-secondary)' }}
-              >
-                <option value="classic">Classic</option>
-                <option value="micr">MICR (Check Printer)</option>
-                <option value="top">Top Check</option>
-              </select>
-            </div>
-            <button className="btn btn-ghost" style={{ fontSize: 13 }} onClick={async () => {
-              try { await api.printSelectedPaystubs(clientId, [stub.id]); } catch (e) { alert(e.message); }
-            }}>↓ Paystub</button>
-            {isDirty && (
-              <button onClick={() => {
-                if (autoSaveTimerRef.current) { clearTimeout(autoSaveTimerRef.current); autoSaveTimerRef.current = null; }
-                setGrossOverride(committed.gross);
-                setFitOverride(committed.fit);
-                setSsOverride(committed.ss);
-                setMedOverride(committed.med);
-                setItemForm({ reportedTips: committed.tips, bonus: committed.bonus, commission: committed.commission, reimbursement: committed.reimbursement, deduction: committed.deduction, garnishment: committed.garnishment });
-                setDateForm({ start: committed.dateStart, end: committed.dateEnd, payDate: committed.datePayDate });
-                const s = new Set();
-                if (parseFloat(committed.tips)         > 0) s.add('reportedTips');
-                if (parseFloat(committed.bonus)        > 0) s.add('bonus');
-                if (parseFloat(committed.commission)   > 0) s.add('commission');
-                if (parseFloat(committed.reimbursement)> 0) s.add('reimbursement');
-                if (parseFloat(committed.deduction)    > 0) s.add('deduction');
-                if (parseFloat(committed.garnishment)  > 0) s.add('garnishment');
-                setAddedItems(s);
-                setOtherOpen(false);
-                // Clear manual-tax flags so reverted tax fields re-derive on the
-                // next gross change instead of staying stuck "manual".
-                setFitManual(false); setSsManual(false); setMedManual(false);
-                setSaveStatus('idle');
-              }} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-secondary)' }}>Revert</button>
-            )}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 110, justifyContent: 'flex-end' }}>
-              {saveStatus === 'saving' && (
-                <span style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 5 }}>
-                  <span className="spinner" style={{ width: 13, height: 13 }} /> Saving…
-                </span>
-              )}
-              {saveStatus === 'saved' && (
-                <span style={{ fontSize: 13, color: '#16a34a', fontWeight: 600 }}>✓ Saved</span>
-              )}
-              {saveStatus === 'error' && (
-                <span style={{ fontSize: 13, color: '#dc2626', fontWeight: 600 }}>✗ Error</span>
-              )}
-              {saveStatus === 'idle' && isDirty && (
-                <span style={{ fontSize: 12, color: '#f59e0b', fontWeight: 500 }}>Unsaved…</span>
-              )}
-            </div>
-          </div>
-        </div>
-      </ModalOverlay>
-    );
-  }
 
   // Flat table renderer — clicking a row opens CheckDetailModal
   function renderTable(rows, startIdx = 0) {
@@ -3429,7 +3454,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       )}
 
       {/* Check detail modal */}
-      {detailModal && <CheckDetailModal rowData={detailModal} onClose={() => { reloadStubs(); setDetailModal(null); }} />}
+      {detailModal && <CheckDetailModal rowData={detailModal} onClose={() => { reloadStubs(); setDetailModal(null); }}
+        reloadStubs={reloadStubs} clientId={clientId} client={client} calcEmpYTD={calcEmpYTD} ppy={ppy}
+        pendingRows={pendingRows} setPendingRows={setPendingRows} getRow={getRow} skipPending={skipPending}
+        periodOverrides={periodOverrides} setPeriodOverrides={setPeriodOverrides} />}
 
       {/* Rate change confirmation */}
       {rateUpdatePrompt && (
