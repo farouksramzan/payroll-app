@@ -1137,7 +1137,20 @@ export default function Dashboard() {
   const [deleting, setDeleting] = useState(null);
   const [view, setView]         = useState(() => localStorage.getItem('dashView') || 'tiles');
   const [selected, setSelected] = useState(new Set());
+  const [search, setSearch]     = useState('');
   const navigate = useNavigate();
+
+  // Filter by company name or EIN (digits only, so "471234567" matches "47-1234567").
+  const visibleClients = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return clients;
+    const qDigits = q.replace(/\D/g, '');
+    return clients.filter(c => {
+      const name = (c.businessName || '').toLowerCase();
+      const ein  = (c.ein || '').replace(/\D/g, '');
+      return name.includes(q) || (qDigits && ein.includes(qDigits));
+    });
+  }, [clients, search]);
 
   useEffect(() => {
     let alive = true;
@@ -1181,20 +1194,38 @@ export default function Dashboard() {
     });
   }
 
-  const allSelected = clients.length > 0 && clients.every(c => selected.has(c.id));
+  const allSelected = visibleClients.length > 0 && visibleClients.every(c => selected.has(c.id));
 
   return (
     <div className="dash-page">
       <div className="dash-header">
         <div>
           <div className="dash-title">Your Companies</div>
-          <div className="dash-subtitle">{clients.length} {clients.length === 1 ? 'company' : 'companies'} on file</div>
+          <div className="dash-subtitle">
+            {search.trim()
+              ? `${visibleClients.length} of ${clients.length} ${clients.length === 1 ? 'company' : 'companies'}`
+              : `${clients.length} ${clients.length === 1 ? 'company' : 'companies'} on file`}
+          </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           {clients.length > 0 && (
             <>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                <span style={{ position: 'absolute', left: 10, fontSize: 13, color: 'var(--text-muted)', pointerEvents: 'none' }}>🔍</span>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Search companies…"
+                  aria-label="Search companies by name or EIN"
+                  style={{ fontSize: 13, padding: '6px 28px 6px 30px', borderRadius: 8, border: '1px solid var(--border)', background: '#fff', width: 220, outline: 'none' }} />
+                {search && (
+                  <button onClick={() => setSearch('')} aria-label="Clear search"
+                    style={{ position: 'absolute', right: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14, lineHeight: 1, padding: 4 }}>×</button>
+                )}
+              </div>
               <button
-                onClick={() => setSelected(allSelected ? new Set() : new Set(clients.map(c => c.id)))}
+                onClick={() => setSelected(allSelected ? new Set() : new Set(visibleClients.map(c => c.id)))}
                 className="btn btn-ghost"
                 style={{ fontSize: 12, padding: '5px 12px' }}>
                 {allSelected ? 'Deselect All' : 'Select All'}
@@ -1228,10 +1259,17 @@ export default function Dashboard() {
           <p>Add your first company to start managing payroll and tax submissions.</p>
           <Link to="/clients/new" className="btn btn-primary">Add Company</Link>
         </div>
+      ) : visibleClients.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-state-icon">🔍</div>
+          <h3>No companies match “{search.trim()}”</h3>
+          <p>Try a different name or EIN.</p>
+          <button onClick={() => setSearch('')} className="btn btn-ghost">Clear search</button>
+        </div>
       ) : view === 'tiles' ? (
         /* ── Tile view ── */
         <div className="company-grid" style={{ alignItems: 'start' }}>
-          {clients.map(client => {
+          {visibleClients.map(client => {
             const ps = payrollStatus(client.nextPayDate);
             const isSel = selected.has(client.id);
             return (
@@ -1288,7 +1326,7 @@ export default function Dashboard() {
             <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr 160px 130px 70px 100px 36px', alignItems: 'center', padding: '9px 16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)', gap: 8 }}>
               <div>
                 <input type="checkbox" checked={allSelected}
-                  onChange={e => setSelected(e.target.checked ? new Set(clients.map(c => c.id)) : new Set())}
+                  onChange={e => setSelected(e.target.checked ? new Set(visibleClients.map(c => c.id)) : new Set())}
                   onClick={e => e.stopPropagation()}
                   style={{ accentColor: 'var(--accent)', width: 14, height: 14, cursor: 'pointer' }} />
               </div>
@@ -1305,7 +1343,7 @@ export default function Dashboard() {
             </div>
 
             {/* Rows */}
-            {clients.map((client, i) => {
+            {visibleClients.map((client, i) => {
               const ps = payrollStatus(client.nextPayDate);
               const isSel = selected.has(client.id);
               return (
