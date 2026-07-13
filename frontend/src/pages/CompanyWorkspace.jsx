@@ -25,6 +25,18 @@ function fmtPeriod(start, end) {
   return `${sStr} – ${eStr}`;
 }
 function r2(n) { return Math.round((n || 0) * 100) / 100; }
+// Per-period salary for a pending row: honor row.salaryOverride when it's a
+// usable number (commas stripped, negatives clamped to 0); otherwise fall back
+// to annual/ppy. A blank or non-numeric override reverts to the default rather
+// than silently paying $0, so clearing the field can't accidentally zero a check.
+function effPeriodSalary(row, emp, ppy) {
+  const ov = row == null ? undefined : row.salaryOverride;
+  if (ov !== undefined && String(ov).trim() !== '') {
+    const n = parseFloat(String(ov).replace(/,/g, ''));
+    if (!isNaN(n)) return r2(Math.max(0, n));
+  }
+  return r2((emp.annualSalary || 0) / ppy);
+}
 function initials(name) { return name ? name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : '?'; }
 const PERIODS_PER_YEAR = { weekly: 52, biweekly: 26, semimonthly: 24, monthly: 12 };
 const FREQ_LABEL = { weekly: 'Weekly', biweekly: 'Bi-weekly', semimonthly: 'Semi-monthly', monthly: 'Monthly' };
@@ -1399,7 +1411,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
       const closeWithFlush = () => { flushLocal(); onClose(); };
       const isSalary = emp.payType === 'salary';
       // Salary / period is editable (row.salaryOverride); falls back to annual/ppy.
-      const salAmt   = row.salaryOverride !== undefined ? r2(parseFloat(row.salaryOverride || 0)) : r2((emp.annualSalary || 0) / ppy);
+      const salAmt   = effPeriodSalary(row, emp, ppy);
       const rate     = parseFloat(row.rate) || emp.hourlyRate || 0;
       const regH     = parseFloat(row.regHours || 0);
       const otH      = parseFloat(row.otHours  || 0);
@@ -1521,7 +1533,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
         const eRate     = parseFloat(r2emp.rate) || emp.hourlyRate || 0;
         const eRegH     = parseFloat(r2emp.regHours || 0);
         const eOtH      = parseFloat(r2emp.otHours  || 0);
-        const eReg      = eIsSalary ? (r2emp.salaryOverride !== undefined ? r2(parseFloat(r2emp.salaryOverride || 0)) : r2((emp.annualSalary || 0) / ppy)) : r2(eRegH * eRate);
+        const eReg      = eIsSalary ? effPeriodSalary(r2emp, emp, ppy) : r2(eRegH * eRate);
         const eOt       = eIsSalary ? 0 : r2(eOtH * eRate * 1.5);
         const eTips     = parseFloat(r2emp.tips       || 0);
         const eBonus    = parseFloat(r2emp.bonus      || 0);
@@ -2606,7 +2618,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
         empsInGroup.forEach(emp => {
           const row   = getRow(period.end, emp.id);
           const isSal = emp.payType === 'salary';
-          const salAmt = row.salaryOverride !== undefined ? r2(parseFloat(row.salaryOverride || 0)) : r2((emp.annualSalary || 0) / ppy);
+          const salAmt = effPeriodSalary(row, emp, ppy);
           const rate  = parseFloat(row.rate) || emp.hourlyRate || 0;
           const gross = r2(
             (isSal ? salAmt : r2(parseFloat(row.regHours || 0) * rate + parseFloat(row.otHours || 0) * rate * 1.5))
@@ -2655,6 +2667,16 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
             setRunErr(`Please enter hours for ${emp.firstName} ${emp.lastName} before processing payroll.`);
             return;
           }
+        } else {
+          // Salary is editable now — block a $0 gross so a cleared/zeroed salary
+          // (with no other earnings) can't be silently dropped by the backend
+          // while the run still reports success.
+          const salGross = r2(effPeriodSalary(row, emp, ppy)
+            + parseFloat(row.tips || 0) + parseFloat(row.bonus || 0) + parseFloat(row.commission || 0));
+          if (salGross <= 0) {
+            setRunErr(`Please enter a salary amount for ${emp.firstName} ${emp.lastName} before processing payroll.`);
+            return;
+          }
         }
       }
     }
@@ -2675,7 +2697,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           const cashAdv  = parseFloat(row.cashAdvance || 0);
           const mileAmt  = parseFloat(row.mileage || 0);
           const rate = parseFloat(row.rate) || emp.hourlyRate || 0;
-          const regPay = isSalary ? (row.salaryOverride !== undefined ? r2(parseFloat(row.salaryOverride || 0)) : r2((emp.annualSalary || 0) / ppy)) : r2(regH * rate);
+          const regPay = isSalary ? effPeriodSalary(row, emp, ppy) : r2(regH * rate);
           const otPay  = isSalary ? 0 : r2(otH * rate * 1.5);
           const lineItems = [
             ...(isSalary
@@ -2779,8 +2801,14 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
         const comm2    = parseFloat(rowData2.commission || 0);
         const cashAdv2 = parseFloat(rowData2.cashAdvance || 0);
         const mile2    = parseFloat(rowData2.mileage || 0);
-        const regPay   = isSalary ? (rowData2.salaryOverride !== undefined ? r2(parseFloat(rowData2.salaryOverride || 0)) : r2((emp.annualSalary || 0) / ppy)) : r2(regH * rate);
+        const regPay   = isSalary ? effPeriodSalary(rowData2, emp, ppy) : r2(regH * rate);
         const otPay    = isSalary ? 0 : r2(otH * rate * 1.5);
+        // Guard a $0 gross (e.g. a cleared/zeroed salary or no hours) — the
+        // backend would silently create no check while we'd still set the status.
+        if (r2(regPay + otPay + tips2 + bonus2 + comm2) <= 0) {
+          alert(`Can't run payroll for ${emp.firstName} ${emp.lastName} — gross pay is $0. Enter an amount first.`);
+          return;
+        }
         const lineItems = [
           ...(isSalary
             ? [{ payType: 'salary', description: 'Salary', amount: regPay }]
@@ -3057,7 +3085,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
               const period = { ...rawPeriod, start: ov.start || rawPeriod.start, end: ov.end || rawPeriod.end, payDate: ov.payDate || rawPeriod.payDate };
               const row      = getRow(rawPeriod.end, emp.id);
               const isSalary = emp.payType === 'salary';
-              const salAmt   = row.salaryOverride !== undefined ? r2(parseFloat(row.salaryOverride || 0)) : r2((emp.annualSalary || 0) / ppy);
+              const salAmt   = effPeriodSalary(row, emp, ppy);
               const rate     = parseFloat(row.rate) || emp.hourlyRate || 0;
               const regH     = parseFloat(row.regHours || 0);
               const otH      = parseFloat(row.otHours  || 0);
