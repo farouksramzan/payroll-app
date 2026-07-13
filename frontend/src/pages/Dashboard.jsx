@@ -1292,8 +1292,15 @@ export default function Dashboard() {
                   onClick={e => e.stopPropagation()}
                   style={{ accentColor: 'var(--accent)', width: 14, height: 14, cursor: 'pointer' }} />
               </div>
-              {['Company', 'Next Pay Date', 'Schedule', 'State', 'Status', ''].map((h, i) => (
-                <div key={i} style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</div>
+              {[
+                { label: 'Company' },
+                { label: 'Next Pay Date', title: "Soonest upcoming pay date across this company's pay groups" },
+                { label: 'Deposit Schedule', title: 'IRS federal tax-deposit schedule — Monthly or Semiweekly depositor. Set per company (per EIN), not per pay group.' },
+                { label: 'State' },
+                { label: 'Status' },
+                { label: '' },
+              ].map((h, i) => (
+                <div key={i} title={h.title} style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: h.title ? 'help' : undefined }}>{h.label}</div>
               ))}
             </div>
 
@@ -1330,7 +1337,7 @@ export default function Dashboard() {
                   <div style={{ fontSize: 13, color: ps ? (ps.cls === 'badge-error' ? '#b4241f' : '#d97706') : 'var(--text-secondary)', fontWeight: ps ? 600 : 400 }} title={ps ? (ps.cls === 'badge-error' ? 'Pay date is past — payroll overdue' : 'Pay date is coming up soon') : undefined}>
                     {client.nextPayDate ? fmtDate(client.nextPayDate) : '—'}
                   </div>
-                  <div style={{ fontSize: 13, color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{client.depositSchedule || '—'}</div>
+                  <div title="IRS federal tax-deposit schedule (company-level)" style={{ fontSize: 13, color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{client.depositSchedule || '—'}</div>
                   <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{client.state || 'TX'}</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'flex-start' }}>
                     {(() => {
