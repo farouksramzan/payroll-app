@@ -139,11 +139,21 @@ router.delete('/:id', (req, res) => {
 
   const archived = issued > 0;
   db.transaction(() => {
-    db.prepare('UPDATE employees SET pay_group_id = NULL WHERE pay_group_id = ?').run(g.id);
     if (archived) {
+      // Stamp pay_group_id onto issued checks that are linked to this group ONLY
+      // via employee membership (legacy stubs / '+ Ungrouped Check' have
+      // pay_group_id = NULL). Must run BEFORE unassigning employees below, or the
+      // archived group's history would render empty once the employee link is cut.
+      db.prepare(`
+        UPDATE paystubs SET pay_group_id = ?
+        WHERE pay_group_id IS NULL AND check_status != 'draft'
+          AND employee_id IN (SELECT id FROM employees WHERE pay_group_id = ?)
+      `).run(g.id, g.id);
+      db.prepare('UPDATE employees SET pay_group_id = NULL WHERE pay_group_id = ?').run(g.id);
       db.prepare("UPDATE pay_groups SET deleted_at = datetime('now') WHERE id = ?").run(g.id);
     } else {
       // No history worth keeping — drop any leftover drafts and the group itself.
+      db.prepare('UPDATE employees SET pay_group_id = NULL WHERE pay_group_id = ?').run(g.id);
       db.prepare("DELETE FROM paystubs WHERE pay_group_id = ? AND check_status = 'draft'").run(g.id);
       db.prepare('DELETE FROM pay_groups WHERE id = ?').run(g.id);
     }

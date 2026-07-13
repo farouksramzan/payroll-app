@@ -2391,7 +2391,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
     api.getPayGroups(clientId)
       .then(groups => {
         setPayGroups(groups);
-        if (groups.length > 0) setCurrentGroupId(prev => prev ?? groups[0].id);
+        // Open on the first ACTIVE group — never auto-land on an archived one.
+        const firstActive = groups.find(g => !g.deletedAt);
+        if (firstActive) setCurrentGroupId(prev => prev ?? firstActive.id);
       })
       .catch(() => {})
       .finally(() => setGroupsLoading(false));
@@ -3669,7 +3671,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       {editGroup && editGroup.id !== UNASSIGNED_ID && (() => {
         // Mirror the backend rule: a group has "history worth keeping" if any
         // non-draft check is linked to it directly or via one of its employees.
-        const grpEmpIds = new Set(activeEmps.filter(e => e.payGroupId === editGroup.id).map(e => e.id));
+        // Use ALL employees (incl. inactive/terminated) — the backend counts them
+        // too, so the confirm message can't contradict the actual outcome.
+        const grpEmpIds = new Set(employees.filter(e => e.payGroupId === editGroup.id).map(e => e.id));
         const editGroupHasChecks = paystubs.some(s =>
           s.check_status !== 'draft' && (s.pay_group_id === editGroup.id || grpEmpIds.has(s.employee_id)));
         return (
@@ -3679,12 +3683,20 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           onMoved={() => { onRefresh?.(); }}
           onDeleted={() => {
             const deletedId = editGroup.id;
+            // The deleted group's employees are about to become unassigned, so a
+            // Unassigned tab will exist even if there were none before.
+            const willHaveUnassigned = unassignedEmps.length > 0
+              || activeEmps.some(e => e.payGroupId === deletedId);
             setEditGroup(null);
             onRefresh?.();
+            // Re-fetch paystubs too: archiving back-fills pay_group_id onto
+            // employee-linked checks, so the stale client copy would otherwise
+            // render the archived group's history empty until a full reload.
+            api.getPaystubs(clientId).then(setPaystubs).catch(() => {});
             api.getPayGroups(clientId).then(groups => {
               setPayGroups(groups);
               const next = groups.find(g => g.id !== deletedId && !g.deletedAt);
-              setCurrentGroupId(next ? next.id : (unassignedEmps.length > 0 ? UNASSIGNED_ID : null));
+              setCurrentGroupId(next ? next.id : (willHaveUnassigned ? UNASSIGNED_ID : null));
             });
           }} />
         );
