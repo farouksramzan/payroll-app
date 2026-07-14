@@ -85,9 +85,13 @@ function buildDashboard(bridgeClient, jobLog) {
     if (!/^\d{4}$/.test(String(pin))) return res.status(400).json({ ok: false, error: 'PIN must be exactly 4 digits' });
     if (bridgeClient.status !== 'connected') return res.status(503).json({ ok: false, error: 'Bridge not connected to Railway — cannot update PIN' });
     try {
-      bridgeClient._send({ type: 'update_pin', ein: String(ein).replace(/-/g, ''), enrollmentPin: String(pin) });
-      console.log(`[Bridge] PIN update sent to Railway for EIN ${ein}`);
-      res.json({ ok: true, message: `PIN updated for EIN ${ein}` });
+      const cleanEin = String(ein).replace(/-/g, '');
+      bridgeClient._send({ type: 'update_pin', ein: cleanEin, enrollmentPin: String(pin) });
+      // Also record it enrolled in the bridge's LOCAL list, otherwise the bridge
+      // keeps re-enrolling a hand-enrolled company (it only checks its own file).
+      if (typeof bridgeClient.markEnrolledLocal === 'function') bridgeClient.markEnrolledLocal(cleanEin);
+      console.log(`[Bridge] PIN update sent to Railway + marked enrolled locally for EIN ${cleanEin}`);
+      res.json({ ok: true, message: `PIN updated and marked enrolled for EIN ${cleanEin}` });
     } catch (err) {
       res.status(500).json({ ok: false, error: err.message });
     }

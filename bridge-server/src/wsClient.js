@@ -227,10 +227,10 @@ function markEnrolled(ein) {
   let list = [];
   try { list = JSON.parse(fs.readFileSync(ENROLLED_JSON, 'utf8')); } catch {}
   const normalized = cleanEin(ein);
-  if (!list.includes(normalized)) {
-    list.push(normalized);
-    fs.writeFileSync(ENROLLED_JSON, JSON.stringify(list, null, 2));
-  }
+  if (list.includes(normalized)) return false;   // already enrolled
+  list.push(normalized);
+  fs.writeFileSync(ENROLLED_JSON, JSON.stringify(list, null, 2));
+  return true;
 }
 
 function saveEnrollmentFile(enrollContent, ein) {
@@ -394,6 +394,16 @@ class BridgeClient extends EventEmitter {
     const r = abortAllFlows();
     this.emit('log', `[RESET] Aborted flows — killed=${r.killed}, cleared ${r.clearedEnrollments} pending enrollment(s). Bridge ready for fresh requests.`);
     return r;
+  }
+
+  // Record an EIN as enrolled in the local enrolled_clients.json so the bridge
+  // skips enrollment for it. Called when a PIN is set manually (set-pin.js /
+  // dashboard) — otherwise a hand-enrolled company keeps getting re-enrolled
+  // because the bridge never learns about it.
+  markEnrolledLocal(ein) {
+    const added = markEnrolled(ein);
+    if (added !== false) this.emit('log', `[ENROLL] EIN ${cleanEin(ein)} marked enrolled locally (won't re-enroll)`);
+    return added;
   }
 
   get status() {
