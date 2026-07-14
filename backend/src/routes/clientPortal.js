@@ -2,14 +2,20 @@
 
 const express = require('express');
 const { getDb } = require('../database/db');
-const { requireAuth, requireClient } = require('../middleware/auth');
+const { requireAuth, requireClient, canAccessClient } = require('../middleware/auth');
 
 const router = express.Router();
 
 router.use(requireAuth, requireClient);
 
 function clientScope(req) {
-  if (req.user.role === 'admin') return req.query.clientId ? parseInt(req.query.clientId, 10) : null;
+  if (req.user.role === 'admin') {
+    // An admin may view a client's portal data only for a company they own or were
+    // granted — never an arbitrary clientId. Returns null (→ empty) otherwise.
+    if (!req.query.clientId) return null;
+    const access = canAccessClient(getDb(), req.query.clientId, req.user);
+    return access ? access.id : null;
+  }
   return req.user.clientId;
 }
 

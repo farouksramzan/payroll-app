@@ -1,6 +1,6 @@
 const express = require('express');
 const { getDb } = require('../database/db');
-const { requireAuth, canAccessClient } = require('../middleware/auth');
+const { requireAuth, requireAdmin, canAccessClient } = require('../middleware/auth');
 const { calculateWithholding, getTaxPeriod } = require('../services/taxCalculator');
 const { submitToEFTPS } = require('../services/eftpsAutomation');
 const { decrypt, encrypt } = require('../services/cryptoService');
@@ -8,6 +8,7 @@ const bridgeManager = require('../ws/bridge');
 
 const router = express.Router();
 router.use(requireAuth);
+router.use(requireAdmin);
 
 function generatePin() {
   const BLOCKED = new Set(['0000', '9999', '1234']);
@@ -54,16 +55,16 @@ router.get('/', (req, res) => {
        FROM submissions s
        JOIN clients c ON s.client_id = c.id
        LEFT JOIN employees e ON s.employee_id = e.id
-       WHERE s.client_id = ? AND c.user_id = ? ORDER BY s.created_at DESC`
+       WHERE s.client_id = ? AND (c.user_id = ? OR c.id IN (SELECT client_id FROM client_accountants WHERE user_id = ?)) ORDER BY s.created_at DESC`
     : `SELECT s.*, c.business_name, e.first_name, e.last_name
        FROM submissions s
        JOIN clients c ON s.client_id = c.id
        LEFT JOIN employees e ON s.employee_id = e.id
-       WHERE c.user_id = ? ORDER BY s.created_at DESC LIMIT 100`;
+       WHERE (c.user_id = ? OR c.id IN (SELECT client_id FROM client_accountants WHERE user_id = ?)) ORDER BY s.created_at DESC LIMIT 100`;
 
   const rows = clientId
-    ? db.prepare(query).all(clientId, req.user.id)
-    : db.prepare(query).all(req.user.id);
+    ? db.prepare(query).all(clientId, req.user.id, req.user.id)
+    : db.prepare(query).all(req.user.id, req.user.id);
 
   res.json(attachLineItems(db, rows));
 });
@@ -76,8 +77,8 @@ router.get('/:id', (req, res) => {
               FROM submissions s
               JOIN clients c ON s.client_id = c.id
               LEFT JOIN employees e ON s.employee_id = e.id
-              WHERE s.id = ? AND c.user_id = ?`)
-    .get(req.params.id, req.user.id);
+              WHERE s.id = ? AND (c.user_id = ? OR c.id IN (SELECT client_id FROM client_accountants WHERE user_id = ?))`)
+    .get(req.params.id, req.user.id, req.user.id);
   if (!sub) return res.status(404).json({ error: 'Submission not found' });
   res.json(attachLineItems(db, sub));
 });
@@ -249,8 +250,8 @@ router.post('/:id/submit', async (req, res) => {
                      c.eftps_enrollment_number, c.deposit_schedule
               FROM submissions s
               JOIN clients c ON s.client_id = c.id
-              WHERE s.id = ? AND c.user_id = ?`)
-    .get(req.params.id, req.user.id);
+              WHERE s.id = ? AND (c.user_id = ? OR c.id IN (SELECT client_id FROM client_accountants WHERE user_id = ?))`)
+    .get(req.params.id, req.user.id, req.user.id);
 
   if (!sub) return res.status(404).json({ error: 'Submission not found' });
   if (sub.eftps_status === 'submitted') return res.status(400).json({ error: 'Already submitted to EFTPS' });
@@ -318,8 +319,8 @@ router.post('/:id/submit-bridge', async (req, res) => {
                      c.bank_account_number_encrypted, c.bank_routing_number, c.bank_account_type
               FROM submissions s
               JOIN clients c ON s.client_id = c.id
-              WHERE s.id = ? AND c.user_id = ?`)
-    .get(req.params.id, req.user.id);
+              WHERE s.id = ? AND (c.user_id = ? OR c.id IN (SELECT client_id FROM client_accountants WHERE user_id = ?))`)
+    .get(req.params.id, req.user.id, req.user.id);
 
   if (!sub) return res.status(404).json({ error: 'Submission not found' });
   if (sub.eftps_status === 'submitted') return res.status(400).json({ error: 'Already submitted' });

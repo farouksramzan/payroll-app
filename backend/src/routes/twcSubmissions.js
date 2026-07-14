@@ -12,12 +12,13 @@
 
 const express   = require('express');
 const { getDb } = require('../database/db');
-const { requireAuth, canAccessClient } = require('../middleware/auth');
+const { requireAuth, requireAdmin, canAccessClient } = require('../middleware/auth');
 const { generateIcesa } = require('../services/icesaService');
 const bridgeTwc = require('../ws/bridgeTwc');
 
 const router = express.Router();
 router.use(requireAuth);
+router.use(requireAdmin);
 
 // ── POST /api/twc-submissions ─────────────────────────────────────────────────
 // Creates a pending TWC submission, generates the ICESA content, and if the
@@ -89,9 +90,9 @@ router.get('/', (req, res) => {
     rows = db.prepare(`
       SELECT ts.* FROM twc_submissions ts
       JOIN clients c ON ts.client_id = c.id
-      WHERE c.user_id = ?
+      WHERE (c.user_id = ? OR c.id IN (SELECT client_id FROM client_accountants WHERE user_id = ?))
       ORDER BY ts.created_at DESC LIMIT 100
-    `).all(req.user.id);
+    `).all(req.user.id, req.user.id);
   }
   res.json(rows.map(serializeSubmission));
 });
@@ -102,8 +103,8 @@ router.get('/:id', (req, res) => {
   const row = db.prepare(`
     SELECT ts.* FROM twc_submissions ts
     JOIN clients c ON ts.client_id = c.id
-    WHERE ts.id = ? AND c.user_id = ?
-  `).get(req.params.id, req.user.id);
+    WHERE ts.id = ? AND (c.user_id = ? OR c.id IN (SELECT client_id FROM client_accountants WHERE user_id = ?))
+  `).get(req.params.id, req.user.id, req.user.id);
   if (!row) return res.status(404).json({ error: 'Submission not found' });
   res.json(serializeSubmission(row));
 });

@@ -1,11 +1,12 @@
 const express = require('express');
 const { getDb } = require('../database/db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, requireAdmin } = require('../middleware/auth');
 const { encrypt, decrypt } = require('../services/cryptoService');
 const moov = require('../services/moovService');
 
 const router = express.Router();
 router.use(requireAuth);
+router.use(requireAdmin);
 
 // GET /api/direct-deposit/moov-test — debug Moov auth
 router.get('/moov-test', async (req, res) => {
@@ -39,8 +40,8 @@ function getEmployee(db, empId, userId) {
   return db.prepare(`
     SELECT e.* FROM employees e
     JOIN clients c ON e.client_id = c.id
-    WHERE e.id = ? AND c.user_id = ?
-  `).get(empId, userId);
+    WHERE e.id = ? AND (c.user_id = ? OR c.id IN (SELECT client_id FROM client_accountants WHERE user_id = ?))
+  `).get(empId, userId, userId);
 }
 
 // GET /api/direct-deposit/:employeeId — return DD status (never returns account number)

@@ -430,7 +430,8 @@ router.put('/:id', (req, res) => {
 });
 
 // PUT /api/clients/:id/pin  — set EFTPS enrollment PIN directly (no bridge needed)
-router.put('/:id/pin', (req, res) => {
+// Accountant-only: business-owner clients must not touch EFTPS credentials.
+router.put('/:id/pin', requireAdmin, (req, res) => {
   const db = getDb();
   const client = canAccessClient(db, req.params.id, req.user);
   if (!client) return res.status(404).json({ error: 'Client not found' });
@@ -453,7 +454,8 @@ router.post('/:id/complete-onboarding', (req, res) => {
 });
 
 // DELETE /api/clients/:id/paystubs — wipe all paystubs for a client (re-import helper)
-router.delete('/:id/paystubs', (req, res) => {
+// Accountant-only: destructive, not for business-owner clients.
+router.delete('/:id/paystubs', requireAdmin, (req, res) => {
   const db = getDb();
   const client = canAccessClient(db, req.params.id, req.user);
   if (!client) return res.status(404).json({ error: 'Client not found' });
@@ -497,7 +499,7 @@ function accountantList(db, client) {
   `).all(client.id);
   const pending = db.prepare(`
     SELECT code, expires_at, created_at FROM accountant_invites
-    WHERE client_id = ? AND used_at IS NULL AND (expires_at IS NULL OR expires_at > datetime('now'))
+    WHERE client_id = ? AND used_at IS NULL AND (expires_at IS NULL OR datetime(expires_at) > datetime('now'))
     ORDER BY created_at DESC
   `).all(client.id);
   return {

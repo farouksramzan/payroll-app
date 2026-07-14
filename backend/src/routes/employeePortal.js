@@ -2,7 +2,7 @@
 
 const express = require('express');
 const { getDb } = require('../database/db');
-const { requireAuth, requireEmployee } = require('../middleware/auth');
+const { requireAuth, requireEmployee, canAccessClient } = require('../middleware/auth');
 const { encrypt, decrypt } = require('../services/cryptoService');
 
 const router = express.Router();
@@ -10,7 +10,16 @@ const router = express.Router();
 router.use(requireAuth, requireEmployee);
 
 function getEmpId(req) {
-  if (req.user.role === 'admin') return req.query.employeeId ? parseInt(req.query.employeeId, 10) : null;
+  if (req.user.role === 'admin') {
+    // An admin may read an employee's portal data only for a company they can
+    // access — never an arbitrary employeeId. Returns null (→ empty) otherwise.
+    if (!req.query.employeeId) return null;
+    const eid = parseInt(req.query.employeeId, 10);
+    const db = getDb();
+    const emp = db.prepare('SELECT client_id FROM employees WHERE id = ?').get(eid);
+    if (!emp || !canAccessClient(db, emp.client_id, req.user)) return null;
+    return eid;
+  }
   return req.user.employeeId;
 }
 

@@ -11,11 +11,12 @@
 
 const express   = require('express');
 const { getDb } = require('../database/db');
-const { requireAuth, canAccessClient } = require('../middleware/auth');
+const { requireAuth, requireAdmin, canAccessClient } = require('../middleware/auth');
 const bridgeTwc = require('../ws/bridgeTwc');
 
 const router = express.Router();
 router.use(requireAuth);
+router.use(requireAdmin);
 
 // POST /api/twc-payments
 router.post('/', (req, res) => {
@@ -87,16 +88,19 @@ router.get('/', (req, res) => {
     return res.json(db.prepare('SELECT * FROM twc_payments WHERE client_id=? ORDER BY created_at DESC LIMIT 50').all(clientId).map(serializePayment));
   }
   res.json(db.prepare(`
-    SELECT p.* FROM twc_payments p JOIN clients c ON p.client_id=c.id WHERE c.user_id=? ORDER BY p.created_at DESC LIMIT 100
-  `).all(req.user.id).map(serializePayment));
+    SELECT p.* FROM twc_payments p JOIN clients c ON p.client_id=c.id
+    WHERE (c.user_id=? OR c.id IN (SELECT client_id FROM client_accountants WHERE user_id = ?))
+    ORDER BY p.created_at DESC LIMIT 100
+  `).all(req.user.id, req.user.id).map(serializePayment));
 });
 
 // GET /api/twc-payments/:id
 router.get('/:id', (req, res) => {
   const db = getDb();
   const row = db.prepare(`
-    SELECT p.* FROM twc_payments p JOIN clients c ON p.client_id=c.id WHERE p.id=? AND c.user_id=?
-  `).get(req.params.id, req.user.id);
+    SELECT p.* FROM twc_payments p JOIN clients c ON p.client_id=c.id
+    WHERE p.id=? AND (c.user_id=? OR c.id IN (SELECT client_id FROM client_accountants WHERE user_id = ?))
+  `).get(req.params.id, req.user.id, req.user.id);
   if (!row) return res.status(404).json({ error: 'Payment not found' });
   res.json(serializePayment(row));
 });
