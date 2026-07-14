@@ -1138,7 +1138,32 @@ export default function Dashboard() {
   const [view, setView]         = useState(() => localStorage.getItem('dashView') || 'tiles');
   const [selected, setSelected] = useState(new Set());
   const [search, setSearch]     = useState('');
+  const [connectOpen, setConnectOpen] = useState(false);
+  const [connectCode, setConnectCode] = useState('');
+  const [connecting, setConnecting]   = useState(false);
+  const [connectErr, setConnectErr]   = useState('');
+  const [connectMsg, setConnectMsg]   = useState('');
   const navigate = useNavigate();
+
+  async function handleConnectCompany(e) {
+    e.preventDefault();
+    setConnectErr(''); setConnectMsg('');
+    const code = connectCode.trim().toUpperCase();
+    if (!code) { setConnectErr('Enter the invite code your client gave you.'); return; }
+    setConnecting(true);
+    try {
+      const res = await api.connectCompany(code);
+      const fresh = await api.getClients();
+      setClients(fresh);
+      setConnecting(false);
+      setConnectOpen(false);
+      setConnectCode('');
+      if (res?.clientId) navigate(`/clients/${res.clientId}`);
+    } catch (err) {
+      setConnectErr(err.message || 'Could not connect with that code.');
+      setConnecting(false);
+    }
+  }
 
   // Filter by company name or EIN (digits only, so "471234567" matches "47-1234567").
   const visibleClients = useMemo(() => {
@@ -1244,9 +1269,33 @@ export default function Dashboard() {
               </div>
             </>
           )}
+          <button className="btn btn-ghost" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => { setConnectOpen(true); setConnectErr(''); setConnectCode(''); }}>
+            🔗 Connect a company
+          </button>
           <Link to="/clients/new" className="btn btn-primary">+ Add Company</Link>
         </div>
       </div>
+
+      {connectOpen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}
+          onClick={e => { if (e.target === e.currentTarget) setConnectOpen(false); }}>
+          <form onSubmit={handleConnectCompany} className="card" style={{ width: 420, maxWidth: '92vw', padding: 24 }}>
+            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 6 }}>Connect a company</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.5 }}>
+              Enter the invite code your client gave you. The company will appear in your list and you can manage it from your own login.
+            </div>
+            {connectErr && <div className="alert alert-error" style={{ marginBottom: 12, fontSize: 13 }}><span>⚠</span>{connectErr}</div>}
+            <input className="form-input mono" autoFocus value={connectCode}
+              onChange={e => setConnectCode(e.target.value.toUpperCase())}
+              placeholder="Invite code (e.g. 9KN8ZPUC)"
+              style={{ textAlign: 'center', letterSpacing: '0.15em', fontSize: 16, marginBottom: 16 }} />
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button type="button" className="btn btn-ghost" onClick={() => setConnectOpen(false)}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={connecting}>{connecting ? 'Connecting…' : 'Connect'}</button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: 80 }}>

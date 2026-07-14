@@ -38,13 +38,30 @@ function canAccessClient(db, clientId, user) {
   const id = parseInt(clientId, 10);
   if (isNaN(id)) return null;
   if (user.role === 'admin') {
-    return db.prepare('SELECT id FROM clients WHERE id = ? AND user_id = ?').get(id, user.id) || null;
+    // Accessible if this admin is the primary owner OR was granted access as an
+    // additional accountant (client_accountants). Returns the full client row.
+    return db.prepare(`
+      SELECT * FROM clients
+      WHERE id = ?
+        AND (user_id = ? OR id IN (SELECT client_id FROM client_accountants WHERE user_id = ?))
+    `).get(id, user.id, user.id) || null;
   }
   if (user.role === 'client') {
     if (user.clientId !== id) return null;
-    return db.prepare('SELECT id FROM clients WHERE id = ?').get(id) || null;
+    return db.prepare('SELECT * FROM clients WHERE id = ?').get(id) || null;
   }
   return null;
 }
 
-module.exports = { requireAuth, requireAdmin, requireClient, requireEmployee, canAccessClient };
+// SQL fragment (+ params) for "clients this admin can access" — primary owner OR
+// granted as an additional accountant. `col` is the client-id column to match
+// (e.g. 'id' or 'client_id'). Use for list / IN(...) queries where a single-row
+// canAccessClient check doesn't fit.
+function accessibleClientsCond(col, userId) {
+  return {
+    sql: `(${col} IN (SELECT id FROM clients WHERE user_id = ?) OR ${col} IN (SELECT client_id FROM client_accountants WHERE user_id = ?))`,
+    params: [userId, userId],
+  };
+}
+
+module.exports = { requireAuth, requireAdmin, requireClient, requireEmployee, canAccessClient, accessibleClientsCond };

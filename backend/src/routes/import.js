@@ -2,7 +2,7 @@ const express = require('express');
 const multer  = require('multer');
 const xlsx    = require('xlsx');
 const { getDb } = require('../database/db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, canAccessClient } = require('../middleware/auth');
 const { encrypt } = require('../services/cryptoService');
 
 const router = express.Router();
@@ -57,7 +57,7 @@ router.post('/employees/preview', upload.single('file'), (req, res) => {
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
 
   const db = getDb();
-  const client = db.prepare('SELECT id FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  const client = canAccessClient(db, clientId, req.user);
   if (!client) return res.status(404).json({ error: 'Client not found' });
   if (!req.file) return res.status(400).json({ error: 'File required' });
 
@@ -95,7 +95,7 @@ router.post('/employees', upload.single('file'), (req, res) => {
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
 
   const db = getDb();
-  const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  const client = canAccessClient(db, clientId, req.user);
   if (!client) return res.status(404).json({ error: 'Client not found' });
   if (!req.file) return res.status(400).json({ error: 'File required' });
 
@@ -428,7 +428,7 @@ router.post('/paychecks/preview', upload.single('file'), (req, res) => {
   const { clientId } = req.body;
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
   const db = getDb();
-  const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  const client = canAccessClient(db, clientId, req.user);
   if (!client) return res.status(404).json({ error: 'Client not found' });
   if (!req.file) return res.status(400).json({ error: 'File required' });
 
@@ -500,7 +500,7 @@ router.post('/paychecks', upload.single('file'), (req, res) => {
   const { clientId, skipExisting, checkStatus, liabilityStatus } = req.body;
   if (!clientId) return res.status(400).json({ error: 'clientId required' });
   const db = getDb();
-  const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  const client = canAccessClient(db, clientId, req.user);
   if (!client) return res.status(404).json({ error: 'Client not found' });
   if (!req.file) return res.status(400).json({ error: 'File required' });
 

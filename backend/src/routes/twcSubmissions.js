@@ -12,7 +12,7 @@
 
 const express   = require('express');
 const { getDb } = require('../database/db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, canAccessClient } = require('../middleware/auth');
 const { generateIcesa } = require('../services/icesaService');
 const bridgeTwc = require('../ws/bridgeTwc');
 
@@ -29,7 +29,7 @@ router.post('/', (req, res) => {
   }
 
   const db = getDb();
-  const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  const client = canAccessClient(db, clientId, req.user);
   if (!client) return res.status(404).json({ error: 'Client not found' });
 
   // Generate ICESA content
@@ -82,7 +82,7 @@ router.get('/', (req, res) => {
   let rows;
   if (clientId) {
     // Verify ownership
-    const client = db.prepare('SELECT id FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+    const client = canAccessClient(db, clientId, req.user);
     if (!client) return res.status(404).json({ error: 'Client not found' });
     rows = db.prepare(`SELECT * FROM twc_submissions WHERE client_id = ? ORDER BY created_at DESC LIMIT 50`).all(clientId);
   } else {

@@ -588,6 +588,38 @@ function migrate() {
     )
   `);
 
+  // ── client_accountants — additional accountants a client has granted access to.
+  // The primary owner is still clients.user_id; rows here grant extra admin users
+  // access to the same company from their own logins (many accountants ↔ 1 company).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS client_accountants (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      client_id   INTEGER NOT NULL,
+      user_id     INTEGER NOT NULL,
+      invited_by  INTEGER,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(client_id, user_id),
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id)   REFERENCES users(id)   ON DELETE CASCADE
+    )
+  `);
+
+  // ── accountant_invites — one-time codes a client generates to invite an
+  // accountant. Redeeming one creates a client_accountants grant. Codes expire.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS accountant_invites (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      client_id   INTEGER NOT NULL,
+      code        TEXT UNIQUE NOT NULL,
+      created_by  INTEGER,
+      expires_at  TEXT,
+      used_at     TEXT,
+      used_by     INTEGER,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+    )
+  `);
+
   // ── Global: link unlinked paystubs to employees by fuzzy first+last name ─────
   // Runs on every startup; idempotent (only touches rows where employee_id IS NULL).
   // Fixes imported paychecks that had middle initials in QB names (e.g. "SHADI D AHVAZI").

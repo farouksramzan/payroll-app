@@ -42,6 +42,13 @@ const api = {
   updateClientPin: (id, pin) => request(`/clients/${id}/pin`, { method: 'PUT', body: JSON.stringify({ pin }) }),
   deleteClient: (id) => request(`/clients/${id}`, { method: 'DELETE' }),
 
+  // Accountant access — invite additional accountants to manage a company
+  getClientAccountants:    (id) => request(`/clients/${id}/accountants`),
+  inviteAccountant:        (id) => request(`/clients/${id}/accountant-invites`, { method: 'POST' }),
+  cancelAccountantInvite:  (id, code) => request(`/clients/${id}/accountant-invites/${code}`, { method: 'DELETE' }),
+  revokeAccountant:        (id, userId) => request(`/clients/${id}/accountants/${userId}`, { method: 'DELETE' }),
+  connectCompany:          (code) => request('/clients/connect', { method: 'POST', body: JSON.stringify({ code }) }),
+
   // Employees
   getEmployees: (clientId) => request(`/employees?clientId=${clientId}`),
   getEmployee: (id, withSSN = false) => request(`/employees/${id}${withSSN ? '?withSSN=true' : ''}`),

@@ -12,7 +12,11 @@ router.use(requireAuth);
 function round2(n) { return Math.round((n || 0) * 100) / 100; }
 
 function assertClient(db, clientId, userId) {
-  const c = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(clientId, userId);
+  // Accessible if this accountant owns the client OR was granted access to it.
+  const c = db.prepare(`
+    SELECT * FROM clients
+    WHERE id = ? AND (user_id = ? OR id IN (SELECT client_id FROM client_accountants WHERE user_id = ?))
+  `).get(clientId, userId, userId);
   if (!c) throw Object.assign(new Error('Client not found'), { status: 404 });
   return c;
 }

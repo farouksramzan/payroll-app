@@ -11,7 +11,7 @@
 
 const express   = require('express');
 const { getDb } = require('../database/db');
-const { requireAuth } = require('../middleware/auth');
+const { requireAuth, canAccessClient } = require('../middleware/auth');
 const bridgeTwc = require('../ws/bridgeTwc');
 
 const router = express.Router();
@@ -27,7 +27,7 @@ router.post('/', (req, res) => {
   if (isNaN(amountNum) || amountNum <= 0) return res.status(400).json({ error: 'amount must be a positive number' });
 
   const db = getDb();
-  const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(clientId, req.user.id);
+  const client = canAccessClient(db, clientId, req.user);
   if (!client) return res.status(404).json({ error: 'Client not found' });
 
   const row = db.prepare(`
@@ -82,7 +82,7 @@ router.get('/', (req, res) => {
   const { clientId } = req.query;
   const db = getDb();
   if (clientId) {
-    const client = db.prepare('SELECT id FROM clients WHERE id=? AND user_id=?').get(clientId, req.user.id);
+    const client = canAccessClient(db, clientId, req.user);
     if (!client) return res.status(404).json({ error: 'Client not found' });
     return res.json(db.prepare('SELECT * FROM twc_payments WHERE client_id=? ORDER BY created_at DESC LIMIT 50').all(clientId).map(serializePayment));
   }

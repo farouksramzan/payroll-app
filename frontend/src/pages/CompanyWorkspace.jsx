@@ -5281,6 +5281,94 @@ function PayrollTab({ clientId, client, employees, onRefresh, refreshTick = 0 })
 // ── Main Workspace ────────────────────────────────────────────────────────────
 const WS_TAB_KEY = 'ws_activeTab';
 
+// ── Accountants Panel — invite additional accountants to manage this company ────
+function AccountantsPanel({ clientId }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [copied, setCopied] = useState('');
+
+  async function load() {
+    if (!clientId) return;
+    setLoading(true);
+    try { setData(await api.getClientAccountants(clientId)); setErr(''); }
+    catch (e) { setErr(e.message); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { load(); /* eslint-disable-next-line */ }, [clientId]);
+
+  async function generate() {
+    setBusy(true); setErr('');
+    try { setData(await api.inviteAccountant(clientId)); }
+    catch (e) { setErr(e.message); }
+    finally { setBusy(false); }
+  }
+  async function cancelInvite(code) {
+    try { setData(await api.cancelAccountantInvite(clientId, code)); } catch (e) { setErr(e.message); }
+  }
+  async function revoke(userId, name) {
+    if (!window.confirm(`Remove ${name}'s access to this company? They lose access immediately.`)) return;
+    try { setData(await api.revokeAccountant(clientId, userId)); } catch (e) { setErr(e.message); }
+  }
+  function copy(text) { navigator.clipboard.writeText(text); setCopied(text); setTimeout(() => setCopied(''), 1500); }
+
+  if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><div className="spinner spinner-dark" /></div>;
+
+  const owner = data?.owner;
+  const linked = data?.accountants || [];
+  const pending = data?.pendingInvites || [];
+
+  const Row = ({ name, email, primary, onRemove }) => (
+    <div style={{ display: 'flex', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid var(--border)', gap: 14 }}>
+      <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--accent-light)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>{(name?.[0] || '?').toUpperCase()}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 600 }}>{name}</div>
+        {email && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{email}</div>}
+      </div>
+      {primary ? <span className="badge badge-neutral">Primary</span>
+               : <button className="btn btn-ghost btn-sm" style={{ color: '#dc2626' }} onClick={onRemove}>Remove</button>}
+    </div>
+  );
+
+  return (
+    <div style={{ padding: 24, maxWidth: 680 }}>
+      <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Accountants</h2>
+      <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 20px', lineHeight: 1.5 }}>
+        Invite one or more accountants to manage this company from their own logins.
+      </p>
+      {err && <div className="alert alert-error" style={{ marginBottom: 16, fontSize: 13 }}><span>⚠</span>{err}</div>}
+
+      <div className="card" style={{ borderLeft: '4px solid var(--accent)', padding: '16px 20px', marginBottom: 16 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>Invite an accountant</div>
+        <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 12px', maxWidth: 560 }}>
+          Generate a one-time code and send it to your accountant. They enter it under “🔗 Connect a company” on their own dashboard. Codes expire in 14 days.
+        </p>
+        <button className="btn btn-primary btn-sm" onClick={generate} disabled={busy}>{busy ? 'Generating…' : '+ Generate invite code'}</button>
+        {pending.length > 0 && (
+          <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {pending.map(p => (
+              <div key={p.code} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 18, fontWeight: 800, letterSpacing: '0.2em', color: 'var(--accent)', background: 'var(--accent-light)', padding: '6px 14px' }}>{p.code}</span>
+                <button className="btn btn-secondary btn-sm" onClick={() => copy(p.code)}>{copied === p.code ? 'Copied!' : 'Copy'}</button>
+                <button className="btn btn-ghost btn-sm" onClick={() => cancelInvite(p.code)} style={{ color: '#dc2626' }}>Cancel</button>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>expires {p.expiresAt ? new Date(p.expiresAt).toLocaleDateString() : '—'}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', fontWeight: 600, fontSize: 14 }}>Accountants with access</div>
+        {owner && <Row name={owner.username} email={owner.email} primary />}
+        {linked.map(a => <Row key={a.userId} name={a.username} email={a.email} onRemove={() => revoke(a.userId, a.username)} />)}
+        {linked.length === 0 && <div style={{ padding: '16px 20px', fontSize: 13, color: 'var(--text-muted)' }}>No additional accountants yet.</div>}
+      </div>
+    </div>
+  );
+}
+
 // ── Users Panel (admin only) ──────────────────────────────────────────────────
 function UsersPanel() {
   const { user: currentUser } = useAuth();
@@ -5545,7 +5633,7 @@ export default function CompanyWorkspace({ clientMode = false }) {
           </div>
         )}
         <div className="ws-tabs">
-          {[['employees','Employees'],['company','Company'],['payroll','Payroll'],...(!clientMode && user?.username === 'admin' ? [['users','Users']] : [])].map(([k, label]) => (
+          {[['employees','Employees'],['company','Company'],['payroll','Payroll'],['accountants','Accountants'],...(!clientMode && user?.username === 'admin' ? [['users','Users']] : [])].map(([k, label]) => (
             <button key={k} className={`ws-tab${activeTab === k ? ' active' : ''}`} onClick={() => setActiveTab(k)} data-tour-id={k === 'payroll' ? 'tour-payroll-tab-btn' : k === 'employees' ? 'tour-employees-tab-btn' : undefined}>
               {label}
               {k === 'employees' && employees.length > 0 && <span style={{ marginLeft: 6, background: activeTab === k ? 'var(--accent)' : 'var(--bg-tertiary)', color: activeTab === k ? '#fff' : 'var(--text-muted)', borderRadius: 20, fontSize: 10, fontWeight: 700, padding: '1px 6px' }}>{employees.length}</span>}
@@ -5557,6 +5645,7 @@ export default function CompanyWorkspace({ clientMode = false }) {
         {activeTab === 'employees' && <EmployeesTab clientId={id} employees={employees} onRefresh={loadAll} clientMode={clientMode} />}
         {activeTab === 'company'   && <CompanyTab client={client} onSaved={loadAll} />}
         {activeTab === 'payroll'   && <PayrollTab clientId={id} client={client} employees={employees} onRefresh={loadAll} refreshTick={refreshTick} />}
+        {activeTab === 'accountants' && <AccountantsPanel clientId={id} />}
         {activeTab === 'users'     && user?.username === 'admin' && <UsersPanel />}
       </div>
     </div>

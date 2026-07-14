@@ -1,7 +1,7 @@
 const express = require('express');
 const crypto  = require('crypto');
 const { getDb } = require('../database/db');
-const { requireAuth, canAccessClient } = require('../middleware/auth');
+const { requireAuth, requireAdmin, canAccessClient } = require('../middleware/auth');
 const { encrypt, decrypt } = require('../services/cryptoService');
 const { calcNextDueDate } = require('../services/taxCalculator');
 
@@ -148,7 +148,12 @@ router.get('/', (req, res) => {
     return res.json([sanitizeClient(own)]);
   }
 
-  const clients = db.prepare('SELECT * FROM clients WHERE user_id = ? ORDER BY business_name').all(req.user.id);
+  // Companies this accountant owns OR was granted access to as an additional accountant.
+  const clients = db.prepare(`
+    SELECT * FROM clients
+    WHERE user_id = ? OR id IN (SELECT client_id FROM client_accountants WHERE user_id = ?)
+    ORDER BY business_name
+  `).all(req.user.id, req.user.id);
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -427,7 +432,7 @@ router.put('/:id', (req, res) => {
 // PUT /api/clients/:id/pin  — set EFTPS enrollment PIN directly (no bridge needed)
 router.put('/:id/pin', (req, res) => {
   const db = getDb();
-  const client = db.prepare('SELECT id, business_name, ein FROM clients WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  const client = canAccessClient(db, req.params.id, req.user);
   if (!client) return res.status(404).json({ error: 'Client not found' });
   const { pin } = req.body;
   if (!pin || !/^\d{4}$/.test(String(pin))) return res.status(400).json({ error: 'PIN must be exactly 4 digits' });
@@ -450,7 +455,7 @@ router.post('/:id/complete-onboarding', (req, res) => {
 // DELETE /api/clients/:id/paystubs — wipe all paystubs for a client (re-import helper)
 router.delete('/:id/paystubs', (req, res) => {
   const db = getDb();
-  const client = db.prepare('SELECT * FROM clients WHERE id = ? AND user_id = ?').get(req.params.id, req.user.id);
+  const client = canAccessClient(db, req.params.id, req.user);
   if (!client) return res.status(404).json({ error: 'Client not found' });
   const ids = db.prepare('SELECT id FROM paystubs WHERE client_id = ?').all(req.params.id).map(r => r.id);
   if (ids.length === 0) return res.json({ deleted: 0 });
@@ -467,6 +472,109 @@ router.delete('/:id', (req, res) => {
   if (!client) return res.status(404).json({ error: 'Client not found' });
   db.prepare('DELETE FROM clients WHERE id = ?').run(req.params.id);
   res.json({ message: 'Client deleted' });
+});
+
+// ── Accountant access (invite additional accountants to manage a company) ──────
+
+function generateAccountantCode(db) {
+  const chars = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+  let code, attempts = 0;
+  do {
+    const bytes = crypto.randomBytes(8);
+    code = '';
+    for (let i = 0; i < 8; i++) code += chars[bytes[i] % chars.length];
+    attempts++;
+  } while (db.prepare('SELECT id FROM accountant_invites WHERE code = ?').get(code) && attempts < 100);
+  return code;
+}
+
+function accountantList(db, client) {
+  const owner = db.prepare('SELECT id, username, email FROM users WHERE id = ?').get(client.user_id);
+  const linked = db.prepare(`
+    SELECT u.id, u.username, u.email, ca.created_at
+    FROM client_accountants ca JOIN users u ON u.id = ca.user_id
+    WHERE ca.client_id = ? ORDER BY ca.created_at
+  `).all(client.id);
+  const pending = db.prepare(`
+    SELECT code, expires_at, created_at FROM accountant_invites
+    WHERE client_id = ? AND used_at IS NULL AND (expires_at IS NULL OR expires_at > datetime('now'))
+    ORDER BY created_at DESC
+  `).all(client.id);
+  return {
+    owner: owner ? { userId: owner.id, username: owner.username, email: owner.email, primary: true } : null,
+    accountants: linked.map(u => ({ userId: u.id, username: u.username, email: u.email, connectedAt: u.created_at, primary: false })),
+    pendingInvites: pending.map(p => ({ code: p.code, expiresAt: p.expires_at, createdAt: p.created_at })),
+  };
+}
+
+// GET /api/clients/:id/accountants — who can manage this company (+ pending invites)
+router.get('/:id/accountants', (req, res) => {
+  const db = getDb();
+  const client = canAccessClient(db, req.params.id, req.user);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+  res.json(accountantList(db, client));
+});
+
+// POST /api/clients/:id/accountant-invites — generate a one-time invite code for
+// an accountant. The client (or an existing accountant) shares it; the accountant
+// redeems it from their own dashboard to gain access.
+router.post('/:id/accountant-invites', (req, res) => {
+  const db = getDb();
+  const client = canAccessClient(db, req.params.id, req.user);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+  const code = generateAccountantCode(db);
+  const expires = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+  db.prepare('INSERT INTO accountant_invites (client_id, code, created_by, expires_at) VALUES (?, ?, ?, ?)')
+    .run(client.id, code, req.user.id, expires);
+  res.status(201).json({ code, expiresAt: expires, ...accountantList(db, client) });
+});
+
+// DELETE /api/clients/:id/accountants/:userId — revoke an accountant's access.
+// The primary owner cannot be removed this way.
+router.delete('/:id/accountants/:userId', (req, res) => {
+  const db = getDb();
+  const client = canAccessClient(db, req.params.id, req.user);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+  const targetId = parseInt(req.params.userId, 10);
+  if (targetId === client.user_id) return res.status(400).json({ error: 'Cannot remove the primary accountant' });
+  db.prepare('DELETE FROM client_accountants WHERE client_id = ? AND user_id = ?').run(client.id, targetId);
+  res.json(accountantList(db, client));
+});
+
+// DELETE /api/clients/:id/accountant-invites/:code — cancel a pending invite code.
+router.delete('/:id/accountant-invites/:code', (req, res) => {
+  const db = getDb();
+  const client = canAccessClient(db, req.params.id, req.user);
+  if (!client) return res.status(404).json({ error: 'Client not found' });
+  db.prepare('DELETE FROM accountant_invites WHERE client_id = ? AND code = ? AND used_at IS NULL')
+    .run(client.id, String(req.params.code).toUpperCase());
+  res.json(accountantList(db, client));
+});
+
+// POST /api/clients/connect — an accountant redeems an invite code to gain access
+// to a company. Admin-only; creates the client_accountants grant.
+router.post('/connect', requireAdmin, (req, res) => {
+  const db = getDb();
+  const code = String(req.body.code || '').trim().toUpperCase();
+  if (!code) return res.status(400).json({ error: 'Invite code is required' });
+  const invite = db.prepare('SELECT * FROM accountant_invites WHERE code = ?').get(code);
+  if (!invite) return res.status(404).json({ error: 'That invite code is not valid' });
+  if (invite.used_at) return res.status(409).json({ error: 'That invite code has already been used' });
+  if (invite.expires_at && invite.expires_at <= new Date().toISOString()) {
+    return res.status(410).json({ error: 'That invite code has expired' });
+  }
+  const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(invite.client_id);
+  if (!client) return res.status(404).json({ error: 'Company no longer exists' });
+  if (client.user_id === req.user.id) return res.status(409).json({ error: 'You already own this company' });
+
+  db.transaction(() => {
+    db.prepare('INSERT OR IGNORE INTO client_accountants (client_id, user_id, invited_by) VALUES (?, ?, ?)')
+      .run(client.id, req.user.id, invite.created_by);
+    db.prepare("UPDATE accountant_invites SET used_at = datetime('now'), used_by = ? WHERE id = ?")
+      .run(req.user.id, invite.id);
+  })();
+
+  res.status(201).json({ clientId: client.id, businessName: client.business_name });
 });
 
 module.exports = router;

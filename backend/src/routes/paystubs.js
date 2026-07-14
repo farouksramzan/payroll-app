@@ -190,8 +190,8 @@ router.post('/mark-late', (req, res) => {
       WHERE check_status = 'draft'
         AND settlement_date IS NOT NULL
         AND settlement_date < ?
-        AND client_id IN (SELECT id FROM clients WHERE user_id = ?)
-    `).run(today, req.user.id);
+        AND client_id IN (SELECT id FROM clients WHERE user_id = ? OR id IN (SELECT client_id FROM client_accountants WHERE user_id = ?))
+    `).run(today, req.user.id, req.user.id);
   }
   res.json({ updated: result.changes });
 });
@@ -2193,7 +2193,7 @@ router.post('/batch-reset-tax', (req, res) => {
       ? db.prepare(`SELECT id FROM clients WHERE id IN (${ph})`).all(...clientIds)
       : [];
   } else {
-    owned = db.prepare(`SELECT id FROM clients WHERE id IN (${ph}) AND user_id = ?`).all(...clientIds, req.user.id);
+    owned = db.prepare(`SELECT id FROM clients WHERE id IN (${ph}) AND (user_id = ? OR id IN (SELECT client_id FROM client_accountants WHERE user_id = ?))`).all(...clientIds, req.user.id, req.user.id);
   }
   if (owned.length !== clientIds.length) return res.status(403).json({ error: 'One or more clients not found' });
 
