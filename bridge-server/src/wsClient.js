@@ -29,24 +29,23 @@ const ENROLLED_JSON           = path.join(__dirname, '..', 'enrolled_clients.jso
 const ENROLL_FOLDER           = path.join(__dirname, '..', 'data', 'enrollments-out');
 const PENDING_FILE            = path.join(__dirname, '..', 'data', 'pending_enrollments.json');
 
-// ── Pending enrollment persistence ───────────────────────────────────────────
-// Survives Ctrl+C, crashes, and reboots. Bridge resumes all pending enrollment
-// check loops automatically on reconnect.
+// ── Pending enrollment persistence (DISABLED) ────────────────────────────────
+// The bridge used to persist in-progress enrollment checks to
+// pending_enrollments.json and auto-resume them on every startup/reconnect — so a
+// server terminated mid-enrollment relaunched straight back into the enrollment
+// loop. That is removed. Enrollment now runs ONLY in response to a fresh incoming
+// job and is NEVER resumed from disk. These helpers are kept as no-ops so the
+// existing call sites stay valid but no resume state is ever written or read.
 
-function loadPendingEnrollments() {
-  try { return JSON.parse(fs.readFileSync(PENDING_FILE, 'utf8')); } catch { return []; }
-}
+function loadPendingEnrollments() { return []; }
+function upsertPendingEnrollment(_entry) { /* disabled — no cross-restart resume */ }
+function removePendingEnrollment(_ein) { /* disabled — no cross-restart resume */ }
 
-function upsertPendingEnrollment(entry) {
-  const list = loadPendingEnrollments().filter(e => cleanEin(e.ein) !== cleanEin(entry.ein));
-  list.push({ ...entry, updatedAt: new Date().toISOString() });
-  fs.mkdirSync(path.dirname(PENDING_FILE), { recursive: true });
-  fs.writeFileSync(PENDING_FILE, JSON.stringify(list, null, 2));
-}
-
-function removePendingEnrollment(ein) {
-  const list = loadPendingEnrollments().filter(e => cleanEin(e.ein) !== cleanEin(ein));
-  fs.writeFileSync(PENDING_FILE, JSON.stringify(list, null, 2));
+// Physically delete any pending_enrollments.json left behind (by an older build,
+// or written before this change) so a terminated server truly opens fresh.
+// Safe to call repeatedly.
+function clearPendingEnrollmentsFile() {
+  try { if (fs.existsSync(PENDING_FILE)) fs.unlinkSync(PENDING_FILE); } catch (_) {}
 }
 
 // ── In-memory enrollment guard ────────────────────────────────────────────────
@@ -81,13 +80,8 @@ function abortAllFlows() {
   _killGen++;
   const killed = killActiveProc();
   _enrollingEINs.clear();
-  let clearedEnrollments = 0;
-  try {
-    clearedEnrollments = loadPendingEnrollments().length;
-    fs.mkdirSync(path.dirname(PENDING_FILE), { recursive: true });
-    fs.writeFileSync(PENDING_FILE, '[]');
-  } catch (_) {}
-  return { killed, clearedEnrollments };
+  clearPendingEnrollmentsFile();
+  return { killed, clearedEnrollments: 0 };
 }
 
 // setTimeout that returns early once aborted() flips — so a kill during the
@@ -496,7 +490,10 @@ class BridgeClient extends EventEmitter {
         this.emit('log', 'Authenticated — bridge is live');
         this._startPing();
         this._resendPendingResults();
-        this._resumePendingEnrollments();
+        // Auto-resume of enrollment flows is disabled: a server terminated
+        // mid-enrollment must come back ready for fresh requests only, never
+        // relaunch the enrollment/check-enrollment loop. Wipe any stale file.
+        clearPendingEnrollmentsFile();
         break;
 
       case 'auth_fail':
@@ -850,55 +847,11 @@ class BridgeClient extends EventEmitter {
     return active;
   }
 
-  // ── Resume pending enrollments on reconnect ───────────────────────────────────
-
-  _resumePendingEnrollments() {
-    const pending = loadPendingEnrollments();
-    if (pending.length === 0) return;
-    this.emit('log', `[RESUME] Found ${pending.length} pending enrollment(s) — resuming...`);
-    for (const entry of pending) {
-      this.emit('log', `[RESUME] Resuming EIN ${cleanEin(entry.ein)} from attempt ${entry.attempt}/${entry.maxRetries}`);
-      this._runResumedEnrollment(entry).catch((err) => {
-        this.emit('log', `[RESUME] Error for EIN ${cleanEin(entry.ein)}: ${err.message}`);
-      });
-    }
-  }
-
-  async _runResumedEnrollment(entry) {
-    const { ein, businessName, jobId, submissionId, achFilePath, clientId, enrollmentPin, attempt } = entry;
-    const log = (msg) => this.emit('log', msg);
-
-    log(`[RESUME] Resuming enrollment check for EIN ${cleanEin(ein)}`);
-
-    const active = await this._pollEnrollmentUntilActive({
-      ein, businessName: businessName || '', jobId, submissionId, achFilePath, clientId, enrollmentPin, startAtAttempt: attempt,
-    });
-
-    if (!active) {
-      removePendingEnrollment(ein);
-      this._send({ type: 'result', jobId, submissionId, success: false, error: 'Enrollment could not be confirmed after 1.5 hours. Please contact support.' });
-      return;
-    }
-
-    markEnrolled(ein);
-    removePendingEnrollment(ein);
-    log(`[RESUME] EIN ${cleanEin(ein)} Active — running payment automation`);
-
-    if (!fs.existsSync(achFilePath)) {
-      log(`[RESUME] ACH file not found: ${achFilePath} — cannot complete payment`);
-      this._send({ type: 'result', jobId, submissionId, success: false, error: 'ACH file missing after resume. Please resubmit payment.' });
-      return;
-    }
-
-    try {
-      const result = await runPaymentWithRetry(achFilePath, log);
-      log(`[RESUME] Payment complete for EIN ${cleanEin(ein)}`);
-      this._send({ type: 'result', jobId, submissionId, success: true, confirmation: result.confirmation, achFilePath: result.achFilePath, message: 'Your payment is sent!', enrollmentPin: enrollmentPin || null });
-    } catch (err) {
-      log(`[RESUME] Payment failed for EIN ${cleanEin(ein)}: ${err.message}`);
-      this._send({ type: 'result', jobId, submissionId, success: false, error: err.message });
-    }
-  }
+  // ── Auto-resume removed ───────────────────────────────────────────────────────
+  // The bridge no longer resumes enrollment / check-enrollment flows from disk on
+  // startup or reconnect. Terminating the server mid-enrollment abandons that
+  // flow and the bridge comes back ready for fresh requests only. Enrollment runs
+  // again only when a new payment job for an unenrolled EIN arrives in-session.
 }
 
 module.exports = BridgeClient;
