@@ -1062,6 +1062,9 @@ function CompanyTab({ client, onSaved }) {
   const [accountDraft, setAccountDraft]       = useState('');
   const [showAccountNum, setShowAccountNum]   = useState(true);
   const [accountSaving, setAccountSaving]     = useState(false);
+  const [pinDraft, setPinDraft]   = useState('');
+  const [pinSaving, setPinSaving] = useState(false);
+  const [pinMsg, setPinMsg]       = useState('');
   const saveTimerRef = useRef(null);
 
   useEffect(() => {
@@ -1069,6 +1072,7 @@ function CompanyTab({ client, onSaved }) {
     setChangingAccount(false);
     setAccountDraft('');
     setShowAccountNum(true);
+    setPinDraft(''); setPinMsg(''); setPinSaving(false);
     setForm({
       businessName:     client.businessName    || '',
       ein:              client.ein             || '',
@@ -1113,6 +1117,19 @@ function CompanyTab({ client, onSaved }) {
       await api.updateClient(client.id, payload);
       setSaveStatus('saved'); onSaved();
     } catch (e) { setErr(e.message); setSaveStatus('error'); }
+  }
+
+  async function savePin() {
+    const clean = String(pinDraft).replace(/\D/g, '');
+    if (!/^\d{4}$/.test(clean)) { setPinMsg('PIN must be exactly 4 digits'); return; }
+    setPinSaving(true); setPinMsg('');
+    try {
+      await api.updateClientPin(client.id, clean);
+      setPinDraft('');
+      setPinMsg('saved');
+      onSaved();
+    } catch (e) { setPinMsg(e.message || 'Failed to save PIN'); }
+    finally { setPinSaving(false); }
   }
 
   async function saveAccountNumber() {
@@ -1183,6 +1200,45 @@ function CompanyTab({ client, onSaved }) {
             </select>
           </F>
         </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 16 }}>
+        <p className="form-section-title" style={{ marginTop: 0 }}>EFTPS — Federal Tax Deposits</p>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+          <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Enrollment status:</span>
+          {client.eftpsEnrolled ? (
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--success)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+              ✓ Enrolled{client.hasBatchProviderPin ? ' · PIN on file' : ''}
+            </span>
+          ) : (
+            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--warning)' }}>Not enrolled</span>
+          )}
+        </div>
+        <F
+          label={client.hasBatchProviderPin ? 'Update Batch Provider PIN' : 'Batch Provider PIN'}
+          hint="Already enrolled this company in EFTPS Batch Provider yourself? Enter its 4-digit PIN here. This marks the company enrolled so tax deposits use this PIN — the bridge won't try to auto-enroll it."
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              className="form-input mono"
+              value={pinDraft}
+              onChange={e => { setPinDraft(e.target.value.replace(/\D/g, '').slice(0, 4)); setPinMsg(''); }}
+              onKeyDown={e => { if (e.key === 'Enter') savePin(); }}
+              placeholder="••••"
+              maxLength={4}
+              inputMode="numeric"
+              style={{ maxWidth: 96, letterSpacing: 6, textAlign: 'center' }}
+            />
+            <button type="button" className="btn btn-primary" disabled={pinSaving || pinDraft.length !== 4} onClick={savePin}>
+              {pinSaving ? 'Saving…' : (client.eftpsEnrolled ? 'Update PIN' : 'Save PIN & mark enrolled')}
+            </button>
+            {pinMsg === 'saved'
+              ? <span style={{ fontSize: 12, color: 'var(--success)', fontWeight: 600 }}>✓ Saved</span>
+              : pinMsg
+                ? <span style={{ fontSize: 12, color: '#dc2626', fontWeight: 600 }}>⚠ {pinMsg}</span>
+                : null}
+          </div>
+        </F>
       </div>
 
       <div className="card" style={{ marginBottom: 16 }}>
