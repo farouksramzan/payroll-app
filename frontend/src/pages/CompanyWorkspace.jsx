@@ -4896,10 +4896,11 @@ function PayLiabilitiesTab({ clientId, client }) {
           <button
             style={{ marginLeft: 'auto', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
             onClick={async () => {
-              if (!window.confirm('Kill the running automation job? This stops the Python script on Computer 2 and marks the job as failed.')) return;
+              if (!window.confirm('Stop the running automation and reset the bridge for fresh requests? The current job (including any enrollment check) is cancelled and will not resume.')) return;
               try {
-                await api.killBridgeJob();
-                setActiveJobId(null); setJobStatus('failed'); setJobMessage('Killed by user');
+                const r = await api.killBridgeJob();
+                setActiveJobId(null); setJobStatus('failed');
+                setJobMessage(r?.cancelled ? `Cancelled ${r.cancelled} job(s) — bridge ready for fresh requests` : 'Cancelled — bridge ready for fresh requests');
               } catch (e) { alert(e.message); }
             }}>
             Kill Job

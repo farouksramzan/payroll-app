@@ -323,9 +323,36 @@ class BridgeManager extends EventEmitter {
     return jobId;
   }
 
+  // Abort the in-flight bridge flow (e.g. an EFTPS enrollment check) AND clear all
+  // server-side job state, so the job is not replayed to the bridge on the next
+  // reconnect (via _resendPendingJobs) — which is what made the enrollment check
+  // keep coming back. Leaves the bridge ready for fresh requests. Safe to call
+  // even when the bridge is offline (still clears pending so nothing replays).
   killJob() {
-    if (!this.isConnected) throw new Error('Batch provider bridge is not connected');
-    this._ws.send(JSON.stringify({ type: 'kill_job' }));
+    if (this.isConnected) {
+      this._ws.send(JSON.stringify({ type: 'kill_job' }));
+    }
+    const cancelled = this._cancelAllPending('Cancelled by user');
+    return { killed: this.isConnected, cancelled };
+  }
+
+  _cancelAllPending(reason) {
+    // Stop the grace timer that would otherwise fail (and had kept) pending jobs.
+    clearTimeout(this._disconnectTimer);
+    this._disconnectTimer = null;
+    let n = 0;
+    for (const [jobId, p] of this._pending) {
+      clearTimeout(p.timeout);
+      this._jobStatuses.set(jobId, { status: 'cancelled', message: reason, updatedAt: new Date().toISOString() });
+      try {
+        if (p.async) p.onResult?.(false, { error: reason, cancelled: true });
+        else p.reject?.(new Error(reason));
+      } catch { /* callback errors must not break the reset */ }
+      n++;
+    }
+    this._pending.clear();
+    this._jobPayloads.clear();
+    return n;
   }
 
   get isConnected() {

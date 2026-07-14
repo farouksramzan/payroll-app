@@ -174,12 +174,12 @@ app.use('/api/client-portal',   clientPortalRoutes);
 app.use('/api/employee-portal', employeePortalRoutes);
 app.get('/api/twc-bridge/status', requireAuth, (req, res) => res.json({ connected: bridgeTwc.isConnected, version: bridgeTwc.bridgeVersion || null }));
 app.post('/api/twc-bridge/kill',  requireAuth, (req, res) => {
-  try { bridgeTwc.killJob(); res.json({ ok: true }); }
+  try { res.json({ ok: true, ...bridgeTwc.killJob() }); }
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 app.get('/api/bridge/status', requireAuth, (req, res) => res.json({ connected: bridgeManager.isConnected }));
 app.post('/api/bridge/kill',  requireAuth, (req, res) => {
-  try { bridgeManager.killJob(); res.json({ ok: true }); }
+  try { res.json({ ok: true, ...bridgeManager.killJob() }); }
   catch (e) { res.status(400).json({ error: e.message }); }
 });
 app.get('/api/health',      (req, res) => res.json({ status: 'ok', env: process.env.NODE_ENV }));

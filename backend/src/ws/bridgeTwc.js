@@ -318,9 +318,31 @@ class BridgeTwcManager extends EventEmitter {
 
   get queueDepth() { return this._queue.length + (this._activeJobId ? 1 : 0); }
 
+  // Abort the in-flight job AND reset all queue/pending state so the bridge is
+  // ready for fresh requests. Without clearing _activeJobId the queue would stay
+  // blocked (nothing new dispatches); without clearing _pending/_queue a killed
+  // job could linger. Safe to call when the bridge is offline.
   killJob() {
-    if (!this.isConnected) throw new Error('TWC Bridge is not connected');
-    this._ws.send(JSON.stringify({ type: 'kill_job' }));
+    if (this.isConnected) {
+      this._ws.send(JSON.stringify({ type: 'kill_job' }));
+    }
+    const reason = 'Cancelled by user';
+    const mark = (jobId, onResult, async = true) => {
+      this._jobStatuses.set(jobId, { status: 'cancelled', message: reason, updatedAt: new Date().toISOString() });
+      try { async ? onResult?.(false, { error: reason, cancelled: true }) : onResult?.(new Error(reason)); } catch { /* ignore */ }
+    };
+    let n = 0;
+    for (const [jobId, p] of this._pending) {
+      clearTimeout(p.timeout);
+      mark(jobId, p.async ? p.onResult : p.reject, p.async);
+      n++;
+    }
+    for (const item of this._queue) { mark(item.jobId, item.onResult); n++; }
+    this._pending.clear();
+    this._jobPayloads?.clear?.();
+    this._queue = [];
+    this._activeJobId = null;
+    return { killed: this.isConnected, cancelled: n };
   }
 
   get isConnected() {
