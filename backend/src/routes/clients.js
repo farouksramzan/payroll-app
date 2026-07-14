@@ -267,6 +267,19 @@ router.get('/', (req, res) => {
 });
 
 // GET /api/clients/:id
+// GET /api/clients/accountant-shares — sync relationships this accountant created
+// (accountants who continuously receive all my companies), for review/revoke.
+// Defined before '/:id' so the literal path isn't captured as an :id param.
+router.get('/accountant-shares', requireAdmin, (req, res) => {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT sl.target_user_id AS userId, u.username, u.email, sl.created_at AS since
+    FROM accountant_sync_links sl JOIN users u ON u.id = sl.target_user_id
+    WHERE sl.source_user_id = ? ORDER BY sl.created_at DESC
+  `).all(req.user.id);
+  res.json({ syncedAccountants: rows });
+});
+
 router.get('/:id', (req, res) => {
   const db = getDb();
   const access = canAccessClient(db, req.params.id, req.user);
@@ -334,6 +347,9 @@ router.post('/', (req, res) => {
   );
 
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(result.lastInsertRowid);
+  // If this accountant has any "share everything" (sync) relationships, grant the
+  // new company to those accountants automatically.
+  propagateSyncForSource(db, req.user.id, client.id);
   res.status(201).json(sanitizeClient(client));
 });
 
@@ -486,8 +502,35 @@ function generateAccountantCode(db) {
     code = '';
     for (let i = 0; i < 8; i++) code += chars[bytes[i] % chars.length];
     attempts++;
-  } while (db.prepare('SELECT id FROM accountant_invites WHERE code = ?').get(code) && attempts < 100);
+  } while (
+    (db.prepare('SELECT id FROM accountant_invites WHERE code = ?').get(code) ||
+     db.prepare('SELECT id FROM accountant_bulk_invites WHERE code = ?').get(code)) &&
+    attempts < 100
+  );
   return code;
+}
+
+// Every client id an accountant can manage: companies they own + companies granted
+// to them via client_accountants.
+function accessibleClientIds(db, userId) {
+  return db.prepare(`
+    SELECT id FROM clients WHERE user_id = ?
+    UNION
+    SELECT client_id FROM client_accountants WHERE user_id = ?
+  `).all(userId, userId).map(r => r.id);
+}
+
+// For a "share everything" (sync) source, grant a single company to every accountant
+// synced to them. Called when the source adds/gains a new company. Returns rows added.
+function propagateSyncForSource(db, sourceUserId, clientId) {
+  const targets = db.prepare('SELECT target_user_id FROM accountant_sync_links WHERE source_user_id = ?').all(sourceUserId);
+  let added = 0;
+  const ins = db.prepare('INSERT OR IGNORE INTO client_accountants (client_id, user_id, invited_by) VALUES (?, ?, ?)');
+  for (const t of targets) {
+    if (t.target_user_id === sourceUserId) continue;
+    added += ins.run(clientId, t.target_user_id, sourceUserId).changes;
+  }
+  return added;
 }
 
 function accountantList(db, client) {
@@ -553,12 +596,53 @@ router.delete('/:id/accountant-invites/:code', (req, res) => {
   res.json(accountantList(db, client));
 });
 
-// POST /api/clients/connect — an accountant redeems an invite code to gain access
-// to a company. Admin-only; creates the client_accountants grant.
+// POST /api/clients/accountant-invites/bulk — generate ONE code that grants a
+// redeeming accountant access to ALL companies the inviter can manage.
+// mode: 'snapshot' (companies at redeem time) | 'sync' (also future companies).
+router.post('/accountant-invites/bulk', requireAdmin, (req, res) => {
+  const db = getDb();
+  const mode = req.body.mode === 'sync' ? 'sync' : 'snapshot';
+  const code = generateAccountantCode(db);
+  const expires = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
+  db.prepare('INSERT INTO accountant_bulk_invites (code, created_by, mode, expires_at) VALUES (?, ?, ?, ?)')
+    .run(code, req.user.id, mode, expires);
+  const companyCount = accessibleClientIds(db, req.user.id).length;
+  res.status(201).json({ code, mode, expiresAt: expires, companyCount });
+});
+
+// POST /api/clients/connect — an accountant redeems an invite code to gain access.
+// Handles both a per-company code and a bulk "all companies" code. Admin-only.
 router.post('/connect', requireAdmin, (req, res) => {
   const db = getDb();
   const code = String(req.body.code || '').trim().toUpperCase();
   if (!code) return res.status(400).json({ error: 'Invite code is required' });
+
+  // ── Bulk "all companies" code ───────────────────────────────────────────────
+  const bulk = db.prepare('SELECT * FROM accountant_bulk_invites WHERE code = ?').get(code);
+  if (bulk) {
+    if (bulk.used_at) return res.status(409).json({ error: 'That invite code has already been used' });
+    if (bulk.expires_at && bulk.expires_at <= new Date().toISOString()) {
+      return res.status(410).json({ error: 'That invite code has expired' });
+    }
+    if (bulk.created_by === req.user.id) return res.status(409).json({ error: 'That is your own invite code' });
+
+    const clientIds = accessibleClientIds(db, bulk.created_by);
+    let granted = 0;
+    db.transaction(() => {
+      const ins = db.prepare('INSERT OR IGNORE INTO client_accountants (client_id, user_id, invited_by) VALUES (?, ?, ?)');
+      for (const cid of clientIds) granted += ins.run(cid, req.user.id, bulk.created_by).changes;
+      if (bulk.mode === 'sync') {
+        db.prepare('INSERT OR IGNORE INTO accountant_sync_links (source_user_id, target_user_id) VALUES (?, ?)')
+          .run(bulk.created_by, req.user.id);
+      }
+      db.prepare("UPDATE accountant_bulk_invites SET used_at = datetime('now'), used_by = ? WHERE id = ?")
+        .run(req.user.id, bulk.id);
+    })();
+
+    return res.status(201).json({ bulk: true, mode: bulk.mode, granted, total: clientIds.length });
+  }
+
+  // ── Per-company code ────────────────────────────────────────────────────────
   const invite = db.prepare('SELECT * FROM accountant_invites WHERE code = ?').get(code);
   if (!invite) return res.status(404).json({ error: 'That invite code is not valid' });
   if (invite.used_at) return res.status(409).json({ error: 'That invite code has already been used' });
@@ -577,6 +661,22 @@ router.post('/connect', requireAdmin, (req, res) => {
   })();
 
   res.status(201).json({ clientId: client.id, businessName: client.business_name });
+});
+
+// DELETE /api/clients/accountant-shares/:userId — stop a sync relationship AND revoke
+// the access it granted (every company I shared with that accountant).
+router.delete('/accountant-shares/:userId', requireAdmin, (req, res) => {
+  const db = getDb();
+  const targetId = parseInt(req.params.userId, 10);
+  if (!targetId) return res.status(400).json({ error: 'Invalid accountant' });
+  db.transaction(() => {
+    db.prepare('DELETE FROM accountant_sync_links WHERE source_user_id = ? AND target_user_id = ?')
+      .run(req.user.id, targetId);
+    // Remove access this accountant granted to the target (rows where I was the inviter).
+    db.prepare('DELETE FROM client_accountants WHERE user_id = ? AND invited_by = ?')
+      .run(targetId, req.user.id);
+  })();
+  res.json({ ok: true });
 });
 
 module.exports = router;

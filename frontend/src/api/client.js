@@ -49,6 +49,11 @@ const api = {
   revokeAccountant:        (id, userId) => request(`/clients/${id}/accountants/${userId}`, { method: 'DELETE' }),
   connectCompany:          (code) => request('/clients/connect', { method: 'POST', body: JSON.stringify({ code }) }),
 
+  // Bulk accountant access — one link that shares ALL my companies at once
+  createBulkAccountantInvite: (mode) => request('/clients/accountant-invites/bulk', { method: 'POST', body: JSON.stringify({ mode }) }),
+  getAccountantShares:        () => request('/clients/accountant-shares'),
+  revokeAccountantShare:      (userId) => request(`/clients/accountant-shares/${userId}`, { method: 'DELETE' }),
+
   // Employees
   getEmployees: (clientId) => request(`/employees?clientId=${clientId}`),
   getEmployee: (id, withSSN = false) => request(`/employees/${id}${withSSN ? '?withSSN=true' : ''}`),

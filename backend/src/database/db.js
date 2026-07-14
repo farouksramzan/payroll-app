@@ -620,6 +620,40 @@ function migrate() {
     )
   `);
 
+  // ── accountant_bulk_invites — one code that grants a redeeming accountant access
+  // to ALL companies the inviting accountant can manage (instead of one code per
+  // company). mode='snapshot' grants the companies that exist at redeem time;
+  // mode='sync' also records an accountant_sync_links row so companies the inviter
+  // adds later are shared automatically.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS accountant_bulk_invites (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      code        TEXT UNIQUE NOT NULL,
+      created_by  INTEGER NOT NULL,
+      mode        TEXT NOT NULL DEFAULT 'snapshot',
+      expires_at  TEXT,
+      used_at     TEXT,
+      used_by     INTEGER,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
+  // ── accountant_sync_links — a standing "share everything" relationship created by
+  // redeeming a mode='sync' bulk invite. Whenever source_user_id adds a new company,
+  // target_user_id is automatically granted access to it (see propagateSyncForSource).
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS accountant_sync_links (
+      id             INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_user_id INTEGER NOT NULL,
+      target_user_id INTEGER NOT NULL,
+      created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(source_user_id, target_user_id),
+      FOREIGN KEY (source_user_id) REFERENCES users(id) ON DELETE CASCADE,
+      FOREIGN KEY (target_user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
   // ── Global: link unlinked paystubs to employees by fuzzy first+last name ─────
   // Runs on every startup; idempotent (only touches rows where employee_id IS NULL).
   // Fixes imported paychecks that had middle initials in QB names (e.g. "SHADI D AHVAZI").

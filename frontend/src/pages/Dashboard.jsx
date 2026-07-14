@@ -1143,7 +1143,44 @@ export default function Dashboard() {
   const [connecting, setConnecting]   = useState(false);
   const [connectErr, setConnectErr]   = useState('');
   const [connectMsg, setConnectMsg]   = useState('');
+  const [shareOpen, setShareOpen]     = useState(false);
+  const [shareMode, setShareMode]     = useState('snapshot');
+  const [shareBusy, setShareBusy]     = useState(false);
+  const [shareLink, setShareLink]     = useState('');
+  const [shareCode, setShareCode]     = useState('');
+  const [shareCount, setShareCount]   = useState(0);
+  const [shareErr, setShareErr]       = useState('');
+  const [shareCopied, setShareCopied] = useState(false);
+  const [syncedAccts, setSyncedAccts] = useState([]);
   const navigate = useNavigate();
+
+  async function openShare() {
+    setShareOpen(true); setShareErr(''); setShareLink(''); setShareCode('');
+    setShareCopied(false); setShareMode('snapshot');
+    try { const r = await api.getAccountantShares(); setSyncedAccts(r.syncedAccountants || []); } catch {}
+  }
+
+  async function handleGenerateShare() {
+    setShareBusy(true); setShareErr('');
+    try {
+      const r = await api.createBulkAccountantInvite(shareMode);
+      setShareCode(r.code);
+      setShareCount(r.companyCount || 0);
+      setShareLink(`${window.location.origin}/?connect=${r.code}`);
+    } catch (e) { setShareErr(e.message || 'Could not create the link.'); }
+    finally { setShareBusy(false); }
+  }
+
+  async function copyShareLink() {
+    try { await navigator.clipboard.writeText(shareLink); setShareCopied(true); setTimeout(() => setShareCopied(false), 2000); }
+    catch { /* clipboard blocked — user can select the field manually */ }
+  }
+
+  async function handleRevokeShare(userId) {
+    if (!window.confirm('Stop syncing and revoke this accountant’s access to every company you shared with them?')) return;
+    try { await api.revokeAccountantShare(userId); setSyncedAccts(a => a.filter(x => x.userId !== userId)); }
+    catch (e) { alert(e.message); }
+  }
 
   async function handleConnectCompany(e) {
     e.preventDefault();
@@ -1156,6 +1193,14 @@ export default function Dashboard() {
       const fresh = await api.getClients();
       setClients(fresh);
       setConnecting(false);
+      if (res?.bulk) {
+        // Bulk "all companies" code — stay open to show how many were added.
+        setConnectMsg(res.granted > 0
+          ? `Connected ${res.granted} ${res.granted === 1 ? 'company' : 'companies'}.${res.mode === 'sync' ? ' Companies they add later will be shared with you automatically.' : ''}`
+          : `You already have access to all ${res.total} of these companies.`);
+        setConnectCode('');
+        return;
+      }
       setConnectOpen(false);
       setConnectCode('');
       if (res?.clientId) navigate(`/clients/${res.clientId}`);
@@ -1191,6 +1236,18 @@ export default function Dashboard() {
     const onFocus = () => loadClients(false);
     window.addEventListener('focus', onFocus);
     return () => { alive = false; clearInterval(timer); window.removeEventListener('focus', onFocus); };
+  }, []);
+
+  // A shared "?connect=CODE" link pre-fills and opens the Connect modal, then the
+  // param is stripped so a refresh doesn't reopen it.
+  useEffect(() => {
+    const code = new URLSearchParams(window.location.search).get('connect');
+    if (code) {
+      setConnectCode(code.toUpperCase());
+      setConnectErr(''); setConnectMsg('');
+      setConnectOpen(true);
+      window.history.replaceState({}, '', window.location.pathname);
+    }
   }, []);
 
   function switchView(v) {
@@ -1269,7 +1326,12 @@ export default function Dashboard() {
               </div>
             </>
           )}
-          <button className="btn btn-ghost" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => { setConnectOpen(true); setConnectErr(''); setConnectCode(''); }}>
+          {clients.length > 0 && (
+            <button className="btn btn-ghost" style={{ fontSize: 12, padding: '5px 12px' }} onClick={openShare}>
+              👥 Share all
+            </button>
+          )}
+          <button className="btn btn-ghost" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => { setConnectOpen(true); setConnectErr(''); setConnectMsg(''); setConnectCode(''); }}>
             🔗 Connect a company
           </button>
           <Link to="/clients/new" className="btn btn-primary">+ Add Company</Link>
@@ -1285,15 +1347,82 @@ export default function Dashboard() {
               Enter the invite code your client gave you. The company will appear in your list and you can manage it from your own login.
             </div>
             {connectErr && <div className="alert alert-error" style={{ marginBottom: 12, fontSize: 13 }}><span>⚠</span>{connectErr}</div>}
+            {connectMsg && <div className="alert alert-success" style={{ marginBottom: 12, fontSize: 13 }}><span>✓</span>{connectMsg}</div>}
             <input className="form-input mono" autoFocus value={connectCode}
               onChange={e => setConnectCode(e.target.value.toUpperCase())}
               placeholder="Invite code (e.g. 9KN8ZPUC)"
               style={{ textAlign: 'center', letterSpacing: '0.15em', fontSize: 16, marginBottom: 16 }} />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button type="button" className="btn btn-ghost" onClick={() => setConnectOpen(false)}>Cancel</button>
+              <button type="button" className="btn btn-ghost" onClick={() => setConnectOpen(false)}>{connectMsg ? 'Close' : 'Cancel'}</button>
               <button type="submit" className="btn btn-primary" disabled={connecting}>{connecting ? 'Connecting…' : 'Connect'}</button>
             </div>
           </form>
+        </div>
+      )}
+
+      {shareOpen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}
+          onClick={e => { if (e.target === e.currentTarget) setShareOpen(false); }}>
+          <div className="card" style={{ width: 480, maxWidth: '92vw', padding: 24 }}>
+            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 6 }}>Share all my companies</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.5 }}>
+              Generate one link that gives another accountant access to every company you manage — no need to invite them one at a time. They open the link from their own login and accept.
+            </div>
+
+            {!shareLink ? (
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+                  {[
+                    ['snapshot', 'Just my companies now', 'Shares the companies you have at the moment they accept. Companies you add later stay private.'],
+                    ['sync', 'Keep in sync (now + future)', 'Also shares any company you add later, automatically. You can revoke this at any time.'],
+                  ].map(([val, title, desc]) => (
+                    <label key={val} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', padding: 12,
+                      border: `1px solid ${shareMode === val ? 'var(--accent)' : 'var(--border)'}`,
+                      background: shareMode === val ? 'var(--bg-secondary)' : '#fff', cursor: 'pointer' }}>
+                      <input type="radio" name="sharemode" checked={shareMode === val} onChange={() => setShareMode(val)} style={{ marginTop: 3 }} />
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>{title}</div>
+                        <div style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.45 }}>{desc}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+                {shareErr && <div className="alert alert-error" style={{ marginBottom: 12, fontSize: 13 }}><span>⚠</span>{shareErr}</div>}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                  <button type="button" className="btn btn-ghost" onClick={() => setShareOpen(false)}>Cancel</button>
+                  <button type="button" className="btn btn-primary" disabled={shareBusy} onClick={handleGenerateShare}>{shareBusy ? 'Generating…' : 'Generate link'}</button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="alert alert-success" style={{ marginBottom: 12, fontSize: 13 }}>
+                  <span>✓</span>Link ready — shares {shareCount} {shareCount === 1 ? 'company' : 'companies'}{shareMode === 'sync' ? ' and keeps sharing new ones' : ''}. Expires in 14 days.
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+                  <input readOnly className="form-input mono" value={shareLink} onFocus={e => e.target.select()} style={{ fontSize: 12 }} />
+                  <button type="button" className="btn btn-secondary" onClick={copyShareLink}>{shareCopied ? '✓ Copied' : 'Copy'}</button>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.5 }}>
+                  Or have them paste this code under “Connect a company”: <span className="mono" style={{ fontWeight: 700, letterSpacing: '0.08em' }}>{shareCode}</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                  <button type="button" className="btn btn-primary" onClick={() => setShareOpen(false)}>Done</button>
+                </div>
+              </>
+            )}
+
+            {syncedAccts.length > 0 && (
+              <div style={{ marginTop: 18, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Currently syncing with</div>
+                {syncedAccts.map(a => (
+                  <div key={a.userId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 0', fontSize: 13 }}>
+                    <span>{a.username}{a.email ? ` · ${a.email}` : ''}</span>
+                    <button type="button" className="btn btn-ghost btn-sm" style={{ color: '#dc2626' }} onClick={() => handleRevokeShare(a.userId)}>Revoke</button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
 
