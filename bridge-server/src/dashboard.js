@@ -59,12 +59,20 @@ function buildDashboard(bridgeClient, jobLog) {
 
   app.post('/api/clear-pending-enrollments', (req, res) => {
     try {
-      const fs   = require('fs');
-      const path = require('path');
-      const PENDING_FILE = path.join(__dirname, '..', 'data', 'pending_enrollments.json');
-      fs.writeFileSync(PENDING_FILE, '[]');
-      console.log('[Bridge] Pending enrollments cleared via dashboard');
-      res.json({ ok: true, message: 'Pending enrollments cleared' });
+      // Full reset: abort any in-flight enrollment loop, kill the active Python
+      // child, and clear pending_enrollments.json — so the enrollment check stops
+      // and does not resume on restart. Falls back to just wiping the file if the
+      // client doesn't expose reset() (older build).
+      let cleared = 0;
+      if (typeof bridgeClient.reset === 'function') {
+        cleared = bridgeClient.reset().clearedEnrollments;
+      } else {
+        const fs = require('fs');
+        const path = require('path');
+        fs.writeFileSync(path.join(__dirname, '..', 'data', 'pending_enrollments.json'), '[]');
+      }
+      console.log(`[Bridge] Enrollment flow reset via dashboard (cleared ${cleared} pending)`);
+      res.json({ ok: true, message: `Bridge reset — cleared ${cleared} pending enrollment(s), ready for fresh requests` });
     } catch (err) {
       res.status(500).json({ ok: false, error: err.message });
     }

@@ -60,6 +60,10 @@ const _enrollingEINs = new Set();
 // force-killed via kill_job without restarting the bridge.
 let _activeProc  = null;  // ChildProcess | null
 let _activeJobId = null;  // string | null — for logging
+// Bumped on every kill/reset. Each in-flight enrollment poll loop captures the
+// value at start and bails the moment it changes — so kill_job actually stops the
+// loop instead of it retrying after the next 15-minute wait.
+let _killGen     = 0;
 
 function setActiveProc(jobId, proc) { _activeProc = proc; _activeJobId = jobId; }
 function clearActiveProc()          { _activeProc = null; _activeJobId = null; }
@@ -68,6 +72,33 @@ function killActiveProc() {
   try { _activeProc.kill('SIGKILL'); } catch (_) {}
   clearActiveProc();
   return true;
+}
+
+// Full stop: abort every in-flight enrollment poll loop, kill the running Python
+// child, and clear the persisted + in-memory enrollment state so nothing resumes
+// on restart/reconnect. Leaves the bridge ready for fresh requests.
+function abortAllFlows() {
+  _killGen++;
+  const killed = killActiveProc();
+  _enrollingEINs.clear();
+  let clearedEnrollments = 0;
+  try {
+    clearedEnrollments = loadPendingEnrollments().length;
+    fs.mkdirSync(path.dirname(PENDING_FILE), { recursive: true });
+    fs.writeFileSync(PENDING_FILE, '[]');
+  } catch (_) {}
+  return { killed, clearedEnrollments };
+}
+
+// setTimeout that returns early once aborted() flips — so a kill during the
+// 15-minute enrollment wait takes effect within a few seconds, not 15 minutes.
+async function interruptibleWait(ms, aborted) {
+  const STEP = 5000;
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (aborted()) return;
+    await new Promise(r => setTimeout(r, Math.min(STEP, end - Date.now())));
+  }
 }
 
 // ── Computer 2 lock ───────────────────────────────────────────────────────────
@@ -356,6 +387,15 @@ class BridgeClient extends EventEmitter {
     if (this.ws) this.ws.close(1000, 'Bridge shutting down');
   }
 
+  // Full reset: abort in-flight enrollment loops, kill the active child process,
+  // and clear persisted pending enrollments so nothing resumes. Used by the
+  // dashboard reset button and safe to call anytime.
+  reset() {
+    const r = abortAllFlows();
+    this.emit('log', `[RESET] Aborted flows — killed=${r.killed}, cleared ${r.clearedEnrollments} pending enrollment(s). Bridge ready for fresh requests.`);
+    return r;
+  }
+
   get status() {
     if (!this.ws) return 'disconnected';
     if (this.ws.readyState === WebSocket.CONNECTING) return 'connecting';
@@ -459,9 +499,10 @@ class BridgeClient extends EventEmitter {
         break;
 
       case 'kill_job': {
-        const killed = killActiveProc();
-        this.emit('log', `kill_job received — ${killed ? `killed process for job ${_activeJobId}` : 'no active process'}`);
-        this._send({ type: 'job_killed', jobId: msg.jobId || _activeJobId || null });
+        const jobId = _activeJobId;
+        const r = abortAllFlows();
+        this.emit('log', `kill_job received — ${r.killed ? `killed process for job ${jobId}` : 'no active process'}; cleared ${r.clearedEnrollments} pending enrollment(s); enrollment loops aborted — bridge ready for fresh requests`);
+        this._send({ type: 'job_killed', jobId: msg.jobId || jobId || null, ...r });
         break;
       }
 
@@ -630,9 +671,11 @@ class BridgeClient extends EventEmitter {
         const WAIT_POLL_MS = 30 * 1000;
         const MAX_WAIT_MS  = 95 * 60 * 1000; // slightly more than the 90-min enrollment timeout
         const waitStarted  = Date.now();
+        const waitGen      = _killGen;
         while (!isEnrolled(job.ein) && Date.now() - waitStarted < MAX_WAIT_MS) {
+          if (_killGen !== waitGen) throw new Error('Cancelled by user');
           log(`[ENROLL] EIN ${cleanEin(job.ein)} still enrolling — will check again in 30s`);
-          await new Promise(r => setTimeout(r, WAIT_POLL_MS));
+          await interruptibleWait(WAIT_POLL_MS, () => _killGen !== waitGen);
         }
         if (!isEnrolled(job.ein)) {
           throw new Error('Enrollment did not complete within expected time — please retry this payment after enrollment confirms.');
@@ -743,6 +786,19 @@ class BridgeClient extends EventEmitter {
     const MAX_RETRIES  = 6;
     const POLL_INTERVAL = 15 * 60 * 1000;
 
+    // Capture the kill generation at start. If a kill_job/reset bumps it, this
+    // loop bails immediately and stops re-checking enrollment.
+    const myGen = _killGen;
+    const aborted = () => _killGen !== myGen;
+    const bail = () => {
+      log(`[ENROLL] Enrollment loop for EIN ${cleanEin(ein)} aborted by kill — not resuming`);
+      removePendingEnrollment(ein);
+      _enrollingEINs.delete(cleanEin(ein));
+      return false;
+    };
+
+    if (aborted()) return bail();
+
     // Persist to disk immediately so a restart can resume from here
     upsertPendingEnrollment({ ein, businessName, jobId, submissionId, achFilePath, clientId, enrollmentPin, attempt: startAtAttempt, maxRetries: MAX_RETRIES });
 
@@ -753,19 +809,23 @@ class BridgeClient extends EventEmitter {
       active = await c2.run('enroll-check', () => checkEnrollmentActive(ein, businessName, log));
       if (active) log(`[ENROLL] EIN ${cleanEin(ein)} confirmed Active immediately`);
     }
+    if (aborted()) return bail();
 
     if (!active) {
       this._send({ type: 'status_update', jobId, status: 'enrollment_pending', message: 'Processing. Since this is your first payment with us, it can take 15 mins to 1 hour.' });
 
       for (let attempt = startAtAttempt + 1; attempt <= MAX_RETRIES; attempt++) {
+        if (aborted()) return bail();
         log(`[ENROLL] Waiting 15 minutes before retry ${attempt}/${MAX_RETRIES}...`);
-        await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL));
+        await interruptibleWait(POLL_INTERVAL, aborted);
+        if (aborted()) return bail();
 
         // Update attempt count in persisted file before running check
         upsertPendingEnrollment({ ein, businessName, jobId, submissionId, achFilePath, clientId, enrollmentPin, attempt, maxRetries: MAX_RETRIES });
 
         log(`[ENROLL] Running enrollment check (retry ${attempt}/${MAX_RETRIES}) for EIN ${cleanEin(ein)}...`);
         active = await c2.run('enroll-check', () => checkEnrollmentActive(ein, businessName, log));
+        if (aborted()) return bail();
 
         if (active) {
           log(`[ENROLL] EIN ${cleanEin(ein)} confirmed Active on retry ${attempt}`);
