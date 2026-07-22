@@ -4691,7 +4691,7 @@ function PayLiabilitiesTab({ clientId, client }) {
             <tr>
               <th style={TH}>Tax</th>
               <th style={TH}>Pay Dates</th>
-              <th style={TH}>IRS Due</th>
+              <th style={TH} title="Submit the payment by this date so it settles by the IRS deadline (2 business days before the due date)">Send By</th>
               <th style={TH}>Checks</th>
               <th style={{ ...TH, textAlign: 'right' }}>Amount</th>
               <th style={TH} />
@@ -4730,8 +4730,9 @@ function PayLiabilitiesTab({ clientId, client }) {
                         <td style={{ padding: '14px 16px', color: '#9ca3af', fontSize: 13 }} />
                         <td style={{ padding: '14px 14px', color: '#374151', fontSize: 14 }}>{dateLabel}</td>
                         <td style={{ padding: '14px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600,
-                          color: isLate ? '#dc2626' : isDueSoon ? '#d97706' : '#374151' }}>
-                          {fmtDate(period.due)}
+                          color: isLate ? '#dc2626' : isDueSoon ? '#d97706' : '#374151' }}
+                          title={period.due ? `IRS due date: ${fmtDate(period.due)}` : undefined}>
+                          {fmtDate(period.sendBy || period.due)}
                           {isLate    && <span style={{ marginLeft: 6, fontFamily: 'inherit', fontWeight: 600, fontSize: 12 }}>(Late)</span>}
                           {isDueSoon && !isLate && <span style={{ marginLeft: 6, fontFamily: 'inherit', fontWeight: 500, fontSize: 12 }}>(Due Soon)</span>}
                         </td>
@@ -5089,7 +5090,7 @@ function PayLiabilitiesTab({ clientId, client }) {
                     <tr>
                       <th style={TH}>Tax</th>
                       <th style={TH}>Pay Dates</th>
-                      <th style={TH}>IRS Due</th>
+                      <th style={TH} title="Submit the payment by this date so it settles by the IRS deadline (2 business days before the due date)">Send By</th>
                       <th style={TH}>Checks</th>
                       <th style={{ ...TH, textAlign: 'right' }}>Amount</th>
                       <th style={TH} />
@@ -5109,7 +5110,8 @@ function PayLiabilitiesTab({ clientId, client }) {
                           onClick={() => setPeriodModal({ period, taxType: period.taxType })}>
                           <td style={{ padding: '14px 14px', fontSize: 13, color: '#6b7280', fontWeight: 500 }}>{period.taxLabel}</td>
                           <td style={{ padding: '14px 14px', color: '#374151' }}>{dateLabel}</td>
-                          <td style={{ padding: '14px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, color: '#6b7280' }}>{fmtDate(period.due)}</td>
+                          <td style={{ padding: '14px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, color: '#6b7280' }}
+                            title={period.due ? `IRS due date: ${fmtDate(period.due)}` : undefined}>{fmtDate(period.sendBy || period.due)}</td>
                           <td style={{ padding: '14px 14px', fontSize: 14, color: '#6b7280' }}>{period.stubs.length}</td>
                           <td style={{ padding: '14px 14px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 15, color: '#16a34a' }}>
                             {fmt(period.total)}
