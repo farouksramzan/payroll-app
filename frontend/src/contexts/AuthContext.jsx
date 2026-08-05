@@ -16,6 +16,18 @@ export function AuthProvider({ children }) {
       .finally(() => setLoading(false));
   }, []);
 
+  // Cross-tab sync: if the token is removed in another tab (sign-out or expiry),
+  // clear this tab's user state too instead of leaving it looking signed in.
+  useEffect(() => {
+    function onStorage(e) {
+      if (e.key === null || (e.key === 'token' && !e.newValue)) {
+        setUser(null);
+      }
+    }
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
   async function login(username, password) {
     const data = await api.login(username, password);
     localStorage.setItem('token', data.token);

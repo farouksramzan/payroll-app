@@ -39,6 +39,9 @@ export default function EmployeeDetail() {
   const [ytd,      setYtd]      = useState(null);
   const [paystubs, setPaystubs] = useState([]);
   const [loading,  setLoading]  = useState(true);
+  const [loadError,  setLoadError]  = useState('');
+  const [ytdError,   setYtdError]   = useState('');
+  const [stubsError, setStubsError] = useState('');
   const [inviteUrl, setInviteUrl] = useState('');
   const [inviting,  setInviting]  = useState(false);
   const currentYear = new Date().getFullYear();
@@ -55,21 +58,44 @@ export default function EmployeeDetail() {
     }
   }
 
+  async function loadYtd() {
+    setYtdError('');
+    try {
+      setYtd(await api.getEmployeeYTD(empId, currentYear));
+    } catch (err) {
+      setYtdError(err.message || 'The server did not respond.');
+    }
+  }
+
+  async function loadPaystubs() {
+    setStubsError('');
+    try {
+      setPaystubs(await api.getPaystubs(clientId, empId));
+    } catch (err) {
+      setStubsError(err.message || 'The server did not respond.');
+    }
+  }
+
+  async function loadPage() {
+    setLoading(true);
+    setLoadError('');
+    try {
+      const [c, emp] = await Promise.all([
+        api.getClient(clientId),
+        api.getEmployee(empId),
+      ]);
+      setClient(c);
+      setEmployee(emp);
+      await Promise.all([loadYtd(), loadPaystubs()]);
+    } catch (err) {
+      setLoadError(err.message || 'The server did not respond.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
-    Promise.all([
-      api.getClient(clientId),
-      api.getEmployee(empId),
-      api.getEmployeeYTD(empId, currentYear),
-      api.getPaystubs(clientId, empId),
-    ])
-      .then(([c, emp, ytdData, stubs]) => {
-        setClient(c);
-        setEmployee(emp);
-        setYtd(ytdData);
-        setPaystubs(stubs);
-      })
-      .catch((err) => { alert(err.message); navigate(`/clients/${clientId}`); })
-      .finally(() => setLoading(false));
+    loadPage();
   }, [clientId, empId]);
 
   if (loading) return (
@@ -77,7 +103,17 @@ export default function EmployeeDetail() {
       <div className="spinner spinner-dark" style={{ width: 36, height: 36, margin: '0 auto' }} />
     </div>
   );
-  if (!employee || !client) return null;
+  if (loadError || !employee || !client) return (
+    <div style={{ padding: 60, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+      <div className="alert alert-error" style={{ maxWidth: 480 }}>
+        Couldn't load this employee. {loadError || 'The server did not respond.'} Try again, or go back to the client page.
+      </div>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button className="btn btn-primary" onClick={loadPage}>Try Again</button>
+        <Link to={`/clients/${clientId}`} className="btn btn-secondary">Back to Client</Link>
+      </div>
+    </div>
+  );
 
   const payFreqLabel = {
     weekly: 'Weekly', biweekly: 'Bi-Weekly', semimonthly: 'Semi-Monthly', monthly: 'Monthly',
@@ -90,6 +126,12 @@ export default function EmployeeDetail() {
   const payRate = employee.payType === 'hourly'
     ? `$${Number(employee.hourlyRate).toFixed(2)}/hr`
     : `$${Number(employee.annualSalary).toLocaleString()}/yr`;
+
+  // Counters in the Year-to-Date card only count stubs whose pay period ends in the current year.
+  const yearStubs = paystubs.filter((s) => {
+    const m = String(s.pay_period_end || '').match(/\d{4}/);
+    return m && Number(m[0]) === currentYear;
+  });
 
   return (
     <>
@@ -182,28 +224,45 @@ export default function EmployeeDetail() {
             <div className="card-header">
               <span className="card-title">{currentYear} Year-to-Date</span>
             </div>
-            <InfoRow label="Gross Wages" value={fmt(ytd?.ytd_gross)} mono />
-            <InfoRow label="SS Wages" value={fmt(ytd?.ytd_ss_wages)} mono />
-            <InfoRow label="FUTA Wages" value={fmt(ytd?.ytd_futa_wages)} mono />
-            <InfoRow label="SUTA Wages" value={fmt(ytd?.ytd_suta_wages)} mono />
-            <div style={{ paddingTop: 14, display: 'flex', gap: 20 }}>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' }}>{paystubs.length}</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Total Paychecks</div>
-              </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: 'var(--success)' }}>
-                  {paystubs.filter((s) => s.status === 'submitted').length}
+            {ytdError ? (
+              <div style={{ padding: '14px 0' }}>
+                <div className="alert alert-error" style={{ marginBottom: 10 }}>
+                  Year-to-date totals didn't load. {ytdError}
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>941 Filed</div>
+                <button className="btn btn-secondary btn-sm" onClick={loadYtd}>Retry</button>
               </div>
-              <div style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: 'var(--success)' }}>
-                  {paystubs.filter((s) => s.status_940 === 'submitted').length}
+            ) : (
+              <>
+                <InfoRow label="Gross Wages" value={fmt(ytd?.ytd_gross)} mono />
+                <InfoRow label="SS Wages" value={fmt(ytd?.ytd_ss_wages)} mono />
+                <InfoRow label="FUTA Wages" value={fmt(ytd?.ytd_futa_wages)} mono />
+                <InfoRow label="SUTA Wages" value={fmt(ytd?.ytd_suta_wages)} mono />
+              </>
+            )}
+            {stubsError ? (
+              <div style={{ paddingTop: 14, fontSize: 12, color: 'var(--text-muted)' }}>
+                Paycheck counts unavailable — see Paycheck History below.
+              </div>
+            ) : (
+              <div style={{ paddingTop: 14, display: 'flex', gap: 20 }}>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' }}>{yearStubs.length}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Paychecks in {currentYear}</div>
                 </div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>940 Filed</div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: 'var(--success)' }}>
+                    {yearStubs.filter((s) => s.status === 'submitted').length}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>941 Filed</div>
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: 'var(--success)' }}>
+                    {yearStubs.filter((s) => s.status_940 === 'submitted').length}
+                  </div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>940 Filed</div>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
         </div>
@@ -215,7 +274,14 @@ export default function EmployeeDetail() {
             <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Click any row to open and edit</span>
           </div>
 
-          {paystubs.length === 0 ? (
+          {stubsError ? (
+            <div style={{ padding: '24px 20px' }}>
+              <div className="alert alert-error" style={{ marginBottom: 10 }}>
+                Paycheck history didn't load. {stubsError}
+              </div>
+              <button className="btn btn-secondary btn-sm" onClick={loadPaystubs}>Retry</button>
+            </div>
+          ) : paystubs.length === 0 ? (
             <div className="empty-state" style={{ padding: '40px 20px' }}>
               <div className="empty-state-icon">📄</div>
               <h3>No paychecks yet</h3>

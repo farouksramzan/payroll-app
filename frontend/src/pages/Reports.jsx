@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -1313,11 +1313,28 @@ export default function Reports() {
     }
   }
 
+  const paramClientId = searchParams.get('clientId');
+  const backClient    = paramClientId ? clients.find((c) => String(c.id) === String(paramClientId)) : null;
+
   return (
     <>
       <div className="page-header">
-        <h2>File Forms</h2>
-        <p>Generate Form 941, 940, TWC, W-2, and W-3 reports, and manage your preparer information</p>
+        {paramClientId && (
+          <div className="breadcrumb">
+            <Link to="/">Dashboard</Link><span>/</span>
+            <Link to={`/clients/${paramClientId}`} state={{ tab: 'payroll' }}>{backClient?.businessName || 'Company'}</Link><span>/</span>
+            <span>File Forms</span>
+          </div>
+        )}
+        <div className="page-header-row">
+          <div>
+            <h2>File Forms</h2>
+            <p>Generate Form 941, 940, TWC, W-2, and W-3 reports, and manage your preparer information</p>
+          </div>
+          {paramClientId && (
+            <Link to={`/clients/${paramClientId}`} state={{ tab: 'payroll' }} className="btn btn-secondary">← Back to company</Link>
+          )}
+        </div>
       </div>
 
       <div className="page-body">
@@ -1520,7 +1537,11 @@ export default function Reports() {
             {!data && !loading && !error && (
               <div className="card" style={{ textAlign: 'center', padding: '48px 24px', color: 'var(--text-muted)' }}>
                 <div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>
-                <p>Select a client and report type above, then click Generate Report.</p>
+                <p>
+                  {clientId
+                    ? 'Click "Generate Report" to build the form.'
+                    : 'Select a client and report type above, then click "Generate Report".'}
+                </p>
               </div>
             )}
           </>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import api from '../api/client';
+import { useAuth } from '../contexts/AuthContext';
 
 function InfoRow({ label, value, mono }) {
   return (
@@ -41,6 +42,10 @@ export default function ClientDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
+  // Client-role users must never be pointed at admin-only routes (/clients/...):
+  // those routes are admin-guarded and would bounce them to their workspace.
+  const isAdmin = user?.role === 'admin';
   const [client,       setClient]       = useState(null);
   const [recentSubs,   setRecentSubs]   = useState([]);
   const [pendingStubs, setPendingStubs] = useState([]);
@@ -103,11 +108,17 @@ export default function ClientDetail() {
             <p className="mono" style={{ fontSize: 13, marginTop: 4 }}>EIN: {client.ein}</p>
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
-            <Link to={`/clients/${id}/payroll/new`} className="btn btn-primary">+ New Payroll Entry</Link>
-            <Link to={`/clients/${id}/paystubs`} className="btn btn-secondary">
-              Paystubs{pendingStubs.length > 0 ? ` (${pendingStubs.length} pending)` : ''}
-            </Link>
-            <Link to={`/clients/${id}/edit`} className="btn btn-secondary">Edit</Link>
+            {isAdmin ? (
+              <>
+                <Link to={`/clients/${id}/payroll/new`} className="btn btn-primary">+ New Payroll Entry</Link>
+                <Link to={`/clients/${id}/paystubs`} className="btn btn-secondary">
+                  Paystubs{pendingStubs.length > 0 ? ` (${pendingStubs.length} pending)` : ''}
+                </Link>
+                <Link to={`/clients/${id}/edit`} className="btn btn-secondary">Edit</Link>
+              </>
+            ) : (
+              <Link to={`/company/${id}`} className="btn btn-primary">Open Company Workspace</Link>
+            )}
           </div>
         </div>
       </div>
@@ -150,12 +161,14 @@ export default function ClientDetail() {
             <div className="card" style={{ gridColumn: '1 / -1' }}>
               <div className="card-header">
                 <span className="card-title">Pending Paystubs</span>
-                <Link to={`/clients/${id}/paystubs`} className="btn btn-secondary btn-sm">View All Paystubs</Link>
+                <Link to={isAdmin ? `/clients/${id}/paystubs` : `/company/${id}`} className="btn btn-secondary btn-sm">
+                  {isAdmin ? 'View All Paystubs' : 'Open Workspace'}
+                </Link>
               </div>
               {pendingStubs.length === 0 ? (
                 <div style={{ padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>No pending paystubs.</span>
-                  <Link to={`/clients/${id}/payroll/new`} className="btn btn-secondary btn-sm">New Payroll Entry</Link>
+                  {isAdmin && <Link to={`/clients/${id}/payroll/new`} className="btn btn-secondary btn-sm">New Payroll Entry</Link>}
                 </div>
               ) : (
                 <div style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -170,7 +183,7 @@ export default function ClientDetail() {
                       </strong>
                     </span>
                   </div>
-                  <Link to={`/clients/${id}/paystubs`} className="btn btn-success btn-sm">Submit All Pending →</Link>
+                  {isAdmin && <Link to={`/clients/${id}/paystubs`} className="btn btn-success btn-sm">Submit All Pending →</Link>}
                 </div>
               )}
             </div>
@@ -182,7 +195,7 @@ export default function ClientDetail() {
         {activeTab === 'employees' && (
           <div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-              <Link to={`/clients/${id}/employees/new`} className="btn btn-primary">+ Add Employee</Link>
+              <Link to={isAdmin ? `/clients/${id}/employees/new` : `/company/${id}/employees/new`} className="btn btn-primary">+ Add Employee</Link>
             </div>
 
             {employees.length === 0 ? (
@@ -190,10 +203,10 @@ export default function ClientDetail() {
                 <div style={{ fontSize: 40, marginBottom: 12 }}>👤</div>
                 <h3 style={{ marginBottom: 8 }}>No employees yet</h3>
                 <p style={{ color: 'var(--text-muted)', marginBottom: 20 }}>Add employees to track payroll per person.</p>
-                <Link to={`/clients/${id}/employees/new`} className="btn btn-primary">Add First Employee</Link>
+                <Link to={isAdmin ? `/clients/${id}/employees/new` : `/company/${id}/employees/new`} className="btn btn-primary">Add First Employee</Link>
               </div>
             ) : (
-              <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)' }}>
@@ -207,7 +220,7 @@ export default function ClientDetail() {
                       <tr
                         key={emp.id}
                         style={{ borderBottom: '1px solid var(--border-light)', cursor: 'pointer', transition: 'background 0.1s' }}
-                        onClick={() => navigate(`/clients/${id}/employees/${emp.id}`)}
+                        onClick={() => navigate(isAdmin ? `/clients/${id}/employees/${emp.id}` : `/company/${id}/employees/${emp.id}/edit`)}
                         onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-primary)'; }}
                         onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                       >
@@ -236,9 +249,11 @@ export default function ClientDetail() {
         {/* ── PAYROLL HISTORY TAB ──────────────────────────────────── */}
         {activeTab === 'payroll' && (
           <div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
-              <Link to={`/clients/${id}/submissions`} className="btn btn-secondary">View All Submissions</Link>
-            </div>
+            {isAdmin && (
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+                <Link to={`/clients/${id}/submissions`} className="btn btn-secondary">View All Submissions</Link>
+              </div>
+            )}
 
             {recentSubs.length === 0 ? (
               <div className="card" style={{ textAlign: 'center', padding: '48px 24px' }}>
@@ -248,7 +263,7 @@ export default function ClientDetail() {
                 <Link to={`/clients/${id}/payroll/new`} className="btn btn-primary">New Payroll Entry</Link>
               </div>
             ) : (
-              <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+              <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)' }}>

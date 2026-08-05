@@ -4,25 +4,48 @@ function getToken() {
   return localStorage.getItem('token');
 }
 
+// Unauthenticated endpoints: a 401 here means "bad credentials / bad code / bad
+// invite" — the form needs to show the server's message, not redirect the page.
+const PUBLIC_PATHS = [
+  '/auth/login',
+  '/auth/register',          // also covers /auth/register-company
+  '/auth/company-by-code/',
+  '/auth/claim-employee',
+  '/auth/invite/',
+  '/auth/accept-invite',
+];
+
 async function request(path, options = {}) {
   const token = getToken();
-  const res = await fetch(`${BASE}${path}`, {
-    ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...options.headers,
-    },
-  });
+  let res;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      ...options,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...options.headers,
+      },
+    });
+  } catch {
+    throw new Error("Can't reach the server — check your connection and try again.");
+  }
 
-  if (res.status === 401) {
+  if (res.status === 401 && !PUBLIC_PATHS.some(p => path.startsWith(p))) {
+    // Session expired mid-use: send them to login and remember where they were.
     localStorage.removeItem('token');
-    window.location.href = '/login';
+    if (window.location.pathname !== '/login') {
+      const next = encodeURIComponent(window.location.pathname + window.location.search);
+      window.location.href = `/login?expired=1&next=${next}`;
+    }
     return;
   }
 
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  if (!res.ok) {
+    if (res.status >= 500) throw new Error(data.error || 'Something went wrong on our end — please try again.');
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
   return data;
 }
 
@@ -80,7 +103,7 @@ const api = {
   getPaystub: (id) => request(`/paystubs/${id}`),
   createPaystub: (data) => request('/paystubs', { method: 'POST', body: JSON.stringify(data) }),
   updatePaystub: (id, data) => request(`/paystubs/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deletePaystub: (id) => request(`/paystubs/${id}`, { method: 'DELETE' }),
+  deletePaystub: (id, { force = false } = {}) => request(`/paystubs/${id}${force ? '?force=1' : ''}`, { method: 'DELETE' }),
   submitPaystub: (id, taxType = '941') => request(`/paystubs/${id}/submit`, { method: 'POST', body: JSON.stringify({ taxType }) }),
   updatePaystubStatus: (id, status, taxType) => request(`/paystubs/${id}/status`, { method: 'PUT', body: JSON.stringify({ status, taxType }) }),
   voidPaystub: (id, reason) => request(`/paystubs/${id}/void`, { method: 'POST', body: JSON.stringify({ reason }) }),

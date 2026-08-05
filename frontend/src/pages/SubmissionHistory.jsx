@@ -44,9 +44,11 @@ export default function SubmissionHistory() {
     }
   }
 
-  const totalDeposited = submissions
-    .filter((s) => s.eftps_status === 'submitted' || s.eftps_status === 'dry_run')
-    .reduce((sum, s) => sum + s.total_deposit, 0);
+  // Dry runs never move money — keep them out of the deposited totals
+  const submittedReal  = submissions.filter((s) => s.eftps_status === 'submitted');
+  const dryRuns        = submissions.filter((s) => s.eftps_status === 'dry_run');
+  const totalDeposited = submittedReal.reduce((sum, s) => sum + s.total_deposit, 0);
+  const totalDryRun    = dryRuns.reduce((sum, s) => sum + s.total_deposit, 0);
 
   return (
     <>
@@ -80,8 +82,13 @@ export default function SubmissionHistory() {
           <div className="stat-card">
             <div className="stat-label">Successfully Submitted</div>
             <div className="stat-value" style={{ color: 'var(--success)' }}>
-              {submissions.filter((s) => s.eftps_status === 'submitted' || s.eftps_status === 'dry_run').length}
+              {submittedReal.length}
             </div>
+            {dryRuns.length > 0 && (
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                + {dryRuns.length} dry run{dryRuns.length !== 1 ? 's' : ''} (not counted)
+              </div>
+            )}
           </div>
           <div className="stat-card">
             <div className="stat-label">Pending</div>
@@ -92,6 +99,11 @@ export default function SubmissionHistory() {
           <div className="stat-card">
             <div className="stat-label">Total Deposited</div>
             <div className="stat-value" style={{ fontSize: 20, color: 'var(--accent)' }}>{fmtAmt(totalDeposited)}</div>
+            {totalDryRun > 0 && (
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                Dry runs: {fmtAmt(totalDryRun)} — no money moved
+              </div>
+            )}
           </div>
         </div>
 
@@ -132,7 +144,18 @@ export default function SubmissionHistory() {
                         style={{ cursor: 'pointer' }}
                         onClick={() => setExpanded(expanded === s.id ? null : s.id)}
                       >
-                        <td className="mono" style={{ color: 'var(--text-muted)' }}>#{s.id}</td>
+                        <td className="mono" style={{ color: 'var(--text-muted)' }}>
+                          <button
+                            type="button"
+                            aria-expanded={expanded === s.id}
+                            aria-label={`${expanded === s.id ? 'Hide' : 'Show'} details for submission #${s.id}`}
+                            onClick={(e) => { e.stopPropagation(); setExpanded(expanded === s.id ? null : s.id); }}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', font: 'inherit', padding: 0, display: 'inline-flex', alignItems: 'center', gap: 4 }}
+                          >
+                            <span aria-hidden="true" style={{ fontSize: 10 }}>{expanded === s.id ? '▾' : '▸'}</span>
+                            #{s.id}
+                          </button>
+                        </td>
                         {!clientId && <td style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{s.business_name}</td>}
                         <td className="mono" style={{ fontSize: 12 }}>{s.pay_period_start}<br />{s.pay_period_end}</td>
                         <td className="amount">{fmtAmt(s.gross_wages)}</td>

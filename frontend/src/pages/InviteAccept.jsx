@@ -3,30 +3,51 @@ import { useParams, useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
+const PAGE_STYLE = {
+  minHeight: '100vh',
+  display: 'flex', alignItems: 'center', justifyContent: 'center',
+  background: 'var(--bg-secondary)', padding: 20,
+};
+const CARD_STYLE = { maxWidth: 440, width: '100%', padding: '32px 36px' };
+
+function Brand() {
+  return (
+    <div style={{ textAlign: 'center', marginBottom: 24 }}>
+      <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.5px', color: 'var(--text-primary)' }}>
+        Payroll<span style={{ color: 'var(--accent)' }}>Tax</span> Pro
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+        Federal Payroll Tax Engine
+      </div>
+    </div>
+  );
+}
+
 export default function InviteAccept() {
   const { token }    = useParams();
   const navigate     = useNavigate();
   const { setUser }  = useAuth();
 
-  const [info,     setInfo]     = useState(null);   // { role, name, clientName }
-  const [loading,  setLoading]  = useState(true);
-  const [error,    setError]    = useState('');
-  const [email,    setEmail]    = useState('');
-  const [password, setPassword] = useState('');
-  const [confirm,  setConfirm]  = useState('');
-  const [saving,   setSaving]   = useState(false);
+  const [info,      setInfo]      = useState(null);   // { role, name, clientName }
+  const [loading,   setLoading]   = useState(true);
+  const [loadError, setLoadError] = useState('');     // invite is invalid / expired
+  const [error,     setError]     = useState('');     // form validation / submit errors
+  const [email,     setEmail]     = useState('');
+  const [password,  setPassword]  = useState('');
+  const [confirm,   setConfirm]   = useState('');
+  const [saving,    setSaving]    = useState(false);
 
   useEffect(() => {
     api.getInvite(token)
       .then(setInfo)
-      .catch(err => setError(err.message))
+      .catch(err => setLoadError(err.message || 'This invite link is not valid.'))
       .finally(() => setLoading(false));
   }, [token]);
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (password !== confirm) { setError('Passwords do not match'); return; }
-    if (password.length < 8)  { setError('Password must be at least 8 characters'); return; }
+    if (password !== confirm) { setError('Passwords do not match. Re-enter them and try again.'); return; }
+    if (password.length < 8)  { setError('Password must be at least 8 characters.'); return; }
     setSaving(true);
     setError('');
     try {
@@ -43,81 +64,124 @@ export default function InviteAccept() {
     }
   }
 
+  // ── Loading ──────────────────────────────────────────────────────────────
   if (loading) return (
-    <div className="d-flex justify-content-center align-items-center" style={{ minHeight: '100vh' }}>
-      <div className="spinner-border text-primary" />
+    <div style={PAGE_STYLE}>
+      <div style={{ textAlign: 'center' }}>
+        <span className="spinner spinner-dark" style={{ width: 28, height: 28, borderWidth: 3 }} />
+        <div style={{ marginTop: 12, fontSize: 13, color: 'var(--text-secondary)' }}>Checking your invite…</div>
+      </div>
     </div>
   );
 
+  // ── Invalid / expired invite ─────────────────────────────────────────────
+  if (loadError || !info) return (
+    <div style={PAGE_STYLE}>
+      <div className="card" style={CARD_STYLE}>
+        <Brand />
+        <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 10px', textAlign: 'center' }}>
+          This invite link isn't valid
+        </h2>
+        <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0 0 8px', textAlign: 'center' }}>
+          The link may have expired, already been used, or been copied incompletely.
+          Ask your accountant or employer to send you a new invite, then open the newest link.
+        </p>
+        {loadError && (
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 20px', textAlign: 'center' }}>
+            {loadError}
+          </p>
+        )}
+        <a
+          href="/login"
+          className="btn btn-secondary"
+          style={{ width: '100%', justifyContent: 'center' }}
+        >
+          Go to sign in
+        </a>
+      </div>
+    </div>
+  );
+
+  // ── Set-password form ────────────────────────────────────────────────────
   return (
-    <div className="min-vh-100 d-flex align-items-center justify-content-center bg-light px-3">
-      <div className="card shadow-sm" style={{ maxWidth: 460, width: '100%' }}>
-        <div className="card-body p-4 p-md-5">
-          <div className="text-center mb-4">
-            <div className="fw-bold fs-4 text-primary mb-1">PayrollTax Pro</div>
-            {info && (
-              <div>
-                <div className="fs-5 fw-semibold">Welcome{info.name ? `, ${info.name}` : ''}!</div>
-                <div className="text-muted small mt-1">
-                  {info.role === 'client'
-                    ? 'Set up your company portal account'
-                    : 'Set up your employee portal account'}
-                </div>
-              </div>
-            )}
+    <div style={PAGE_STYLE}>
+      <div className="card" style={CARD_STYLE}>
+        <Brand />
+        <div style={{ textAlign: 'center', marginBottom: 20 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 4px' }}>
+            Welcome{info.name ? `, ${info.name}` : ''}!
+          </h2>
+          <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
+            {info.role === 'client'
+              ? `Set up your company portal account${info.clientName ? ` for ${info.clientName}` : ''}`
+              : `Set up your employee portal account${info.clientName ? ` for ${info.clientName}` : ''}`}
+          </p>
+        </div>
+
+        {error && (
+          <div className="alert alert-error" style={{ marginBottom: 16 }}>
+            <span>⚠</span>
+            <span>{error}</span>
+          </div>
+        )}
+
+        <form onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label className="form-label">Email address</label>
+            <input
+              type="email"
+              className="form-input"
+              value={email}
+              onChange={e => setEmail(e.target.value)}
+              placeholder="you@example.com"
+              required
+              autoComplete="email"
+            />
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 5 }}>
+              This will be your login username.
+            </p>
           </div>
 
-          {error && <div className="alert alert-danger py-2 small">{error}</div>}
+          <div className="form-group">
+            <label className="form-label">Create a password</label>
+            <input
+              type="password"
+              className="form-input"
+              value={password}
+              onChange={e => setPassword(e.target.value)}
+              placeholder="At least 8 characters"
+              required
+              autoComplete="new-password"
+            />
+          </div>
 
-          {info ? (
-            <form onSubmit={handleSubmit}>
-              <div className="mb-3">
-                <label className="form-label fw-medium">Email address</label>
-                <input
-                  type="email"
-                  className="form-control"
-                  value={email}
-                  onChange={e => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  required
-                  autoComplete="email"
-                />
-                <div className="form-text">This will be your login username.</div>
-              </div>
+          <div className="form-group">
+            <label className="form-label">Confirm password</label>
+            <input
+              type="password"
+              className="form-input"
+              value={confirm}
+              onChange={e => setConfirm(e.target.value)}
+              placeholder="Repeat your password"
+              required
+              autoComplete="new-password"
+            />
+          </div>
 
-              <div className="mb-3">
-                <label className="form-label fw-medium">Create a password</label>
-                <input
-                  type="password"
-                  className="form-control"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  placeholder="At least 8 characters"
-                  required
-                  autoComplete="new-password"
-                />
-              </div>
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={saving}
+            style={{ width: '100%', justifyContent: 'center', padding: '11px 18px' }}
+          >
+            {saving ? <><span className="spinner" /> Creating account…</> : 'Create Account'}
+          </button>
+        </form>
 
-              <div className="mb-4">
-                <label className="form-label fw-medium">Confirm password</label>
-                <input
-                  type="password"
-                  className="form-control"
-                  value={confirm}
-                  onChange={e => setConfirm(e.target.value)}
-                  placeholder="Repeat your password"
-                  required
-                  autoComplete="new-password"
-                />
-              </div>
-
-              <button type="submit" className="btn btn-primary w-100" disabled={saving}>
-                {saving ? <span className="spinner-border spinner-border-sm me-2" /> : null}
-                Create Account
-              </button>
-            </form>
-          ) : null}
-        </div>
+        <p style={{ marginTop: 18, fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
+          Already have an account?{' '}
+          <a href="/login" style={{ color: 'var(--accent)', fontWeight: 600, textDecoration: 'none' }}>Sign in</a>
+        </p>
       </div>
     </div>
   );

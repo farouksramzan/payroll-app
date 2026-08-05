@@ -1,10 +1,24 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Fragment } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 
 function fmt(n) {
   return `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function fmtDay(d) {
+  if (!d) return '—';
+  return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// ABA routing-number checksum — catches most single-digit typos before a
+// paycheck gets misrouted.
+function validRoutingNumber(rn) {
+  if (!/^\d{9}$/.test(rn)) return false;
+  const d = rn.split('').map(Number);
+  const sum = 3 * (d[0] + d[3] + d[6]) + 7 * (d[1] + d[4] + d[7]) + (d[2] + d[5] + d[8]);
+  return sum % 10 === 0;
 }
 
 const INPUT_STYLE = {
@@ -497,7 +511,8 @@ export default function EmployeeDashboard() {
   const [editSection, setEditSection] = useState(null); // 'contact' | 'tax' | 'bank'
   const [form,        setForm]        = useState({});
   const [saving,      setSaving]      = useState(false);
-  const [saveMsg,     setSaveMsg]     = useState('');
+  const [saveMsg,     setSaveMsg]     = useState(null); // { type: 'success' | 'error', text }
+  const [openStub,    setOpenStub]    = useState(null); // id of the expanded pay record
 
   useEffect(() => {
     Promise.all([api.getEmployeePortalMe(), api.getEmployeePortalPaystubs()])
@@ -516,29 +531,58 @@ export default function EmployeeDashboard() {
   function startEdit(section, fields) {
     setForm(fields);
     setEditSection(section);
-    setSaveMsg('');
+    setSaveMsg(null);
   }
 
   function cancelEdit() {
     setEditSection(null);
     setForm({});
-    setSaveMsg('');
+    setSaveMsg(null);
   }
 
-  async function handleSave(e) {
-    e.preventDefault();
-    setSaving(true); setSaveMsg('');
+  async function doSave(payload) {
+    setSaving(true); setSaveMsg(null);
     try {
-      const updated = await api.updateEmployeePortalMe(form);
+      const updated = await api.updateEmployeePortalMe(payload);
       setMe(updated);
       setEditSection(null);
       setForm({});
-      setSaveMsg('Saved successfully.');
+      setSaveMsg({ type: 'success', text: 'Saved successfully.' });
     } catch (err) {
-      setSaveMsg(err.message);
+      setSaveMsg({ type: 'error', text: `${err.message || 'Save failed.'} Check your entries and try again.` });
     } finally {
       setSaving(false);
     }
+  }
+
+  function handleSave(e) {
+    e.preventDefault();
+    doSave(form);
+  }
+
+  function handleBankSave(e) {
+    e.preventDefault();
+    const routing = (form.bankRoutingNumber || '').replace(/\D/g, '');
+    const account = (form.bankAccountNumber || '').replace(/\D/g, '');
+    const confirm = (form.bankAccountConfirm || '').replace(/\D/g, '');
+    if (!routing && !account) {
+      setSaveMsg({ type: 'error', text: 'Enter your routing and account numbers, or press Cancel.' });
+      return;
+    }
+    if (!validRoutingNumber(routing)) {
+      setSaveMsg({ type: 'error', text: "That routing number doesn't look right. Check the 9-digit number at the bottom-left of a check." });
+      return;
+    }
+    if (account.length < 4) {
+      setSaveMsg({ type: 'error', text: 'Enter a valid account number (at least 4 digits).' });
+      return;
+    }
+    if (account !== confirm) {
+      setSaveMsg({ type: 'error', text: "Account numbers don't match. Re-enter them to confirm." });
+      return;
+    }
+    const { bankAccountConfirm, ...payload } = form;
+    doSave(payload);
   }
 
   if (loading) return (
@@ -558,9 +602,9 @@ export default function EmployeeDashboard() {
 
       {/* Nav */}
       <div style={{
-        height: 'var(--nav-h)', background: 'var(--accent)',
-        display: 'flex', alignItems: 'center', padding: '0 28px',
-        gap: 16, flexShrink: 0, boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+        minHeight: 'var(--nav-h)', background: 'var(--accent)',
+        display: 'flex', alignItems: 'center', padding: '6px 28px', flexWrap: 'wrap',
+        gap: 16, rowGap: 4, flexShrink: 0, boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
       }}>
         <div style={{ fontSize: 17, fontWeight: 800, color: '#fff', letterSpacing: '-0.4px' }}>
           Payroll<span style={{ color: '#7ca4e0' }}>Tax</span> Pro
@@ -630,7 +674,7 @@ export default function EmployeeDashboard() {
 
         {/* Pay Records tab */}
         {tab === 'paystubs' && (
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
             <div className="card-header" style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-light)' }}>
               <span className="card-title">Pay Records</span>
               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{paystubs.length} total</span>
@@ -645,24 +689,57 @@ export default function EmployeeDashboard() {
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
-                    {['Period', 'Gross Pay', 'Fed. Tax', 'SS Tax', 'Medicare', 'Net Pay'].map(h => (
-                      <th key={h} style={{ padding: '10px 18px', textAlign: h === 'Period' ? 'left' : 'right', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
+                    {['Period', 'Gross Pay', 'Fed. Tax', 'SS Tax', 'Medicare', 'Net Pay', ''].map((h, i) => (
+                      <th key={i} style={{ padding: '10px 18px', textAlign: h === 'Period' || h === '' ? 'left' : 'right', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {paystubs.map(p => (
-                    <tr key={p.id} style={{ borderBottom: '1px solid var(--border-light)' }}
-                      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <td style={{ padding: '13px 18px', fontSize: 13, fontWeight: 600 }}>Q{p.tax_quarter} {p.tax_year}</td>
-                      <td style={{ padding: '13px 18px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>{fmt(p.gross_wages)}</td>
-                      <td style={{ padding: '13px 18px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>{fmt(p.fit_withholding)}</td>
-                      <td style={{ padding: '13px 18px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>{fmt(p.employee_ss)}</td>
-                      <td style={{ padding: '13px 18px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>{fmt(p.employee_medicare)}</td>
-                      <td style={{ padding: '13px 18px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: 'var(--accent)', fontWeight: 700 }}>{fmt(p.net_pay)}</td>
-                    </tr>
+                    <Fragment key={p.id}>
+                      <tr style={{ borderBottom: '1px solid var(--border-light)', cursor: 'pointer' }}
+                        onClick={() => setOpenStub(openStub === p.id ? null : p.id)}
+                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
+                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                      >
+                        <td style={{ padding: '13px 18px', fontSize: 13, fontWeight: 600 }}>Q{p.tax_quarter} {p.tax_year}</td>
+                        <td style={{ padding: '13px 18px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>{fmt(p.gross_wages)}</td>
+                        <td style={{ padding: '13px 18px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>{fmt(p.fit_withholding)}</td>
+                        <td style={{ padding: '13px 18px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>{fmt(p.employee_ss)}</td>
+                        <td style={{ padding: '13px 18px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>{fmt(p.employee_medicare)}</td>
+                        <td style={{ padding: '13px 18px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: 'var(--accent)', fontWeight: 700 }}>{fmt(p.net_pay)}</td>
+                        <td style={{ padding: '13px 18px', fontSize: 12, color: 'var(--accent)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                          {openStub === p.id ? 'Hide ▴' : 'Details ▾'}
+                        </td>
+                      </tr>
+                      {openStub === p.id && (
+                        <tr style={{ borderBottom: '1px solid var(--border-light)', background: 'var(--bg-secondary)' }}>
+                          <td colSpan={7} style={{ padding: '16px 18px' }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 12 }}>
+                              {[
+                                ['Pay Period',          `${fmtDay(p.pay_period_start)} – ${fmtDay(p.pay_period_end)}`],
+                                ['Pay Date',            fmtDay(p.settlement_date)],
+                                ['Gross Pay',           fmt(p.gross_wages)],
+                                ['Federal Income Tax',  fmt(p.fit_withholding)],
+                                ['Social Security',     fmt(p.employee_ss)],
+                                ['Medicare',            fmt(p.employee_medicare)],
+                                ...(Number(p.additional_medicare) > 0 ? [['Additional Medicare', fmt(p.additional_medicare)]] : []),
+                                ...(Number(p.state_income_tax)   > 0 ? [['State Income Tax',    fmt(p.state_income_tax)]]   : []),
+                                ['Net Pay',             fmt(p.net_pay)],
+                              ].map(([label, value]) => (
+                                <div key={label}>
+                                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 2 }}>{label}</div>
+                                  <div style={{ fontSize: 13, fontWeight: label === 'Net Pay' ? 700 : 500, color: label === 'Net Pay' ? 'var(--accent)' : 'var(--text-primary)', fontFamily: label.includes('Period') || label.includes('Date') ? 'inherit' : 'JetBrains Mono, monospace' }}>{value}</div>
+                                </div>
+                              ))}
+                            </div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 12 }}>
+                              Need a printable copy? Ask your accountant — they can print or send your paystub PDF.
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
@@ -679,9 +756,9 @@ export default function EmployeeDashboard() {
         {tab === 'profile' && me && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
 
-            {saveMsg && (
+            {saveMsg?.type === 'success' && (
               <div style={{ background: 'var(--success-light)', border: '1px solid var(--success)', borderRadius: 6, padding: '10px 16px', fontSize: 13, color: 'var(--success)', fontWeight: 600 }}>
-                {saveMsg}
+                {saveMsg.text}
               </div>
             )}
 
@@ -740,7 +817,7 @@ export default function EmployeeDashboard() {
                       onBlur={e => e.target.style.borderColor = 'var(--border)'}
                     />
                   </FormField>
-                  {saving && <div style={{ fontSize: 12, color: 'var(--error)' }}>{saveMsg}</div>}
+                  {saveMsg?.type === 'error' && <div style={{ fontSize: 12, color: 'var(--error)' }}>{saveMsg.text}</div>}
                   <div style={{ display: 'flex', gap: 10 }}>
                     <button type="submit" className="btn btn-primary btn-sm" disabled={saving}>
                       {saving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : 'Save'}
@@ -769,6 +846,7 @@ export default function EmployeeDashboard() {
                   <button className="btn btn-secondary btn-sm" onClick={() => startEdit('bank', {
                     bankRoutingNumber: '',
                     bankAccountNumber: '',
+                    bankAccountConfirm: '',
                     bankAccountType:   me.accountType || 'checking',
                   })}>
                     {me.hasBankInfo ? 'Update' : 'Add Account'}
@@ -777,7 +855,7 @@ export default function EmployeeDashboard() {
               </div>
 
               {editSection === 'bank' ? (
-                <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <form onSubmit={handleBankSave} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                   <FormField label="Routing Number">
                     <input
                       type="text"
@@ -799,6 +877,13 @@ export default function EmployeeDashboard() {
                     />
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Stored encrypted. Only the last 4 digits are visible after saving.</div>
                   </FormField>
+                  <FormField label="Re-enter Account Number">
+                    <SensitiveInput
+                      value={form.bankAccountConfirm || ''}
+                      onChange={e => setForm(f => ({ ...f, bankAccountConfirm: e.target.value.replace(/\D/g, '') }))}
+                      placeholder="Type your account number again"
+                    />
+                  </FormField>
                   <FormField label="Account Type">
                     <select
                       value={form.bankAccountType || 'checking'}
@@ -809,7 +894,7 @@ export default function EmployeeDashboard() {
                       <option value="savings">Savings</option>
                     </select>
                   </FormField>
-                  {saveMsg && editSection === 'bank' && <div style={{ fontSize: 12, color: 'var(--error)' }}>{saveMsg}</div>}
+                  {saveMsg?.type === 'error' && <div style={{ fontSize: 12, color: 'var(--error)' }}>{saveMsg.text}</div>}
                   <div style={{ display: 'flex', gap: 10 }}>
                     <button type="submit" className="btn btn-primary btn-sm" disabled={saving}>
                       {saving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : 'Save'}
@@ -859,6 +944,7 @@ export default function EmployeeDashboard() {
                       />
                     </FormField>
                   ))}
+                  {saveMsg?.type === 'error' && <div style={{ fontSize: 12, color: 'var(--error)' }}>{saveMsg.text}</div>}
                   <div style={{ display: 'flex', gap: 10 }}>
                     <button type="submit" className="btn btn-primary btn-sm" disabled={saving}>
                       {saving ? <span className="spinner" style={{ width: 14, height: 14 }} /> : 'Save'}

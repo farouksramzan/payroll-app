@@ -69,7 +69,12 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
   const lineItemsList = stub.lineItems || [];
   const compFromItems = lineItemsList.filter(li => li.pay_type === 'regular' && stub.regular_hours == null).reduce((s, li) => s + (li.amount || 0), 0);
   const displayedTips = stub.reported_tips || lineItemsList.filter(li => li.pay_type === 'tips').reduce((s, li) => s + (li.amount || 0), 0);
-  const initialGross  = r2(compFromItems > 0 ? compFromItems : stub.regular_pay != null ? stub.regular_pay : (stub.gross_wages || 0));
+  // Fallback for checks with no base line item: derive the BASE comp by removing
+  // overtime/tips/bonus/commission from gross — using raw gross_wages here made the
+  // save payload re-add those as separate items on top (double-counted gross).
+  const initialGross  = r2(compFromItems > 0 ? compFromItems
+    : stub.regular_pay != null ? stub.regular_pay
+    : Math.max(0, (stub.gross_wages || 0) - (stub.overtime_pay || 0) - (displayedTips || 0) - (stub.bonus || 0) - (stub.commission || 0)));
   const initialFit    = r2(stub.fit_withholding || 0);
 
   const [ytd, setYtd] = useState({ gross: null, fit: null, eeSS: null, eeMed: null, stateTax: null, futa: null, suta: null, netPay: null, erSS: null, erMed: null });
@@ -166,11 +171,29 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
     try {
       const payload = { payPeriodStart: dateForm.start, payPeriodEnd: dateForm.end, settlementDate: dateForm.payDate };
       if (parseFloat(grossOverride) !== initialGross) {
-        payload.lineItems = [{ payType: 'salary', amount: parseFloat(grossOverride) }];
+        // Preserve the check's pay structure: hourly checks keep a 'regular'
+        // base (not 'salary'), overtime stays as its own line item, and
+        // tips/bonus/commission ride along so the backend keeps them in gross.
+        const baseType = stub.regular_hours != null ? 'regular' : 'salary';
+        const tipAmt   = parseFloat(itemForm.reportedTips || 0);
+        const bonusAmt = parseFloat(itemForm.bonus        || 0);
+        const commAmt  = parseFloat(itemForm.commission   || 0);
+        payload.lineItems = [
+          { payType: baseType, amount: parseFloat(grossOverride || 0) },
+          ...(stub.overtime_pay > 0 ? [{ payType: 'overtime', amount: stub.overtime_pay, hours: stub.overtime_hours || null }] : []),
+          ...(tipAmt   > 0 ? [{ payType: 'tips',       amount: tipAmt   }] : []),
+          ...(bonusAmt > 0 ? [{ payType: 'bonus',      amount: bonusAmt }] : []),
+          ...(commAmt  > 0 ? [{ payType: 'commission', amount: commAmt  }] : []),
+        ];
+        payload.reportedTips = tipAmt;
+        payload.bonus        = bonusAmt;
+        payload.commission   = commAmt;
       }
       if (parseFloat(fitOverride) !== initialFit) {
+        // A FIT-only edit doesn't need lineItems — sending a lone 'salary' item
+        // here was converting hourly checks to salary and dropping overtime,
+        // tips, and bonus from gross.
         payload.fitWithholdingOverride = parseFloat(fitOverride || 0);
-        if (!payload.lineItems) payload.lineItems = [{ payType: 'salary', amount: parseFloat(grossOverride) }];
       }
       if (itemDirty) {
         payload.reportedTips  = parseFloat(itemForm.reportedTips  || 0);
@@ -192,7 +215,7 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
 
   const mainPayRow = stub.regular_hours != null && stub.regular_pay != null
     ? { label: `Hourly  (${stub.regular_hours} hrs)`, amount: stub.regular_pay, editValue: canEdit ? grossOverride : undefined, onEditChange: canEdit ? setGrossOverride : undefined }
-    : { label: 'Compensation', amount: compFromItems > 0 ? compFromItems : (stub.gross_wages || 0), editValue: canEdit ? grossOverride : undefined, onEditChange: canEdit ? setGrossOverride : undefined };
+    : { label: 'Compensation', amount: initialGross, editValue: canEdit ? grossOverride : undefined, onEditChange: canEdit ? setGrossOverride : undefined };
 
   const optionalEarnings = [
     { key: 'reportedTips',  label: 'Reported Tips'  },

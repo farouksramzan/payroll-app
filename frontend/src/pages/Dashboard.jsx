@@ -106,17 +106,6 @@ function initials(name) {
   return name ? name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : '?';
 }
 
-const LIAB_STATUS = {
-  overdue:    { label: 'Tax Overdue', cls: 'badge-error',   title: 'Has overdue EFTPS deposits' },
-  'due-soon': { label: 'Due Soon',    cls: 'badge-warning', title: 'EFTPS deposit due within 5 days' },
-};
-
-function LiabStatusBadge({ status }) {
-  const cfg = LIAB_STATUS[status];
-  if (!cfg) return null;
-  return <span className={`badge ${cfg.cls}`} style={{ fontSize: 10 }} title={cfg.title}>{cfg.label}</span>;
-}
-
 // Soft status pill for the company list. Colour = severity, not category:
 // overdue is always red (matching the red "past due" pay date), on-track green.
 // Only one status pill ever shows per company (see the list cell), so the label
@@ -124,6 +113,7 @@ function LiabStatusBadge({ status }) {
 const STATUS_TONES = {
   payroll: { bg: '#fdecec', color: '#b4241f', dot: '#e24b4a', title: 'Payroll has not been run for a due pay period' },
   tax:     { bg: '#fdecec', color: '#b4241f', dot: '#e24b4a', title: 'Payroll is current, but a tax deposit or filing is past due' },
+  warn:    { bg: '#fef3c7', color: '#92400e', dot: '#d97706', title: 'A pay date or tax deposit is coming up soon' },
   ok:      { bg: '#e9f5ec', color: '#1a7a3a', dot: '#2fb457', title: 'No overdue payroll or taxes' },
 };
 function StatusPill({ tone, label }) {
@@ -134,6 +124,24 @@ function StatusPill({ tone, label }) {
       {label}
     </span>
   );
+}
+
+// One prioritized status per company — shared by tile AND list views so both
+// tell the same story. Payroll must be run before its taxes can be deposited,
+// so an overdue payroll subsumes the tax flag: only the upstream signal shows.
+function companyStatus(client) {
+  const ps = payrollStatus(client.nextPayDate);
+  if (ps && ps.cls === 'badge-error')       return { tone: 'payroll', label: 'Payroll overdue' };
+  if (client.liabilityStatus === 'overdue') return { tone: 'tax',     label: 'Tax overdue' };
+  if (ps)                                   return { tone: 'warn',    label: ps.label };
+  if (client.liabilityStatus === 'due-soon') return { tone: 'warn',   label: 'Tax due soon' };
+  return client.nextPayDate ? { tone: 'ok', label: 'On track' } : null;
+}
+// Severity rank for default triage sorting (lower = more urgent).
+function companyUrgencyRank(client) {
+  const st = companyStatus(client);
+  if (!st) return 4;
+  return { payroll: 0, tax: 1, warn: 2, ok: 3 }[st.tone] ?? 4;
 }
 
 const ISSUED = new Set(['printed', 'deposited']);
@@ -520,7 +528,7 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
     let badge = null;
     const bs = { fontSize:10, fontWeight:700, borderRadius:99, padding:'2px 7px', cursor:'pointer', display:'inline-block' };
     if (submitted) badge = <span style={{...bs, background:'#dcfce7', color:'#16a34a'}} onClick={toggle}>✓ Sent</span>;
-    else if (processing) badge = <span style={{...bs, background:'#dbeafe', color:'1d4ed8'}} onClick={toggle}>⟳ Processing</span>;
+    else if (processing) badge = <span style={{...bs, background:'#dbeafe', color:'#1d4ed8'}} onClick={toggle}>⟳ Processing</span>;
     else if (failed) badge = <span style={{...bs, background:'#fee2e2', color:'#dc2626'}} onClick={toggle}>✗ Failed</span>;
     else if (late) badge = <span style={{...bs, background:'#fee2e2', color:'#dc2626', cursor:'default'}}>LATE</span>;
     else if (dueSoon && sendBy) badge = <span style={{...bs, background:'#fef3c7', color:'#d97706', cursor:'default'}}>DUE {fmtShort(sendBy)}</span>;
@@ -719,7 +727,17 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
   const [debugInfo, setDebugInfo]   = useState([]);
   const [hoursEdits, setHoursEdits] = useState({}); // { [rowId]: { reg, ot } }
   const [savingHours, setSavingHours] = useState(new Set());
+  const [refreshTick, setRefreshTick] = useState(0);
   const clientKey = useMemo(() => [...clientIds].sort().join(','), [clientIds]);
+
+  // Same freshness rules as LiabSection: refetch every 60s and on window focus,
+  // so both panels agree after payroll is run in another tab.
+  useEffect(() => {
+    const bump = () => setRefreshTick(t => t + 1);
+    const timer = setInterval(bump, 60_000);
+    window.addEventListener('focus', bump);
+    return () => { clearInterval(timer); window.removeEventListener('focus', bump); };
+  }, []);
 
   async function fetchRows(key) {
     if (!key) { setRows([]); setDebugInfo([]); return; }
@@ -783,25 +801,40 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
           const empIds = new Set(groupEmps.map(e => e.id));
           const groupStubs = stubs.filter(s => s.pay_group_id === group.id && s.check_status !== 'voided');
           const fallbackStubs = groupStubs.length > 0 ? groupStubs : stubs.filter(s => s.employee_id && empIds.has(s.employee_id) && s.check_status !== 'voided');
-          const paidEnds = new Set(fallbackStubs.map(s => s.pay_period_end));
+          // Track paid periods PER EMPLOYEE — one employee's stub must not hide
+          // the other unpaid employees in the same pay period.
+          const anyPaidEnds = new Set(fallbackStubs.map(s => s.pay_period_end));
+          const paidByEmp = new Map(); // employee_id -> Set of pay_period_end
+          fallbackStubs.forEach(s => {
+            if (!s.employee_id) return;
+            if (!paidByEmp.has(s.employee_id)) paidByEmp.set(s.employee_id, new Set());
+            paidByEmp.get(s.employee_id).add(s.pay_period_end);
+          });
+          // Stubs with no employee_id can't be attributed — count them for everyone
+          // (preserves the old behavior for legacy data instead of resurfacing rows).
+          const unattributedEnds = new Set(fallbackStubs.filter(s => !s.employee_id).map(s => s.pay_period_end));
+          const rowEmps = groupEmps.length > 0 ? groupEmps : [{ id: `g${group.id}`, firstName: group.name, lastName: '', payType: 'hourly', hourlyRate: 0 }];
+          const isPaidFor = (emp, endStr) => groupEmps.length === 0
+            ? anyPaidEnds.has(endStr) // placeholder row — any stub for the period counts
+            : unattributedEnds.has(endStr) || (paidByEmp.get(emp.id)?.has(endStr) || false);
 
           let sDate = new Date(anchor + 'T00:00:00'), eDate = new Date(group.firstPayPeriodEnd + 'T00:00:00');
           const pendingPeriods = [];
           for (let i = 0; i < 60; i++) {
             const endStr = eDate.toISOString().slice(0, 10);
-            if (!paidEnds.has(endStr)) {
+            const unpaidEmps = rowEmps.filter(emp => !isPaidFor(emp, endStr));
+            if (unpaidEmps.length > 0) {
               const payDate = addBizDays(endStr, 2);
               const isLate    = payDate < today;
               const isDueSoon = !isLate && payDate <= in14Str;
-              if (isLate || isDueSoon) pendingPeriods.push({ start: sDate.toISOString().slice(0, 10), end: endStr, payDate, isLate, isDueSoon });
+              if (isLate || isDueSoon) pendingPeriods.push({ start: sDate.toISOString().slice(0, 10), end: endStr, payDate, isLate, isDueSoon, emps: unpaidEmps });
               if (!isLate) break;
             }
             [sDate, eDate] = advancePeriod(sDate, eDate, freq);
           }
 
           pendingPeriods.forEach(period => {
-            const rowEmps = groupEmps.length > 0 ? groupEmps : [{ id: `g${group.id}`, firstName: group.name, lastName: '', payType: 'hourly', hourlyRate: 0 }];
-            rowEmps.forEach(emp => {
+            period.emps.forEach(emp => {
               const ytdGross = stubs
                 .filter(s => s.employee_id === emp.id && s.check_status !== 'voided' && (s.tax_year === curYear || (s.pay_period_end || '').startsWith(String(curYear))))
                 .reduce((sum, s) => sum + (s.gross_wages || 0), 0);
@@ -838,7 +871,16 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
     }
   }
 
-  useEffect(() => { fetchRows(clientKey); }, [clientKey]);
+  const lastKeyRef = useRef(null);
+  useEffect(() => {
+    const keyChanged = lastKeyRef.current !== clientKey;
+    // Skip the timed refresh while the accountant has unsaved hours typed in,
+    // so a background refetch doesn't clobber their input. A change in the
+    // selected companies always fetches.
+    if (!keyChanged && Object.keys(hoursEdits).length > 0) return;
+    lastKeyRef.current = clientKey;
+    fetchRows(clientKey);
+  }, [clientKey, refreshTick]);
 
   function toggleCheck(id) {
     setSelected(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; });
@@ -891,6 +933,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
         settlementDate: r._payDate,
         payGroupId: r._groupId,
         employees: [{ employeeId: r._employeeId, lineItems, ytdGross: r._ytdGross || 0 }],
+        paymentMethod: 'auto', // keep legacy per-employee DD behavior for the inline quick-run
       });
       setHoursEdits(prev => { const n = { ...prev }; delete n[r.id]; return n; });
       fetchRows(clientKey);
@@ -920,15 +963,21 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
       const names = skipped.map(r => r.employee_name || 'Unknown').join(', ');
       if (!window.confirm(`${skipped.length} employee(s) don't have direct deposit set up and will be skipped:\n\n${names}\n\nContinue for the remaining ${ddRows.length}?`)) return;
     }
+    const totalNet = ddRows.reduce((s, r) => s + (r.net_pay || 0), 0);
+    if (!window.confirm(`Mark ${ddRows.length} paycheck${ddRows.length === 1 ? '' : 's'} as paid by direct deposit?\n\nTotal net pay: ${fmt(totalNet)}\n\nThis records the payment in the app — it does not move money.`)) return;
     setSubmitting(true);
+    let done = 0;
     try {
       for (const r of ddRows) {
         await api.updatePaystubStatus(r.id, 'direct_deposit_sent');
+        done++;
       }
       setSelected(new Set());
-      fetchRows(clientKey);
-    } catch (e) { alert(e.message); }
-    finally { setSubmitting(false); }
+      alert(`Marked ${done} paycheck${done === 1 ? '' : 's'} as paid by direct deposit — total net pay ${fmt(totalNet)}.`);
+    } catch (e) {
+      alert(`Marked ${done} of ${ddRows.length} paychecks before an error stopped the update: ${e.message}\n\nThe list will refresh to show what went through — the remaining checks are still pending. Select them and try again.`);
+    }
+    finally { setSubmitting(false); fetchRows(clientKey); }
   }
 
   const grouped = [];
@@ -969,7 +1018,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
             {selCount > 0 && <>
               <span style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-secondary)', marginLeft: rows.some(r => r._isLate) ? 8 : 0 }}>{selCount} selected</span>
               {selStored.length > 0 && <button style={bulkBtn({ background: '#374151', border: '1px solid #1f2937', color: '#fff' })} onClick={handlePrint}>Print PDF ({selStored.length})</button>}
-              {selStored.length > 0 && <button style={bulkBtn({ background: '#2563eb', border: '1px solid #1d4ed8', color: '#fff' })} onClick={handleDD} disabled={submitting}>{submitting ? 'Sending…' : `Direct Deposit (${selStored.length})`}</button>}
+              {selStored.length > 0 && <button style={bulkBtn({ background: '#2563eb', border: '1px solid #1d4ed8', color: '#fff' })} onClick={handleDD} disabled={submitting}>{submitting ? 'Updating…' : `Mark as Direct Deposited (${selStored.length})`}</button>}
               <button style={{ ...bulkBtn(), marginLeft: 'auto', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-secondary)' }} onClick={() => setSelected(new Set())}>Clear</button>
             </>}
           </div>
@@ -1093,7 +1142,17 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
               </tbody>
             </table>
           )}
-          {debugInfo.length > 0 && (
+          {debugInfo.some(d => d.error) && (
+            <div style={{ padding: '10px 14px', borderTop: '1px solid var(--border)' }}>
+              {debugInfo.filter(d => d.error).map(d => (
+                <div key={d.name} className="alert alert-error" style={{ fontSize: 12.5, marginBottom: 8 }}>
+                  <span>⚠</span>Couldn't load paychecks for {d.name} — {d.error}. Its checks are missing from the table above.
+                </div>
+              ))}
+              <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} onClick={() => fetchRows(clientKey)}>↻ Retry</button>
+            </div>
+          )}
+          {import.meta.env.DEV && debugInfo.length > 0 && (
             <div style={{ padding: '10px 14px', fontSize: 11, color: 'var(--text-muted)', borderTop: '1px solid var(--border)', background: '#f8fafc' }}>
               <div style={{ fontWeight: 700, marginBottom: 6, color: 'var(--text)', fontSize: 12 }}>Debug — raw fetch results ({debugInfo.length} companies):</div>
               {debugInfo.map(d => (
@@ -1152,7 +1211,25 @@ export default function Dashboard() {
   const [shareErr, setShareErr]       = useState('');
   const [shareCopied, setShareCopied] = useState(false);
   const [syncedAccts, setSyncedAccts] = useState([]);
+  const [deleteTarget, setDeleteTarget] = useState(null);   // client pending delete confirmation
+  const [deleteInfo, setDeleteInfo]     = useState(null);   // { employees, paystubs } — null while loading
+  const [deleteNameInput, setDeleteNameInput] = useState('');
+  const [hoverTile, setHoverTile]   = useState(null);
+  const [sort, setSort]             = useState({ key: 'urgency', dir: 'asc' });
+  const [pollFailed, setPollFailed] = useState(false);
+  const [reloadTick, setReloadTick] = useState(0);
+  const firstLoadRef = useRef(true);
+  const panelRef = useRef(null);
   const navigate = useNavigate();
+
+  // Escape closes any open modal.
+  useEffect(() => {
+    const onKey = e => {
+      if (e.key === 'Escape') { setConnectOpen(false); setShareOpen(false); setDeleteTarget(null); }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   async function openShare() {
     setShareOpen(true); setShareErr(''); setShareLink(''); setShareCode('');
@@ -1210,33 +1287,50 @@ export default function Dashboard() {
     }
   }
 
-  // Filter by company name or EIN (digits only, so "471234567" matches "47-1234567").
+  // Filter by company name or EIN (digits only, so "471234567" matches "47-1234567"),
+  // then sort: default is urgency (payroll overdue → tax overdue → due soon →
+  // on track), with click-to-sort on Company / Next Pay Date / Status.
   const visibleClients = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return clients;
     const qDigits = q.replace(/\D/g, '');
-    return clients.filter(c => {
+    const filtered = !q ? [...clients] : clients.filter(c => {
       const name = (c.businessName || '').toLowerCase();
       const ein  = (c.ein || '').replace(/\D/g, '');
       return name.includes(q) || (qDigits && ein.includes(qDigits));
     });
-  }, [clients, search]);
+    const dir = sort.dir === 'asc' ? 1 : -1;
+    const byName    = (a, b) => (a.businessName || '').localeCompare(b.businessName || '');
+    const byPayDate = (a, b) => (a.nextPayDate || '9999').localeCompare(b.nextPayDate || '9999');
+    filtered.sort((a, b) => {
+      if (sort.key === 'company') return dir * byName(a, b);
+      if (sort.key === 'payDate') return dir * (byPayDate(a, b) || byName(a, b));
+      // 'urgency' (default) — most urgent first when ascending
+      const d = companyUrgencyRank(a) - companyUrgencyRank(b);
+      if (d !== 0) return dir * d;
+      return byPayDate(a, b) || byName(a, b);
+    });
+    return filtered;
+  }, [clients, search, sort]);
+
+  function toggleSort(key) {
+    setSort(s => s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' });
+  }
 
   useEffect(() => {
     let alive = true;
-    const loadClients = (initial = false) => {
+    const loadClients = () => {
+      const initial = firstLoadRef.current;
       if (initial) setLoading(true);
       api.getClients()
-        .then(data => { if (alive) setClients(data); })
-        .catch(() => {})
-        .finally(() => { if (alive && initial) setLoading(false); });
+        .then(data => { if (alive) { setClients(data); setPollFailed(false); } })
+        .catch(() => { if (alive) setPollFailed(true); })
+        .finally(() => { if (alive && initial) { firstLoadRef.current = false; setLoading(false); } });
     };
-    loadClients(true);
-    const timer = setInterval(() => loadClients(false), 60_000);
-    const onFocus = () => loadClients(false);
-    window.addEventListener('focus', onFocus);
-    return () => { alive = false; clearInterval(timer); window.removeEventListener('focus', onFocus); };
-  }, []);
+    loadClients();
+    const timer = setInterval(loadClients, 60_000);
+    window.addEventListener('focus', loadClients);
+    return () => { alive = false; clearInterval(timer); window.removeEventListener('focus', loadClients); };
+  }, [reloadTick]);
 
   // A shared "?connect=CODE" link pre-fills and opens the Connect modal, then the
   // param is stripped so a refresh doesn't reopen it.
@@ -1256,15 +1350,36 @@ export default function Dashboard() {
     localStorage.setItem('dashView', v);
   }
 
-  async function handleDelete(e, client) {
+  function handleDelete(e, client) {
     e.stopPropagation();
-    if (!window.confirm(`Delete ${client.businessName}? This cannot be undone.`)) return;
+    setDeleteTarget(client);
+    setDeleteNameInput('');
+    setDeleteInfo(null);
+    // Fetch what would be destroyed so the confirmation can spell it out.
+    const targetId = client.id;
+    Promise.all([
+      api.getEmployees(client.id).catch(() => null),
+      api.getPaystubs(client.id).catch(() => null),
+    ]).then(([emps, stubs]) => {
+      // A slow response for a previously-opened company must not attach its counts
+      // (and its type-to-confirm bypass rules) to a different delete target.
+      setDeleteTarget(cur => {
+        if (cur?.id === targetId) setDeleteInfo({ employees: emps ? emps.length : null, paystubs: stubs ? stubs.length : null });
+        return cur;
+      });
+    });
+  }
+
+  async function confirmDelete() {
+    const client = deleteTarget;
+    if (!client) return;
     setDeleting(client.id);
     try {
       await api.deleteClient(client.id);
       setClients(c => c.filter(x => x.id !== client.id));
       setSelected(prev => { const n = new Set(prev); n.delete(client.id); return n; });
-    } catch (err) { alert(err.message); }
+      setDeleteTarget(null);
+    } catch (err) { alert(`Delete failed: ${err.message}`); }
     finally { setDeleting(null); }
   }
 
@@ -1277,22 +1392,46 @@ export default function Dashboard() {
   }
 
   const allSelected = visibleClients.length > 0 && visibleClients.every(c => selected.has(c.id));
+  // Select All is additive over the visible (filtered) set — it never drops
+  // companies that were selected before the search was typed. Deselect removes
+  // only the visible ones.
+  function toggleSelectAllVisible() {
+    setSelected(prev => {
+      if (allSelected) {
+        const n = new Set(prev);
+        visibleClients.forEach(c => n.delete(c.id));
+        return n;
+      }
+      return new Set([...prev, ...visibleClients.map(c => c.id)]);
+    });
+  }
+  const hiddenSelCount = [...selected].filter(id => !visibleClients.some(c => c.id === id)).length;
+  const selNames   = clients.filter(c => selected.has(c.id)).map(c => c.businessName);
+  const selSummary = selNames.slice(0, 3).join(', ') + (selNames.length > 3 ? ` +${selNames.length - 3} more` : '');
+  // Typed-name confirmation is required when the company has (or may have) paystubs.
+  const deleteNeedsTypedName = !deleteInfo || deleteInfo.paystubs == null || deleteInfo.paystubs > 0;
+  const deleteNameMatches = deleteTarget && deleteNameInput.trim().toLowerCase() === (deleteTarget.businessName || '').trim().toLowerCase();
 
   return (
-    <div className="dash-page">
-      <div className="dash-header">
+    <div className="dash-page" style={{ paddingBottom: selected.size > 0 ? 76 : undefined }}>
+      <div className="dash-header" style={{ flexWrap: 'wrap', gap: 12 }}>
         <div>
           <div className="dash-title">Your Companies</div>
           <div className="dash-subtitle">
             {search.trim()
               ? `${visibleClients.length} of ${clients.length} ${clients.length === 1 ? 'company' : 'companies'}`
               : `${clients.length} ${clients.length === 1 ? 'company' : 'companies'} on file`}
+            {search.trim() && hiddenSelCount > 0 && (
+              <span style={{ marginLeft: 8, color: '#b45309', fontWeight: 600 }}>
+                · {hiddenSelCount} selected {hiddenSelCount === 1 ? 'company is' : 'companies are'} hidden by this search
+              </span>
+            )}
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', maxWidth: '100%' }}>
           {clients.length > 0 && (
             <>
-              <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+              <div style={{ position: 'relative', display: 'flex', alignItems: 'center', maxWidth: '100%' }}>
                 <span style={{ position: 'absolute', left: 10, fontSize: 13, color: 'var(--text-muted)', pointerEvents: 'none' }}>🔍</span>
                 <input
                   type="text"
@@ -1300,14 +1439,14 @@ export default function Dashboard() {
                   onChange={e => setSearch(e.target.value)}
                   placeholder="Search companies…"
                   aria-label="Search companies by name or EIN"
-                  style={{ fontSize: 13, padding: '6px 28px 6px 30px', borderRadius: 0, border: '1px solid var(--border)', background: '#fff', width: 220, outline: 'none' }} />
+                  style={{ fontSize: 13, padding: '6px 28px 6px 30px', borderRadius: 0, border: '1px solid var(--border)', background: '#fff', width: 220, maxWidth: '100%', outline: 'none' }} />
                 {search && (
                   <button onClick={() => setSearch('')} aria-label="Clear search"
                     style={{ position: 'absolute', right: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14, lineHeight: 1, padding: 4 }}>×</button>
                 )}
               </div>
               <button
-                onClick={() => setSelected(allSelected ? new Set() : new Set(visibleClients.map(c => c.id)))}
+                onClick={toggleSelectAllVisible}
                 className="btn btn-ghost"
                 style={{ fontSize: 12, padding: '5px 12px' }}>
                 {allSelected ? 'Deselect All' : 'Select All'}
@@ -1337,6 +1476,59 @@ export default function Dashboard() {
           <Link to="/clients/new" className="btn btn-primary">+ Add Company</Link>
         </div>
       </div>
+
+      {pollFailed && (
+        <div className="alert alert-error" style={{ marginBottom: 16, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span>⚠</span>
+          <span style={{ flex: 1 }}>Couldn't refresh your companies — the list below may be out of date. Check your connection, then retry.</span>
+          <button className="btn btn-ghost btn-sm" style={{ fontSize: 12, flexShrink: 0 }} onClick={() => setReloadTick(t => t + 1)}>↻ Retry</button>
+        </div>
+      )}
+
+      {deleteTarget && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}
+          onClick={e => { if (e.target === e.currentTarget) setDeleteTarget(null); }}>
+          <div className="card" style={{ width: 440, maxWidth: '92vw', padding: 24 }}>
+            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 6, color: '#b4241f' }}>Delete {deleteTarget.businessName}?</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.55 }}>
+              This permanently deletes <strong>{deleteTarget.businessName}</strong>
+              {deleteInfo && deleteInfo.employees != null && deleteInfo.paystubs != null
+                ? <> — including its <strong>{deleteInfo.employees} employee{deleteInfo.employees === 1 ? '' : 's'}</strong>, <strong>{deleteInfo.paystubs} paycheck{deleteInfo.paystubs === 1 ? '' : 's'}</strong>, and all tax history</>
+                : <> — including all of its employees, paychecks, and tax history</>}
+              . This cannot be undone.
+            </div>
+            {!deleteInfo && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
+                <span className="spinner spinner-dark" style={{ width: 12, height: 12 }} />
+                Checking what this company contains…
+              </div>
+            )}
+            {deleteInfo && deleteNeedsTypedName && (
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>
+                  {deleteInfo.paystubs > 0
+                    ? 'This company has payroll history. Type the company name to confirm:'
+                    : 'We couldn’t check this company’s payroll history. Type the company name to confirm:'}
+                </div>
+                <input className="form-input" autoFocus value={deleteNameInput}
+                  onChange={e => setDeleteNameInput(e.target.value)}
+                  placeholder={deleteTarget.businessName}
+                  aria-label={`Type ${deleteTarget.businessName} to confirm deletion`} />
+              </div>
+            )}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button type="button" className="btn btn-ghost" onClick={() => setDeleteTarget(null)}>Cancel</button>
+              <button type="button" className="btn"
+                disabled={deleting === deleteTarget.id || !deleteInfo || (deleteNeedsTypedName && !deleteNameMatches)}
+                onClick={confirmDelete}
+                style={{ background: '#dc2626', border: '1px solid #b91c1c', color: '#fff',
+                  opacity: (!deleteInfo || (deleteNeedsTypedName && !deleteNameMatches)) ? 0.5 : 1 }}>
+                {deleting === deleteTarget.id ? 'Deleting…' : 'Delete company'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {connectOpen && (
         <div style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}
@@ -1448,15 +1640,24 @@ export default function Dashboard() {
         /* ── Tile view ── */
         <div className="company-grid" style={{ alignItems: 'start' }}>
           {visibleClients.map(client => {
-            const ps = payrollStatus(client.nextPayDate);
+            const st = companyStatus(client);
             const isSel = selected.has(client.id);
+            const checkboxVisible = isSel || hoverTile === client.id || selected.size > 0;
             return (
               <div key={client.id} className="company-tile"
                 onClick={() => navigate(`/clients/${client.id}`)}
                 role="button" tabIndex={0}
+                onMouseEnter={() => setHoverTile(client.id)}
+                onMouseLeave={() => setHoverTile(h => h === client.id ? null : h)}
                 style={{ outline: isSel ? '2px solid var(--accent)' : undefined, outlineOffset: 2 }}
                 onKeyDown={e => e.key === 'Enter' && navigate(`/clients/${client.id}`)}>
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, marginBottom: 14 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 14 }}>
+                  <input type="checkbox" checked={isSel}
+                    onChange={() => toggleSelect(client.id)}
+                    onClick={e => e.stopPropagation()}
+                    aria-label={`Select ${client.businessName}`}
+                    style={{ accentColor: 'var(--accent)', width: 15, height: 15, cursor: 'pointer', flexShrink: 0, marginTop: 14,
+                      visibility: checkboxVisible ? 'visible' : 'hidden' }} />
                   <div style={{ position: 'relative', flexShrink: 0 }} onClick={e => { e.stopPropagation(); toggleSelect(client.id); }}>
                     <div style={{ width: 44, height: 44, borderRadius: 10, background: 'var(--accent-light)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800 }}>
                       {initials(client.businessName)}
@@ -1468,18 +1669,17 @@ export default function Dashboard() {
                     <div className="tile-ein">EIN: {client.ein}</div>
                   </div>
                   <button className="btn btn-ghost btn-sm" onClick={e => handleDelete(e, client)} disabled={deleting === client.id}
-                    style={{ flexShrink: 0, opacity: 0.4, fontSize: 14, padding: '4px 7px' }} title="Delete">
+                    style={{ flexShrink: 0, opacity: 0.4, fontSize: 14, padding: '4px 7px' }} title={`Delete ${client.businessName}`} aria-label={`Delete ${client.businessName}`}>
                     {deleting === client.id ? <span className="spinner spinner-dark" style={{ width: 12, height: 12 }} /> : '✕'}
                   </button>
                 </div>
-                {client.overdueAmount > 0 && (
+                {client.overdueAmount > 0 && st?.tone === 'tax' && (
                   <div style={{ fontSize: 11, color: '#dc2626', fontWeight: 600, marginBottom: 6 }}>
                     ⚠ Tax deposit overdue — ${Number(client.overdueAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                 )}
                 <div className="tile-badges">
-                  <LiabStatusBadge status={client.liabilityStatus} />
-                  {ps && <span className={`badge ${ps.cls}`}>{ps.label}</span>}
+                  {st && <StatusPill tone={st.tone} label={st.label} />}
                   <span className="badge badge-neutral" style={{ textTransform: 'capitalize' }}>{client.payrollFrequency || 'biweekly'}</span>
                   <span className="badge badge-neutral">{client.state || 'TX'}</span>
                 </div>
@@ -1504,19 +1704,27 @@ export default function Dashboard() {
             <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr 160px 130px 70px 100px 36px', alignItems: 'center', padding: '9px 16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)', gap: 8 }}>
               <div>
                 <input type="checkbox" checked={allSelected}
-                  onChange={e => setSelected(e.target.checked ? new Set(visibleClients.map(c => c.id)) : new Set())}
+                  onChange={toggleSelectAllVisible}
                   onClick={e => e.stopPropagation()}
+                  aria-label="Select all visible companies"
                   style={{ accentColor: 'var(--accent)', width: 14, height: 14, cursor: 'pointer' }} />
               </div>
               {[
-                { label: 'Company' },
-                { label: 'Next Pay Date', title: "Soonest upcoming pay date across this company's pay groups" },
+                { label: 'Company', sortKey: 'company' },
+                { label: 'Next Pay Date', sortKey: 'payDate', title: "Soonest upcoming pay date across this company's pay groups" },
                 { label: 'Deposit Schedule', title: 'IRS federal tax-deposit schedule — Monthly or Semiweekly depositor. Set per company (per EIN), not per pay group.' },
                 { label: 'State' },
-                { label: 'Status' },
+                { label: 'Status', sortKey: 'urgency' },
                 { label: '' },
               ].map((h, i) => (
-                <div key={i} title={h.title} style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: h.title ? 'help' : undefined }}>{h.label}</div>
+                <div key={i} title={h.sortKey ? `Sort by ${h.label.toLowerCase()}${h.title ? ` — ${h.title}` : ''}` : h.title}
+                  onClick={h.sortKey ? () => toggleSort(h.sortKey) : undefined}
+                  role={h.sortKey ? 'button' : undefined}
+                  tabIndex={h.sortKey ? 0 : undefined}
+                  onKeyDown={h.sortKey ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort(h.sortKey); } } : undefined}
+                  style={{ fontSize: 11, fontWeight: 700, color: h.sortKey && sort.key === h.sortKey ? 'var(--text)' : 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: h.sortKey ? 'pointer' : h.title ? 'help' : undefined, userSelect: 'none' }}>
+                  {h.label}{h.sortKey && sort.key === h.sortKey ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
+                </div>
               ))}
             </div>
 
@@ -1526,16 +1734,20 @@ export default function Dashboard() {
               const isSel = selected.has(client.id);
               return (
                 <div key={client.id}
+                  role="button" tabIndex={0}
+                  aria-label={`Open ${client.businessName}`}
                   style={{ display: 'grid', gridTemplateColumns: '40px 1fr 160px 130px 70px 100px 36px', alignItems: 'center', padding: '10px 16px', gap: 8,
                     background: isSel ? 'var(--accent-light)' : i % 2 === 0 ? '#fff' : '#f8fafc',
                     borderBottom: '1px solid var(--border)', cursor: 'pointer', transition: 'background 0.1s' }}
-                  onClick={() => navigate(`/clients/${client.id}`)}>
+                  onClick={() => navigate(`/clients/${client.id}`)}
+                  onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(`/clients/${client.id}`); } }}>
 
                   {/* Checkbox — isolated from row click */}
                   <div onClick={e => e.stopPropagation()}>
                     <input type="checkbox" checked={isSel}
                       onChange={() => toggleSelect(client.id)}
                       onClick={e => e.stopPropagation()}
+                      aria-label={`Select ${client.businessName}`}
                       style={{ accentColor: 'var(--accent)', width: 14, height: 14, cursor: 'pointer' }} />
                   </div>
 
@@ -1557,15 +1769,10 @@ export default function Dashboard() {
                   <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{client.state || 'TX'}</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'flex-start' }}>
                     {(() => {
-                      const payrollOverdue = !!(ps && ps.cls === 'badge-error');
-                      const taxOverdue = client.liabilityStatus === 'overdue';
-                      // Payroll must be run before its taxes can be deposited, so an
-                      // overdue payroll makes the tax flag redundant — show only the
-                      // upstream signal. Tax overdue surfaces once payroll is current.
-                      if (payrollOverdue) return <StatusPill tone="payroll" label="Payroll overdue" />;
-                      if (taxOverdue)     return <StatusPill tone="tax"     label="Tax overdue" />;
-                      return client.nextPayDate
-                        ? <StatusPill tone="ok" label="On track" />
+                      // Shared prioritized status — same rule as tile view.
+                      const st = companyStatus(client);
+                      return st
+                        ? <StatusPill tone={st.tone} label={st.label} />
                         : <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>—</span>;
                     })()}
                   </div>
@@ -1573,7 +1780,7 @@ export default function Dashboard() {
                   {/* Delete */}
                   <div onClick={e => e.stopPropagation()}>
                     <button className="btn btn-ghost btn-sm" onClick={e => handleDelete(e, client)} disabled={deleting === client.id}
-                      style={{ opacity: 0.35, fontSize: 13, padding: '3px 6px' }} title="Delete">
+                      style={{ opacity: 0.35, fontSize: 13, padding: '3px 6px' }} title={`Delete ${client.businessName}`} aria-label={`Delete ${client.businessName}`}>
                       {deleting === client.id ? <span className="spinner spinner-dark" style={{ width: 11, height: 11 }} /> : '✕'}
                     </button>
                   </div>
@@ -1585,17 +1792,37 @@ export default function Dashboard() {
 
       {/* Multi-company panel — shown for both tile and list views */}
       {!loading && clients.length > 0 && selected.size > 0 && (
-        <>
+        <div ref={panelRef}>
           <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 600 }}>{selected.size} {selected.size === 1 ? 'company' : 'companies'} selected:</span>
-            <span>{clients.filter(c => selected.has(c.id)).map(c => c.businessName).join(', ')}</span>
+            <span>{selSummary}</span>
             <button onClick={() => setSelected(new Set())}
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: 12, padding: 0, fontWeight: 600 }}>
               Clear
             </button>
           </div>
           <MultiCompanyPanel clientIds={[...selected]} clients={clients} />
-        </>
+        </div>
+      )}
+
+      {/* Fixed bulk-action bar — visible selection feedback even when the panel is below the fold */}
+      {!loading && selected.size > 0 && (
+        <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 1000, background: 'var(--accent)', color: '#fff',
+          padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', boxShadow: '0 -2px 10px rgba(0,0,0,0.18)' }}>
+          <span style={{ fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{selected.size} {selected.size === 1 ? 'company' : 'companies'} selected</span>
+          <span style={{ fontSize: 12, opacity: 0.9, flex: 1, minWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selSummary}</span>
+          {hiddenSelCount > 0 && search.trim() && (
+            <span style={{ fontSize: 11.5, fontWeight: 600, background: 'rgba(255,255,255,0.18)', borderRadius: 99, padding: '2px 9px', flexShrink: 0 }}>
+              {hiddenSelCount} hidden by search
+            </span>
+          )}
+          <button style={bulkBtn()} onClick={() => panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+            View liabilities &amp; paychecks ↓
+          </button>
+          <button style={bulkBtn({ background: 'transparent', border: '1px solid rgba(255,255,255,0.5)' })} onClick={() => setSelected(new Set())}>
+            Clear
+          </button>
+        </div>
       )}
     </div>
   );

@@ -1,4 +1,5 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Routes, Route, Navigate, Link } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
@@ -29,6 +30,48 @@ function ClientRedirect() {
   if (!user) return <Navigate to="/login" replace />;
   if (user.role === 'client') return <Navigate to={`/company/${user.clientId}`} replace />;
   return <Navigate to="/" replace />;
+}
+
+// Friendly 404 — bad or stale URLs land here instead of silently redirecting home
+function NotFound() {
+  const { user } = useAuth();
+
+  useEffect(() => {
+    document.title = 'Page not found · PayrollTax Pro';
+  }, []);
+
+  let homePath = '/login';
+  let homeLabel = 'Go to sign in';
+  if (user) {
+    homePath = user.role === 'client' ? `/company/${user.clientId}`
+             : user.role === 'employee' ? '/employee'
+             : '/';
+    homeLabel = 'Go to my dashboard';
+  }
+
+  return (
+    <div
+      style={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'var(--bg-secondary)',
+        padding: 20,
+      }}
+    >
+      <div className="card" style={{ maxWidth: 440, width: '100%', textAlign: 'center', padding: '36px 32px' }}>
+        <div style={{ fontSize: 40, marginBottom: 12 }}>🔍</div>
+        <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
+          We couldn't find that page
+        </h2>
+        <p style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.55, marginBottom: 20 }}>
+          The link may be old or mistyped. Nothing was deleted — your companies and payroll data are unchanged.
+        </p>
+        <Link to={homePath} className="btn btn-primary">{homeLabel}</Link>
+      </div>
+    </div>
+  );
 }
 
 // Route "/" redirects based on role
@@ -118,7 +161,7 @@ export default function App() {
           <Route path="reports" element={<Reports />} />
         </Route>
 
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </AuthProvider>
   );

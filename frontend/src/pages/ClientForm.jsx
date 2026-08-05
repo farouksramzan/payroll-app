@@ -119,7 +119,16 @@ export default function ClientForm() {
   }, [id, isEdit]);
 
   function set(field) {
-    return (e) => setForm((f) => ({ ...f, [field]: e.target.value }));
+    return (e) => {
+      const value = e.target.value;
+      setForm((f) => ({ ...f, [field]: value }));
+      setErrors((errs) => {
+        if (!errs[field]) return errs;
+        const next = { ...errs };
+        delete next[field];
+        return next;
+      });
+    };
   }
 
   function validate() {
@@ -137,7 +146,18 @@ export default function ClientForm() {
   async function handleSubmit(e) {
     e.preventDefault();
     const errs = validate();
-    if (Object.keys(errs).length) { setErrors(errs); return; }
+    if (Object.keys(errs).length) {
+      setErrors(errs);
+      const order = ['businessName', 'ein', 'businessAddress', 'businessCity', 'businessZip', 'bankRoutingNumber'];
+      const first = order.find((k) => errs[k]);
+      const el = first && document.getElementById(`field-${first}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        el.focus({ preventScroll: true });
+      }
+      return;
+    }
+    setErrors({});
     setSaving(true);
     setApiError('');
     try {
@@ -173,7 +193,7 @@ export default function ClientForm() {
           <span>{isEdit ? 'Edit Client' : 'Add Client'}</span>
         </div>
         <h2>{isEdit ? 'Edit Client' : 'Add New Client'}</h2>
-        <p>{isEdit ? 'Update client information and credentials' : 'Enter business details and EFTPS credentials'}</p>
+        <p>{isEdit ? 'Update client information and credentials' : 'Enter business, bank, and contact details. EFTPS enrollment and the Batch Provider PIN are set up afterward in the Company tab.'}</p>
       </div>
 
       <div className="page-body" style={{ maxWidth: 720 }}>
@@ -189,37 +209,36 @@ export default function ClientForm() {
 
             <div className="form-group">
               <label className="form-label">Business Name <span>*</span></label>
-              <input className="form-input" value={form.businessName} onChange={set('businessName')} placeholder="Acme Corp" />
+              <input id="field-businessName" className="form-input" value={form.businessName} onChange={set('businessName')} placeholder="Acme Corp" />
               {errors.businessName && <p className="form-error-msg">{errors.businessName}</p>}
             </div>
 
             <div className="form-group" style={{ maxWidth: 320 }}>
               <label className="form-label">EIN <span>*</span></label>
-              <input className="form-input mono" value={form.ein} onChange={set('ein')} placeholder="12-3456789" />
+              <input id="field-ein" className="form-input mono" value={form.ein} onChange={set('ein')} placeholder="12-3456789" />
               {errors.ein && <p className="form-error-msg">{errors.ein}</p>}
               <p className="form-hint">Format: XX-XXXXXXX</p>
             </div>
 
-            {isEdit && (
-              <div className="form-group" style={{ maxWidth: 280 }}>
-                <label className="form-label">941 Deposit Schedule</label>
-                <select className="form-select" value={form.depositSchedule} onChange={set('depositSchedule')}>
-                  <option value="monthly">Monthly</option>
-                  <option value="semiweekly">Semi-weekly</option>
-                </select>
-              </div>
-            )}
+            <div className="form-group" style={{ maxWidth: 280 }}>
+              <label className="form-label">941 Deposit Schedule</label>
+              <select className="form-select" value={form.depositSchedule} onChange={set('depositSchedule')}>
+                <option value="monthly">Monthly</option>
+                <option value="semiweekly">Semi-weekly</option>
+              </select>
+              <p className="form-hint">From the client's IRS notice. Monthly vs semi-weekly sets when federal deposits are due — a wrong schedule can mean late deposits and penalties.</p>
+            </div>
 
             <div className="form-group">
               <label className="form-label">Business Address <span>*</span></label>
-              <input className="form-input" value={form.businessAddress} onChange={set('businessAddress')} placeholder="123 Main St" />
+              <input id="field-businessAddress" className="form-input" value={form.businessAddress} onChange={set('businessAddress')} placeholder="123 Main St" />
               {errors.businessAddress && <p className="form-error-msg">{errors.businessAddress}</p>}
             </div>
 
             <div className="form-grid" style={{ gridTemplateColumns: '1fr 180px 100px' }}>
               <div className="form-group">
                 <label className="form-label">City <span>*</span></label>
-                <input className="form-input" value={form.businessCity} onChange={set('businessCity')} placeholder="San Antonio" />
+                <input id="field-businessCity" className="form-input" value={form.businessCity} onChange={set('businessCity')} placeholder="San Antonio" />
                 {errors.businessCity && <p className="form-error-msg">{errors.businessCity}</p>}
               </div>
               <div className="form-group">
@@ -233,7 +252,7 @@ export default function ClientForm() {
               </div>
               <div className="form-group">
                 <label className="form-label">ZIP <span>*</span></label>
-                <input className="form-input mono" value={form.businessZip} onChange={set('businessZip')} placeholder="78201" maxLength={10} />
+                <input id="field-businessZip" className="form-input mono" value={form.businessZip} onChange={set('businessZip')} placeholder="78201" maxLength={10} />
                 {errors.businessZip && <p className="form-error-msg">{errors.businessZip}</p>}
               </div>
             </div>
@@ -289,7 +308,7 @@ export default function ClientForm() {
               </div>
               <div className="form-group">
                 <label className="form-label">Routing Number</label>
-                <input className="form-input mono" value={form.bankRoutingNumber} onChange={set('bankRoutingNumber')} placeholder="9-digit routing number" maxLength={9} />
+                <input id="field-bankRoutingNumber" className="form-input mono" value={form.bankRoutingNumber} onChange={set('bankRoutingNumber')} placeholder="9-digit routing number" maxLength={9} />
                 {errors.bankRoutingNumber && <p className="form-error-msg">{errors.bankRoutingNumber}</p>}
               </div>
             </div>
@@ -302,26 +321,22 @@ export default function ClientForm() {
               </select>
             </div>
 
-            {isEdit && (
-              <>
-                <p className="form-section-title">Payroll Schedule</p>
-                <div className="form-grid">
-                  <div className="form-group">
-                    <label className="form-label">Payroll Frequency</label>
-                    <select className="form-select" value={form.payrollFrequency} onChange={set('payrollFrequency')}>
-                      <option value="weekly">Weekly</option>
-                      <option value="biweekly">Bi-weekly</option>
-                      <option value="semimonthly">Semi-monthly</option>
-                      <option value="monthly">Monthly</option>
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Next Payroll Date</label>
-                    <input className="form-input" type="date" value={form.nextPayrollDate} onChange={set('nextPayrollDate')} />
-                  </div>
-                </div>
-              </>
-            )}
+            <p className="form-section-title">Payroll Schedule</p>
+            <div className="form-grid">
+              <div className="form-group">
+                <label className="form-label">Payroll Frequency</label>
+                <select className="form-select" value={form.payrollFrequency} onChange={set('payrollFrequency')}>
+                  <option value="weekly">Weekly</option>
+                  <option value="biweekly">Bi-weekly</option>
+                  <option value="semimonthly">Semi-monthly</option>
+                  <option value="monthly">Monthly</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Next Payroll Date</label>
+                <input className="form-input" type="date" value={form.nextPayrollDate} onChange={set('nextPayrollDate')} />
+              </div>
+            </div>
 
             <p className="form-section-title">Contact Information</p>
 

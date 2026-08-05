@@ -440,6 +440,10 @@ export default function PayrollEntry() {
   const [submitResult,    setSubmitResult]    = useState(null);
   const [bridgeConnected, setBridgeConnected] = useState(false);
 
+  // Unsaved-entry protection — set when the user edits pay lines by hand
+  // (employee auto-prefill does not count as user work)
+  const [formTouched, setFormTouched] = useState(false);
+
   useEffect(() => {
     api.getClient(id).then((c) => { setClient(c); setWorkState(c.state || 'TX'); }).catch(() => navigate('/'));
     api.getEmployees(id).then(setEmployees).catch(() => {});
@@ -615,6 +619,21 @@ export default function PayrollEntry() {
     }
   }
 
+  // Dirty once dates are entered or pay lines edited, until the entry is saved
+  const entryDirty = !submission && (formTouched || payPeriodStart !== '' || payPeriodEnd !== '');
+
+  useEffect(() => {
+    if (!entryDirty) return;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [entryDirty]);
+
+  function handleBack() {
+    if (entryDirty && !window.confirm('This paycheck entry has not been saved. Leave and discard it?')) return;
+    navigate(-1);
+  }
+
   if (!client) return (
     <div style={{ padding: 60, textAlign: 'center' }}>
       <div className="spinner spinner-dark" style={{ width: 36, height: 36, margin: '0 auto' }} />
@@ -641,7 +660,7 @@ export default function PayrollEntry() {
             <p>{client.businessName} — EIN: {client.ein}</p>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <button className="btn btn-secondary" onClick={() => navigate(-1)}>← Back</button>
+            <button className="btn btn-secondary" onClick={handleBack}>← Back</button>
             {step === 1 && taxes && (
               <>
                 <button className="btn btn-secondary btn-lg" onClick={handleSaveAsPaystub} disabled={savingPaystub || !payPeriodStart || !payPeriodEnd}>
@@ -763,7 +782,7 @@ export default function PayrollEntry() {
 
               {/* Pay line items */}
               <div style={{ marginBottom: 14 }}>
-                <LineItemsTable items={lineItems} onChange={setLineItems} />
+                <LineItemsTable items={lineItems} onChange={(items) => { setFormTouched(true); setLineItems(items); }} />
               </div>
 
               {/* W-4 label */}

@@ -194,12 +194,34 @@ export default function Onboarding() {
   function updateBiz(k, v) { setBiz(p => ({ ...p, [k]: v })); }
   function updateGroupForm(k, v) { setGroupForm(p => ({ ...p, [k]: v })); }
 
-  // Fetch client data on mount
+  // Fetch client data + already-saved pay groups on mount, and resume at the
+  // right step — a mid-wizard refresh should never force re-entering data
+  // (or creating a duplicate pay group) that's already saved server-side.
   useEffect(() => {
     if (!clientId) return;
-    api.getClient(clientId).then(c => {
-      if (c.businessName) setBiz(b => ({ ...b, businessName: c.businessName }));
+    Promise.all([
+      api.getClient(clientId),
+      api.getPayGroups(clientId).catch(() => []),
+    ]).then(([c, groups]) => {
+      setBiz(b => ({
+        ...b,
+        businessName:    c.businessName    || b.businessName,
+        businessAddress: c.businessAddress || b.businessAddress,
+        businessCity:    c.businessCity    || b.businessCity,
+        state:           c.state           || b.state,
+        businessZip:     c.businessZip     || b.businessZip,
+        contactPhone:    c.contactPhone    || b.contactPhone,
+      }));
       if (c.joinCode) setJoinCode(c.joinCode);
+      if (groups.length > 0) {
+        // Steps 1 & 2 already done — show saved groups and resume at Invite Team
+        setPayGroups(groups);
+        setShowAddForm(false);
+        setStep(3);
+      } else if (c.businessAddress || c.businessCity || c.businessZip || c.contactPhone) {
+        // Business details already saved — resume at Pay Groups
+        setStep(2);
+      }
     }).catch(() => {});
   }, [clientId]);
 
@@ -332,7 +354,7 @@ export default function Onboarding() {
                 <Field label="Business Phone">
                   <input style={inputStyle} value={biz.contactPhone} onChange={e => updateBiz('contactPhone', e.target.value)} placeholder="(512) 555-0100" type="tel" />
                 </Field>
-                {error && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>{error}</div>}
+                {error && <div style={{ color: 'var(--error)', fontSize: 13, marginBottom: 12 }}>{error}</div>}
                 <button onClick={handleStep1} disabled={saving} style={{ width: '100%', padding: '12px 0', background: 'var(--accent)', color: '#fff', border: 'none', borderRadius: 8, fontWeight: 700, fontSize: 15, cursor: 'pointer', marginTop: 8 }}>
                   {saving ? 'Saving…' : 'Continue →'}
                 </button>
@@ -372,7 +394,7 @@ export default function Onboarding() {
               {/* Add group form */}
               {showAddForm ? (
                 <div style={{ marginBottom: 16 }}>
-                  {error && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 10 }}>{error}</div>}
+                  {error && <div style={{ color: 'var(--error)', fontSize: 13, marginBottom: 10 }}>{error}</div>}
                   <PayGroupForm
                     value={groupForm}
                     onChange={updateGroupForm}
@@ -391,7 +413,7 @@ export default function Onboarding() {
                 </button>
               )}
 
-              {error && !showAddForm && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>{error}</div>}
+              {error && !showAddForm && <div style={{ color: 'var(--error)', fontSize: 13, marginBottom: 12 }}>{error}</div>}
 
               <div style={{ display: 'flex', gap: 10 }}>
                 <button onClick={() => { setStep(1); setError(''); }} style={{ flex: 1, padding: '12px 0', background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1.5px solid var(--border)', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
@@ -467,7 +489,7 @@ export default function Onboarding() {
                   ))}
                 </div>
 
-                {error && <div style={{ color: 'var(--red)', fontSize: 13, marginBottom: 12 }}>{error}</div>}
+                {error && <div style={{ color: 'var(--error)', fontSize: 13, marginBottom: 12 }}>{error}</div>}
                 <div style={{ display: 'flex', gap: 10 }}>
                   <button onClick={() => { setStep(2); setError(''); }} style={{ flex: 1, padding: '12px 0', background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1.5px solid var(--border)', borderRadius: 8, fontWeight: 600, fontSize: 14, cursor: 'pointer' }}>
                     ← Back

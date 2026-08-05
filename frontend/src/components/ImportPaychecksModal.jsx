@@ -23,7 +23,7 @@ const LIABILITY_STATUS_OPTIONS = [
   { value: 'processing', label: 'Processing — already submitted to EFTPS' },
 ];
 
-export default function ImportPaychecksModal({ clientId, onClose, onImported }) {
+export default function ImportPaychecksModal({ clientId, onClose, onImported, onDone }) {
   const [file, setFile]               = useState(null);
   const [preview, setPreview]         = useState(null);
   const [skipExisting, setSkip]       = useState(true);
@@ -57,13 +57,26 @@ export default function ImportPaychecksModal({ clientId, onClose, onImported }) 
     setError('');
     try {
       const result = await api.importPaychecks(clientId, file, skipExisting, checkStatus, liabilityStatus);
+      // Show the summary screen (incl. W-4 follow-ups for auto-created
+      // employees) before notifying the parent — calling onImported here let
+      // the parent unmount the modal and the summary was never seen.
       setDone(result);
-      onImported();
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
+  }
+
+  // Dismissal after a successful import: hand the summary to the parent via
+  // onDone, then fire onImported (refresh) and onClose. Before an import
+  // completes this is just a plain close.
+  function finish() {
+    if (done) {
+      if (onDone) onDone(done);
+      onImported();
+    }
+    onClose();
   }
 
   const toImport   = preview ? preview.checks.filter(c => !(skipExisting && c.alreadyExists)) : [];
@@ -78,11 +91,11 @@ export default function ImportPaychecksModal({ clientId, onClose, onImported }) 
             <h3 style={{ margin: 0 }}>Import Paycheck History</h3>
             <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-muted)' }}>QuickBooks Tax Tracking Detail export (.xlsx)</p>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--text-muted)' }}>×</button>
+          <button onClick={finish} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--text-muted)' }}>×</button>
         </div>
 
         {done ? (
-          <DoneScreen done={done} onClose={onClose} />
+          <DoneScreen done={done} onClose={finish} />
         ) : (
           <>
             <div

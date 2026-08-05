@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../api/client';
 
@@ -25,7 +25,7 @@ function StatusLine({ form, status, amount, confirmation, submittedAt }) {
 
   const labelColor = isSubmitted ? '#10b981' : isFailed ? 'var(--error)' : 'var(--text-muted)';
   const labelText  = isSubmitted
-    ? (isDryRun ? 'Dry Run' : 'Filed')
+    ? (isDryRun ? 'Dry Run' : 'Deposited')
     : isFailed ? 'Failed' : isProcessing ? 'Processing' : 'Pending';
 
   return (
@@ -75,13 +75,23 @@ async function downloadPDF(id, payPeriodEnd) {
 }
 
 function SUIModal({ stub, onClose }) {
+  const dialogRef = useRef(null);
+
+  useEffect(() => {
+    if (!stub) return;
+    dialogRef.current?.focus();
+    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [stub, onClose]);
+
   if (!stub) return null;
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={onClose}>
-      <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 28, maxWidth: 480, width: '100%' }} onClick={(e) => e.stopPropagation()}>
+      <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="sui-modal-title" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 28, maxWidth: 480, width: '100%', outline: 'none' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <h3 style={{ margin: 0, fontSize: 16 }}>SUI — State Unemployment Insurance</h3>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text-muted)' }}>×</button>
+          <h3 id="sui-modal-title" style={{ margin: 0, fontSize: 16 }}>SUI — State Unemployment Insurance</h3>
+          <button onClick={onClose} aria-label="Close" title="Close" style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text-muted)' }}>×</button>
         </div>
         <div className="alert alert-warning" style={{ marginBottom: 16 }}>
           <span>⚠</span>
@@ -119,7 +129,7 @@ function BatchResultBanner({ result, onDismiss }) {
       ) : (
         <><span>✓</span> Submitted {result.submitted} paystub{result.submitted !== 1 ? 's' : ''} ({result.taxType?.toUpperCase()}) — total {fmtAmt(result.totalDeposit)}{result.confirmation ? ` · Conf: ${result.confirmation}` : ''}</>
       )}
-      <button onClick={onDismiss} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: 16 }}>×</button>
+      <button onClick={onDismiss} aria-label="Dismiss message" title="Dismiss" style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: 16 }}>×</button>
     </div>
   );
 }
@@ -177,13 +187,18 @@ export default function Paystubs() {
   }
 
   async function handleBatch(taxType, taxYear, taxQuarter) {
-    const isPending = taxType === '940' ? pending940 : pending941;
-    if (isPending.length === 0) return;
+    const allPending = taxType === '940' ? pending940 : pending941;
+    // When a year/quarter filter is passed, the server submits only that quarter —
+    // the confirmation must show that quarter's count and total, not the all-time ones.
+    const scoped = (taxYear && taxQuarter)
+      ? allPending.filter((s) => Number(s.tax_year) === Number(taxYear) && Number(s.tax_quarter) === Number(taxQuarter))
+      : allPending;
+    if (scoped.length === 0) return;
 
-    const totalAmt = taxType === '940' ? totalPending940Deposit : totalPending941Deposit;
+    const totalAmt = scoped.reduce((sum, s) => sum + ((taxType === '940' ? s.futa_tax : s.total_deposit) || 0), 0);
     const label    = taxType === '940' ? `940 FUTA` : `941`;
     const filter   = (taxYear && taxQuarter) ? ` for Q${taxQuarter} ${taxYear}` : '';
-    if (!window.confirm(`Submit all pending ${label} paystubs${filter} (total ${fmtAmt(totalAmt)}) to EFTPS?`)) return;
+    if (!window.confirm(`Submit ${scoped.length} pending ${label} paystub${scoped.length !== 1 ? 's' : ''}${filter} (total ${fmtAmt(totalAmt)}) to EFTPS?`)) return;
 
     taxType === '940' ? setBatching940(true) : setBatching941(true);
     setBatchResult(null);
@@ -241,7 +256,8 @@ export default function Paystubs() {
             const hasSUI  = (stub.suta_tax || 0) > 0;
             const can941  = stub.status !== 'submitted' && stub.status !== 'processing';
             const can940  = hasFUTA && stub.status_940 !== 'submitted' && stub.status_940 !== 'processing';
-            const canDel  = stub.status !== 'submitted' && stub.status !== 'processing' && stub.status_940 !== 'processing';
+            const canDel  = stub.status !== 'submitted' && stub.status !== 'processing' &&
+                            stub.status_940 !== 'submitted' && stub.status_940 !== 'processing' && stub.status_940 !== 'dry_run';
 
             return (
               <tr key={stub.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
@@ -314,7 +330,7 @@ export default function Paystubs() {
                     </button>
                     {/* Delete */}
                     {canDel && (
-                      <button className="btn btn-danger btn-sm" onClick={() => handleDelete(stub)} disabled={deleting === stub.id} title="Delete paystub">
+                      <button className="btn btn-danger btn-sm" onClick={() => handleDelete(stub)} disabled={deleting === stub.id} title="Delete paystub" aria-label="Delete paystub">
                         {deleting === stub.id ? <span className="spinner" /> : '×'}
                       </button>
                     )}
@@ -375,7 +391,7 @@ export default function Paystubs() {
             {[
               { label: 'Pending 941',       value: pending941.length,  sub: fmtAmt(totalPending941Deposit),  accent: pending941.length > 0 },
               { label: 'Pending 940 (FUTA)', value: pending940.length,  sub: fmtAmt(totalPending940Deposit),  accent: pending940.length > 0 },
-              { label: 'Submitted 941',      value: submitted941.length, sub: 'Filed with EFTPS' },
+              { label: 'Submitted 941',      value: submitted941.length, sub: 'Deposited via EFTPS' },
               { label: 'Total Paystubs',     value: paystubs.length,    sub: client?.businessName },
             ].map(({ label, value, sub, accent }) => (
               <div key={label} className="card" style={{ padding: '14px 18px' }}>
@@ -384,6 +400,13 @@ export default function Paystubs() {
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{sub}</div>
               </div>
             ))}
+          </div>
+        )}
+
+        {paystubs.length > 0 && (
+          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
+            EFTPS deposits pay the taxes — they don't file the quarterly Form 941 or annual Form 940 return.{' '}
+            <Link to={`/reports?clientId=${id}`} style={{ color: 'var(--accent)', fontWeight: 600 }}>File returns on the File Forms page →</Link>
           </div>
         )}
 

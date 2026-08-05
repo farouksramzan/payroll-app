@@ -49,9 +49,9 @@ export default function ClientDashboard() {
 
       {/* Nav */}
       <div style={{
-        height: 'var(--nav-h)', background: 'var(--accent)',
-        display: 'flex', alignItems: 'center', padding: '0 28px',
-        gap: 16, flexShrink: 0, boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
+        minHeight: 'var(--nav-h)', background: 'var(--accent)',
+        display: 'flex', alignItems: 'center', padding: '6px 28px', flexWrap: 'wrap',
+        gap: 16, rowGap: 4, flexShrink: 0, boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
       }}>
         <div style={{ fontSize: 17, fontWeight: 800, color: '#fff', letterSpacing: '-0.4px' }}>
           Payroll<span style={{ color: '#7ca4e0' }}>Tax</span> Pro
@@ -88,7 +88,7 @@ export default function ClientDashboard() {
 
         {/* Summary cards */}
         {summary && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 28 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16, marginBottom: 28 }}>
             <StatCard value={summary.employeeCount} label="Total Employees" color="var(--accent)" />
             <StatCard value={summary.invitedCount} label="Portal Access" color="var(--success)" />
             <StatCard
@@ -123,7 +123,7 @@ export default function ClientDashboard() {
 
         {/* Overview tab */}
         {tab === 'overview' && (
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
             <div className="card-header" style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-light)' }}>
               <span className="card-title">Recent Pay Records</span>
             </div>
@@ -228,7 +228,7 @@ export default function ClientDashboard() {
 
         {/* Pay Records tab */}
         {tab === 'paystubs' && (
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div className="card" style={{ padding: 0, overflowX: 'auto' }}>
             <div className="card-header" style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-light)' }}>
               <span className="card-title">All Pay Records</span>
               <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{paystubs.length} records</span>

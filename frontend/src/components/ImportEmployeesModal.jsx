@@ -1,6 +1,14 @@
 import { useState, useRef } from 'react';
 import api from '../api/client';
 
+// Show only the last 4 of an SSN in the preview — full SSNs shouldn't sit on
+// screen during a client screen-share. The full value is still imported.
+function maskSSN(ssn) {
+  const digits = String(ssn || '').replace(/\D/g, '');
+  if (!digits) return null;
+  return `•••-••-${digits.slice(-4)}`;
+}
+
 export default function ImportEmployeesModal({ clientId, onClose, onImported }) {
   const [file, setFile]             = useState(null);
   const [preview, setPreview]       = useState(null);
@@ -101,14 +109,26 @@ export default function ImportEmployeesModal({ clientId, onClose, onImported }) 
                   <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
                     Found <strong style={{ color: 'var(--text-primary)' }}>{preview.count}</strong> employees
                     {skipExisting && preview.rows.some(r => r.alreadyExists) && (
-                      <span style={{ color: 'var(--warning)' }}> · {preview.rows.filter(r => r.alreadyExists).length} already exist (will skip)</span>
+                      <span style={{ color: 'var(--warning)' }}> · {preview.rows.filter(r => r.alreadyExists).length} matched by name (will skip)</span>
                     )}
                   </div>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
                     <input type="checkbox" checked={skipExisting} onChange={e => setSkip(e.target.checked)} />
-                    Skip existing employees
+                    Skip existing employees (matched by name)
                   </label>
                 </div>
+
+                {preview.rows.some(r => r.alreadyExists) && (
+                  skipExisting ? (
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+                      Matching is by name only. If a row marked "Exists" is really a different person with the same name, uncheck the box above — but that re-imports every matched row.
+                    </div>
+                  ) : (
+                    <div className="alert alert-warning" style={{ marginBottom: 10, fontSize: 12 }}>
+                      <span>⚠</span> {preview.rows.filter(r => r.alreadyExists).length} row{preview.rows.filter(r => r.alreadyExists).length !== 1 ? 's' : ''} marked "Exists" will be imported as new, duplicate employee records. Leave the box checked unless these are different people who share a name.
+                    </div>
+                  )
+                )}
 
                 <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 16 }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
@@ -123,7 +143,7 @@ export default function ImportEmployeesModal({ clientId, onClose, onImported }) 
                       {preview.rows.map((r, i) => (
                         <tr key={i} style={{ borderBottom: '1px solid var(--border-light)', opacity: (skipExisting && r.alreadyExists) ? 0.45 : 1 }}>
                           <td style={{ padding: '8px 12px', fontWeight: 600 }}>{r.firstName} {r.lastName}</td>
-                          <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{r.ssn || '—'}</td>
+                          <td style={{ padding: '8px 12px', fontFamily: 'monospace', color: 'var(--text-muted)' }}>{maskSSN(r.ssn) || '—'}</td>
                           <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>{r.address || '—'}</td>
                           <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>{r.city || '—'}</td>
                           <td style={{ padding: '8px 12px', color: 'var(--text-secondary)' }}>{r.state || '—'}</td>

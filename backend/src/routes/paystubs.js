@@ -1409,11 +1409,21 @@ router.put('/:id', (req, res) => {
 });
 
 // ── DELETE /api/paystubs/:id ──────────────────────────────────────────────────
+// Paystubs with a submitted 941 or 940 deposit are protected: deleting them does
+// not reverse the filed deposit. Pass ?force=1 to delete anyway.
 router.delete('/:id', (req, res) => {
   const db = getDb();
   const stub = db.prepare('SELECT * FROM paystubs WHERE id = ?').get(req.params.id);
   if (!stub || !canAccessClient(db, stub.client_id, req.user)) return res.status(404).json({ error: 'Paystub not found' });
-  if (stub.status === 'submitted') return res.status(400).json({ error: 'Cannot delete a submitted paystub' });
+  const force = req.query.force === '1' || req.query.force === 'true';
+  const submitted941 = stub.status === 'submitted';
+  const submitted940 = stub.status_940 === 'submitted';
+  if (!force && (submitted941 || submitted940)) {
+    const which = [submitted941 && '941', submitted940 && '940'].filter(Boolean).join(' and ');
+    return res.status(409).json({
+      error: `The ${which} deposit for this paystub was already submitted to EFTPS. Deleting it will not reverse the filed deposit — file an amended return if the deposit was wrong. To delete anyway, retry with force enabled.`,
+    });
+  }
   if (stub.check_status === 'voided') return res.status(400).json({ error: 'Voided checks cannot be deleted — they must stay for record keeping' });
 
   db.transaction(() => {
@@ -1739,8 +1749,16 @@ router.post('/payroll-run', (req, res) => {
     return created;
   })();
 
-  // Fire Moov direct deposit for employees with active bank accounts (async, non-blocking)
-  const ddResults = results.filter(r => r.directDeposit && r.moovAccountId && r.moovBankAccountId);
+  // Fire Moov direct deposit for employees with active bank accounts (async, non-blocking).
+  // Gated on the chosen paymentMethod: a "Print Paycheck"/"Print Paystub" run must NEVER
+  // move money — firing ACH for DD-active employees on a print run double-paid them
+  // (printed check + bank transfer). Only 'dd' and legacy 'auto' runs may transfer.
+  // Default CLOSED: an absent paymentMethod must not move money. Every in-app
+  // caller passes one explicitly ('print' | 'paystub' | 'dd' | 'auto').
+  const methodAllowsACH = paymentMethod === 'dd' || paymentMethod === 'auto';
+  const ddResults = methodAllowsACH
+    ? results.filter(r => r.directDeposit && r.moovAccountId && r.moovBankAccountId)
+    : [];
   if (ddResults.length > 0 && moov.isConfigured()) {
     const db2 = getDb();
     const facilitatorAccountId = process.env.MOOV_FACILITATOR_ACCOUNT_ID;

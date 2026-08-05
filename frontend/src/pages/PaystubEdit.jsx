@@ -29,6 +29,18 @@ function fmtAmt(n) {
 }
 function round2(n) { return Math.round((n || 0) * 100) / 100; }
 
+// Reconstruct a Step 3 children/other split from the stored combined credit total.
+// Any total that came from valid inputs (children × $2,200 + other × $500) has an
+// exact split, which keeps the recalculated withholding identical to the stored check.
+function splitStep3Credits(credits) {
+  const cr = Math.round(credits || 0);
+  for (let c = Math.floor(cr / CHILD_CREDIT); c >= 0; c--) {
+    const rem = cr - c * CHILD_CREDIT;
+    if (rem >= 0 && rem % DEPENDENT_CREDIT === 0) return { children: c, other: rem / DEPENDENT_CREDIT, exact: true };
+  }
+  return { children: 0, other: Math.round(cr / DEPENDENT_CREDIT), exact: false };
+}
+
 function Field({ label, hint, required, children }) {
   return (
     <div className="form-group">
@@ -75,7 +87,7 @@ function TaxPreview({ taxes, loading }) {
   );
 }
 
-function SubmissionCard({ form, label, code, detail, amount, isSubmitted, confirmation, submittedAt, onSubmit, submitting, anySubmitting }) {
+function SubmissionCard({ form, label, code, detail, amount, isSubmitted, isProcessing, confirmation, submittedAt, onSubmit, submitting, anySubmitting }) {
   const fmtSubmittedAt = submittedAt
     ? new Date(submittedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' })
     : null;
@@ -117,10 +129,10 @@ function SubmissionCard({ form, label, code, detail, amount, isSubmitted, confir
           <button
             className={`btn btn-sm ${isSubmitted ? 'btn-secondary' : 'btn-primary'}`}
             onClick={onSubmit}
-            disabled={anySubmitting || isSubmitted}
+            disabled={anySubmitting || isSubmitted || isProcessing}
             style={isSubmitted ? { opacity: 0.6, cursor: 'default' } : {}}
           >
-            {submitting ? <span className="spinner" /> : isSubmitted ? '✓ Filed' : `Submit ${form}`}
+            {submitting ? <span className="spinner" /> : isSubmitted ? '✓ Deposited' : isProcessing ? 'Processing…' : `Submit ${form}`}
           </button>
         </div>
       </div>
@@ -136,7 +148,7 @@ function SubmissionCard({ form, label, code, detail, amount, isSubmitted, confir
           </div>
           {fmtSubmittedAt && (
             <div style={{ fontSize: 11, color: '#10b981', marginTop: 4 }}>
-              Filed {fmtSubmittedAt}
+              Deposited {fmtSubmittedAt}
             </div>
           )}
         </div>
@@ -146,7 +158,9 @@ function SubmissionCard({ form, label, code, detail, amount, isSubmitted, confir
       {!isSubmitted && (
         <div style={{ padding: '8px 16px', background: 'var(--bg-primary)' }}>
           <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-            Not yet submitted — click "Submit {form}" to file this deposit with EFTPS.
+            {isProcessing
+              ? 'A submission for this deposit is already in progress — wait for it to finish before submitting again.'
+              : `Not yet deposited — click "Submit ${form}" to pay this deposit via EFTPS.`}
           </div>
         </div>
       )}
@@ -181,13 +195,18 @@ export default function PaystubEdit() {
   const [lineItems,       setLineItems]       = useState([]);
   const [notes,           setNotes]           = useState('');
 
+  // W-4 restore + unsaved-changes tracking
+  const [w4Warning,       setW4Warning]       = useState('');
+  const [step4Touched,    setStep4Touched]    = useState(false);
+  const [initialSnapshot, setInitialSnapshot] = useState(null);
+
   // Tax preview
   const [taxes,       setTaxes]       = useState(null);
   const [calcLoading, setCalcLoading] = useState(false);
 
   useEffect(() => {
     Promise.all([api.getClient(clientId), api.getPaystub(stubId)])
-      .then(([c, s]) => {
+      .then(async ([c, s]) => {
         setClient(c);
         setStub(s);
         // Pre-populate form
@@ -199,11 +218,39 @@ export default function PaystubEdit() {
         setYtdGross(s.ytd_wages_before > 0 ? String(s.ytd_wages_before) : '');
         setFilingStatus(s.filing_status || 'single');
         setStep2Checkbox(!!s.step2_checkbox);
-        setStep3Children(Math.round((s.step3_credits || 0) / CHILD_CREDIT));
-        setStep3Other(0); // approximate; step3_credits combines both
-        setStep4a('');
-        setStep4b('');
-        setStep4c('');
+
+        // Restore W-4 details. The paystub stores only the combined Step 3 credit
+        // total; Step 4 amounts live on the employee record — pull them from there
+        // so Save doesn't silently overwrite the stored withholding inputs.
+        let emp = null;
+        if (s.employee_id) {
+          try { emp = await api.getEmployee(s.employee_id); } catch { emp = null; }
+        }
+        const storedCredits = Math.round(s.step3_credits || 0);
+        const empCredits = emp ? (emp.step3Children || 0) * CHILD_CREDIT + (emp.step3Other || 0) * DEPENDENT_CREDIT : null;
+        const warnings = [];
+        if (emp && empCredits === storedCredits) {
+          setStep3Children(emp.step3Children || 0);
+          setStep3Other(emp.step3Other || 0);
+        } else {
+          const split = splitStep3Credits(storedCredits);
+          setStep3Children(split.children);
+          setStep3Other(split.other);
+          if (!split.exact) {
+            warnings.push(`Step 3 dependents could not be exactly restored for this check (stored credit total ${fmtAmt(storedCredits)}). Verify the Step 3 fields before saving — Save recalculates withholding from them.`);
+          }
+        }
+        if (emp) {
+          setStep4a(emp.step4a > 0 ? String(emp.step4a) : '');
+          setStep4b(emp.step4b > 0 ? String(emp.step4b) : '');
+          setStep4c(emp.step4c > 0 ? String(emp.step4c) : '');
+        } else {
+          setStep4a('');
+          setStep4b('');
+          setStep4c('');
+          warnings.push('This check is not linked to an employee record, so W-4 Step 4 amounts (other income, deductions, extra withholding) could not be restored. If the original check used them, re-enter them before saving.');
+        }
+        setW4Warning(warnings.join(' '));
         setNotes(s.notes || '');
         // Line items
         if (s.lineItems && s.lineItems.length > 0) {
@@ -224,6 +271,30 @@ export default function PaystubEdit() {
 
   const grossWages = round2(lineItems.reduce((s, li) => s + parseFloat(li.amount || 0), 0));
   const step3Credits = step3Children * CHILD_CREDIT + step3Other * DEPENDENT_CREDIT;
+
+  // Unsaved-changes detection — compare current form values against the loaded ones
+  const formSnapshot = JSON.stringify({
+    payPeriodStart, payPeriodEnd, settlementDate, payFrequency, workState, ytdGross,
+    filingStatus, step2Checkbox, step3Children, step3Other, step4a, step4b, step4c,
+    lineItems, notes,
+  });
+  const isDirty = initialSnapshot !== null && formSnapshot !== initialSnapshot;
+
+  useEffect(() => {
+    if (!loading && stub && initialSnapshot === null) setInitialSnapshot(formSnapshot);
+  }, [loading, stub, initialSnapshot, formSnapshot]);
+
+  useEffect(() => {
+    if (!isDirty) return;
+    const warn = (e) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [isDirty]);
+
+  function handleBack() {
+    if (isDirty && !window.confirm('You have unsaved changes to this paycheck. Leave without saving?')) return;
+    navigate(-1);
+  }
 
   const recalculate = useCallback(async () => {
     if (!grossWages || grossWages <= 0) { setTaxes(null); return; }
@@ -275,17 +346,24 @@ export default function PaystubEdit() {
     setSaveResult(null);
     try {
       const items = lineItems.filter((li) => parseFloat(li.amount || 0) > 0);
-      const res = await api.updatePaystub(stubId, {
+      const payload = {
         payPeriodStart, payPeriodEnd, settlementDate: settlementDate || null,
         payFrequency, filingStatus, step2Checkbox, step3Children, step3Other,
-        step4a: parseFloat(step4a || 0),
-        step4b: parseFloat(step4b || 0),
-        step4c: parseFloat(step4c || 0),
         lineItems: items,
         workState, ytdGross: parseFloat(ytdGross || 0), notes,
-      });
+      };
+      // Only send Step 4 amounts the user actually edited here. When omitted,
+      // the server keeps using the employee's stored W-4 values instead of
+      // overwriting them with this form's defaults.
+      if (step4Touched) {
+        payload.step4a = parseFloat(step4a || 0);
+        payload.step4b = parseFloat(step4b || 0);
+        payload.step4c = parseFloat(step4c || 0);
+      }
+      const res = await api.updatePaystub(stubId, payload);
       setStub(res.paystub);
       setSaveResult(res);
+      setInitialSnapshot(formSnapshot); // saved — current values are the new baseline
     } catch (err) {
       alert(err.message);
     } finally {
@@ -295,6 +373,8 @@ export default function PaystubEdit() {
 
   async function handleSubmit(taxType) {
     if (!stub) return;
+    const status = taxType === '940' ? stub.status_940 : stub.status;
+    if (status === 'submitted' || status === 'processing') return; // already deposited or in flight
     const label = taxType === '940' ? 'FUTA (940)' : '941 (FIT + SS + Medicare)';
     if (!window.confirm(`Submit ${label} to EFTPS for this paystub?`)) return;
     setSubmitting(taxType);
@@ -314,9 +394,11 @@ export default function PaystubEdit() {
     </div>
   );
 
-  const is941Submitted = stub?.status === 'submitted';
-  const is940Submitted = stub?.status_940 === 'submitted';
-  const hasFUTA        = (stub?.futa_tax || 0) > 0 || (taxes?.futaTax || 0) > 0;
+  const is941Submitted  = stub?.status === 'submitted';
+  const is940Submitted  = stub?.status_940 === 'submitted';
+  const is941Processing = stub?.status === 'processing';
+  const is940Processing = stub?.status_940 === 'processing';
+  const hasFUTA         = (stub?.futa_tax || 0) > 0 || (taxes?.futaTax || 0) > 0;
 
   return (
     <>
@@ -345,7 +427,7 @@ export default function PaystubEdit() {
               {stub?.check_number && <span style={{ marginLeft: 10, fontFamily: 'JetBrains Mono, monospace', color: 'var(--accent)', fontWeight: 600 }}>Check #{stub.check_number}</span>}
             </p>
           </div>
-          <button className="btn btn-secondary" onClick={() => navigate(-1)}>← Back</button>
+          <button className="btn btn-secondary" onClick={handleBack}>← Back</button>
         </div>
       </div>
 
@@ -357,7 +439,7 @@ export default function PaystubEdit() {
             <div>
               <strong>Already submitted:</strong>{' '}
               {[is941Submitted && '941 (federal payroll taxes)', is940Submitted && '940 (FUTA)'].filter(Boolean).join(' and ')}.{' '}
-              Edits to this paystub do <strong>not</strong> revise the filed EFTPS deposit — you must file an amended return separately if amounts change.
+              Edits to this paystub do <strong>not</strong> revise the EFTPS deposit already paid — you must file an amended return separately if amounts change.
             </div>
           </div>
         )}
@@ -367,6 +449,14 @@ export default function PaystubEdit() {
           <div className={`alert ${saveResult.warning ? 'alert-warning' : 'alert-success'}`} style={{ marginBottom: 16 }}>
             <span>{saveResult.warning ? '⚠' : '✓'}</span>
             <span>{saveResult.warning || 'Changes saved successfully.'}</span>
+          </div>
+        )}
+
+        {/* W-4 restore warning */}
+        {w4Warning && (
+          <div className="alert alert-warning" style={{ marginBottom: 16 }}>
+            <span>⚠</span>
+            <span>{w4Warning}</span>
           </div>
         )}
 
@@ -448,7 +538,7 @@ export default function PaystubEdit() {
                           </div>
                         </td>
                         <td style={{ padding: '8px 10px', textAlign: 'center' }}>
-                          <button type="button" onClick={() => setLineItems((prev) => prev.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', color: 'var(--error)', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</button>
+                          <button type="button" aria-label={`Remove pay line ${idx + 1}`} title="Remove line" onClick={() => setLineItems((prev) => prev.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', color: 'var(--error)', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</button>
                         </td>
                       </tr>
                     ))}
@@ -505,19 +595,19 @@ export default function PaystubEdit() {
                   <Field label="Step 4(a) — Other income (annual)">
                     <div style={{ position: 'relative' }}>
                       <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontFamily: 'monospace' }}>$</span>
-                      <input className="form-input mono" type="number" min="0" value={step4a} onChange={(e) => setStep4a(e.target.value)} placeholder="0" style={{ paddingLeft: 24 }} />
+                      <input className="form-input mono" type="number" min="0" value={step4a} onChange={(e) => { setStep4a(e.target.value); setStep4Touched(true); }} placeholder="0" style={{ paddingLeft: 24 }} />
                     </div>
                   </Field>
                   <Field label="Step 4(b) — Deductions (annual)">
                     <div style={{ position: 'relative' }}>
                       <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontFamily: 'monospace' }}>$</span>
-                      <input className="form-input mono" type="number" min="0" value={step4b} onChange={(e) => setStep4b(e.target.value)} placeholder="0" style={{ paddingLeft: 24 }} />
+                      <input className="form-input mono" type="number" min="0" value={step4b} onChange={(e) => { setStep4b(e.target.value); setStep4Touched(true); }} placeholder="0" style={{ paddingLeft: 24 }} />
                     </div>
                   </Field>
                   <Field label="Step 4(c) — Extra withholding (per period)">
                     <div style={{ position: 'relative' }}>
                       <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontFamily: 'monospace' }}>$</span>
-                      <input className="form-input mono" type="number" min="0" value={step4c} onChange={(e) => setStep4c(e.target.value)} placeholder="0" style={{ paddingLeft: 24 }} />
+                      <input className="form-input mono" type="number" min="0" value={step4c} onChange={(e) => { setStep4c(e.target.value); setStep4Touched(true); }} placeholder="0" style={{ paddingLeft: 24 }} />
                     </div>
                   </Field>
                 </div>
@@ -542,6 +632,7 @@ export default function PaystubEdit() {
                   detail="FIT + SS + Medicare (quarterly)"
                   amount={fmtAmt(taxes?.totalDeposit ?? stub?.total_deposit)}
                   isSubmitted={is941Submitted}
+                  isProcessing={is941Processing}
                   confirmation={stub?.eftps_confirmation}
                   submittedAt={stub?.submitted_at}
                   onSubmit={() => handleSubmit('941')}
@@ -558,6 +649,7 @@ export default function PaystubEdit() {
                     detail="Federal Unemployment (annual)"
                     amount={fmtAmt(taxes?.futaTax ?? stub?.futa_tax)}
                     isSubmitted={is940Submitted}
+                    isProcessing={is940Processing}
                     confirmation={stub?.eftps_940_confirmation}
                     submittedAt={stub?.eftps_940_submitted_at}
                     onSubmit={() => handleSubmit('940')}
@@ -580,6 +672,11 @@ export default function PaystubEdit() {
                   </div>
                 )}
 
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                  EFTPS pays the tax deposits only — it does not file the quarterly Form 941 or annual Form 940 return.{' '}
+                  <Link to={`/reports?clientId=${clientId}`} style={{ color: 'var(--accent)', fontWeight: 600 }}>Generate returns on the File Forms page →</Link>
+                </div>
+
               </div>
             </div>
 
@@ -599,26 +696,26 @@ export default function PaystubEdit() {
           display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'flex-end',
           padding: '20px 0', borderTop: '1px solid var(--border)', marginTop: 8,
         }}>
-          <button className="btn btn-secondary" onClick={() => navigate(-1)}>Cancel</button>
+          <button className="btn btn-secondary" onClick={handleBack}>Cancel</button>
           <button className="btn btn-primary" onClick={handleSave} disabled={saving} style={{ minWidth: 130 }}>
             {saving ? <><span className="spinner" /> Saving…</> : 'Save Changes'}
           </button>
           <button
             className="btn btn-success"
             onClick={() => handleSubmit('941')}
-            disabled={submitting !== null || is941Submitted}
+            disabled={submitting !== null || is941Submitted || is941Processing}
             style={{ minWidth: 130 }}
           >
-            {submitting === '941' ? <span className="spinner" /> : is941Submitted ? '✓ 941 Filed' : 'Submit 941'}
+            {submitting === '941' ? <span className="spinner" /> : is941Submitted ? '✓ 941 Deposited' : is941Processing ? 'Processing…' : 'Submit 941'}
           </button>
           {hasFUTA && (
             <button
               className="btn btn-success"
               onClick={() => handleSubmit('940')}
-              disabled={submitting !== null || is940Submitted}
+              disabled={submitting !== null || is940Submitted || is940Processing}
               style={{ minWidth: 130 }}
             >
-              {submitting === '940' ? <span className="spinner" /> : is940Submitted ? '✓ 940 Filed' : 'Submit 940'}
+              {submitting === '940' ? <span className="spinner" /> : is940Submitted ? '✓ 940 Deposited' : is940Processing ? 'Processing…' : 'Submit 940'}
             </button>
           )}
         </div>

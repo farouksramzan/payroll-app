@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate, Navigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, Navigate, Link, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
 import founderImg from '../assets/founder.jpg';
@@ -54,11 +54,26 @@ const LABEL_STYLE = {
 export default function Login() {
   const { user, login, setUser } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const [tab,  setTab]  = useState('admin');
   const [mode, setMode] = useState('login'); // 'login' | 'signup'
   const [error, setError]   = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Session-expiry state from the API layer (see api/client.js 401 handling)
+  const sessionExpired = searchParams.get('expired') === '1';
+  const nextParam = searchParams.get('next');
+  const safeNext = nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//') ? nextParam : null;
+
+  // Stack the two panels on narrow screens (phones) so the sign-in form is reachable
+  const [isNarrow, setIsNarrow] = useState(() => window.matchMedia('(max-width: 900px)').matches);
+  useEffect(() => {
+    const mq = window.matchMedia('(max-width: 900px)');
+    const onChange = (e) => setIsNarrow(e.matches);
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
 
   // Login form
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
@@ -84,8 +99,8 @@ export default function Login() {
     setError('');
     setLoginForm({ username: '', password: '' });
     setCompanyForm({ businessName: '', ein: '', contactName: '', email: '', password: '', confirmPassword: '' });
-    setEmpStep(1); setEmpCode(''); setEmpCompany(null); setEmpSelected(null);
-    setEmpForm({ email: '', password: '', confirmPassword: '' });
+    setEmpStep(1); setEmpCode(''); setEmpCompany(null);
+    setEmpForm({ firstName: '', lastName: '', email: '', password: '', confirmPassword: '' });
   }
 
   function switchMode(m) {
@@ -99,7 +114,8 @@ export default function Login() {
     setError(''); setLoading(true);
     try {
       const u = await login(loginForm.username, loginForm.password);
-      if (u.role === 'client')        navigate(`/company/${u.clientId}`, { replace: true });
+      if (safeNext)                   navigate(safeNext, { replace: true });
+      else if (u.role === 'client')   navigate(`/company/${u.clientId}`, { replace: true });
       else if (u.role === 'employee') navigate('/employee', { replace: true });
       else                            navigate('/',         { replace: true });
     } catch (err) {
@@ -114,6 +130,9 @@ export default function Login() {
     e.preventDefault();
     if (companyForm.password !== companyForm.confirmPassword) {
       return setError('Passwords do not match');
+    }
+    if (companyForm.password.length < 8) {
+      return setError('Password must be at least 8 characters');
     }
     setError(''); setLoading(true);
     try {
@@ -186,14 +205,15 @@ export default function Login() {
   const activeTab = ROLE_TABS.find(t => t.key === tab);
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', fontFamily: 'Inter, system-ui, sans-serif' }}>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: isNarrow ? 'column' : 'row', fontFamily: 'Inter, system-ui, sans-serif' }}>
 
       {/* ── Left — Marketing panel ─────────────────────────────────────────── */}
       <div style={{
         flex: 1,
+        order: isNarrow ? 2 : 0,
         background: 'linear-gradient(150deg, #0f172a 0%, #1e293b 60%, #0f4c35 100%)',
         display: 'flex', flexDirection: 'column',
-        padding: '52px 56px', color: '#fff', overflowY: 'auto', minWidth: 0,
+        padding: isNarrow ? '40px 24px' : '52px 56px', color: '#fff', overflowY: 'auto', minWidth: 0,
       }}>
         <div style={{ marginBottom: 52 }}>
           <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px', color: '#fff' }}>
@@ -212,7 +232,7 @@ export default function Login() {
           }}>
             The Problem We're Solving
           </div>
-          <h1 style={{ fontSize: 36, fontWeight: 900, lineHeight: 1.15, margin: '0 0 20px', letterSpacing: '-0.5px' }}>
+          <h1 style={{ fontSize: isNarrow ? 28 : 36, fontWeight: 900, lineHeight: 1.15, margin: '0 0 20px', letterSpacing: '-0.5px' }}>
             Per-check fees are{' '}
             <span style={{ color: '#f87171' }}>killing independent accountants.</span>
           </h1>
@@ -233,7 +253,7 @@ export default function Login() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, marginBottom: 44 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? '1fr' : 'repeat(3, 1fr)', gap: 12, marginBottom: 44 }}>
           {STATS.map(s => (
             <div key={s.value} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: '16px 14px' }}>
               <div style={{ fontSize: 26, fontWeight: 900, color: '#4ade80', fontFamily: 'JetBrains Mono, monospace', lineHeight: 1 }}>{s.value}</div>
@@ -242,7 +262,7 @@ export default function Login() {
           ))}
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 44 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? '1fr' : '1fr 1fr', gap: 12, marginBottom: 44 }}>
           {FEATURES.map(f => (
             <div key={f.title} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 12, padding: '16px' }}>
               <div style={{ fontSize: 22, marginBottom: 8 }}>{f.icon}</div>
@@ -270,7 +290,7 @@ export default function Login() {
         </div>
 
         <div style={{ marginTop: 'auto', paddingTop: 24, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: 'rgba(124,58,237,0.2)', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 20, padding: '6px 14px' }}>
               <span style={{ fontSize: 14 }}>🤖</span>
               <span style={{ fontSize: 12, fontWeight: 700, color: '#c4b5fd' }}>Built entirely with Claude Code</span>
@@ -281,15 +301,17 @@ export default function Login() {
         </div>
       </div>
 
-      {/* ── Right — Auth panel ────────────────────────────────────────────── */}
+      {/* ── Right — Auth panel (first on narrow screens) ──────────────────── */}
       <div style={{
-        width: 460,
+        width: isNarrow ? '100%' : 460,
         flexShrink: 0,
+        order: isNarrow ? 1 : 0,
         background: '#f8fafc',
         display: 'flex', flexDirection: 'column',
         alignItems: 'center', justifyContent: 'center',
-        padding: '52px 44px',
-        borderLeft: '1px solid #e2e8f0',
+        padding: isNarrow ? '36px 20px' : '52px 44px',
+        borderLeft: isNarrow ? 'none' : '1px solid #e2e8f0',
+        borderBottom: isNarrow ? '1px solid #e2e8f0' : 'none',
         overflowY: 'auto',
       }}>
         <div style={{ width: '100%', maxWidth: 380 }}>
@@ -316,6 +338,12 @@ export default function Login() {
             ))}
           </div>
 
+          {sessionExpired && (
+            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#92400e', display: 'flex', gap: 8 }}>
+              <span>⏱</span> Your session expired — sign in to continue.
+            </div>
+          )}
+
           {error && (
             <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#b91c1c', display: 'flex', gap: 8 }}>
               <span>⚠</span> {error}
@@ -327,21 +355,13 @@ export default function Login() {
             <>
               <h2 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', margin: '0 0 4px', letterSpacing: '-0.3px' }}>Sign in</h2>
               <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 20px' }}>{activeTab.hint}</p>
-              <div style={{ background: '#fff', border: '1px solid #bae6fd', borderRadius: 10, padding: '10px 14px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontSize: 16, flexShrink: 0 }}>👀</span>
-                <div>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#0369a1', marginBottom: 2 }}>Demo account</div>
-                  <div style={{ fontSize: 12, color: '#475569' }}>
-                    <code style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: 4, fontFamily: 'monospace' }}>admin</code>
-                    {' / '}
-                    <code style={{ background: '#f1f5f9', padding: '1px 6px', borderRadius: 4, fontFamily: 'monospace' }}>admin123</code>
-                  </div>
-                </div>
-              </div>
               <AdminLoginForm form={loginForm} setForm={setLoginForm} loading={loading} onSubmit={handleLogin} />
-              <p style={{ marginTop: 20, fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>
+              <p style={{ marginTop: 14, fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>
+                Forgot your password? Ask another admin on your account to reset it.
+              </p>
+              <p style={{ marginTop: 10, fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>
                 Don't have an account?{' '}
-                <a href="/register" style={{ color: '#16a34a', fontWeight: 600, textDecoration: 'none' }}>Create one free</a>
+                <Link to="/register" style={{ color: '#16a34a', fontWeight: 600, textDecoration: 'none' }}>Create one free</Link>
               </p>
             </>
           )}
@@ -363,16 +383,16 @@ export default function Login() {
                 </div>
                 <div>
                   <label style={LABEL_STYLE}>Password</label>
-                  <input type="password" placeholder="••••••••" autoComplete="current-password" required value={loginForm.password}
+                  <PasswordInput value={loginForm.password} autoComplete="current-password"
                     onChange={e => setLoginForm(f => ({ ...f, password: e.target.value }))}
-                    style={INPUT_STYLE}
-                    onFocus={e => e.target.style.borderColor = '#22c55e'}
-                    onBlur={e => e.target.style.borderColor = '#e2e8f0'}
                   />
                 </div>
                 <SubmitBtn loading={loading} label="Sign In as Company" />
               </form>
-              <p style={{ marginTop: 20, fontSize: 12, color: '#64748b', textAlign: 'center' }}>
+              <p style={{ marginTop: 14, fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>
+                Forgot your password? Contact your accountant to reset it.
+              </p>
+              <p style={{ marginTop: 10, fontSize: 12, color: '#64748b', textAlign: 'center' }}>
                 New company?{' '}
                 <button onClick={() => switchMode('signup')} style={{ background: 'none', border: 'none', color: '#16a34a', fontWeight: 600, cursor: 'pointer', fontSize: 12 }}>
                   Create an account
@@ -424,20 +444,14 @@ export default function Login() {
                 </div>
                 <div>
                   <label style={LABEL_STYLE}>Password *</label>
-                  <input type="password" placeholder="Min 8 characters" required value={companyForm.password}
+                  <PasswordInput placeholder="Min 8 characters" autoComplete="new-password" value={companyForm.password}
                     onChange={e => setCompanyForm(f => ({ ...f, password: e.target.value }))}
-                    style={INPUT_STYLE}
-                    onFocus={e => e.target.style.borderColor = '#22c55e'}
-                    onBlur={e => e.target.style.borderColor = '#e2e8f0'}
                   />
                 </div>
                 <div>
                   <label style={LABEL_STYLE}>Confirm Password *</label>
-                  <input type="password" placeholder="Repeat password" required value={companyForm.confirmPassword}
+                  <PasswordInput placeholder="Repeat password" autoComplete="new-password" value={companyForm.confirmPassword}
                     onChange={e => setCompanyForm(f => ({ ...f, confirmPassword: e.target.value }))}
-                    style={INPUT_STYLE}
-                    onFocus={e => e.target.style.borderColor = '#22c55e'}
-                    onBlur={e => e.target.style.borderColor = '#e2e8f0'}
                   />
                 </div>
                 <SubmitBtn loading={loading} label="Create Company Account" />
@@ -468,16 +482,16 @@ export default function Login() {
                 </div>
                 <div>
                   <label style={LABEL_STYLE}>Password</label>
-                  <input type="password" placeholder="••••••••" autoComplete="current-password" required value={loginForm.password}
+                  <PasswordInput value={loginForm.password} autoComplete="current-password"
                     onChange={e => setLoginForm(f => ({ ...f, password: e.target.value }))}
-                    style={INPUT_STYLE}
-                    onFocus={e => e.target.style.borderColor = '#22c55e'}
-                    onBlur={e => e.target.style.borderColor = '#e2e8f0'}
                   />
                 </div>
                 <SubmitBtn loading={loading} label="Sign In as Employee" />
               </form>
-              <p style={{ marginTop: 20, fontSize: 12, color: '#64748b', textAlign: 'center' }}>
+              <p style={{ marginTop: 14, fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>
+                Forgot your password? Ask your employer to send you a new invite.
+              </p>
+              <p style={{ marginTop: 10, fontSize: 12, color: '#64748b', textAlign: 'center' }}>
                 New employee?{' '}
                 <button onClick={() => switchMode('signup')} style={{ background: 'none', border: 'none', color: '#16a34a', fontWeight: 600, cursor: 'pointer', fontSize: 12 }}>
                   Create account with join code
@@ -516,7 +530,7 @@ function AdminLoginForm({ form, setForm, loading, onSubmit }) {
     <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div>
         <label style={LABEL_STYLE}>Username</label>
-        <input type="text" placeholder="admin" autoComplete="username" required value={form.username}
+        <input type="text" placeholder="yourname" autoComplete="username" required value={form.username}
           onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
           style={INPUT_STYLE}
           onFocus={e => e.target.style.borderColor = '#22c55e'}
@@ -525,15 +539,51 @@ function AdminLoginForm({ form, setForm, loading, onSubmit }) {
       </div>
       <div>
         <label style={LABEL_STYLE}>Password</label>
-        <input type="password" placeholder="••••••••" autoComplete="current-password" required value={form.password}
+        <PasswordInput value={form.password} autoComplete="current-password"
           onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-          style={INPUT_STYLE}
-          onFocus={e => e.target.style.borderColor = '#22c55e'}
-          onBlur={e => e.target.style.borderColor = '#e2e8f0'}
         />
       </div>
       <SubmitBtn loading={loading} label="Sign In as Accountant" />
     </form>
+  );
+}
+
+// Password field with show/hide toggle and a Caps Lock warning.
+function PasswordInput({ value, onChange, placeholder = '••••••••', autoComplete, required = true }) {
+  const [show, setShow] = useState(false);
+  const [caps, setCaps] = useState(false);
+  return (
+    <div>
+      <div style={{ position: 'relative' }}>
+        <input
+          type={show ? 'text' : 'password'}
+          placeholder={placeholder}
+          autoComplete={autoComplete}
+          required={required}
+          value={value}
+          onChange={onChange}
+          onKeyUp={e => setCaps(!!(e.getModifierState && e.getModifierState('CapsLock')))}
+          style={{ ...INPUT_STYLE, paddingRight: 52 }}
+          onFocus={e => e.target.style.borderColor = '#22c55e'}
+          onBlur={e => { e.target.style.borderColor = '#e2e8f0'; setCaps(false); }}
+        />
+        <button
+          type="button"
+          onClick={() => setShow(s => !s)}
+          aria-label={show ? 'Hide password' : 'Show password'}
+          style={{
+            position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
+            background: 'none', border: 'none', cursor: 'pointer',
+            fontSize: 11, fontWeight: 600, color: '#64748b', padding: '4px 6px',
+          }}
+        >
+          {show ? 'Hide' : 'Show'}
+        </button>
+      </div>
+      {caps && (
+        <p style={{ fontSize: 11, color: '#b45309', margin: '4px 0 0' }}>Caps Lock is on</p>
+      )}
+    </div>
   );
 }
 
@@ -634,20 +684,14 @@ function EmployeeStep2({ empCompany, empForm, setEmpForm, loading, onSubmit, onB
         </div>
         <div>
           <label style={LABEL_STYLE}>Create Password *</label>
-          <input type="password" placeholder="Min 8 characters" required value={empForm.password}
+          <PasswordInput placeholder="Min 8 characters" autoComplete="new-password" value={empForm.password}
             onChange={e => setEmpForm(f => ({ ...f, password: e.target.value }))}
-            style={INPUT_STYLE}
-            onFocus={e => e.target.style.borderColor = '#22c55e'}
-            onBlur={e => e.target.style.borderColor = '#e2e8f0'}
           />
         </div>
         <div>
           <label style={LABEL_STYLE}>Confirm Password *</label>
-          <input type="password" placeholder="Repeat password" required value={empForm.confirmPassword}
+          <PasswordInput placeholder="Repeat password" autoComplete="new-password" value={empForm.confirmPassword}
             onChange={e => setEmpForm(f => ({ ...f, confirmPassword: e.target.value }))}
-            style={INPUT_STYLE}
-            onFocus={e => e.target.style.borderColor = '#22c55e'}
-            onBlur={e => e.target.style.borderColor = '#e2e8f0'}
           />
         </div>
         <SubmitBtn loading={loading} label="Create Employee Account" />

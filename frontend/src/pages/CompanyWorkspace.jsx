@@ -247,7 +247,10 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
     if (!empId) return;
     api.getDirectDeposit(empId).then(setDd).catch(() => {});
     api.getEmployee(empId, true).then(emp => setForm({
-      firstName: emp.firstName || '', lastName: emp.lastName || '', ssn: emp.ssn || '',
+      // ssn intentionally starts blank: the label promises "leave blank to keep
+      // current", so prefilling the decrypted SSN made every unrelated save re-send
+      // it and contradicted the label.
+      firstName: emp.firstName || '', lastName: emp.lastName || '', ssn: '', ssnOnFile: !!emp.ssn,
       address: emp.address || '', city: emp.city || '', state: emp.state || 'TX', zip: emp.zip || '',
       workState: emp.workState || '',
       filingStatus: emp.filingStatus || 'single',
@@ -265,8 +268,23 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
     })).catch(e => setErr(e.message));
   }, [empId]);
 
-  function set(field) { return e => { const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value; setForm(f => ({ ...f, [field]: v })); }; }
+  const dirtyRef = useRef(false); // unsaved edits — guard against silent discard on overlay click
+
+  function set(field) { return e => { const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value; dirtyRef.current = true; setForm(f => ({ ...f, [field]: v })); }; }
   function setNG(field) { return e => setNewGroup(g => ({ ...g, [field]: e.target.value })); }
+
+  function requestClose() {
+    if (dirtyRef.current && !window.confirm('You have unsaved changes. Discard them?')) return;
+    onClose();
+  }
+
+  // Escape closes the drawer (with the same unsaved-changes guard)
+  useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape') requestClose(); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   function setNGEndDate(val) { setNewGroup(g => ({ ...g, firstPayPeriodEnd: val, payDate: val ? calcDefaultPayDate(val) : '' })); }
 
   async function handleCreateGroup() {
@@ -305,6 +323,12 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
   }
 
   async function handleSave() {
+    // The drawer previously saved with zero validation — blanked names silently
+    // reverted server-side and malformed SSNs were stored as-is.
+    if (!form.firstName.trim() || !form.lastName.trim()) { setErr('First and last name are required.'); return; }
+    if (form.ssn && !/^\d{3}-?\d{2}-?\d{4}$/.test(form.ssn.trim())) { setErr('SSN must be 9 digits (XXX-XX-XXXX). Leave it blank to keep the current one.'); return; }
+    if (form.payType === 'hourly' && form.hourlyRate && !(parseFloat(form.hourlyRate) > 0)) { setErr('Hourly rate must be a positive number.'); return; }
+    if (form.payType === 'salary' && form.annualSalary && !(parseFloat(form.annualSalary) > 0)) { setErr('Annual salary must be a positive number.'); return; }
     setSaving(true); setErr('');
     try {
       const payload = { clientId, ...form,
@@ -313,8 +337,10 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
         hourlyRate: parseFloat(form.hourlyRate || 0), annualSalary: parseFloat(form.annualSalary || 0),
         payGroupId: form.payGroupId ? parseInt(form.payGroupId) : null,
       };
+      delete payload.ssnOnFile;
       if (!payload.ssn) delete payload.ssn;
       await api.updateEmployee(empId, payload);
+      dirtyRef.current = false;
       onSaved();
     } catch (e) { setErr(e.message); }
     finally { setSaving(false); }
@@ -346,7 +372,11 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
   }
 
   async function handleDelete() {
-    if (!window.confirm(`Delete ${form?.firstName} ${form?.lastName}? This cannot be undone.`)) return;
+    if (!window.confirm(
+      `Delete ${form?.firstName} ${form?.lastName}?\n\n` +
+      `This permanently removes the employee AND all of their paychecks, pay stubs, and W-2 wage history from every report. ` +
+      `If they simply stopped working here, mark them Inactive instead (Status → Inactive) so their history is kept.\n\nThis cannot be undone.`
+    )) return;
     setDeleting(true);
     try {
       await api.deleteEmployee(empId);
@@ -356,11 +386,11 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
 
   return (
     <>
-      <div className="drawer-overlay" onClick={onClose} />
-      <div className="drawer">
+      <div className="drawer-overlay" onClick={requestClose} />
+      <div className="drawer" role="dialog" aria-modal="true" aria-label={form ? `Edit ${form.firstName} ${form.lastName}` : 'Edit employee'}>
         <div className="drawer-header">
           <div className="drawer-title">{form ? `${form.firstName} ${form.lastName}` : 'Employee'}</div>
-          <button className="drawer-close" onClick={onClose}>×</button>
+          <button className="drawer-close" onClick={requestClose} aria-label="Close">×</button>
         </div>
         <div className="drawer-body">
           {err && <div className="alert alert-error" style={{ marginBottom: 16 }}><span>⚠</span>{err}</div>}
@@ -374,10 +404,10 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                 <div className="form-group"><label className="form-label">Last Name</label><input className="form-input" value={form.lastName} onChange={set('lastName')} /></div>
               </div>
               <div className="form-group">
-                <label className="form-label">SSN <span style={{ fontWeight: 400, fontSize: 10, color: 'var(--text-muted)', textTransform: 'none' }}>(leave blank to keep current)</span></label>
+                <label className="form-label">SSN <span style={{ fontWeight: 400, fontSize: 10, color: 'var(--text-muted)', textTransform: 'none' }}>{form.ssnOnFile ? '(on file — type here only to replace it)' : '(none on file yet)'}</span></label>
                 <div style={{ position: 'relative' }}>
-                  <input className="form-input mono" type={showSsn ? 'text' : 'password'} value={form.ssn} onChange={set('ssn')} placeholder="leave blank to keep" maxLength={11} style={{ paddingRight: 36 }} />
-                  <button type="button" onClick={() => setShowSsn(v => !v)} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 15, lineHeight: 1, padding: 0 }} title={showSsn ? 'Hide SSN' : 'Show SSN'}>
+                  <input className="form-input mono" type={showSsn ? 'text' : 'password'} value={form.ssn} onChange={set('ssn')} placeholder={form.ssnOnFile ? 'leave blank to keep current' : 'XXX-XX-XXXX'} maxLength={11} style={{ paddingRight: 36 }} />
+                  <button type="button" onClick={() => setShowSsn(v => !v)} aria-label={showSsn ? 'Hide SSN' : 'Show SSN'} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 15, lineHeight: 1, padding: 0 }} title={showSsn ? 'Hide SSN' : 'Show SSN'}>
                     {showSsn ? '🙈' : '👁'}
                   </button>
                 </div>
@@ -1066,9 +1096,18 @@ function CompanyTab({ client, onSaved }) {
   const [pinSaving, setPinSaving] = useState(false);
   const [pinMsg, setPinMsg]       = useState('');
   const saveTimerRef = useRef(null);
+  const loadedClientIdRef = useRef(null); // re-init the form only when SWITCHING companies
+  const saveChainRef = useRef(Promise.resolve()); // serializes autosaves so a slow old save can't overwrite a newer one
 
   useEffect(() => {
     if (!client) return;
+    // Re-initializing on every `client` object (each autosave round-trip creates a
+    // fresh object via onSaved→reload) was resetting the form mid-typing and wiping
+    // in-flight edits, PIN drafts, and the bank-account draft. Only rebuild when the
+    // user actually opens a different company.
+    if (loadedClientIdRef.current === client.id) return;
+    loadedClientIdRef.current = client.id;
+    touchedRef.current = new Set();
     setChangingAccount(false);
     setAccountDraft('');
     setShowAccountNum(true);
@@ -1100,23 +1139,45 @@ function CompanyTab({ client, onSaved }) {
     });
   }, [client]);
 
-  async function doSave(currentForm) {
+  // Don't autosave invalid compliance data — a half-typed EIN or 5-digit routing
+  // number silently persisting would poison EFTPS files and tax forms downstream.
+  function validateForSave(f) {
+    if (!f.businessName.trim()) return 'Business name can’t be empty — not saved yet';
+    if (f.ein && !/^\d{2}-?\d{7}$/.test(f.ein.trim())) return 'EIN must be 9 digits (XX-XXXXXXX) — not saved yet';
+    if (f.bankRoutingNumber && !/^\d{9}$/.test(f.bankRoutingNumber.trim())) return 'Routing number must be exactly 9 digits — not saved yet';
+    if (f.businessZip && !/^\d{5}(-\d{4})?$/.test(f.businessZip.trim())) return 'ZIP must be 5 digits — not saved yet';
+    return null;
+  }
+
+  function doSave(currentForm) {
+    const invalid = validateForSave(currentForm);
+    if (invalid) { setErr(invalid); setSaveStatus('error'); return; }
     setSaveStatus('saving'); setErr('');
-    try {
-      const payload = {
-        ...currentForm,
-        suiRateQ1: currentForm.suiRateQ1 ? parseFloat(currentForm.suiRateQ1) / 100 : null,
-        suiRateQ2: currentForm.suiRateQ2 ? parseFloat(currentForm.suiRateQ2) / 100 : null,
-        suiRateQ3: currentForm.suiRateQ3 ? parseFloat(currentForm.suiRateQ3) / 100 : null,
-        suiRateQ4: currentForm.suiRateQ4 ? parseFloat(currentForm.suiRateQ4) / 100 : null,
-        suiAccountNumber: currentForm.suiAccountNumber || null,
-        countyCode: currentForm.countyCode || null,
-      };
-      delete payload.bankAccountLast4;
-      delete payload.bankAccountNumber; // account number saved separately via saveAccountNumber()
-      await api.updateClient(client.id, payload);
-      setSaveStatus('saved'); onSaved();
-    } catch (e) { setErr(e.message); setSaveStatus('error'); }
+    // Chain saves: overlapping requests could land out of order server-side and
+    // let a stale payload overwrite a newer one.
+    saveChainRef.current = saveChainRef.current.then(async () => {
+      try {
+        const payload = {
+          ...currentForm,
+          suiRateQ1: currentForm.suiRateQ1 ? parseFloat(currentForm.suiRateQ1) / 100 : null,
+          suiRateQ2: currentForm.suiRateQ2 ? parseFloat(currentForm.suiRateQ2) / 100 : null,
+          suiRateQ3: currentForm.suiRateQ3 ? parseFloat(currentForm.suiRateQ3) / 100 : null,
+          suiRateQ4: currentForm.suiRateQ4 ? parseFloat(currentForm.suiRateQ4) / 100 : null,
+          suiAccountNumber: currentForm.suiAccountNumber || null,
+          countyCode: currentForm.countyCode || null,
+        };
+        delete payload.bankAccountLast4;
+        delete payload.bankAccountNumber; // account number saved separately via saveAccountNumber()
+        // depositSchedule is also editable from the Pay Liabilities tab; since this
+        // form's snapshot only refreshes on company switch, sending it untouched
+        // would silently revert a schedule changed over there. Send only if the
+        // user edited it HERE (the backend PUT keeps absent fields unchanged).
+        if (!touchedRef.current.has('depositSchedule')) delete payload.depositSchedule;
+        await api.updateClient(client.id, payload);
+        setSaveStatus('saved'); onSaved();
+      } catch (e) { setErr(e.message); setSaveStatus('error'); }
+    });
+    return saveChainRef.current;
   }
 
   async function savePin() {
@@ -1147,18 +1208,31 @@ function CompanyTab({ client, onSaved }) {
     finally { setAccountSaving(false); }
   }
 
+  const pendingFormRef = useRef(null); // last form still inside the debounce window
+  const touchedRef = useRef(new Set()); // fields the user actually edited in THIS tab
+
   function set(field) {
     return e => {
       const val = e.target.value;
+      touchedRef.current.add(field);
       setForm(f => {
         const newForm = { ...f, [field]: val };
+        pendingFormRef.current = newForm;
         setSaveStatus('idle'); setErr('');
         clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = setTimeout(() => doSave(newForm), 1400);
+        saveTimerRef.current = setTimeout(() => { pendingFormRef.current = null; doSave(newForm); }, 1400);
         return newForm;
       });
     };
   }
+
+  // Flush a pending debounce on unmount (switching tabs/companies inside the 1.4s
+  // window was silently dropping the last edit).
+  useEffect(() => () => {
+    clearTimeout(saveTimerRef.current);
+    if (pendingFormRef.current) doSave(pendingFormRef.current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!form) return <div style={{ padding: 40, textAlign: 'center' }}><div className="spinner spinner-dark" style={{ width: 28, height: 28 }} /></div>;
 
@@ -1430,10 +1504,29 @@ function ModalColHeader({ hasYTD }) {
 }
 
 function ModalOverlay({ children, onClose }) {
+  const ref = useRef(null);
+  // Escape must call the CURRENT onClose — capturing the mount-time closure made
+  // Escape see stale isDirty=false in CheckDetailModal and silently discard edits.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  // Escape closes; focus moves into the dialog on open so keyboard/screen-reader
+  // users aren't left interacting with the page behind the overlay.
+  useEffect(() => {
+    const onKey = e => { if (e.key === 'Escape') onCloseRef.current(); };
+    document.addEventListener('keydown', onKey);
+    const el = ref.current;
+    if (el && !el.contains(document.activeElement)) {
+      el.setAttribute('tabindex', '-1');
+      el.focus({ preventScroll: true });
+    }
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      {children}
+      <div ref={ref} role="dialog" aria-modal="true" style={{ outline: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', maxHeight: '100%' }}>
+        {children}
+      </div>
     </div>
   );
 }
@@ -2181,8 +2274,16 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
     const employerTotal = r2(employerRows.reduce((s, r) => s + r.amount, 0));
     const employerYTD   = r2(employerRows.reduce((s, r) => s + (r.ytd || 0), 0));
 
+    // Closing inside the 900ms autosave debounce was silently discarding the last
+    // edit — flush any dirty state before the modal unmounts.
+    const closeWithSave = () => {
+      if (autoSaveTimerRef.current) { clearTimeout(autoSaveTimerRef.current); autoSaveTimerRef.current = null; }
+      if (isDirty) saveEdits();
+      onClose();
+    };
+
     return (
-      <ModalOverlay onClose={onClose}>
+      <ModalOverlay onClose={closeWithSave}>
         <div className="card" style={{ width: 740, maxWidth: '96vw', maxHeight: '92vh', overflowY: 'auto', padding: 0, borderRadius: 12 }}>
 
           {/* Header */}
@@ -2195,7 +2296,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
                   {stub.check_number && <span style={{ ...MODAL_MONO, fontSize: 13, color: 'var(--accent)', fontWeight: 700 }}>Check #{stub.check_number}</span>}
                 </div>
               </div>
-              <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+              <button onClick={closeWithSave} aria-label="Save and close" style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
             </div>
             {/* Pay period strip — editable for non-voided checks */}
             <div style={{ display: 'flex', marginTop: 14, borderRadius: 8, overflow: 'hidden', border: `1px solid ${isDirty ? 'var(--accent)' : 'var(--border)'}`, background: 'var(--bg-secondary)', transition: 'border-color 0.15s' }}>
@@ -2309,8 +2410,19 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
           <div style={{ position: 'sticky', bottom: 0, background: '#fff', borderTop: '2px solid var(--border)', padding: '14px 24px', display: 'flex', gap: 8, alignItems: 'center', zIndex: 10, boxShadow: '0 -2px 10px rgba(0,0,0,0.07)' }}>
             {!isVoided && (
               <button onClick={async () => {
-                if (!window.confirm('Delete this check? This cannot be undone.')) return;
-                try { await api.deletePaystub(stub.id); onClose(); reloadStubs(); } catch (e) { alert(e.message); }
+                const who = stub.employee_name || 'this employee';
+                if (!window.confirm(`Delete ${who}'s ${fmt(stub.gross_wages || 0)} check${stub.check_number ? ` (#${stub.check_number})` : ''}?\n\nIts wages and tax liabilities are removed from every report. This cannot be undone.`)) return;
+                try { await api.deletePaystub(stub.id); onClose(); reloadStubs(); }
+                catch (e) {
+                  // The backend blocks deleting checks whose 941/940 deposit was
+                  // already submitted (409). Offer the explicit override.
+                  if (/already submitted/i.test(e.message || '')) {
+                    if (window.confirm(`${e.message}\n\nDelete anyway?`)) {
+                      try { await api.deletePaystub(stub.id, { force: true }); onClose(); reloadStubs(); }
+                      catch (e2) { alert(e2.message); }
+                    }
+                  } else alert(e.message);
+                }
               }} style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 18px', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
                 🗑 Delete
               </button>
@@ -2428,6 +2540,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
   const [periodEdit, setPeriodEdit]               = useState(null); // { id, start, end, payDate }
   const [savingPeriod, setSavingPeriod]           = useState(false);
   const [empStatusDrop, setEmpStatusDrop]         = useState(null); // { stub, top, right }
+  const [empStatusBusy, setEmpStatusBusy]         = useState(false); // guards double-fire → duplicate paycheck
   const [periodOverrides, setPeriodOverrides]     = useState(() => { // { [periodEnd]: { start, end, payDate } }
     try { const s = localStorage.getItem(`periodOverrides_${clientId}`); return s ? JSON.parse(s) : {}; } catch { return {}; }
   });
@@ -2744,9 +2857,53 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
         }
       }
     }
+
+    // ── Review before running ────────────────────────────────────────────────
+    // These buttons create real checks, consume check numbers, and book tax
+    // liabilities — and the backend can fire real ACH transfers. Summarize what
+    // is about to happen and make the payment method explicit per employee.
+    const reviewRows = [];
+    for (const period of pendingPeriods) {
+      for (const emp of empsInGroup) {
+        const row = getRow(period.end, emp.id);
+        if (!row.selected) continue;
+        const isSalary = emp.payType === 'salary';
+        const rate = parseFloat(row.rate) || emp.hourlyRate || 0;
+        const gross = isSalary
+          ? r2(effPeriodSalary(row, emp, ppy) + parseFloat(row.tips || 0) + parseFloat(row.bonus || 0) + parseFloat(row.commission || 0))
+          : r2(parseFloat(row.regHours || 0) * rate + parseFloat(row.otHours || 0) * rate * 1.5
+              + parseFloat(row.tips || 0) + parseFloat(row.bonus || 0) + parseFloat(row.commission || 0));
+        const hasDD = emp.directDeposit?.status === 'active';
+        reviewRows.push({ emp, gross, hasDD });
+      }
+    }
+    if (forceMethod === 'dd') {
+      const noDD = reviewRows.filter(r => !r.hasDD);
+      if (noDD.length > 0) {
+        setRunErr(`Direct deposit isn't set up for: ${noDD.map(r => `${r.emp.firstName} ${r.emp.lastName}`).join(', ')}. ` +
+          `They would be marked "deposited" without any money moving. Set up their bank details first, or deselect them and use Print Paycheck.`);
+        return;
+      }
+    }
+    const lateCount = selectedLateStubs.size + selectedHistoryLateIds.length;
+    if (reviewRows.length + lateCount > 0) {
+      const totalGross = reviewRows.reduce((s, r) => s + r.gross, 0);
+      const methodLabel = forceMethod === 'dd' ? 'paid by direct deposit (real ACH transfers)'
+                        : forceMethod === 'paystub' ? 'processed as paper checks (print pay stubs)'
+                        : 'processed as paper checks (print paychecks)';
+      const lines = [
+        `Run payroll for ${reviewRows.length + lateCount} check${reviewRows.length + lateCount === 1 ? '' : 's'}${reviewRows.length ? ` — total gross ${fmt(totalGross)}` : ''}?`,
+        '',
+        `They will be ${methodLabel}.`,
+        'This creates the checks and books their tax liabilities.',
+      ];
+      if (!window.confirm(lines.join('\n'))) return;
+    }
+
     setRunning(true);
     try {
       const allNewIds = [];
+      const processedKeys = []; // which [periodEnd][empId] rows this run consumed
       for (const period of pendingPeriods) {
         const selectedEmps = empsInGroup.filter(emp => getRow(period.end, emp.id).selected);
         if (selectedEmps.length === 0) continue;
@@ -2778,8 +2935,11 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           return { employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay, bonus: bonusAmt, commission: commAmt, reimbursement: mileAmt, deduction: cashAdv, reportedTips: tips };
         });
         const ov = periodOverrides[period.end] || {};
-        const res = await api.runPayroll({ clientId, payPeriodStart: ov.start || period.start, payPeriodEnd: ov.end || period.end, settlementDate: ov.payDate || period.payDate, payGroupId: currentGroupId, employees: payrollEmps });
+        // paymentMethod tells the backend whether to fire ACH transfers: 'print'/'paystub'
+        // must never move money even for DD-active employees (double-pay risk).
+        const res = await api.runPayroll({ clientId, payPeriodStart: ov.start || period.start, payPeriodEnd: ov.end || period.end, settlementDate: ov.payDate || period.payDate, payGroupId: currentGroupId, employees: payrollEmps, paymentMethod: forceMethod || 'auto' });
         if (res?.paystubs) res.paystubs.forEach(s => allNewIds.push({ id: s.id, directDeposit: s.directDeposit }));
+        processedKeys.push(...selectedEmps.map(emp => ({ periodEnd: period.end, empId: emp.id })));
       }
       // Include selected late stubs — route based on forceMethod or employee DD status
       selectedLateStubs.forEach(id => {
@@ -2805,21 +2965,37 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
         ...ddIds.map(id => api.updatePaystubStatus(id, 'direct_deposit_sent').catch(() => {})),
       ]);
       await reloadStubs();
-      setPendingRows({});
-      setPeriodOverrides({});
+      // Only clear the rows this run actually processed — wiping the whole map was
+      // destroying hours/rates the accountant had typed for OTHER pay groups/periods.
+      setPendingRows(prev => {
+        const next = { ...prev };
+        for (const { periodEnd, empId } of processedKeys) {
+          if (next[periodEnd]) {
+            next[periodEnd] = { ...next[periodEnd] };
+            delete next[periodEnd][empId];
+            if (Object.keys(next[periodEnd]).length === 0) delete next[periodEnd];
+          }
+        }
+        return next;
+      });
+      setPeriodOverrides(prev => {
+        const processedEnds = new Set(processedKeys.map(k => k.periodEnd));
+        const next = {};
+        for (const [end, ov] of Object.entries(prev)) if (!processedEnds.has(end)) next[end] = ov;
+        return next;
+      });
       setSelectedLateStubs(new Set());
       const ddCount = ddIds.length;
       const printMode = forceMethod === 'paystub' ? 'paystub' : 'paycheck';
       if (printIds.length > 0) {
         setPrintModal({ ids: printIds, mode: printMode });
+        if (ddCount > 0) {
+          setRunSuccess(`Payroll complete — ${printIds.length} check${printIds.length !== 1 ? 's' : ''} to print and ${ddCount} direct deposit${ddCount !== 1 ? 's' : ''} initiated.`);
+        }
       } else if (ddCount > 0) {
-        setRunSuccess(`Payroll complete — ${ddCount} direct deposit${ddCount !== 1 ? 's' : ''} initiated via Moov.`);
+        setRunSuccess(`Payroll complete — ${ddCount} direct deposit${ddCount !== 1 ? 's' : ''} initiated.`);
       } else {
-        setRunSuccess('Payroll complete — no checks were generated.');
-      }
-      if (printIds.length > 0 && ddCount > 0) {
-        // Both: show print dialog, success message will show after close
-        setRunSuccess(`+ ${ddCount} direct deposit${ddCount !== 1 ? 's' : ''} sent via Moov.`);
+        setRunErr('Nothing was processed — no employees were selected or every selected row was empty.');
       }
     } catch (err) {
       setRunErr(err.message || 'Payroll run failed');
@@ -2847,7 +3023,15 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
   }, [empStatusDrop]);
 
   async function handleEmpStatusChange(drop, newStatus) {
+    if (empStatusBusy) return; // a run is already in flight — a second click would duplicate the paycheck
     setEmpStatusDrop(null);
+    // Setting a status on a PENDING row actually runs payroll — make that explicit.
+    if (!drop.stub && newStatus !== 'draft') {
+      const emp = drop.emp;
+      const ok = window.confirm(`This runs payroll for ${emp.firstName} ${emp.lastName} (creates the check and its tax liabilities), then marks it ${newStatus === 'printed' ? 'Printed' : 'Deposited'}. Continue?`);
+      if (!ok) return;
+    }
+    setEmpStatusBusy(true);
     try {
       if (drop.stub) {
         // History row — just update the status
@@ -2902,6 +3086,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           settlementDate: period.payDate,
           payGroupId: currentGroupId,
           employees: [payrollEmp],
+          // 'printed' must NEVER fire ACH (double-pay); 'deposited' keeps the
+          // legacy per-employee DD behavior.
+          paymentMethod: newStatus === 'printed' ? 'print' : 'auto',
         });
         const newId = res?.paystubs?.[0]?.id;
         if (newId && newStatus !== 'draft') {
@@ -2910,6 +3097,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       }
       await reloadStubs();
     } catch (e) { alert(e.message || 'Failed to update status'); }
+    finally { setEmpStatusBusy(false); }
   }
 
   // Select-all helper — selects Late + Due Soon (within 5 days), toggles on repeat click
@@ -2917,12 +3105,23 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
     const isDueSoon = p => !p.isLate && daysUntil(p.payDate) !== null && daysUntil(p.payDate) <= 5;
     const duePeriods = pendingPeriods.filter(p => p.isLate || isDueSoon(p));
     const lateHistIds = history.flatMap(p => p.stubs.filter(s => s.check_status === 'late').map(s => s.id));
-    const allSel = duePeriods.every(p => empsInGroup.every(e => getRow(p.end, e.id).selected))
+    // Don't select hourly employees with no hours entered — running them would just
+    // fail one-by-one at process time.
+    const isSelectable = (period, emp) => {
+      const row = getRow(period.end, emp.id);
+      return emp.payType === 'salary' || parseFloat(row.regHours || 0) > 0 || parseFloat(row.otHours || 0) > 0;
+    };
+    // "All selected?" must only consider selectable rows — a blank-hours employee can
+    // never be selected, so counting them made the toggle stick permanently on.
+    const allSel = duePeriods.every(p => empsInGroup.every(e => !isSelectable(p, e) || getRow(p.end, e.id).selected))
       && lateHistIds.every(id => selectedLateStubs.has(id));
     const newPR = { ...pendingRows };
     duePeriods.forEach(period => {
       const pr = { ...(newPR[period.end] || {}) };
-      empsInGroup.forEach(emp => { pr[emp.id] = { ...getRow(period.end, emp.id), selected: !allSel }; });
+      empsInGroup.forEach(emp => {
+        const row = getRow(period.end, emp.id);
+        pr[emp.id] = { ...row, selected: !allSel && isSelectable(period, emp) };
+      });
       newPR[period.end] = pr;
     });
     setPendingRows(newPR);
@@ -2931,26 +3130,33 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
 
   async function handleBulkStatusChange(newStatus) {
     setBulkBusy(true);
-    try {
-      await Promise.all([...selectedHistoryStubs].map(id => api.updatePaystub(id, { checkStatus: newStatus })));
-      await reloadStubs();
-      setSelectedHistoryStubs(new Set());
-    } catch (e) { alert(e.message || 'Failed to update status'); }
-    finally { setBulkBusy(false); }
+    // Collect per-item outcomes — an all-or-nothing Promise.all told the user
+    // nothing about which checks actually updated.
+    const results = await Promise.allSettled([...selectedHistoryStubs].map(id => api.updatePaystub(id, { checkStatus: newStatus })));
+    const failed = results.filter(r => r.status === 'rejected');
+    await reloadStubs();
+    setSelectedHistoryStubs(new Set());
+    setBulkBusy(false);
+    if (failed.length > 0) {
+      alert(`${results.length - failed.length} of ${results.length} checks updated. ${failed.length} failed: ${failed[0].reason?.message || 'unknown error'}\nThe list shows what actually saved.`);
+    }
   }
 
   async function handleBulkDelete() {
     const count = selectedHistoryStubs.size;
-    if (!window.confirm(`Delete ${count} check${count !== 1 ? 's' : ''}?\n\nThis will reverse all associated tax liabilities and cannot be undone.`)) return;
+    if (!window.confirm(`Delete ${count} check${count !== 1 ? 's' : ''}?\n\nTheir wages and tax liabilities are removed from every report. This cannot be undone.`)) return;
     setBulkBusy(true);
-    try {
-      for (const id of selectedHistoryStubs) {
-        await api.deletePaystub(id).catch(() => {});
-      }
-      await reloadStubs();
-      setSelectedHistoryStubs(new Set());
-    } catch (e) { alert(e.message || 'Delete failed'); }
-    finally { setBulkBusy(false); }
+    let deleted = 0; const errors = [];
+    for (const id of selectedHistoryStubs) {
+      try { await api.deletePaystub(id); deleted++; }
+      catch (e) { errors.push(e.message); }
+    }
+    await reloadStubs();
+    setSelectedHistoryStubs(new Set());
+    setBulkBusy(false);
+    if (errors.length > 0) {
+      alert(`Deleted ${deleted} of ${count} checks. ${errors.length} couldn't be deleted: ${errors[0]}${errors.length > 1 ? ` (+${errors.length - 1} more)` : ''}`);
+    }
   }
 
   async function handleUgCalculate() {
@@ -3020,6 +3226,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       const res = await api.runPayroll({
         clientId, payPeriodStart: start, payPeriodEnd: end, settlementDate: payDate,
         employees: [{ employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay, bonus: ugBonus, commission: ugComm, reimbursement: ugMile, deduction: ugCashAdv, reportedTips: ugTips }],
+        paymentMethod: method === 'dd' ? 'dd' : 'print',
       });
       const newIds = (res?.paystubs || []).map(s => s.id);
       const isDD = method === 'dd' && emp.directDeposit?.status === 'active';
@@ -3105,7 +3312,11 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
     }
 
     return (
-      <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 15 }}>
+      /* min-width stops the fixed columns collapsing into each other on phones —
+         the grid scrolls sideways inside .table-scroll instead of overlapping text */
+      <div className="table-scroll">
+      {/* fixed cols total 730px — keep ≥160px for the employee-name column */}
+      <table style={{ width: '100%', minWidth: 890, borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 15 }}>
         <colgroup>
           <col style={{ width: 40 }} />
           <col />
@@ -3236,8 +3447,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                       </td>
                     </>
                   )}
-                  <td style={{ padding: '12px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: grossPreview > 0 ? 'var(--success, #16a34a)' : '#aaa', fontSize: 15 }}>
-                    {grossPreview > 0 ? fmt(estNetPay) : '—'}
+                  <td title="Estimated — final net pay is computed when payroll runs"
+                    style={{ padding: '12px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: grossPreview > 0 ? 'var(--success, #16a34a)' : '#aaa', fontSize: 15 }}>
+                    {grossPreview > 0 ? <>{fmt(estNetPay)}<span style={{ fontSize: 10, fontWeight: 500, color: '#9ca3af', marginLeft: 3 }}>est.</span></> : '—'}
                   </td>
                   <td style={{ padding: '8px 10px', textAlign: 'right' }}>
                     <span style={{ cursor: 'pointer' }} title="Click to change status"
@@ -3369,6 +3581,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           })}
         </tbody>
       </table>
+      </div>
     );
   }
 
@@ -3705,11 +3918,13 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           ].map(({ value, label, badge }) => {
             const curStatus = empStatusDrop.stub?.check_status ?? (empStatusDrop.period ? 'draft' : 'draft');
             const isCur = curStatus === value;
+            // A pending row has no check yet — choosing a status RUNS payroll first. Say so.
+            const isPendingRun = !empStatusDrop.stub && value !== 'draft';
             return (
-              <button key={value} onClick={() => handleEmpStatusChange(empStatusDrop, value)}
-                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '8px 14px', background: isCur ? 'var(--accent-light)' : 'none', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+              <button key={value} disabled={empStatusBusy} onClick={() => handleEmpStatusChange(empStatusDrop, value)}
+                style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '8px 14px', background: isCur ? 'var(--accent-light)' : 'none', border: 'none', cursor: empStatusBusy ? 'wait' : 'pointer', textAlign: 'left', opacity: empStatusBusy ? 0.6 : 1 }}>
                 <StatusBadge status={badge} />
-                <span style={{ fontSize: 12, fontWeight: isCur ? 700 : 400 }}>{label}</span>
+                <span style={{ fontSize: 12, fontWeight: isCur ? 700 : 400 }}>{isPendingRun ? `Run payroll & mark ${label}` : label}</span>
               </button>
             );
           })}
@@ -4517,11 +4732,19 @@ function PayLiabilitiesTab({ clientId, client }) {
   const [submitting, setSubmitting] = useState(null);
   const [result,   setResult]       = useState(null);
   const [periodModal, setPeriodModal] = useState(null); // { period, taxType } | null
-  const [sched941, setSched941] = useState(client?.depositSchedule || 'monthly');
-  const [sched940, setSched940] = useState('quarterly');
-  const [schedSUI, setSchedSUI] = useState('quarterly');
+  // Schedules drive due dates, Send By dates, and Late flags — they were throwaway
+  // local state, silently reverting to defaults on every visit. 941 persists to the
+  // client record (it's a real DB field); 940/SUI persist per-client in localStorage.
+  const [sched941, setSched941State] = useState(client?.depositSchedule || 'monthly');
+  const [sched940, setSched940State] = useState(() => localStorage.getItem(`sched940_${clientId}`) || 'quarterly');
+  const [schedSUI, setSchedSUIState] = useState(() => localStorage.getItem(`schedSUI_${clientId}`) || 'quarterly');
+  useEffect(() => { if (client?.depositSchedule) setSched941State(client.depositSchedule); }, [client?.depositSchedule]);
+  const setSched941 = v => { setSched941State(v); api.updateClient(clientId, { depositSchedule: v }).catch(() => {}); };
+  const setSched940 = v => { setSched940State(v); localStorage.setItem(`sched940_${clientId}`, v); };
+  const setSchedSUI = v => { setSchedSUIState(v); localStorage.setItem(`schedSUI_${clientId}`, v); };
   const [activeJobId,      setActiveJobId]      = useState(null);
   const [activeJobTaxType, setActiveJobTaxType] = useState(null);
+  const [activeJobPeriodDue, setActiveJobPeriodDue] = useState(null); // which period row is actually sending
   const [jobStatus,        setJobStatus]        = useState(null);   // 'enrollment_pending' | 'completed' | 'failed'
   const [jobMessage,       setJobMessage]       = useState('');
   const [twcPayModal,      setTwcPayModal]      = useState(null); // { amount, defaultDate } | null
@@ -4544,8 +4767,12 @@ function PayLiabilitiesTab({ clientId, client }) {
         (s.status === 'processing' || s.status_940 === 'processing') && s.bridge_job_id
       );
       if (processingStub) {
+        const restoredType = processingStub.status === 'processing' ? '941' : '940';
         setActiveJobId(prev => prev || processingStub.bridge_job_id);
-        setActiveJobTaxType(prev => prev || (processingStub.status === 'processing' ? '941' : '940'));
+        setActiveJobTaxType(prev => prev || restoredType);
+        // Restore which period row is sending too, so its button reads "Sending…"
+        // after a page refresh instead of none of them.
+        setActiveJobPeriodDue(prev => prev || calcLiabilityDue(processingStub, restoredType, restoredType === '941' ? sched941 : sched940) || 'unknown');
         setJobStatus(prev => prev || processingStub.bridge_status || 'processing');
       }
     }
@@ -4583,6 +4810,19 @@ function PayLiabilitiesTab({ clientId, client }) {
 
   const total941 = periods941.reduce((s, p) => s + p.total, 0) + credit941;
   const total940 = periods940.reduce((s, p) => s + p.total, 0) + credit940;
+
+  // Unapplied credit belongs to exactly ONE period — the earliest-due pending one,
+  // capped at that period's total. Handing the full credit to every period's confirm
+  // dialog and detail modal was double-counting it (two pending periods would both
+  // promise the same reduction), and sent-history periods showed totals reduced by
+  // credit that was never part of that payment.
+  function creditForPeriod(period, taxType) {
+    const credit = taxType === '941' ? credit941 : taxType === '940' ? credit940 : 0;
+    if (!credit || !period) return 0;
+    const list = taxType === '941' ? periods941 : taxType === '940' ? periods940 : [];
+    if (!list.length || list[0] !== period) return 0;   // history rows are different objects → 0
+    return Math.max(credit, -period.total);             // credit is negative; never push below $0
+  }
   const totalSUI = periodsSUI.reduce((s, p) => s + p.total, 0);
 
   // Poll job status every 60s while a bridge job is active
@@ -4598,6 +4838,7 @@ function PayLiabilitiesTab({ clientId, client }) {
           clearInterval(pollRef.current);
           setActiveJobId(null);
           setActiveJobTaxType(null);
+          setActiveJobPeriodDue(null);
           await reload({ skipJobRestore: true });
         }
       } catch (err) {
@@ -4607,6 +4848,7 @@ function PayLiabilitiesTab({ clientId, client }) {
           clearInterval(pollRef.current);
           setActiveJobId(null);
           setActiveJobTaxType(null);
+          setActiveJobPeriodDue(null);
           setJobStatus('failed');
           await reload({ skipJobRestore: true });
         }
@@ -4632,9 +4874,12 @@ function PayLiabilitiesTab({ clientId, client }) {
       return;
     }
     const ids = period.stubs.map(s => s.id);
-    const credit = taxType === '941' ? credit941 : credit940;
+    const credit = creditForPeriod(period, taxType);
     const amt = period.total + credit;
-    if (!window.confirm(`Submit ${taxType.toUpperCase()} deposit of ${fmt(amt)} to EFTPS?`)) return;
+    const msg = credit
+      ? `Submit ${taxType.toUpperCase()} deposit to EFTPS?\n\nPeriod total ${fmt(period.total)}\n− credit ${fmt(-credit)}\n= ${fmt(amt)} to submit`
+      : `Submit ${taxType.toUpperCase()} deposit of ${fmt(amt)} to EFTPS?`;
+    if (!window.confirm(msg)) return;
     setSubmitting(taxType); setResult(null);
     try {
       const res = await api.batchSubmitPaystubs({ clientId, paystubIds: ids, taxType });
@@ -4642,6 +4887,7 @@ function PayLiabilitiesTab({ clientId, client }) {
       if (res.jobId) {
         setActiveJobId(res.jobId);
         setActiveJobTaxType(taxType);
+        setActiveJobPeriodDue(period.due || 'unknown');
         setJobStatus('processing');
         setJobMessage('');
       }
@@ -4650,11 +4896,32 @@ function PayLiabilitiesTab({ clientId, client }) {
     finally { setSubmitting(null); }
   }
 
+  const [periodStatusBusy, setPeriodStatusBusy] = useState(null); // period.due|taxType while updating
+
   async function togglePeriodStatus(period, taxType, newDbStatus) {
-    try {
-      await Promise.all(period.stubs.map(s => api.updatePaystubStatus(s.id, newDbStatus, taxType)));
-      await reload();
-    } catch (e) { alert(e.message); }
+    const busyKey = `${taxType}|${period.due || 'unknown'}`;
+    if (periodStatusBusy) return; // double-click guard
+    if (newDbStatus === 'submitted') {
+      const label = taxType === 'sui' ? 'State SUI' : `Federal ${taxType.toUpperCase()}`;
+      const ok = window.confirm(
+        `Mark the ${label} period${period.due ? ` due ${fmtDate(period.due)}` : ''} — ${fmt(period.total)} — as paid outside this app?\n\n` +
+        `This moves ${period.stubs.length} check${period.stubs.length === 1 ? '' : 's'} into Sent history. Use Undo there if this was a mistake.`
+      );
+      if (!ok) return;
+    }
+    setPeriodStatusBusy(busyKey);
+    // Sequential (not Promise.all) so one failure doesn't leave an unknown number
+    // of the remaining stubs flipped; report exactly what happened either way.
+    let done = 0; let failErr = null;
+    for (const s of period.stubs) {
+      try { await api.updatePaystubStatus(s.id, newDbStatus, taxType); done++; }
+      catch (e) { failErr = e; break; }
+    }
+    setPeriodStatusBusy(null);
+    if (failErr) {
+      alert(`Only ${done} of ${period.stubs.length} checks were updated before an error: ${failErr.message}\nThe list below reflects what actually saved.`);
+    }
+    await reload();
   }
 
   if (loading) return <div style={{ padding: 40, textAlign: 'center' }}><div className="spinner spinner-dark" style={{ width: 28, height: 28 }} /></div>;
@@ -4677,7 +4944,7 @@ function PayLiabilitiesTab({ clientId, client }) {
     };
 
     return (
-      <div style={{ background: '#fff', border: '1.5px solid #9faab6', borderRadius: 4, overflow: 'hidden', marginBottom: 16 }}>
+      <div className="table-scroll" style={{ background: '#fff', border: '1.5px solid #9faab6', borderRadius: 4, marginBottom: 16 }}>
         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
           <colgroup>
             <col style={{ width: 130 }} />
@@ -4724,6 +4991,8 @@ function PayLiabilitiesTab({ clientId, client }) {
                     return (
                       <tr key={period.due || 'unknown'}
                         style={{ background: '#fff', borderTop: '1px solid #e5e7eb', cursor: 'pointer' }}
+                        tabIndex={0} role="button" aria-label={`View ${sec.title} period details — ${fmt(period.total)}`}
+                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPeriodModal({ period, taxType: sec.taxType }); } }}
                         onMouseEnter={e => { e.currentTarget.style.background = '#fafafa'; }}
                         onMouseLeave={e => { e.currentTarget.style.background = '#fff'; }}
                         onClick={() => setPeriodModal({ period, taxType: sec.taxType })}>
@@ -4744,17 +5013,24 @@ function PayLiabilitiesTab({ clientId, client }) {
                           <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end' }}>
                             <button
                               onClick={e => { e.stopPropagation(); togglePeriodStatus(period, sec.taxType, 'submitted'); }}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#16a34a', fontSize: 13, textDecoration: 'underline', padding: '2px 0', whiteSpace: 'nowrap' }}>
-                              Mark Sent
+                              disabled={periodStatusBusy !== null || (activeJobId !== null && activeJobTaxType === sec.taxType)}
+                              title={activeJobId !== null && activeJobTaxType === sec.taxType ? 'A payment for this tax type is processing — wait for it to finish' : 'Record this period as paid outside the app'}
+                              style={{ background: 'none', border: 'none', color: '#16a34a', fontSize: 13, textDecoration: 'underline', padding: '2px 0', whiteSpace: 'nowrap',
+                                cursor: periodStatusBusy || (activeJobId && activeJobTaxType === sec.taxType) ? 'not-allowed' : 'pointer',
+                                opacity: periodStatusBusy || (activeJobId && activeJobTaxType === sec.taxType) ? 0.5 : 1 }}>
+                              {periodStatusBusy === `${sec.taxType}|${period.due || 'unknown'}` ? 'Updating…' : 'Mark Sent'}
                             </button>
                             <button
                               className="btn btn-primary btn-sm"
                               style={{ fontSize: 13, whiteSpace: 'nowrap' }}
                               disabled={submitting !== null || activeJobId !== null}
+                              title={activeJobId !== null ? 'Another payment is processing — one payment at a time' : undefined}
                               onClick={e => { e.stopPropagation(); handleSubmitPeriod(period, sec.taxType); }}>
-                              {sec.taxType === 'sui' ? '↓ SUI Report' : activeJobId && activeJobTaxType === sec.taxType ? 'Sent…' : 'Pay to EFTPS'}
+                              {sec.taxType === 'sui' ? '↓ SUI Report'
+                                : activeJobId && activeJobTaxType === sec.taxType && activeJobPeriodDue === (period.due || 'unknown') ? 'Sending…'
+                                : 'Pay to EFTPS'}
                             </button>
-                            {sec.taxType === 'sui' && (
+                            {sec.taxType === 'sui' && (client?.state || 'TX') === 'TX' && (
                               <button
                                 className="btn btn-sm"
                                 style={{ fontSize: 13, whiteSpace: 'nowrap', background: '#0369a1', color: '#fff', border: 'none' }}
@@ -4953,35 +5229,46 @@ function PayLiabilitiesTab({ clientId, client }) {
           <button
             style={{ marginLeft: 'auto', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
             onClick={async () => {
-              if (!window.confirm('Stop the running automation and reset the bridge for fresh requests? The current job (including any enrollment check) is cancelled and will not resume.')) return;
+              if (!window.confirm('Cancel the payment that is currently processing?\n\nIf it hasn’t reached EFTPS yet, it will NOT be sent and you can resubmit right away. If it may have already gone through, check the EFTPS website before paying again so you don’t double-pay.')) return;
               try {
                 const r = await api.killBridgeJob();
-                setActiveJobId(null); setJobStatus('failed');
-                setJobMessage(r?.cancelled ? `Cancelled ${r.cancelled} job(s) — bridge ready for fresh requests` : 'Cancelled — bridge ready for fresh requests');
+                setActiveJobId(null); setActiveJobTaxType(null); setActiveJobPeriodDue(null);
+                setJobStatus('cancelled');
+                setJobMessage(r?.cancelled ? `Cancelled ${r.cancelled} job(s)` : 'Cancelled');
               } catch (e) { alert(e.message); }
             }}>
-            Kill Job
+            Cancel Payment
           </button>
         </div>
       )}
       {!activeJobId && jobStatus === 'completed' && (
-        <div className="alert alert-success" style={{ marginBottom: 16 }}>
+        <div className="alert alert-success" role="status" style={{ marginBottom: 16 }}>
           <span>✓</span>
-          <span>Congrats! Your payment has been sent to EFTPS. To see if it has been settled, please visit the EFTPS website.</span>
-          <button onClick={() => { setJobStatus(null); setJobMessage(''); }} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button>
+          <span>Payment submitted to EFTPS. It settles on the scheduled date — you can confirm it on the EFTPS website.</span>
+          <button onClick={() => { setJobStatus(null); setJobMessage(''); }} aria-label="Dismiss" style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button>
+        </div>
+      )}
+      {!activeJobId && jobStatus === 'cancelled' && (
+        <div className="alert alert-warning" role="status" style={{ marginBottom: 16 }}>
+          <span>✋</span>
+          <span>Payment cancelled — this app did not send it. Ready for a fresh submission whenever you are.{jobMessage ? ` (${jobMessage})` : ''}</span>
+          <button onClick={() => { setJobStatus(null); setJobMessage(''); }} aria-label="Dismiss" style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button>
         </div>
       )}
       {!activeJobId && jobStatus === 'failed' && (
-        <div className="alert alert-error" style={{ marginBottom: 16 }}>
+        <div className="alert alert-error" role="alert" style={{ marginBottom: 16 }}>
           <span>⚠</span>
-          <span>Please call or text (210) 238-6850. A technical error has occurred and will be fixed immediately if you reach out!</span>
-          <button onClick={() => { setJobStatus(null); setJobMessage(''); }} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button>
+          <span>
+            The payment didn&rsquo;t go through — no money was sent.
+            {jobMessage ? ` Details: ${jobMessage}` : ''} Fix the issue and resubmit, or contact support if it keeps failing.
+          </span>
+          <button onClick={() => { setJobStatus(null); setJobMessage(''); }} aria-label="Dismiss" style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button>
         </div>
       )}
-      {paystubs.some(s => s.submission_error === 'BRIDGE_DISCONNECTED' && s.status === 'failed') && (
-        <div className="alert alert-error" style={{ marginBottom: 16 }}>
+      {jobStatus !== 'failed' && paystubs.some(s => s.submission_error === 'BRIDGE_DISCONNECTED' && s.status === 'failed') && (
+        <div className="alert alert-error" role="alert" style={{ marginBottom: 16 }}>
           <span>⚠</span>
-          <span>Please call or text (210) 238-6850. A technical error has occurred and will be fixed immediately if you reach out!</span>
+          <span>A payment failed because the payment computer (bridge) was offline — no money was sent. Start the bridge, then resubmit the period below.</span>
         </div>
       )}
       {result && !activeJobId && jobStatus !== 'completed' && jobStatus !== 'failed' && (
@@ -5062,7 +5349,7 @@ function PayLiabilitiesTab({ clientId, client }) {
             borderBottom: '1px solid #d1d5db',
           };
           return (
-            <div style={{ background: '#fff', border: '1.5px solid #9faab6', borderRadius: 4, overflow: 'hidden', marginTop: 20 }}>
+            <div className="table-scroll" style={{ background: '#fff', border: '1.5px solid #9faab6', borderRadius: 4, marginTop: 20 }}>
               {/* Collapsible header */}
               <button
                 onClick={() => setOpen(o => !o)}
@@ -5105,6 +5392,8 @@ function PayLiabilitiesTab({ clientId, client }) {
                       return (
                         <tr key={`${period.taxType}-${period.due || idx}`}
                           style={{ background: '#fff', borderTop: '1px solid #e5e7eb', cursor: 'pointer' }}
+                          tabIndex={0} role="button" aria-label={`View sent ${period.taxLabel} period — ${fmt(period.total)}`}
+                          onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setPeriodModal({ period, taxType: period.taxType }); } }}
                           onMouseEnter={e => { e.currentTarget.style.background = '#fafafa'; }}
                           onMouseLeave={e => { e.currentTarget.style.background = '#fff'; }}
                           onClick={() => setPeriodModal({ period, taxType: period.taxType })}>
@@ -5141,7 +5430,7 @@ function PayLiabilitiesTab({ clientId, client }) {
         <PeriodDetailModal
           period={periodModal.period}
           taxType={periodModal.taxType}
-          credit={periodModal.taxType === '941' ? credit941 : periodModal.taxType === '940' ? credit940 : 0}
+          credit={creditForPeriod(periodModal.period, periodModal.taxType)}
           onClose={() => setPeriodModal(null)}
         />
       )}
@@ -5170,14 +5459,19 @@ function PayLiabilitiesTab({ clientId, client }) {
               }
             } catch (e) { alert(e.message); }
           }}
-          onClose={() => { setTwcPayModal(null); }}
+          onClose={() => {
+            setTwcPayModal(null);
+            // Clear finished jobs so the next open shows a fresh form, not a stale result.
+            setTwcPayJob(prev => prev && (prev.status === 'completed' || prev.status === 'failed') ? null : prev);
+          }}
+          onReset={() => setTwcPayJob(null)}
         />
       )}
     </div>
   );
 }
 
-function TwcPaymentModal({ client, defaultAmount, defaultDate, twcPayJob, onSubmit, onClose }) {
+function TwcPaymentModal({ client, defaultAmount, defaultDate, twcPayJob, onSubmit, onClose, onReset }) {
   const [amount, setAmount]           = useState(defaultAmount ? defaultAmount.toFixed(2) : '');
   const [paymentDate, setPaymentDate] = useState(defaultDate || '');
   const [submitting, setSubmitting]   = useState(false);
@@ -5280,6 +5574,10 @@ function TwcPaymentModal({ client, defaultAmount, defaultDate, twcPayJob, onSubm
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
           <button className="btn btn-secondary" onClick={onClose}>{done ? 'Close' : 'Cancel'}</button>
+          {/* A failed attempt must not brick the modal — clear the job and show the form again */}
+          {twcPayJob?.status === 'failed' && onReset && (
+            <button className="btn btn-primary" onClick={onReset}>Try Again</button>
+          )}
           {!twcPayJob && (
             <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting || !acctNum}>
               {submitting ? 'Sending…' : 'Submit Payment'}
@@ -5295,16 +5593,26 @@ function TwcPaymentModal({ client, defaultAmount, defaultDate, twcPayJob, onSubm
 function FileFormsTab({ clientId }) {
   const navigate    = useNavigate();
   const currentYear = new Date().getFullYear();
-  const currentQ    = Math.ceil((new Date().getMonth() + 1) / 3);
   const [year, setYear] = useState(currentYear);
   const qDue = { 1: 'Apr 30', 2: 'Jul 31', 3: 'Oct 31', 4: 'Jan 31' };
-  const statusCls = { Past: 'badge-neutral', Due: 'badge-warning', Upcoming: 'badge-success' };
+  const statusCls = { Past: 'badge-neutral', Due: 'badge-warning', Upcoming: 'badge-neutral' };
+  // Status comes from the actual filing window, not the calendar quarter: a form is
+  // 'Due' from the moment its period ends until its deadline, 'Past' only after the
+  // deadline. (The old `q < currentQ → Past` logic marked Q2's 941 "Past" in July,
+  // 9 days before its Jul 31 deadline.)
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const qEnd      = (y, q) => [`${y}-03-31`, `${y}-06-30`, `${y}-09-30`, `${y}-12-31`][q - 1];
+  const qDeadline = (y, q) => q === 4 ? `${y + 1}-01-31` : [`${y}-04-30`, `${y}-07-31`, `${y}-10-31`][q - 1];
+  const quarterStatus = (y, q) => todayStr > qDeadline(y, q) ? 'Past' : todayStr > qEnd(y, q) ? 'Due' : 'Upcoming';
+  const annualStatus  = (y) => todayStr > `${y + 1}-01-31` ? 'Past' : todayStr > `${y}-12-31` ? 'Due' : 'Upcoming';
+  const twcStatus = [1, 2, 3, 4].some(q => quarterStatus(year, q) === 'Due') ? 'Due'
+                  : [1, 2, 3, 4].every(q => quarterStatus(year, q) === 'Past') ? 'Past' : 'Upcoming';
   const forms = [
-    ...[1,2,3,4].map(q => ({ id: `941-${year}-q${q}`, name: `Form 941 — Q${q} ${year}`, desc: 'Federal Payroll Tax Return', due: `${qDue[q]}, ${q === 4 ? year + 1 : year}`, status: q < currentQ || year < currentYear ? 'Past' : q === currentQ && year === currentYear ? 'Due' : 'Upcoming', action: () => navigate(`/reports?clientId=${clientId}&form=941&year=${year}&quarter=${q}`) })),
-    { id: `940-${year}`, name: `Form 940 — ${year}`, desc: 'FUTA Annual Return', due: `Jan 31, ${year + 1}`, status: year < currentYear ? 'Past' : 'Due', action: () => navigate(`/reports?clientId=${clientId}&form=940&year=${year}`) },
-    { id: `w2-${year}`,  name: `W-2 — ${year}`,     desc: 'Wage and Tax Statement (per employee)', due: `Jan 31, ${year + 1}`, status: year < currentYear ? 'Past' : 'Due', action: () => navigate(`/reports?clientId=${clientId}&form=w2&year=${year}`) },
-    { id: `w3-${year}`,  name: `W-3 — ${year}`,     desc: 'Transmittal of Wage and Tax Statements', due: `Jan 31, ${year + 1}`, status: year < currentYear ? 'Past' : 'Due', action: () => navigate(`/reports?clientId=${clientId}&form=w3&year=${year}`) },
-    { id: `twc-${year}`, name: `State WC — ${year}`, desc: 'State Workforce Commission (SUI)', due: 'Quarterly', status: 'Due', action: () => navigate(`/reports?clientId=${clientId}&form=twc&year=${year}`) },
+    ...[1,2,3,4].map(q => ({ id: `941-${year}-q${q}`, name: `Form 941 — Q${q} ${year}`, desc: 'Federal Payroll Tax Return', due: `${qDue[q]}, ${q === 4 ? year + 1 : year}`, status: quarterStatus(year, q), action: () => navigate(`/reports?clientId=${clientId}&form=941&year=${year}&quarter=${q}`) })),
+    { id: `940-${year}`, name: `Form 940 — ${year}`, desc: 'FUTA Annual Return', due: `Jan 31, ${year + 1}`, status: annualStatus(year), action: () => navigate(`/reports?clientId=${clientId}&form=940&year=${year}`) },
+    { id: `w2-${year}`,  name: `W-2 — ${year}`,     desc: 'Wage and Tax Statement (per employee)', due: `Jan 31, ${year + 1}`, status: annualStatus(year), action: () => navigate(`/reports?clientId=${clientId}&form=w2&year=${year}`) },
+    { id: `w3-${year}`,  name: `W-3 — ${year}`,     desc: 'Transmittal of Wage and Tax Statements', due: `Jan 31, ${year + 1}`, status: annualStatus(year), action: () => navigate(`/reports?clientId=${clientId}&form=w3&year=${year}`) },
+    { id: `twc-${year}`, name: `State WC — ${year}`, desc: 'State Workforce Commission (SUI)', due: 'Quarterly', status: twcStatus, action: () => navigate(`/reports?clientId=${clientId}&form=twc&year=${year}`) },
   ];
   return (
     <div>
@@ -5324,11 +5632,16 @@ function FileFormsTab({ clientId }) {
 // ── Payroll Tab ───────────────────────────────────────────────────────────────
 function PayrollTab({ clientId, client, employees, onRefresh, refreshTick = 0 }) {
   const [searchParams] = useSearchParams();
+  const { user } = useAuth();
   const [sub, setSub] = useState(() => searchParams.get('tab') === 'liabilities' ? 'liabilities' : 'pay');
+  // File Forms navigates to admin-only report pages — a dead end for business-owner
+  // (client-ROLE) logins, so don't offer it to them. Gate on role, not the /company
+  // route: accountants can open /company/:id too and must keep File Forms.
+  const subTabs = [['pay','Pay Employees'],['liabilities','Pay Liabilities'],...(user?.role !== 'client' ? [['forms','File Forms']] : [])];
   return (
     <div>
-      <div className="pay-subtabs">
-        {[['pay','Pay Employees'],['liabilities','Pay Liabilities'],['forms','File Forms']].map(([k, label]) => <button key={k} data-tour-id={k === 'liabilities' ? 'tour-liabilities-tab' : undefined} className={`pay-subtab${sub === k ? ' active' : ''}`} onClick={() => setSub(k)}>{label}</button>)}
+      <div className="pay-subtabs" role="tablist" aria-label="Payroll sections">
+        {subTabs.map(([k, label]) => <button key={k} role="tab" aria-selected={sub === k} data-tour-id={k === 'liabilities' ? 'tour-liabilities-tab' : undefined} className={`pay-subtab${sub === k ? ' active' : ''}`} onClick={() => setSub(k)}>{label}</button>)}
       </div>
       {sub === 'pay'         && <PayEmployeesTab clientId={clientId} client={client} employees={employees} onRefresh={onRefresh} refreshTick={refreshTick} />}
       {sub === 'liabilities' && <PayLiabilitiesTab clientId={clientId} client={client} refreshTick={refreshTick} />}
@@ -5568,12 +5881,31 @@ export default function CompanyWorkspace({ clientMode = false }) {
   const [refreshTick, setRefreshTick] = useState(0);
   const [inviteUrl, setInviteUrl]   = useState('');
   const [inviting, setInviting]     = useState(false);
-  const [activeTab, setActiveTab] = useState(
-    location.state?.tab || sessionStorage.getItem(WS_TAB_KEY) || 'employees'
-  );
+  const [activeTab, setActiveTab] = useState(() => {
+    // ?tab= in the URL wins so tabs are bookmarkable/shareable — but only known
+    // values (an unknown value would render a blank workspace body).
+    const KNOWN = ['employees', 'company', 'payroll', 'accountants', 'users'];
+    let t = new URLSearchParams(window.location.search).get('tab');
+    if (t === 'liabilities' || t === 'pay' || t === 'forms') t = 'payroll'; // sub-tab deep links live under Payroll
+    if (t && KNOWN.includes(t)) return t;
+    const fallback = location.state?.tab || sessionStorage.getItem(WS_TAB_KEY) || 'employees';
+    return KNOWN.includes(fallback) ? fallback : 'employees';
+  });
 
-  useEffect(() => { sessionStorage.setItem(WS_TAB_KEY, activeTab); }, [activeTab]);
+  useEffect(() => {
+    sessionStorage.setItem(WS_TAB_KEY, activeTab);
+    // Keep the URL in sync (replace, not push — tab flips shouldn't spam history)
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', activeTab);
+    window.history.replaceState({}, '', url);
+  }, [activeTab]);
   useEffect(() => { if (id) loadAll(); }, [id]);
+
+  // Browser-tab title: with several companies open, every tab said just "PayrollTax Pro"
+  useEffect(() => {
+    if (client?.businessName) document.title = `${client.businessName} · PayrollTax Pro`;
+    return () => { document.title = 'PayrollTax Pro'; };
+  }, [client?.businessName]);
 
   async function loadAll() {
     try { const [c, emps] = await Promise.all([api.getClient(id), api.getEmployees(id)]); setClient(c); setEmployees(emps); }
@@ -5691,9 +6023,9 @@ export default function CompanyWorkspace({ clientMode = false }) {
             <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14 }} onClick={() => setInviteUrl('')}>×</button>
           </div>
         )}
-        <div className="ws-tabs">
+        <div className="ws-tabs" role="tablist" aria-label="Company sections">
           {[['employees','Employees'],['company','Company'],['payroll','Payroll'],['accountants','Accountants'],...(!clientMode && user?.username === 'admin' ? [['users','Users']] : [])].map(([k, label]) => (
-            <button key={k} className={`ws-tab${activeTab === k ? ' active' : ''}`} onClick={() => setActiveTab(k)} data-tour-id={k === 'payroll' ? 'tour-payroll-tab-btn' : k === 'employees' ? 'tour-employees-tab-btn' : undefined}>
+            <button key={k} role="tab" aria-selected={activeTab === k} className={`ws-tab${activeTab === k ? ' active' : ''}`} onClick={() => setActiveTab(k)} data-tour-id={k === 'payroll' ? 'tour-payroll-tab-btn' : k === 'employees' ? 'tour-employees-tab-btn' : undefined}>
               {label}
               {k === 'employees' && employees.length > 0 && <span style={{ marginLeft: 6, background: activeTab === k ? 'var(--accent)' : 'var(--bg-tertiary)', color: activeTab === k ? '#fff' : 'var(--text-muted)', borderRadius: 20, fontSize: 10, fontWeight: 700, padding: '1px 6px' }}>{employees.length}</span>}
             </button>

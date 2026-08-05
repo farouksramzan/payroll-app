@@ -92,15 +92,16 @@ function TourSpotlight({ targetId, padding = 10 }) {
 }
 
 // ── Step config factory ───────────────────────────────────────────────────────
-function buildSteps(habibiId) {
-  const base = `/clients/${habibiId}`;
+function buildSteps(client) {
+  const base = `/clients/${client.id}`;
+  const name = client.name;
   return [
     null, // 0 = welcome (inline)
     {
       // Step 1 — Dashboard
       title: '🏢 Your Client Dashboard',
       body: 'All your payroll clients are listed here. Each card shows the company name, upcoming payroll date, and deposit schedule.',
-      hint: 'Find and click the Habibi Hookah Cafe card to open its workspace.',
+      hint: `Find and click the ${name} card to open its workspace.`,
       spotlight: null, // user needs to scroll/look themselves
       doNav: true, to: '/', toState: null,
       autoClick: null,
@@ -108,7 +109,7 @@ function buildSteps(habibiId) {
     {
       // Step 2 — Payroll tab
       title: '📋 Payroll Tab — Pay Periods',
-      body: "You're inside Habibi Hookah Cafe's workspace. The Payroll tab shows every pay period — pending upcoming ones at the top and completed checks below.",
+      body: `You're inside ${name}'s workspace. The Payroll tab shows every pay period — pending upcoming ones at the top and completed checks below.`,
       hint: 'The Payroll tab is being highlighted — it should already be active.',
       spotlight: 'tour-payroll-tab-btn',
       doNav: true, to: base, toState: { tab: 'payroll' },
@@ -169,11 +170,15 @@ function StepDots({ current, total, onGoto }) {
       {Array.from({ length: total }, (_, i) => {
         const n = i + 1;
         return (
-          <div
+          <button
             key={n}
+            type="button"
             onClick={() => onGoto(n)}
+            aria-label={`Go to step ${n} of ${total}`}
+            aria-current={n === current ? 'step' : undefined}
             style={{
               width: n === current ? 20 : 7, height: 7, borderRadius: 4,
+              border: 'none', padding: 0,
               background: n === current ? '#22c55e' : n < current ? 'rgba(34,197,94,0.4)' : 'rgba(255,255,255,0.2)',
               transition: 'all 0.2s', cursor: 'pointer', flexShrink: 0,
             }}
@@ -191,7 +196,9 @@ export default function OnboardingModal() {
   const [step, setStep] = useState(() => {
     try { return localStorage.getItem(STORAGE_KEY) === 'dismissed' ? null : 0; } catch { return 0; }
   });
-  const [habibiId, setHabibiId] = useState(null);
+  const [client, setClient] = useState(null); // { id, name } — first company in the account
+  const [clientsEmpty, setClientsEmpty] = useState(false);
+  const [tourError, setTourError] = useState(false);
   const [spotlight, setSpotlight] = useState(null);
 
   // Generation counter — incremented on every step change to cancel stale auto-clicks
@@ -202,7 +209,9 @@ export default function OnboardingModal() {
     const handler = () => {
       try { localStorage.removeItem(STORAGE_KEY); } catch {}
       setSpotlight(null);
-      setHabibiId(null);
+      setClient(null);
+      setClientsEmpty(false);
+      setTourError(false);
       genRef.current += 1;
       setStep(0);
     };
@@ -210,23 +219,35 @@ export default function OnboardingModal() {
     return () => window.removeEventListener('start-tour', handler);
   }, []);
 
-  // Fetch Habibi client ID once tour starts
+  // Fetch the account's first company as the tour subject (starts at the
+  // welcome screen so its name is ready for the copy)
   useEffect(() => {
-    if (step === null || step === 0 || habibiId) return;
+    if (step === null || client || clientsEmpty) return;
     api.getClients()
       .then(clients => {
-        const h = clients.find(c =>
-          (c.businessName || c.business_name || '').toLowerCase().includes('habibi')
-        );
-        if (h) setHabibiId(h.id);
+        if (Array.isArray(clients) && clients.length > 0) {
+          const first = clients[0];
+          setClient({ id: first.id, name: first.businessName || first.business_name || 'your first company' });
+        } else {
+          setClientsEmpty(true);
+        }
       })
-      .catch(() => {});
-  }, [step, habibiId]);
+      .catch(() => setTourError(true));
+  }, [step, client, clientsEmpty]);
+
+  // Safety net: if the tour subject can't be resolved within 5 seconds of
+  // entering the guided steps, show "Tour unavailable" instead of hanging
+  useEffect(() => {
+    if (step === null || step === 0 || step === 8) return;
+    if (client || clientsEmpty || tourError) return;
+    const t = setTimeout(() => setTourError(true), 5000);
+    return () => clearTimeout(t);
+  }, [step, client, clientsEmpty, tourError]);
 
   // On step change: navigate if needed, run autoClick, set spotlight
   useEffect(() => {
-    if (step === null || step === 0 || step === 8 || !habibiId) return;
-    const steps = buildSteps(habibiId);
+    if (step === null || step === 0 || step === 8 || !client) return;
+    const steps = buildSteps(client);
     const s = steps[step];
     if (!s) return;
 
@@ -256,7 +277,7 @@ export default function OnboardingModal() {
         if (genRef.current === myToken) setSpotlight(s.spotlight);
       }, s.autoClick ? actionDelay + 300 : 300);
     }
-  }, [step, habibiId]); // eslint-disable-line
+  }, [step, client]); // eslint-disable-line
 
   const dismiss = useCallback(() => {
     try { localStorage.setItem(STORAGE_KEY, 'dismissed'); } catch {}
@@ -297,7 +318,10 @@ export default function OnboardingModal() {
               <div style={{ fontSize: 40, marginBottom: 14 }}>👋</div>
               <h2 style={{ fontSize: 24, fontWeight: 900, color: '#f1f5f9', margin: '0 0 10px', letterSpacing: '-0.3px' }}>Welcome to PayrollTax Pro</h2>
               <p style={{ fontSize: 14, color: '#94a3b8', lineHeight: 1.75, margin: '0 0 24px' }}>
-                We'll walk you through <strong style={{ color: '#4ade80' }}>Habibi Hookah Cafe</strong> — a real client in this account. The tour auto-navigates and auto-opens everything so you can just watch.
+                {client
+                  ? <>We'll walk you through <strong style={{ color: '#4ade80' }}>{client.name}</strong> — the first company in your account.</>
+                  : <>We'll walk you through the first company in your account.</>}
+                {' '}The tour auto-navigates and auto-opens everything so you can just watch.
               </p>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 28 }}>
                 {[
@@ -349,9 +373,55 @@ export default function OnboardingModal() {
     );
   }
 
+  // ── No companies yet — prompt to add one instead of running the tour ──────
+  if (clientsEmpty) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+        <div style={{ background: '#0f172a', borderRadius: 20, width: '100%', maxWidth: 460, boxShadow: '0 30px 80px rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)', overflow: 'hidden', textAlign: 'center' }}>
+          <div style={{ height: 4, background: 'linear-gradient(90deg, #16a34a, #4ade80)' }} />
+          <div style={{ padding: '40px 36px 36px' }}>
+            <div style={{ fontSize: 48, marginBottom: 16 }}>🏢</div>
+            <h2 style={{ fontSize: 22, fontWeight: 900, color: '#f1f5f9', margin: '0 0 12px' }}>Add your first company</h2>
+            <p style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.75, margin: '0 0 28px' }}>
+              The tour walks through a real company, and this account doesn't have one yet. Add your first company, then start the tour again from the Tutorial button.
+            </p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={dismiss} style={{ flex: 1, padding: '11px 0', borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                Close
+              </button>
+              <button onClick={() => { dismiss(); navigate('/clients/new'); }} style={{ flex: 2, padding: '11px 0', borderRadius: 10, background: 'linear-gradient(135deg, #16a34a, #15803d)', border: 'none', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 20px rgba(22,163,74,0.35)' }}>
+                Add a company →
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ── Guide steps 1–7 ───────────────────────────────────────────────────────
-  const steps = habibiId ? buildSteps(habibiId) : null;
+  const steps = client ? buildSteps(client) : null;
   const current = steps?.[step];
+
+  // ── Safety net — couldn't resolve the tour subject ────────────────────────
+  if (!current && tourError) {
+    return (
+      <div style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(0,0,0,0.65)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+        <div style={{ background: '#0f172a', borderRadius: 20, width: '100%', maxWidth: 460, boxShadow: '0 30px 80px rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)', overflow: 'hidden', textAlign: 'center' }}>
+          <div style={{ height: 4, background: 'linear-gradient(90deg, #16a34a, #4ade80)' }} />
+          <div style={{ padding: '40px 36px 36px' }}>
+            <h2 style={{ fontSize: 22, fontWeight: 900, color: '#f1f5f9', margin: '0 0 12px' }}>Tour unavailable right now</h2>
+            <p style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.75, margin: '0 0 28px' }}>
+              We couldn't load your companies to run the tour. Close this and try again in a minute from the Tutorial button.
+            </p>
+            <button onClick={dismiss} style={{ width: '100%', padding: '12px 0', borderRadius: 10, background: 'linear-gradient(135deg, #16a34a, #15803d)', border: 'none', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 20px rgba(22,163,74,0.3)' }}>
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
@@ -395,7 +465,7 @@ export default function OnboardingModal() {
             </div>
 
             {!current ? (
-              <div style={{ color: '#64748b', fontSize: 13, padding: '6px 0' }}>Loading…</div>
+              <div style={{ color: '#64748b', fontSize: 13, padding: '6px 0' }}>Loading your company…</div>
             ) : (
               <>
                 <h3 style={{ fontSize: 15, fontWeight: 800, color: '#f1f5f9', margin: '0 0 6px', letterSpacing: '-0.2px' }}>{current.title}</h3>
