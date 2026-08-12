@@ -1662,7 +1662,13 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
       const [localRow, setLocalRow] = useState(() => ({ ...savedRow }));
       const initialRowRef = useRef(savedRow);
       const row = localRow;
-      const setField = (field, v) => setLocalRow(r => ({ ...r, [field]: v }));
+      // Clearing an override field reverts to the automatic estimate. Storing the
+      // empty string used to pin the value at $0 forever — the classic symptom was
+      // "no matter what salary I enter, federal/state tax stays 0".
+      const setField = (field, v) => setLocalRow(r => ({
+        ...r,
+        [field]: (v === '' && /Override$/.test(field)) ? undefined : v,
+      }));
       const flushLocal = () => setPendingRows(prev => ({
         ...prev,
         [period.end]: { ...(prev[period.end] || {}), [emp.id]: { ...((prev[period.end] || {})[emp.id] || {}), ...localRow } },
@@ -2378,13 +2384,13 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
     const deductionRows = [
       { label: 'Federal Income Tax', amount: stub.fit_withholding   || 0, ytd: ytd.fit,
         editValue: canEdit ? fitOverride : undefined,
-        onEditChange: canEdit ? (v => { setFitManual(true); setFitOverride(v); }) : undefined },
+        onEditChange: canEdit ? (v => { setFitManual(v !== ''); setFitOverride(v); }) : undefined },
       { label: 'Social Security', amount: stub.employee_ss       || 0, ytd: ytd.eeSS,
         editValue: canEdit ? ssOverride  : undefined,
-        onEditChange: canEdit ? (v => { setSsManual(true);  setSsOverride(v);  }) : undefined },
+        onEditChange: canEdit ? (v => { setSsManual(v !== '');  setSsOverride(v);  }) : undefined },
       { label: 'Medicare',        amount: stub.employee_medicare || 0, ytd: ytd.eeMed,
         editValue: canEdit ? medOverride : undefined,
-        onEditChange: canEdit ? (v => { setMedManual(true); setMedOverride(v); }) : undefined },
+        onEditChange: canEdit ? (v => { setMedManual(v !== ''); setMedOverride(v); }) : undefined },
       liveAddlMed > 0 && { label: 'Addl Medicare', amount: liveAddlMed, ytd: 0 },
       { label: 'State Income Tax',   amount: liveStateTax, ytd: ytd.stateTax },
       ...optionalDeductions
@@ -2400,16 +2406,16 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
     const employerRows = [
       { label: 'SS Match (Company)',       amount: parseFloat(erSsOverride  || 0), ytd: ytd.erSS   ?? 0,
         editValue: canEdit ? erSsOverride  : undefined,
-        onEditChange: canEdit ? (v => { setErSsManual(true);  setErSsOverride(v);  }) : undefined },
+        onEditChange: canEdit ? (v => { setErSsManual(v !== '');  setErSsOverride(v);  }) : undefined },
       { label: 'Medicare Match (Company)', amount: parseFloat(erMedOverride || 0), ytd: ytd.erMed  ?? 0,
         editValue: canEdit ? erMedOverride : undefined,
-        onEditChange: canEdit ? (v => { setErMedManual(true); setErMedOverride(v); }) : undefined },
+        onEditChange: canEdit ? (v => { setErMedManual(v !== ''); setErMedOverride(v); }) : undefined },
       { label: 'Federal Unemployment',     amount: parseFloat(futaOverride  || 0), ytd: ytd.futa,
         editValue: canEdit ? futaOverride  : undefined,
-        onEditChange: canEdit ? (v => { setFutaManual(true);  setFutaOverride(v);  }) : undefined },
+        onEditChange: canEdit ? (v => { setFutaManual(v !== '');  setFutaOverride(v);  }) : undefined },
       { label: `${stub.work_state || 'State'} Unemployment`, amount: parseFloat(sutaOverride || 0), ytd: ytd.suta,
         editValue: canEdit ? sutaOverride : undefined,
-        onEditChange: canEdit ? (v => { setSutaManual(true); setSutaOverride(v); }) : undefined },
+        onEditChange: canEdit ? (v => { setSutaManual(v !== ''); setSutaOverride(v); }) : undefined },
     ];
     const employerTotal = r2(employerRows.reduce((s, r) => s + r.amount, 0));
     const employerYTD   = r2(employerRows.reduce((s, r) => s + (r.ytd || 0), 0));
@@ -2663,7 +2669,20 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
   const [paystubs, setPaystubs]                   = useState([]);
   // pendingRows[periodEnd][empId] = { regHours, otHours, rate, selected }
   const [pendingRows, setPendingRows] = useState(() => {
-    try { const s = localStorage.getItem(`pendingRows_${clientId}`); return s ? JSON.parse(s) : {}; } catch { return {}; }
+    try {
+      const s = localStorage.getItem(`pendingRows_${clientId}`);
+      const rows = s ? JSON.parse(s) : {};
+      // Strip empty-string tax overrides saved by older builds — they pinned the
+      // display at $0 forever ("no matter what salary, federal tax stays 0").
+      for (const periodMap of Object.values(rows)) {
+        for (const row of Object.values(periodMap || {})) {
+          for (const k of Object.keys(row || {})) {
+            if (/Override$/.test(k) && row[k] === '') delete row[k];
+          }
+        }
+      }
+      return rows;
+    } catch { return {}; }
   });
   useEffect(() => {
     try { localStorage.setItem(`pendingRows_${clientId}`, JSON.stringify(pendingRows)); } catch {}
