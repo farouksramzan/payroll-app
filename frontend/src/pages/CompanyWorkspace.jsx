@@ -279,6 +279,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
       step4a: emp.step4a > 0 ? String(emp.step4a) : '',
       step4b: emp.step4b > 0 ? String(emp.step4b) : '',
       step4c: emp.step4c > 0 ? String(emp.step4c) : '',
+      fitExempt: !!emp.fitExempt,
       payType: emp.payType || 'hourly',
       hourlyRate: emp.hourlyRate > 0 ? String(emp.hourlyRate) : '',
       annualSalary: emp.annualSalary > 0 ? String(emp.annualSalary) : '',
@@ -583,13 +584,22 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                 <div className="form-group"><label className="form-label">Qualifying children (×$2,200)</label><input className="form-input" type="number" min="0" max="20" value={form.step3Children} onChange={e => setForm(f => ({ ...f, step3Children: parseInt(e.target.value || 0) }))} style={{ maxWidth: 80 }} /></div>
                 <div className="form-group"><label className="form-label">Other dependents (×$500)</label><input className="form-input" type="number" min="0" max="20" value={form.step3Other} onChange={e => setForm(f => ({ ...f, step3Other: parseInt(e.target.value || 0) }))} style={{ maxWidth: 80 }} /></div>
               </div>
-              <div className="form-group">
+              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', marginBottom: 6, padding: '9px 10px', border: `1px solid ${form.fitExempt ? 'var(--warning)' : 'var(--border)'}`, background: form.fitExempt ? 'var(--warning-light)' : 'transparent' }}>
+                <input type="checkbox" checked={form.fitExempt} onChange={set('fitExempt')} style={{ accentColor: 'var(--warning)', width: 14, height: 14, marginTop: 2 }} />
+                <span style={{ fontSize: 13 }}>
+                  <strong>Exempt — don&rsquo;t withhold federal income tax</strong>
+                  <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                    For employees who claimed Exempt on their W-4. No federal income tax (including extra withholding) is taken; Social Security and Medicare still apply.
+                  </span>
+                </span>
+              </label>
+              <div className="form-group" style={{ opacity: form.fitExempt ? 0.5 : 1 }}>
                 <label className="form-label">Extra Withholding <span style={{ fontWeight: 400, fontSize: 10, color: 'var(--text-muted)', textTransform: 'none' }}>(W-4 Step 4c — per paycheck)</span></label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>$</span>
-                  <input className="form-input mono" type="number" min="0" step="0.01" value={form.step4c} onChange={set('step4c')} placeholder="0.00" style={{ maxWidth: 120 }} />
+                  <input className="form-input mono" type="number" min="0" step="0.01" value={form.step4c} onChange={set('step4c')} placeholder="0.00" style={{ maxWidth: 120 }} disabled={form.fitExempt} />
                 </div>
-                <p className="form-hint">Withheld as additional federal income tax on every paycheck, on top of the calculated amount.</p>
+                <p className="form-hint">{form.fitExempt ? 'Ignored while Exempt is checked.' : 'Withheld as additional federal income tax on every paycheck, on top of the calculated amount.'}</p>
               </div>
               <div className="form-group" style={{ maxWidth: 180 }}><label className="form-label">Hire Date</label><input className="form-input" type="date" value={form.hireDate} onChange={set('hireDate')} /></div>
 
@@ -1632,7 +1642,7 @@ function ModalOverlay({ children, onClose }) {
 
 // ── Pay Employees Tab ─────────────────────────────────────────────────────────
 
-function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, calcEmpYTD, ppy, pendingRows, setPendingRows, getRow, skipPending, periodOverrides, setPeriodOverrides, csDefaults }) {
+function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, employees, calcEmpYTD, ppy, pendingRows, setPendingRows, getRow, skipPending, periodOverrides, setPeriodOverrides, csDefaults }) {
     if (!rowData) return null;
 
     // Use module-scope stable components (ModalTR, ModalColHeader, ModalOverlay)
@@ -1761,6 +1771,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
           step4a: emp.step4a || 0,
           step4b: emp.step4b || 0,
           step4c: emp.step4c || 0,
+          fitExempt: !!emp.fitExempt,
           workState: emp.workState || 'TX',
           ytdGross: ytd.gross,
           sutaRate: suiRateEst,
@@ -2300,6 +2311,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
     // IMPORTANT: skip the very first render — the saved values from the DB are authoritative on open.
     // Only recalculate when liveGross actually changes after the modal is mounted.
     const prevLiveGross = useRef(liveGross); // initialised to mount-time value
+    const fitCalcTimer  = useRef(null);
     useEffect(() => {
       const prev = prevLiveGross.current;
       prevLiveGross.current = liveGross;
@@ -2313,23 +2325,39 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
       if (liveGross > 0) {
         // Recompute FIT (unless manually pinned) plus state income tax and
         // additional Medicare from the new gross, so the live preview matches
-        // what the backend will store.
-        api.calculate({
-          grossWages:    liveGross,
-          payFrequency:  stub.pay_frequency   || 'biweekly',
-          filingStatus:  stub.filing_status   || 'single',
-          step2Checkbox: !!stub.step2_checkbox,
-          step3Children: stub.step3_children  || 0,
-          step3Other:    stub.step3_other     || 0,
-          step4a: 0, step4b: 0, step4c: 0,
-          workState: stub.work_state || 'TX',
-          ytdGross:  stub.ytd_wages_before    || 0,
-        }).then(res => {
-          if (!fitManual) setFitOverride(String(r2(res.fitWithholding || 0)));
-          setLiveStateTax(r2(res.stateIncomeTax   || 0));
-          setLiveAddlMed (r2(res.additionalMedicare || 0));
-        }).catch(() => {});
+        // what the backend will store. Debounced: one request per pause in
+        // typing, not one per keystroke (keystroke-rate calls could trip the
+        // API rate limit, and the old silent catch left FIT/state frozen at
+        // their pre-edit values while SS/Medicare kept moving).
+        clearTimeout(fitCalcTimer.current);
+        fitCalcTimer.current = setTimeout(() => {
+          // Use the employee's REAL W-4 (extra withholding / exempt) so the live
+          // FIT matches what the backend stores on save.
+          const emp = (employees || []).find(x => x.id === stub.employee_id);
+          const doCalc = () => api.calculate({
+            grossWages:    liveGross,
+            payFrequency:  stub.pay_frequency   || 'biweekly',
+            filingStatus:  stub.filing_status   || 'single',
+            step2Checkbox: !!stub.step2_checkbox,
+            step3Children: stub.step3_children  || 0,
+            step3Other:    stub.step3_other     || 0,
+            step4a: emp?.step4a || 0, step4b: emp?.step4b || 0, step4c: emp?.step4c || 0,
+            fitExempt: !!emp?.fitExempt,
+            workState: stub.work_state || 'TX',
+            ytdGross:  stub.ytd_wages_before    || 0,
+          });
+          doCalc()
+            .catch(() => new Promise(r => setTimeout(r, 800)).then(doCalc)) // one retry
+            .then(res => {
+              if (!res) return;
+              if (!fitManual) setFitOverride(String(r2(res.fitWithholding || 0)));
+              setLiveStateTax(r2(res.stateIncomeTax   || 0));
+              setLiveAddlMed (r2(res.additionalMedicare || 0));
+            })
+            .catch(() => {});
+        }, 350);
       }
+      return () => clearTimeout(fitCalcTimer.current);
     }, [liveGross]);
 
     // Clamp at 0 to match the backend — a check can't be written for a negative
@@ -2934,6 +2962,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
             step2Checkbox: !!emp.step2Checkbox,
             step3Children: emp.step3Children || 0, step3Other: emp.step3Other || 0,
             step4a: emp.step4a || 0, step4b: emp.step4b || 0, step4c: emp.step4c || 0,
+            fitExempt: !!emp.fitExempt,
             workState: emp.workState || client?.state || 'TX',
             ytdGross,
             sutaRate: client?.suiRateQ1 ?? client?.sutaRate ?? 0.027,
@@ -3321,6 +3350,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
         step4a:        emp.step4a        || 0,
         step4b:        emp.step4b        || 0,
         step4c:        emp.step4c        || 0,
+        fitExempt:     !!emp.fitExempt,
         workState:     emp.workState     || client?.state || 'TX',
         ytdGross:      ytd.gross,
         sutaRate:      client?.suiRateQ1 || client?.suiRateQ2 || client?.suiRateQ3 || client?.suiRateQ4 || null,
@@ -3501,7 +3531,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
               const estEeMed   = r2(grossPreview * EE_MEDICARE_RATE);
               const cacheKey   = `${emp.id}_${rawPeriod.end}_${Math.round(grossPreview * 100)}`;
               const cached     = calcCache[cacheKey];
-              const estFIT     = cached != null ? (cached.fitWithholding || 0) : Math.round(((taxAnn => taxAnn <= 12225 ? taxAnn * 0.10 : 1222.5 + (Math.min(taxAnn, 49675) - 12225) * 0.12 + Math.max(0, taxAnn - 49675) * 0.22)(Math.max(0, grossPreview * ppy - 16100))) / ppy);
+              const estFIT     = emp.fitExempt ? 0 : cached != null ? (cached.fitWithholding || 0) : Math.round(((taxAnn => taxAnn <= 12225 ? taxAnn * 0.10 : 1222.5 + (Math.min(taxAnn, 49675) - 12225) * 0.12 + Math.max(0, taxAnn - 49675) * 0.22)(Math.max(0, grossPreview * ppy - 16100))) / ppy);
               const estStateTax = cached != null ? (cached.stateIncomeTax || 0) : 0;
               // Respect the manual overrides the detail modal writes to the row, so
               // this inline net pay equals the modal's "Net Pay (est.)" instead of
@@ -4003,7 +4033,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       {detailModal && <CheckDetailModal rowData={detailModal} onClose={() => { reloadStubs(); setDetailModal(null); }}
         reloadStubs={reloadStubs} clientId={clientId} client={client} calcEmpYTD={calcEmpYTD} ppy={ppy}
         pendingRows={pendingRows} setPendingRows={setPendingRows} getRow={getRow} skipPending={skipPending}
-        periodOverrides={periodOverrides} setPeriodOverrides={setPeriodOverrides} csDefaults={csTotals} />}
+        periodOverrides={periodOverrides} setPeriodOverrides={setPeriodOverrides} csDefaults={csTotals} employees={employees} />}
 
       {/* Rate change confirmation */}
       {rateUpdatePrompt && (

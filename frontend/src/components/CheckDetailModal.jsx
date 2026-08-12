@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import api from '../api/client';
 
 const MONO = { fontFamily: 'JetBrains Mono, monospace' };
@@ -101,6 +101,60 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
   });
   const [otherOpen, setOtherOpen] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // ── Live tax preview ──────────────────────────────────────────────────────────
+  // Editing the pay amount must move FIT/SS/Medicare/state in the preview — this
+  // modal used to show the stored values frozen until save, so federal/state tax
+  // looked like they "didn't adjust". Employee W-4 (extra withholding / exempt)
+  // is fetched once so the live FIT matches what the backend stores.
+  const [liveTaxes, setLiveTaxes] = useState(null); // { ss, med, addlMed, fit, state } | null
+  const empW4Ref = useRef(null);
+  const fitManualRef = useRef(false);
+  const liveCalcTimer = useRef(null);
+  useEffect(() => {
+    if (!stub.employee_id) return;
+    api.getEmployee(stub.employee_id).then(e => { empW4Ref.current = e; }).catch(() => {});
+  }, [stub.employee_id]);
+
+  const liveGrossPreview = r2(
+    parseFloat(grossOverride || 0) + (stub.overtime_pay || 0) +
+    ['reportedTips', 'bonus', 'commission'].reduce((s, k) => s + (addedItems.has(k) ? parseFloat(itemForm[k] || 0) : 0), 0)
+  );
+  const prevGrossRef = useRef(liveGrossPreview);
+  useEffect(() => {
+    const prev = prevGrossRef.current;
+    prevGrossRef.current = liveGrossPreview;
+    if (isVoided || liveGrossPreview === prev || liveGrossPreview <= 0) return;
+    // FICA updates instantly (flat rates, client-side)…
+    setLiveTaxes(t => ({ ...(t || {}), ss: r2(liveGrossPreview * 0.062), med: r2(liveGrossPreview * 0.0145) }));
+    // …FIT/state via the calculator, debounced to one call per typing pause.
+    clearTimeout(liveCalcTimer.current);
+    liveCalcTimer.current = setTimeout(() => {
+      const emp = empW4Ref.current;
+      const doCalc = () => api.calculate({
+        grossWages:    liveGrossPreview,
+        payFrequency:  stub.pay_frequency || 'biweekly',
+        filingStatus:  stub.filing_status || 'single',
+        step2Checkbox: !!stub.step2_checkbox,
+        step3Children: stub.step3_children || 0,
+        step3Other:    stub.step3_other    || 0,
+        step4a: emp?.step4a || 0, step4b: emp?.step4b || 0, step4c: emp?.step4c || 0,
+        fitExempt: !!emp?.fitExempt,
+        workState: stub.work_state || 'TX',
+        ytdGross:  stub.ytd_wages_before || 0,
+      });
+      doCalc()
+        .catch(() => new Promise(r => setTimeout(r, 800)).then(doCalc)) // one retry
+        .then(res => {
+          if (!res) return;
+          setLiveTaxes(t => ({ ...(t || {}), fit: r2(res.fitWithholding || 0), state: r2(res.stateIncomeTax || 0), addlMed: r2(res.additionalMedicare || 0) }));
+          if (!fitManualRef.current) setFitOverride(String(r2(res.fitWithholding || 0)));
+        })
+        .catch(() => {});
+    }, 350);
+    return () => clearTimeout(liveCalcTimer.current);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [liveGrossPreview]);
 
   useEffect(() => {
     if (!stub.employee_id || !clientId) return;
@@ -243,11 +297,13 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
   );
 
   const deductionRows = [
-    { label: 'Federal Income Tax', amount: stub.fit_withholding   || 0, ytd: ytd.fit,      editValue: canEdit ? fitOverride : undefined, onEditChange: canEdit ? setFitOverride : undefined },
-    { label: 'Social Security',    amount: stub.employee_ss       || 0, ytd: ytd.eeSS      },
-    { label: 'Medicare',           amount: stub.employee_medicare || 0, ytd: ytd.eeMed     },
-    (stub.additional_medicare || 0) > 0 && { label: 'Addl Medicare', amount: stub.additional_medicare },
-    { label: 'State Income Tax',   amount: stub.state_income_tax  || 0, ytd: ytd.stateTax  },
+    { label: 'Federal Income Tax', amount: liveTaxes?.fit ?? (stub.fit_withholding || 0), ytd: ytd.fit,
+      editValue: canEdit ? fitOverride : undefined,
+      onEditChange: canEdit ? (v => { fitManualRef.current = true; setFitOverride(v); }) : undefined },
+    { label: 'Social Security',    amount: liveTaxes?.ss  ?? (stub.employee_ss       || 0), ytd: ytd.eeSS      },
+    { label: 'Medicare',           amount: liveTaxes?.med ?? (stub.employee_medicare || 0), ytd: ytd.eeMed     },
+    ((liveTaxes?.addlMed ?? stub.additional_medicare) || 0) > 0 && { label: 'Addl Medicare', amount: liveTaxes?.addlMed ?? stub.additional_medicare },
+    { label: 'State Income Tax',   amount: liveTaxes?.state ?? (stub.state_income_tax || 0), ytd: ytd.stateTax  },
     ...optionalDeductions
       .filter(x => addedItems.has(x.key))
       .map(x => ({ label: x.label, amount: parseFloat(itemForm[x.key] || 0), editValue: canEdit ? itemForm[x.key] : undefined, onEditChange: set(x.key) })),

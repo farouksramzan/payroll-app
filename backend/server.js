@@ -51,7 +51,10 @@ app.use(helmet({
 app.use(cors({ origin: corsOrigins, credentials: true }));
 app.use(express.json());
 
-const limiter     = rateLimit({ windowMs: 15 * 60 * 1000, max: 2000 });
+// 6000/15min: live tax-preview calls during heavy check editing plus dashboard
+// polling were brushing the old 2000 cap from a single office IP — hitting it
+// silently froze FIT/state estimates in the check modals.
+const limiter     = rateLimit({ windowMs: 15 * 60 * 1000, max: 6000 });
 const authLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max:   50 });
 app.use(limiter);
 

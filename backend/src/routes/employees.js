@@ -16,6 +16,7 @@ function sanitize(e, withSSN = false) {
     filingStatus: e.filing_status, step2Checkbox: !!e.step2_checkbox,
     step3Children: e.step3_children, step3Other: e.step3_other,
     step4a: e.step4a, step4b: e.step4b, step4c: e.step4c,
+    fitExempt: !!e.fit_exempt,
     payType: e.pay_type, hourlyRate: e.hourly_rate, annualSalary: e.annual_salary,
     payFrequency: e.pay_frequency, isActive: !!e.is_active,
     hireDate: e.hire_date, createdAt: e.created_at,
@@ -107,7 +108,7 @@ router.get('/:id/ytd', (req, res) => {
 router.post('/', (req, res) => {
   const db = getDb();
   const { firstName, middleName, lastName, ssn, address, city, state, zip, workState,
-    filingStatus, step2Checkbox, step3Children, step3Other, step4a, step4b, step4c,
+    filingStatus, step2Checkbox, step3Children, step3Other, step4a, step4b, step4c, fitExempt,
     payType, hourlyRate, annualSalary, payFrequency, hireDate,
     firstPayPeriodStart, firstPayPeriodEnd, payGroupId } = req.body;
 
@@ -120,17 +121,17 @@ router.post('/', (req, res) => {
 
   const result = db.prepare(`
     INSERT INTO employees (client_id, first_name, middle_name, last_name, ssn_encrypted, address, city, state, zip, work_state,
-      filing_status, step2_checkbox, step3_children, step3_other, step4a, step4b, step4c,
+      filing_status, step2_checkbox, step3_children, step3_other, step4a, step4b, step4c, fit_exempt,
       pay_type, hourly_rate, annual_salary, pay_frequency, hire_date,
       first_pay_period_start, first_pay_period_end, pay_group_id)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     clientId, firstName.trim(), middleName ? middleName.trim() : null, lastName.trim(), encrypt(ssn),
     address || null, city || null, state || 'TX', zip || null,
     workState ? workState.toUpperCase() : null,
     filingStatus || 'single', step2Checkbox ? 1 : 0,
     parseInt(step3Children || 0), parseInt(step3Other || 0),
-    parseFloat(step4a || 0), parseFloat(step4b || 0), parseFloat(step4c || 0),
+    parseFloat(step4a || 0), parseFloat(step4b || 0), parseFloat(step4c || 0), fitExempt ? 1 : 0,
     payType || 'hourly', parseFloat(hourlyRate || 0), parseFloat(annualSalary || 0),
     payFrequency || 'biweekly', hireDate || null,
     firstPayPeriodStart || null, firstPayPeriodEnd || null,
@@ -153,7 +154,7 @@ router.put('/:id', (req, res) => {
   if (!e || !canAccessClient(db, e.client_id, req.user)) return res.status(404).json({ error: 'Employee not found' });
 
   const { firstName, middleName, lastName, ssn, address, city, state, zip, workState,
-    filingStatus, step2Checkbox, step3Children, step3Other, step4a, step4b, step4c,
+    filingStatus, step2Checkbox, step3Children, step3Other, step4a, step4b, step4c, fitExempt,
     payType, hourlyRate, annualSalary, payFrequency, hireDate, isActive,
     firstPayPeriodStart, firstPayPeriodEnd, payGroupId } = req.body;
 
@@ -161,7 +162,7 @@ router.put('/:id', (req, res) => {
     UPDATE employees SET
       first_name=?, middle_name=?, last_name=?, ssn_encrypted=?, address=?, city=?, state=?, zip=?, work_state=?,
       filing_status=?, step2_checkbox=?, step3_children=?, step3_other=?,
-      step4a=?, step4b=?, step4c=?,
+      step4a=?, step4b=?, step4c=?, fit_exempt=?,
       pay_type=?, hourly_rate=?, annual_salary=?, pay_frequency=?,
       hire_date=?, is_active=?,
       first_pay_period_start=?, first_pay_period_end=?, pay_group_id=?
@@ -178,6 +179,7 @@ router.put('/:id', (req, res) => {
     step4a !== undefined ? parseFloat(step4a) : e.step4a,
     step4b !== undefined ? parseFloat(step4b) : e.step4b,
     step4c !== undefined ? parseFloat(step4c) : e.step4c,
+    fitExempt !== undefined ? (fitExempt ? 1 : 0) : e.fit_exempt,
     payType || e.pay_type, hourlyRate !== undefined ? parseFloat(hourlyRate) : e.hourly_rate,
     annualSalary !== undefined ? parseFloat(annualSalary) : e.annual_salary,
     payFrequency || e.pay_frequency, hireDate ?? e.hire_date,

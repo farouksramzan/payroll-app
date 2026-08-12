@@ -251,6 +251,8 @@ function migrate() {
   ]);
   addCols('employees', [
     { name: 'middle_name', def: 'TEXT' },
+    // W-4 "Exempt" — no federal income tax withheld (FICA still applies)
+    { name: 'fit_exempt',  def: 'INTEGER DEFAULT 0' },
   ]);
 
   // Rename eftps_pin_encrypted → batch_provider_pin_encrypted on existing databases

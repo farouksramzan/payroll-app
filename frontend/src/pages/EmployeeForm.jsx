@@ -42,7 +42,7 @@ const EMPTY = {
   firstName: '', middleName: '', lastName: '', ssn: '',
   address: '', city: '', state: 'TX', zip: '',
   workState: '',
-  filingStatus: 'single', step2Checkbox: false,
+  filingStatus: 'single', step2Checkbox: false, fitExempt: false,
   step3Children: 0, step3Other: 0,
   step4a: '', step4b: '', step4c: '',
   payType: 'hourly', hourlyRate: '', annualSalary: '',
@@ -89,6 +89,7 @@ export default function EmployeeForm() {
             workState: emp.workState || '',
             filingStatus: emp.filingStatus || 'single',
             step2Checkbox: !!emp.step2Checkbox,
+            fitExempt: !!emp.fitExempt,
             step3Children: emp.step3Children || 0,
             step3Other:    emp.step3Other    || 0,
             step4a: emp.step4a > 0 ? String(emp.step4a) : '',
@@ -167,6 +168,7 @@ export default function EmployeeForm() {
         step4a: parseFloat(form.step4a || 0),
         step4b: parseFloat(form.step4b || 0),
         step4c: parseFloat(form.step4c || 0),
+        fitExempt: !!form.fitExempt,
         hourlyRate:   parseFloat(form.hourlyRate   || 0),
         annualSalary: parseFloat(form.annualSalary || 0),
         payGroupId: form.payGroupId ? parseInt(form.payGroupId) : null,
@@ -426,6 +428,16 @@ export default function EmployeeForm() {
                 </div>
               ))}
             </div>
+
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', marginTop: 14, padding: '9px 10px', border: `1px solid ${form.fitExempt ? 'var(--warning)' : 'var(--border)'}`, background: form.fitExempt ? 'var(--warning-light)' : 'transparent' }}>
+              <input type="checkbox" checked={form.fitExempt} onChange={set('fitExempt')} style={{ accentColor: 'var(--warning)', width: 14, height: 14, marginTop: 2 }} />
+              <span style={{ fontSize: 13 }}>
+                <strong>Exempt — don&rsquo;t withhold federal income tax</strong>
+                <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                  For employees who claimed Exempt on their W-4. Social Security and Medicare still apply.
+                </span>
+              </span>
+            </label>
           </div>
 
           <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>

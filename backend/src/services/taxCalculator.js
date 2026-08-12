@@ -68,6 +68,7 @@ function calculateWithholding({
   step4a = 0,
   step4b = 0,
   step4c = 0,
+  fitExempt = false, // W-4 "Exempt" — no federal income tax withheld at all
   // State tax params
   workState     = null,
   ytdGross      = 0,   // YTD gross wages before this period (for SS/FUTA/SUTA caps)
@@ -99,7 +100,9 @@ function calculateWithholding({
 
   const credits = (step3Children || 0) * CHILD_CREDIT + (step3Other || 0) * DEPENDENT_CREDIT;
   const annualWithholding = Math.max(0, annualTax - credits);
-  const fitWithholding = Math.round(Math.max(0, annualWithholding / periods + (step4c || 0)));
+  // W-4 Exempt: no federal income tax withheld — including no Step 4(c) extra
+  // (an exempt W-4 only completes steps 1 and 5). FICA still applies below.
+  const fitWithholding = fitExempt ? 0 : Math.round(Math.max(0, annualWithholding / periods + (step4c || 0)));
 
   // ── FICA — Social Security (wage base cap via YTD) ────────────────────────────
   const ssWagesThisPeriod = Math.max(0, Math.min(grossWages, SS_WAGE_BASE - Math.min(ytdGross, SS_WAGE_BASE)));
