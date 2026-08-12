@@ -583,6 +583,14 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                 <div className="form-group"><label className="form-label">Qualifying children (×$2,200)</label><input className="form-input" type="number" min="0" max="20" value={form.step3Children} onChange={e => setForm(f => ({ ...f, step3Children: parseInt(e.target.value || 0) }))} style={{ maxWidth: 80 }} /></div>
                 <div className="form-group"><label className="form-label">Other dependents (×$500)</label><input className="form-input" type="number" min="0" max="20" value={form.step3Other} onChange={e => setForm(f => ({ ...f, step3Other: parseInt(e.target.value || 0) }))} style={{ maxWidth: 80 }} /></div>
               </div>
+              <div className="form-group">
+                <label className="form-label">Extra Withholding <span style={{ fontWeight: 400, fontSize: 10, color: 'var(--text-muted)', textTransform: 'none' }}>(W-4 Step 4c — per paycheck)</span></label>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>$</span>
+                  <input className="form-input mono" type="number" min="0" step="0.01" value={form.step4c} onChange={set('step4c')} placeholder="0.00" style={{ maxWidth: 120 }} />
+                </div>
+                <p className="form-hint">Withheld as additional federal income tax on every paycheck, on top of the calculated amount.</p>
+              </div>
               <div className="form-group" style={{ maxWidth: 180 }}><label className="form-label">Hire Date</label><input className="form-input" type="date" value={form.hireDate} onChange={set('hireDate')} /></div>
 
               {/* ── Child Support ── */}
