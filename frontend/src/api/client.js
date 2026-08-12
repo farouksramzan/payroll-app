@@ -86,6 +86,30 @@ const api = {
   updateEmployee: (id, data) => request(`/employees/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteEmployee: (id) => request(`/employees/${id}`, { method: 'DELETE' }),
 
+  // Child support — orders per employee, withholdings per paycheck, vendor checks
+  getChildSupportOrders:    (clientId) => request(`/child-support/orders?clientId=${clientId}`),
+  getEmployeeChildSupport:  (employeeId) => request(`/child-support/orders/employee/${employeeId}`),
+  createChildSupportOrder:  (data) => request('/child-support/orders', { method: 'POST', body: JSON.stringify(data) }),
+  updateChildSupportOrder:  (id, data) => request(`/child-support/orders/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteChildSupportOrder:  (id) => request(`/child-support/orders/${id}`, { method: 'DELETE' }),
+  getChildSupportWithholdings: (clientId) => request(`/child-support/withholdings?clientId=${clientId}`),
+  payChildSupport:          (data) => request('/child-support/pay', { method: 'POST', body: JSON.stringify(data) }),
+  unpayChildSupport:        (data) => request('/child-support/unpay', { method: 'POST', body: JSON.stringify(data) }),
+  printChildSupportCheck: async (clientId, withholdingIds, checkNumber) => {
+    const token = localStorage.getItem('token');
+    const res = await fetch('/api/child-support/print-check', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ clientId, withholdingIds, checkNumber }),
+    });
+    if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || 'Check PDF failed'); }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'child-support-check.pdf'; a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  },
+
   // Payroll calculator
   calculate: (data) => request('/payroll/calculate', { method: 'POST', body: JSON.stringify(data) }),
   getStates: () => request('/payroll/states'),

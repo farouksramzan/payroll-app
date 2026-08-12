@@ -126,6 +126,21 @@ function calcStartFromEnd(endDate, freq) {
   else s = addDays(e, -13);
   return s.toISOString().slice(0, 10);
 }
+// Child support per-check override semantics: undefined OR a cleared ("") field
+// means "use the employee's order default"; only a real number overrides. Returns
+// the effective amount for display/estimates.
+function csEffectiveAmount(row, csDefault) {
+  const v = row?.childSupport;
+  if (v === undefined || String(v).trim() === '') return csDefault || 0;
+  return parseFloat(v) || 0;
+}
+// The payload variant: undefined = let the backend withhold order defaults.
+function csOverrideForPayload(row) {
+  const v = row?.childSupport;
+  if (v === undefined || String(v).trim() === '') return undefined;
+  return parseFloat(v) || 0;
+}
+
 function calcIRSDepositDue(payDate, depositSchedule) {
   if (!payDate) return '';
   const d = new Date(payDate + 'T00:00:00'), dow = d.getDay();
@@ -234,6 +249,10 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
   const [newGroup, setNewGroup] = useState({ name: '', frequency: 'biweekly', firstPayPeriodEnd: '', payDate: '' });
   const [savingGroup, setSavingGroup] = useState(false);
   const [dd, setDd]             = useState(null); // { status, last4, bankAccountType, routingNumber }
+  const [csOrders, setCsOrders] = useState([]);   // child support orders for this employee
+  const [csForm, setCsForm]     = useState(null); // { vendorName, caseNumber, amount } | null (add form open)
+  const [csBusy, setCsBusy]     = useState(false);
+  const [csErr, setCsErr]       = useState('');
   const [ddForm, setDdForm]     = useState({ routingNumber: '', accountNumber: '', confirmAccount: '', bankAccountType: 'checking' });
   const [ddEdit, setDdEdit]     = useState(false);
   const [ddSaving, setDdSaving] = useState(false);
@@ -245,6 +264,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
 
   useEffect(() => {
     if (!empId) return;
+    api.getEmployeeChildSupport(empId).then(setCsOrders).catch(() => {});
     api.getDirectDeposit(empId).then(setDd).catch(() => {});
     api.getEmployee(empId, true).then(emp => setForm({
       // ssn intentionally starts blank: the label promises "leave blank to keep
@@ -369,6 +389,34 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
       setDdEdit(false);
     } catch (e) { setDdErr(e.message); }
     finally { setDdSaving(false); }
+  }
+
+  async function handleCsAdd() {
+    const amt = parseFloat(csForm.amount);
+    if (!csForm.vendorName.trim()) { setCsErr('Vendor name is required — it’s who the check is made out to.'); return; }
+    if (!(amt > 0)) { setCsErr('Amount per paycheck must be greater than $0.'); return; }
+    setCsBusy(true); setCsErr('');
+    try {
+      const created = await api.createChildSupportOrder({ employeeId: empId, vendorName: csForm.vendorName, caseNumber: csForm.caseNumber, amount: amt });
+      setCsOrders(prev => [...prev, created]);
+      setCsForm(null);
+    } catch (e) { setCsErr(e.message); }
+    finally { setCsBusy(false); }
+  }
+
+  async function handleCsToggle(order) {
+    try {
+      const updated = await api.updateChildSupportOrder(order.id, { active: order.active ? 0 : 1 });
+      setCsOrders(prev => prev.map(o => o.id === order.id ? updated : o));
+    } catch (e) { setCsErr(e.message); }
+  }
+
+  async function handleCsDelete(order) {
+    if (!window.confirm(`Remove the ${fmt(order.amount)}/check child support order payable to ${order.vendor_name}?\n\nPast paychecks and pending remittances keep their history — only future withholding stops.`)) return;
+    try {
+      await api.deleteChildSupportOrder(order.id);
+      setCsOrders(prev => prev.filter(o => o.id !== order.id));
+    } catch (e) { setCsErr(e.message); }
   }
 
   async function handleDelete() {
@@ -536,6 +584,49 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                 <div className="form-group"><label className="form-label">Other dependents (×$500)</label><input className="form-input" type="number" min="0" max="20" value={form.step3Other} onChange={e => setForm(f => ({ ...f, step3Other: parseInt(e.target.value || 0) }))} style={{ maxWidth: 80 }} /></div>
               </div>
               <div className="form-group" style={{ maxWidth: 180 }}><label className="form-label">Hire Date</label><input className="form-input" type="date" value={form.hireDate} onChange={set('hireDate')} /></div>
+
+              {/* ── Child Support ── */}
+              <p className="form-section-title">Child Support</p>
+              {csErr && <div className="alert alert-error" role="alert" style={{ marginBottom: 10, fontSize: 12 }}><span>⚠</span>{csErr}</div>}
+              {csOrders.length === 0 && !csForm && (
+                <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '0 0 10px' }}>No withholding orders. Add one to withhold child support from every paycheck automatically.</p>
+              )}
+              {csOrders.map(o => (
+                <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid var(--border)', marginBottom: 6, background: o.active ? '#fff' : 'var(--bg-secondary)', opacity: o.active ? 1 : 0.65 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.vendor_name}</div>
+                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{o.case_number ? `Case ${o.case_number} · ` : ''}{fmt(o.amount)} per paycheck{o.active ? '' : ' · paused'}</div>
+                  </div>
+                  <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => handleCsToggle(o)}>{o.active ? 'Pause' : 'Resume'}</button>
+                  <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11, color: '#dc2626' }} onClick={() => handleCsDelete(o)}>Remove</button>
+                </div>
+              ))}
+              {csForm ? (
+                <div style={{ background: 'var(--accent-light)', border: '1px solid var(--accent-mid)', padding: '12px 12px 10px', marginBottom: 14 }}>
+                  <div className="form-group" style={{ marginBottom: 8 }}>
+                    <label className="form-label" style={{ fontSize: 11 }}>Vendor (check payable to)</label>
+                    <input className="form-input" value={csForm.vendorName} onChange={e => setCsForm(f => ({ ...f, vendorName: e.target.value }))} placeholder="e.g. TX Child Support SDU" />
+                  </div>
+                  <div className="form-grid" style={{ marginBottom: 8 }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: 11 }}>Case / Cause #</label>
+                      <input className="form-input mono" value={csForm.caseNumber} onChange={e => setCsForm(f => ({ ...f, caseNumber: e.target.value }))} placeholder="optional" />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: 11 }}>Amount per paycheck ($)</label>
+                      <input className="form-input mono" type="number" min="0.01" step="0.01" value={csForm.amount} onChange={e => setCsForm(f => ({ ...f, amount: e.target.value }))} placeholder="150.00" />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setCsForm(null); setCsErr(''); }}>Cancel</button>
+                    <button type="button" className="btn btn-primary btn-sm" disabled={csBusy} onClick={handleCsAdd}>{csBusy ? 'Adding…' : 'Add Order'}</button>
+                  </div>
+                </div>
+              ) : (
+                <button type="button" className="btn btn-secondary btn-sm" style={{ marginBottom: 16 }} onClick={() => { setCsForm({ vendorName: '', caseNumber: '', amount: '' }); setCsErr(''); }}>
+                  + Add Child Support Order
+                </button>
+              )}
 
               {/* ── Direct Deposit ── */}
               <p className="form-section-title">Direct Deposit</p>
@@ -1533,7 +1624,7 @@ function ModalOverlay({ children, onClose }) {
 
 // ── Pay Employees Tab ─────────────────────────────────────────────────────────
 
-function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, calcEmpYTD, ppy, pendingRows, setPendingRows, getRow, skipPending, periodOverrides, setPeriodOverrides }) {
+function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, calcEmpYTD, ppy, pendingRows, setPendingRows, getRow, skipPending, periodOverrides, setPeriodOverrides, csDefaults }) {
     if (!rowData) return null;
 
     // Use module-scope stable components (ModalTR, ModalColHeader, ModalOverlay)
@@ -1610,6 +1701,11 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
         { field: 'mileage',     label: 'Mileage / Reimbursement', hint: 'non-taxable', isDeduction: false },
         { field: 'cashAdvance', label: 'Cash Advance',            hint: 'deduction',   isDeduction: true  },
       ];
+      // Child support: default comes from the employee's active orders; an edited
+      // value on this row overrides the total for this check only (clearing the
+      // field reverts to the default).
+      const csDefault = r2((csDefaults || {})[emp.id] || 0);
+      const csEffective = csEffectiveAmount(row, csDefault);
       const [addedPendingItems, setAddedPendingItems] = useState(() => {
         const s = new Set();
         if (parseFloat(row.tips        || 0) > 0) s.add('tips');
@@ -1631,7 +1727,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
       const dispMed    = row.medOverride   !== undefined ? parseFloat(row.medOverride   || 0) : estMedCalc;
       const dispErSS   = row.erSsOverride  !== undefined ? parseFloat(row.erSsOverride  || 0) : r2(liveGross * EE_SS_RATE);
       const dispErMed  = row.erMedOverride !== undefined ? parseFloat(row.erMedOverride || 0) : r2(liveGross * EE_MEDICARE_RATE);
-      const estNet     = r2(liveGross - dispSS - dispMed - estCashAdv);
+      const estNet     = r2(liveGross - dispSS - dispMed - estCashAdv - csEffective);
       // Employer estimates
       const estFutaTaxable = Math.max(0, Math.min(liveGross, 7000 - ytd.gross));
       const estFutaCalc= r2(estFutaTaxable * 0.006);
@@ -1668,9 +1764,9 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
       const dispFIT      = row.fitOverride   !== undefined ? parseFloat(row.fitOverride   || 0) : estFITCalc;
       const dispStateTax = row.stateOverride !== undefined ? parseFloat(row.stateOverride || 0) : estStateTaxCalc;
       const estNetFull  = (dispFIT != null && dispStateTax != null)
-        ? r2(liveGross - dispFIT - dispSS - dispMed - dispStateTax - estCashAdv)
+        ? r2(liveGross - dispFIT - dispSS - dispMed - dispStateTax - estCashAdv - csEffective)
         : (liveCalc != null
-          ? r2(liveGross - (liveCalc.fitWithholding || 0) - dispSS - dispMed - (liveCalc.stateIncomeTax || 0) - estCashAdv)
+          ? r2(liveGross - (liveCalc.fitWithholding || 0) - dispSS - dispMed - (liveCalc.stateIncomeTax || 0) - estCashAdv - csEffective)
           : estNet);
 
       // Sum estimates from ALL OTHER pending periods for this employee
@@ -1820,6 +1916,10 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
                   {addedPendingItems.has('cashAdvance') && (
                     <TR label="Cash Advance"       amount={parseFloat(row.cashAdvance || 0)} ytdAmount={null} negative color="#dc2626"
                       editValue={row.cashAdvance || ''} onEditChange={v => setField('cashAdvance', v)} />
+                  )}
+                  {(csDefault > 0 || row.childSupport !== undefined) && (
+                    <TR label="Child Support"      amount={csEffective} ytdAmount={null} negative color="#dc2626"
+                      editValue={row.childSupport !== undefined ? row.childSupport : String(csDefault)} onEditChange={v => setField('childSupport', v)} />
                   )}
                   <TR label="Social Security (est.)" amount={dispSS}  ytdAmount={ytdWithCurrent.eeSS}     negative color="#dc2626"
                     editValue={row.ssOverride !== undefined ? row.ssOverride : String(estSSCalc)} onEditChange={v => setField('ssOverride', v)} />
@@ -2235,6 +2335,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
       - liveStateTax
       - parseFloat(itemForm.deduction   || 0)
       - parseFloat(itemForm.garnishment || 0)
+      - (stub.child_support || 0)
       + parseFloat(itemForm.reimbursement || 0)
     ));
 
@@ -2253,6 +2354,9 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
       ...optionalDeductions
         .filter(x => addedItems.has(x.key))
         .map(x => ({ label: x.label, amount: parseFloat(itemForm[x.key] || 0), editValue: canEdit ? itemForm[x.key] : undefined, onEditChange: set(x.key) })),
+      // Read-only: withheld per the employee's child support orders. Adjust the
+      // amount on future checks via the employee's orders, not here.
+      (stub.child_support || 0) > 0 && { label: 'Child Support', amount: stub.child_support },
     ].filter(Boolean);
 
     const hiddenItems = [...optionalEarnings, ...optionalDeductions].filter(x => !addedItems.has(x.key));
@@ -2504,6 +2608,17 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, cal
 
 function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick = 0 }) {
   const [showPaycheckImport, setShowPaycheckImport] = useState(false);
+  // Active child-support order totals per employee — auto-withheld on every run,
+  // editable per check in the detail modal.
+  const [csTotals, setCsTotals] = useState({});
+  const [csRefetch, setCsRefetch] = useState(0); // bumped when the employee drawer closes (orders may have changed)
+  useEffect(() => {
+    api.getChildSupportOrders(clientId).then(orders => {
+      const m = {};
+      for (const o of orders) if (o.active) m[o.employee_id] = r2((m[o.employee_id] || 0) + (o.amount || 0));
+      setCsTotals(m);
+    }).catch(() => {});
+  }, [clientId, refreshTick, csRefetch]);
   const [payGroups, setPayGroups]     = useState([]);
   const [currentGroupId, setCurrentGroupId] = useState(null);
   const [archiveMenuOpen, setArchiveMenuOpen] = useState(false);
@@ -2932,7 +3047,11 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
             ...(commAmt   > 0 ? [{ payType: 'commission', description: 'Commission',         amount: commAmt }] : []),
           ];
           const ytd = calcEmpYTD(emp.id, null);
-          return { employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay, bonus: bonusAmt, commission: commAmt, reimbursement: mileAmt, deduction: cashAdv, reportedTips: tips };
+          const csOv = csOverrideForPayload(row);
+          return { employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay, bonus: bonusAmt, commission: commAmt, reimbursement: mileAmt, deduction: cashAdv, reportedTips: tips,
+            // Only send when edited on this check — absent (or a cleared field)
+            // lets the backend withhold the employee's active order amounts.
+            ...(csOv !== undefined ? { childSupport: csOv } : {}) };
         });
         const ov = periodOverrides[period.end] || {};
         // paymentMethod tells the backend whether to fire ACH transfers: 'print'/'paystub'
@@ -3078,6 +3197,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           regularPay: regPay,
           overtimePay: otPay,
           bonus: bonus2, commission: comm2, reimbursement: mile2, deduction: cashAdv2, reportedTips: tips2,
+          ...(csOverrideForPayload(rowData2) !== undefined ? { childSupport: csOverrideForPayload(rowData2) } : {}),
         };
         const res = await api.runPayroll({
           clientId,
@@ -3383,7 +3503,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
               const dispFITest  = row.fitOverride   !== undefined ? parseFloat(row.fitOverride   || 0) : estFIT;
               const dispStateEst= row.stateOverride !== undefined ? parseFloat(row.stateOverride || 0) : estStateTax;
               const cashAdvEst  = parseFloat(row.cashAdvance || 0);
-              const estNetPay  = r2(grossPreview - dispEeSS - dispEeMed - dispFITest - dispStateEst - cashAdvEst);
+              const csEst       = csEffectiveAmount(row, csTotals[emp.id]);
+              const estNetPay  = r2(grossPreview - dispEeSS - dispEeMed - dispFITest - dispStateEst - cashAdvEst - csEst);
               const daysToPayDate = daysUntil(period.payDate);
               const isLate   = period.payDate < new Date().toISOString().slice(0, 10);
               const status   = isLate ? 'late' : (daysToPayDate !== null && daysToPayDate <= 5 ? 'due-soon' : 'upcoming');
@@ -3874,7 +3995,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       {detailModal && <CheckDetailModal rowData={detailModal} onClose={() => { reloadStubs(); setDetailModal(null); }}
         reloadStubs={reloadStubs} clientId={clientId} client={client} calcEmpYTD={calcEmpYTD} ppy={ppy}
         pendingRows={pendingRows} setPendingRows={setPendingRows} getRow={getRow} skipPending={skipPending}
-        periodOverrides={periodOverrides} setPeriodOverrides={setPeriodOverrides} />}
+        periodOverrides={periodOverrides} setPeriodOverrides={setPeriodOverrides} csDefaults={csTotals} />}
 
       {/* Rate change confirmation */}
       {rateUpdatePrompt && (
@@ -3934,8 +4055,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       {/* Employee edit drawer */}
       {drawerEmpId && (
         <EmployeeDrawer clientId={clientId} empId={drawerEmpId}
-          onClose={() => setDrawerEmpId(null)}
-          onSaved={() => { setDrawerEmpId(null); onRefresh?.(); }} />
+          onClose={() => { setDrawerEmpId(null); setCsRefetch(t => t + 1); }}
+          onSaved={() => { setDrawerEmpId(null); setCsRefetch(t => t + 1); onRefresh?.(); }} />
       )}
 
       {/* Pay Group Editor */}
@@ -4125,7 +4246,11 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
           {/* ── Step 2: Full check preview ── */}
           {ugPreview && (() => {
             const { emp, isSalary, regH, otH, rate, regPay, otPay, gross, ugTips, ugBonus, ugComm, ugCashAdv, ugMile, calc, ytd } = ugPreview;
-            const netPay    = r2(gross - (calc.fitWithholding || 0) - (calc.employeeSS || 0) - (calc.employeeMedicare || 0) - (calc.additionalMedicare || 0) - (calc.stateIncomeTax || 0) - ugCashAdv);
+            // The backend auto-withholds active child support orders on EVERY run,
+            // including ungrouped checks — the preview must show it or the printed
+            // net won't match this screen.
+            const ugCS      = r2(csTotals[emp.id] || 0);
+            const netPay    = Math.max(0, r2(gross - (calc.fitWithholding || 0) - (calc.employeeSS || 0) - (calc.employeeMedicare || 0) - (calc.additionalMedicare || 0) - (calc.stateIncomeTax || 0) - ugCashAdv - ugCS));
             const erTotal   = r2((calc.employerSS || 0) + (calc.employerMedicare || 0) + (calc.futaTax || 0) + (calc.sutaTax || 0));
             const dep941    = r2((calc.fitWithholding || 0) + (calc.employeeSS || 0) + (calc.employerSS || 0) + (calc.employeeMedicare || 0) + (calc.employerMedicare || 0) + (calc.additionalMedicare || 0));
             const hasDD     = emp.directDeposit?.status === 'active';
@@ -4190,6 +4315,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
                         <Row label="Medicare"           amount={calc.employeeMedicare || 0}  ytdAmt={ytd.eeMed}    negative color={(calc.employeeMedicare || 0) > 0 ? '#dc2626' : 'var(--text-muted)'} />
                         <Row label="State Income Tax"   amount={calc.stateIncomeTax || 0}    ytdAmt={ytd.stateTax} negative color={(calc.stateIncomeTax || 0) > 0 ? '#dc2626' : 'var(--text-muted)'} />
                         {ugCashAdv > 0 && <Row label="Cash Advance (deduction)" amount={ugCashAdv} negative color="#dc2626" />}
+                        {ugCS > 0 && <Row label="Child Support (auto-withheld)" amount={ugCS} negative color="#dc2626" />}
                       </tbody>
                     </table>
                   </div>
@@ -4728,6 +4854,8 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
 function PayLiabilitiesTab({ clientId, client }) {
   const [paystubs, setPaystubs]     = useState([]);
   const [credits, setCredits]       = useState([]);
+  const [csWithholdings, setCsWithholdings] = useState([]); // child support rows joined w/ paycheck
+  const [csBusyKey, setCsBusyKey]   = useState(null);       // vendor|payDate while paying/printing
   const [loading,  setLoading]      = useState(true);
   const [submitting, setSubmitting] = useState(null);
   const [result,   setResult]       = useState(null);
@@ -4760,8 +4888,12 @@ function PayLiabilitiesTab({ clientId, client }) {
   const UNPAID_SUI = (s) => (s.status_sui || 'pending') === 'pending' || s.status_sui === 'processing' || s.status_sui === 'failed';
 
   async function reload({ keepSelections = false, skipJobRestore = false } = {}) {
-    const [stubs, crds] = await Promise.all([api.getPaystubs(clientId), api.getPaystubCredits(clientId)]);
-    setPaystubs(stubs); setCredits(crds);
+    const [stubs, crds, csw] = await Promise.all([
+      api.getPaystubs(clientId),
+      api.getPaystubCredits(clientId),
+      api.getChildSupportWithholdings(clientId).catch(() => []),
+    ]);
+    setPaystubs(stubs); setCredits(crds); setCsWithholdings(csw);
     if (!skipJobRestore) {
       const processingStub = stubs.find(s =>
         (s.status === 'processing' || s.status_940 === 'processing') && s.bridge_job_id
@@ -4786,6 +4918,68 @@ function PayLiabilitiesTab({ clientId, client }) {
   const unappCredits = credits.filter(c => !c.applied);
   const credit941 = unappCredits.reduce((s, c) => s + (c.total_941_credit || 0), 0);
   const credit940 = unappCredits.reduce((s, c) => s + (c.total_940_credit || 0), 0);
+
+  // ── Child support liabilities ────────────────────────────────────────────────
+  // Pending withholdings on issued checks, grouped by vendor + pay date. The
+  // remittance is due 7 calendar days after the pay date (standard TX/most-state
+  // rule), so Late/Due Soon flags key off that.
+  const csAddDays = (dateStr, n) => { const d = new Date(dateStr + 'T00:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); };
+  const csPendingGroups = (() => {
+    const map = {};
+    for (const w of csWithholdings) {
+      if (w.status !== 'pending' || !ISSUED.has(w.check_status)) continue;
+      const payDate = w.settlement_date || w.pay_period_end || 'unknown';
+      const key = `${w.vendor_name}|${payDate}`;
+      if (!map[key]) map[key] = { key, vendor: w.vendor_name, payDate, due: payDate !== 'unknown' ? csAddDays(payDate, 7) : null, rows: [], total: 0 };
+      map[key].rows.push(w);
+      map[key].total = r2(map[key].total + w.amount);
+    }
+    return Object.values(map).sort((a, b) => (a.due || '').localeCompare(b.due || ''));
+  })();
+  const csSentGroups = (() => {
+    const map = {};
+    for (const w of csWithholdings) {
+      if (w.status !== 'submitted') continue;
+      // Full paid_at timestamp: two "Mark Sent" batches on the same day must stay
+      // separate rows, or one Undo would revert both payments.
+      const key = `${w.vendor_name}|${w.check_number || ''}|${w.paid_at || ''}`;
+      if (!map[key]) map[key] = { key, vendor: w.vendor_name, checkNumber: w.check_number, paidAt: w.paid_at, rows: [], total: 0 };
+      map[key].rows.push(w);
+      map[key].total = r2(map[key].total + w.amount);
+    }
+    return Object.values(map).sort((a, b) => (b.paidAt || '').localeCompare(a.paidAt || ''));
+  })();
+
+  async function handleCsPay(group, { print }) {
+    if (csBusyKey) return;
+    const ok = window.confirm(print
+      ? `Print a ${fmt(group.total)} check to ${group.vendor}?\n\nThis uses the company's next check number and marks ${group.rows.length} withholding${group.rows.length === 1 ? '' : 's'} paid.`
+      : `Mark ${fmt(group.total)} to ${group.vendor} as paid outside this app?\n\nUse Undo under Sent child support if this was a mistake.`);
+    if (!ok) return;
+    setCsBusyKey(group.key);
+    try {
+      const ids = group.rows.map(w => w.id);
+      const res = await api.payChildSupport({ clientId, withholdingIds: ids, assignCheckNumber: !!print });
+      if (print) {
+        try { await api.printChildSupportCheck(clientId, ids, res.checkNumber); }
+        catch (e) {
+          alert(`The payment was recorded (check #${res.checkNumber}) but the PDF failed: ${e.message}\nUse Reprint under "Sent child support" to try again.`);
+        }
+      }
+    } catch (e) { alert(e.message); }
+    finally {
+      // Always reload — the payment may have succeeded even if the print didn't,
+      // and a stale "pending" row would invite a double payment.
+      setCsBusyKey(null);
+      await reload();
+    }
+  }
+
+  async function handleCsUndo(group) {
+    if (!window.confirm(`Move this ${fmt(group.total)} ${group.vendor} payment back to pending?`)) return;
+    try { await api.unpayChildSupport({ clientId, withholdingIds: group.rows.map(w => w.id) }); await reload(); }
+    catch (e) { alert(e.message); }
+  }
 
   function buildPeriods(stubs, taxType, schedule) {
     const map = {};
@@ -5289,7 +5483,73 @@ function PayLiabilitiesTab({ clientId, client }) {
         togglePeriodStatus={togglePeriodStatus}
       />
 
-      {periods941.length === 0 && periods940.length === 0 && periodsSUI.length === 0 && (
+      {/* Child support — vendor remittance checks, due 7 days after each pay date */}
+      {csPendingGroups.length > 0 && (
+        <div className="table-scroll" style={{ background: '#fff', border: '1.5px solid #9faab6', borderRadius: 4, marginBottom: 16 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+            <thead>
+              <tr>
+                {['Vendor', 'Pay Date', 'Due', 'Employees', 'Amount', ''].map((h, i) => (
+                  <th key={h || 'actions'} style={{ padding: '8px 14px', fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: i === 4 ? 'right' : 'left', background: '#f8f9fa', borderBottom: '1px solid #d1d5db' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <tr style={{ background: '#f8f9fa' }}>
+                <td colSpan={6} style={{ padding: '9px 16px', borderLeft: '3px solid #6b7280', fontWeight: 700, fontSize: 13, color: '#374151' }}>
+                  Child Support
+                  {csPendingGroups.some(g => g.due && todayStr > g.due) && <span style={{ color: '#dc2626', fontWeight: 600, marginLeft: 12, fontSize: 12 }}>{csPendingGroups.filter(g => g.due && todayStr > g.due).length} overdue</span>}
+                </td>
+              </tr>
+              {csPendingGroups.map(g => {
+                const isLate = g.due && todayStr > g.due;
+                const isDueSoon = !isLate && g.due && daysUntil(g.due) !== null && daysUntil(g.due) <= 3;
+                const busy = csBusyKey === g.key;
+                return (
+                  <tr key={g.key} style={{ background: '#fff', borderTop: '1px solid #e5e7eb' }}>
+                    <td style={{ padding: '14px 14px', fontWeight: 600, color: '#374151' }}>
+                      {g.vendor}
+                      <div style={{ fontSize: 11.5, fontWeight: 400, color: '#9ca3af' }}>{[...new Set(g.rows.map(w => w.case_number).filter(Boolean))].map(c => `Case ${c}`).join(' · ')}</div>
+                    </td>
+                    <td style={{ padding: '14px 14px', color: '#374151' }}>{fmtDate(g.payDate === 'unknown' ? null : g.payDate)}</td>
+                    <td style={{ padding: '14px 14px', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, color: isLate ? '#dc2626' : isDueSoon ? '#d97706' : '#374151' }}
+                      title="Child support must be remitted within 7 days of the pay date">
+                      {fmtDate(g.due)}
+                      {isLate && <span style={{ marginLeft: 6, fontSize: 12 }}>(Late)</span>}
+                      {isDueSoon && <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 500 }}>(Due Soon)</span>}
+                    </td>
+                    <td style={{ padding: '14px 14px', fontSize: 13, color: '#6b7280' }}>{[...new Set(g.rows.map(w => w.employee_name).filter(Boolean))].join(', ') || g.rows.length}</td>
+                    <td style={{ padding: '14px 14px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 15, color: '#111' }}>{fmt(g.total)}</td>
+                    <td style={{ padding: '8px 14px', textAlign: 'right' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end' }}>
+                        <button
+                          onClick={() => handleCsPay(g, { print: false })}
+                          disabled={csBusyKey !== null}
+                          title="Record this remittance as paid outside the app"
+                          style={{ background: 'none', border: 'none', color: '#16a34a', fontSize: 13, textDecoration: 'underline', padding: '2px 0', whiteSpace: 'nowrap', cursor: csBusyKey ? 'not-allowed' : 'pointer', opacity: csBusyKey ? 0.5 : 1 }}>
+                          Mark Sent
+                        </button>
+                        <button className="btn btn-primary btn-sm" style={{ fontSize: 13, whiteSpace: 'nowrap' }}
+                          disabled={csBusyKey !== null}
+                          onClick={() => handleCsPay(g, { print: true })}>
+                          {busy ? 'Printing…' : '🖨 Print Check'}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              <tr style={{ background: '#f8f9fa', borderTop: '1px solid #e5e7eb' }}>
+                <td colSpan={4} style={{ padding: '10px 14px' }} />
+                <td style={{ padding: '10px 14px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 15 }}>{fmt(r2(csPendingGroups.reduce((s, g) => s + g.total, 0)))}</td>
+                <td />
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {periods941.length === 0 && periods940.length === 0 && periodsSUI.length === 0 && csPendingGroups.length === 0 && (
         <div className="card">
           <div className="empty-state" style={{ padding: '32px 20px' }}>
             <div className="empty-state-icon">✓</div>
@@ -5297,6 +5557,38 @@ function PayLiabilitiesTab({ clientId, client }) {
             <p>No pending liabilities.</p>
           </div>
         </div>
+      )}
+
+      {/* Sent child support — collapsible, with Undo and reprint */}
+      {csSentGroups.length > 0 && (
+        <details style={{ marginBottom: 16 }}>
+          <summary style={{ cursor: 'pointer', padding: '10px 14px', background: '#fff', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>
+            Sent child support ({csSentGroups.length}) <span style={{ float: 'right', fontFamily: 'JetBrains Mono, monospace', color: '#16a34a', fontWeight: 700 }}>{fmt(r2(csSentGroups.reduce((s, g) => s + g.total, 0)))}</span>
+          </summary>
+          <div className="table-scroll" style={{ background: '#fff', border: '1px solid var(--border)', borderTop: 'none' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+              <tbody>
+                {csSentGroups.map(g => (
+                  <tr key={g.key} style={{ borderTop: '1px solid #e5e7eb' }}>
+                    <td style={{ padding: '11px 14px', fontWeight: 600, color: '#6b7280' }}>{g.vendor}</td>
+                    <td style={{ padding: '11px 14px', color: '#6b7280', fontSize: 12.5 }}>{g.checkNumber ? `Check #${g.checkNumber}` : 'Paid outside app'}{g.paidAt ? ` · ${fmtDate(g.paidAt.slice(0, 10))}` : ''}</td>
+                    <td style={{ padding: '11px 14px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#16a34a' }}>{fmt(g.total)}</td>
+                    <td style={{ padding: '8px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                      <button onClick={async () => { try { await api.printChildSupportCheck(clientId, g.rows.map(w => w.id), g.checkNumber); } catch (e) { alert(e.message); } }}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12.5, textDecoration: 'underline', marginRight: 10 }}>
+                        Reprint
+                      </button>
+                      <button onClick={() => handleCsUndo(g)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 12.5, textDecoration: 'underline' }}>
+                        Undo
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
       )}
 
       {/* Sent / Submitted history — single collapsible flat table */}

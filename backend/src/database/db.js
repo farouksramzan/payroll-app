@@ -290,6 +290,9 @@ function migrate() {
     { name: 'status_940',             def: "TEXT DEFAULT 'pending'" },
     { name: 'eftps_940_confirmation', def: 'TEXT' },
     { name: 'eftps_940_submitted_at', def: 'TEXT' },
+    // Total child support withheld on this check (post-tax; reduces net pay).
+    // Per-vendor breakdown lives in child_support_withholdings.
+    { name: 'child_support',          def: 'REAL DEFAULT 0' },
   ]);
 
   // payroll schedule + sequential check numbers on clients
@@ -651,6 +654,46 @@ function migrate() {
       UNIQUE(source_user_id, target_user_id),
       FOREIGN KEY (source_user_id) REFERENCES users(id) ON DELETE CASCADE,
       FOREIGN KEY (target_user_id) REFERENCES users(id) ON DELETE CASCADE
+    )
+  `);
+
+  // ── child_support_orders — recurring withholding orders per employee ─────────
+  // Each order: who the remittance check is made out to (vendor, e.g. a State
+  // Disbursement Unit), the case/cause number, and the amount withheld per check.
+  // An employee can carry multiple orders. Amounts are auto-withheld on every
+  // payroll run (editable per check) and reduce net pay post-tax.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS child_support_orders (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER NOT NULL,
+      vendor_name TEXT NOT NULL,
+      case_number TEXT,
+      amount      REAL NOT NULL DEFAULT 0,
+      active      INTEGER NOT NULL DEFAULT 1,
+      created_at  DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+    )
+  `);
+
+  // ── child_support_withholdings — one row per (paystub, order) actually withheld.
+  // Drives the Pay Liabilities "Child Support" section: pending rows group by
+  // vendor + pay date (due 7 days after pay date); paying assigns a company check
+  // number and marks them submitted. Cascade-deletes with the paycheck.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS child_support_withholdings (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      client_id    INTEGER NOT NULL,
+      paystub_id   INTEGER NOT NULL,
+      employee_id  INTEGER,
+      order_id     INTEGER,
+      vendor_name  TEXT NOT NULL,
+      case_number  TEXT,
+      amount       REAL NOT NULL,
+      status       TEXT NOT NULL DEFAULT 'pending',
+      check_number INTEGER,
+      paid_at      TEXT,
+      created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (paystub_id) REFERENCES paystubs(id) ON DELETE CASCADE
     )
   `);
 

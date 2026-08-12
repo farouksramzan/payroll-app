@@ -321,7 +321,7 @@ function renderClassicCheck(doc, stub, client, db) {
     }
     return sy;
   }
-  const deductRows = [['Federal Income Tax', stub.fit_withholding],['Social Security (6.2%)', stub.employee_ss],['Medicare (1.45%)', stub.employee_medicare],['State Income Tax', stub.state_income_tax],['Deductions', stub.deduction],['Garnishments', stub.garnishment]];
+  const deductRows = [['Federal Income Tax', stub.fit_withholding],['Social Security (6.2%)', stub.employee_ss],['Medicare (1.45%)', stub.employee_medicare],['State Income Tax', stub.state_income_tax],['Deductions', stub.deduction],['Garnishments', stub.garnishment],['Child Support', stub.child_support]];
   const employerRows = [['Social Security Match', stub.employer_ss],['Medicare Match', stub.employer_medicare],['FUTA (0.6%)', stub.futa_tax],['SUI', stub.suta_tax]];
   const lBottom = section('EMPLOYEE DEDUCTIONS', deductRows, leftX, y);
   const rBottom = section('EMPLOYER CONTRIBUTIONS', employerRows, rightX, y);
@@ -329,7 +329,7 @@ function renderClassicCheck(doc, stub, client, db) {
 
   doc.rect(ML, y, TW, 1).fill(BORDER); y += 8;
   doc.font('Helvetica-Bold').fontSize(9).fillColor(DARK).text('Gross Pay', ML + 4, y).text(`$${Number(stub.gross_wages).toFixed(2)}`, ML + 4, y, { width: TW - 8, align: 'right' }); y += 14;
-  doc.font('Helvetica').fontSize(8).fillColor(GRAY).text('Total Deductions', ML + 4, y).text(`-$${Number(stub.fit_withholding + stub.employee_ss + stub.employee_medicare + (stub.state_income_tax || 0) + (stub.deduction || 0) + (stub.garnishment || 0)).toFixed(2)}`, ML + 4, y, { width: TW - 8, align: 'right' }); y += 14;
+  doc.font('Helvetica').fontSize(8).fillColor(GRAY).text('Total Deductions', ML + 4, y).text(`-$${Number(stub.fit_withholding + stub.employee_ss + stub.employee_medicare + (stub.state_income_tax || 0) + (stub.deduction || 0) + (stub.garnishment || 0) + (stub.child_support || 0)).toFixed(2)}`, ML + 4, y, { width: TW - 8, align: 'right' }); y += 14;
   if (stub.reimbursement > 0) { doc.text('Reimbursements', ML + 4, y).text(`+$${Number(stub.reimbursement).toFixed(2)}`, ML + 4, y, { width: TW - 8, align: 'right' }); y += 14; }
   doc.rect(ML, y, TW, 1).fill(BORDER); y += 6;
   doc.font('Helvetica-Bold').fontSize(11).fillColor(ACCENT).text('NET PAY', ML + 4, y).text(`$${Number(stub.net_pay).toFixed(2)}`, ML + 4, y, { width: TW - 8, align: 'right' }); y += 20;
@@ -407,7 +407,7 @@ function drawCheckSection(doc, stub, client, routingNumber, accountNumber, check
     - (stub.fit_withholding || 0) - (stub.employee_ss || 0)
     - (stub.employee_medicare || 0) - (stub.additional_medicare || 0)
     - (stub.state_income_tax || 0) - (stub.deduction || 0)
-    - (stub.garnishment || 0) + (stub.reimbursement || 0)
+    - (stub.garnishment || 0) - (stub.child_support || 0) + (stub.reimbursement || 0)
   );
 
   // ── Company block (upper-left) ──────────────────────────────────────────────
@@ -524,7 +524,7 @@ function drawRecordOfPayment(doc, stub, client, db, startY, copyLabel) {
     - (stub.fit_withholding || 0) - (stub.employee_ss || 0)
     - (stub.employee_medicare || 0) - (stub.additional_medicare || 0)
     - (stub.state_income_tax || 0) - (stub.deduction || 0)
-    - (stub.garnishment || 0) + (stub.reimbursement || 0)
+    - (stub.garnishment || 0) - (stub.child_support || 0) + (stub.reimbursement || 0)
   );
 
   // ── YTD query ────────────────────────────────────────────────────────────────
@@ -542,11 +542,12 @@ function drawRecordOfPayment(doc, stub, client, db, startY, copyLabel) {
   const ytdSIT      = r2(ytdRows.reduce((s, r) => s + (r.state_income_tax    || 0), 0));
   const ytdDeduct   = r2(ytdRows.reduce((s, r) => s + (r.deduction           || 0), 0));
   const ytdGarni    = r2(ytdRows.reduce((s, r) => s + (r.garnishment         || 0), 0));
+  const ytdCS       = r2(ytdRows.reduce((s, r) => s + (r.child_support       || 0), 0));
   const ytdReimb    = r2(ytdRows.reduce((s, r) => s + (r.reimbursement       || 0), 0));
   const ytdNet      = r2(ytdRows.reduce((s, r) => s + r2(
     (r.gross_wages||0)-(r.fit_withholding||0)-(r.employee_ss||0)
     -(r.employee_medicare||0)-(r.additional_medicare||0)
-    -(r.state_income_tax||0)-(r.deduction||0)-(r.garnishment||0)+(r.reimbursement||0)
+    -(r.state_income_tax||0)-(r.deduction||0)-(r.garnishment||0)-(r.child_support||0)+(r.reimbursement||0)
   ), 0));
 
   // ── Separator ────────────────────────────────────────────────────────────────
@@ -658,6 +659,8 @@ function drawRecordOfPayment(doc, stub, client, db, startY, copyLabel) {
     taxRow('Deductions',   stub.deduction  || 0, ytdDeduct);
   if ((stub.garnishment || 0) > 0 || ytdGarni > 0)
     taxRow('Garnishments', stub.garnishment|| 0, ytdGarni);
+  if ((stub.child_support || 0) > 0 || ytdCS > 0)
+    taxRow('Child Support', stub.child_support || 0, ytdCS);
 
   // Net Pay (bold)
   doc.font('Helvetica-Bold').fontSize(7.5).fillColor(BLACK)
@@ -765,7 +768,7 @@ function renderTopCheck(doc, stub, client, routingNumber, accountNumber, db) {
     }
     return sy;
   }
-  const deductRows = [['Federal Income Tax', stub.fit_withholding],['Social Security (6.2%)', stub.employee_ss],['Medicare (1.45%)', stub.employee_medicare],['State Income Tax', stub.state_income_tax],['Deductions', stub.deduction],['Garnishments', stub.garnishment]];
+  const deductRows = [['Federal Income Tax', stub.fit_withholding],['Social Security (6.2%)', stub.employee_ss],['Medicare (1.45%)', stub.employee_medicare],['State Income Tax', stub.state_income_tax],['Deductions', stub.deduction],['Garnishments', stub.garnishment],['Child Support', stub.child_support]];
   const employerRows = [['Social Security Match', stub.employer_ss],['Medicare Match', stub.employer_medicare],['FUTA (0.6%)', stub.futa_tax],['SUI', stub.suta_tax]];
   const lBottom = section('EMPLOYEE DEDUCTIONS', deductRows, leftX, y);
   const rBottom = section('EMPLOYER CONTRIBUTIONS', employerRows, rightX, y);
@@ -773,7 +776,7 @@ function renderTopCheck(doc, stub, client, routingNumber, accountNumber, db) {
 
   doc.rect(ML, y, TW, 1).fill(BORDER); y += 8;
   doc.font('Helvetica-Bold').fontSize(9).fillColor(DARK).text('Gross Pay', ML + 4, y).text(`$${Number(stub.gross_wages).toFixed(2)}`, ML + 4, y, { width: TW - 8, align: 'right' }); y += 14;
-  doc.font('Helvetica').fontSize(8).fillColor(GRAY).text('Total Deductions', ML + 4, y).text(`-$${Number(stub.fit_withholding + stub.employee_ss + stub.employee_medicare + (stub.state_income_tax || 0) + (stub.deduction || 0) + (stub.garnishment || 0)).toFixed(2)}`, ML + 4, y, { width: TW - 8, align: 'right' }); y += 14;
+  doc.font('Helvetica').fontSize(8).fillColor(GRAY).text('Total Deductions', ML + 4, y).text(`-$${Number(stub.fit_withholding + stub.employee_ss + stub.employee_medicare + (stub.state_income_tax || 0) + (stub.deduction || 0) + (stub.garnishment || 0) + (stub.child_support || 0)).toFixed(2)}`, ML + 4, y, { width: TW - 8, align: 'right' }); y += 14;
   if (stub.reimbursement > 0) { doc.text('Reimbursements', ML + 4, y).text(`+$${Number(stub.reimbursement).toFixed(2)}`, ML + 4, y, { width: TW - 8, align: 'right' }); y += 14; }
   doc.rect(ML, y, TW, 1).fill(BORDER); y += 6;
   doc.font('Helvetica-Bold').fontSize(11).fillColor(ACCENT).text('NET PAY', ML + 4, y).text(`$${Number(stub.net_pay).toFixed(2)}`, ML + 4, y, { width: TW - 8, align: 'right' }); y += 20;
@@ -920,6 +923,7 @@ router.post('/paystub-selected', (req, res) => {
       ...(stub.state_income_tax > 0 ? [[`${stub.work_state || ''} State Tax`, fmtM(stub.state_income_tax)]] : []),
       ...(stub.deduction > 0    ? [['Deductions',   fmtM(stub.deduction)]]   : []),
       ...(stub.garnishment > 0  ? [['Garnishments', fmtM(stub.garnishment)]] : []),
+      ...(stub.child_support > 0 ? [['Child Support', fmtM(stub.child_support)]] : []),
     ];
     const erTaxRows = [
       ['SS Match (6.2%)',        fmtM(stub.employer_ss)],
@@ -935,7 +939,7 @@ router.post('/paystub-selected', (req, res) => {
     doc.rect(40, y, W, 1).fill(BORDER); y += 8;
 
     // Net pay highlight
-    const totalDed = (stub.fit_withholding || 0) + (stub.employee_ss || 0) + (stub.employee_medicare || 0) + (stub.additional_medicare || 0) + (stub.state_income_tax || 0) + (stub.deduction || 0) + (stub.garnishment || 0);
+    const totalDed = (stub.fit_withholding || 0) + (stub.employee_ss || 0) + (stub.employee_medicare || 0) + (stub.additional_medicare || 0) + (stub.state_income_tax || 0) + (stub.deduction || 0) + (stub.garnishment || 0) + (stub.child_support || 0);
     doc.font('Helvetica').fontSize(9).fillColor(GRAY)
       .text('Total Deductions (Employee):', 40, y, { width: W * 0.65 });
     doc.font('Helvetica-Bold').fillColor(DARK).text(fmtM(totalDed), 40, y, { width: W, align: 'right' }); y += 16;
@@ -1284,7 +1288,9 @@ router.put('/:id', (req, res) => {
     const effectiveGarnishment   = garnishmentIn   !== undefined ? parseFloat(garnishmentIn   || 0) : (stub.garnishment   || 0);
     const effectiveReimbursement = reimbursementIn !== undefined ? parseFloat(reimbursementIn || 0) : (stub.reimbursement || 0);
     // Never store a negative net pay — it would drive a negative ACH amount.
-    taxes.netPay = Math.max(0, Math.round((taxes.netPay - effectiveDeduction - effectiveGarnishment + effectiveReimbursement) * 100) / 100);
+    // child_support isn't editable here, but the stored withholding must keep
+    // reducing net pay when other fields are re-derived.
+    taxes.netPay = Math.max(0, Math.round((taxes.netPay - effectiveDeduction - effectiveGarnishment - (stub.child_support || 0) + effectiveReimbursement) * 100) / 100);
 
     db.prepare(`
       UPDATE paystubs SET
@@ -1368,6 +1374,7 @@ router.put('/:id', (req, res) => {
       - (stub.state_income_tax || 0)
       - newDeduction
       - newGarnishment
+      - (stub.child_support || 0)
       + newReimbursement
     ));
     db.prepare(`
@@ -1422,6 +1429,14 @@ router.delete('/:id', (req, res) => {
     const which = [submitted941 && '941', submitted940 && '940'].filter(Boolean).join(' and ');
     return res.status(409).json({
       error: `The ${which} deposit for this paystub was already submitted to EFTPS. Deleting it will not reverse the filed deposit — file an amended return if the deposit was wrong. To delete anyway, retry with force enabled.`,
+    });
+  }
+  // A paid child-support remittance is a real outgoing check — deleting the paycheck
+  // would cascade away the only record of it (check number, amount, date).
+  const paidCS = db.prepare(`SELECT COUNT(*) AS n FROM child_support_withholdings WHERE paystub_id = ? AND status = 'submitted'`).get(stub.id).n;
+  if (!force && paidCS > 0) {
+    return res.status(409).json({
+      error: `A child support check for this paycheck was already paid/printed. Deleting the paycheck erases that payment record (check number and amount). Undo the child support payment first, or retry with force enabled.`,
     });
   }
   if (stub.check_status === 'voided') return res.status(400).json({ error: 'Voided checks cannot be deleted — they must stay for record keeping' });
@@ -1632,9 +1647,9 @@ router.post('/payroll-run', (req, res) => {
         total_deposit, net_pay, ytd_wages_before,
         tax_year, tax_quarter, check_number, payroll_run_id,
         payment_method, regular_hours, overtime_hours, regular_pay, overtime_pay,
-        bonus, commission, reimbursement, deduction, garnishment, reported_tips,
+        bonus, commission, reimbursement, deduction, garnishment, child_support, reported_tips,
         check_status, settlement_due_date, pay_group_id
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `);
     const insertItem = db.prepare(`
       INSERT INTO paystub_line_items (paystub_id, pay_type, description, hours, rate, amount)
@@ -1649,6 +1664,10 @@ router.post('/payroll-run', (req, res) => {
         ytd_futa_wages = ytd_futa_wages + excluded.ytd_futa_wages,
         ytd_suta_wages = ytd_suta_wages + excluded.ytd_suta_wages,
         updated_at     = CURRENT_TIMESTAMP
+    `);
+    const insertCS = db.prepare(`
+      INSERT INTO child_support_withholdings (client_id, paystub_id, employee_id, order_id, vendor_name, case_number, amount, status)
+      VALUES (?,?,?,?,?,?,?, 'pending')
     `);
 
     for (const empData of employees) {
@@ -1678,12 +1697,48 @@ router.post('/payroll-run', (req, res) => {
         sutaRate:  client.suta_rate || null,
       });
 
-      // Net pay = gross - taxes - deductions - garnishments + reimbursements
-      taxes.netPay = Math.round((taxes.netPay
+      // Child support: auto-withhold the employee's active orders (post-tax).
+      // empData.childSupport, when present, overrides the TOTAL for this check —
+      // scaled proportionally across the orders so multi-order splits stay fair.
+      const csOrders = db.prepare('SELECT * FROM child_support_orders WHERE employee_id = ? AND active = 1').all(emp.id);
+      let csAlloc = csOrders.map(o => ({ order: o, amount: r2(o.amount) })).filter(a => a.amount > 0);
+      // Shrink allocations (last-first) until their sum fits `limit` — used both for
+      // an override total and for capping at the net actually available.
+      const capAlloc = (alloc, limit) => {
+        let total = r2(alloc.reduce((s, a) => s + a.amount, 0));
+        const out = alloc.map(a => ({ ...a }));
+        for (let i = out.length - 1; i >= 0 && total > limit; i--) {
+          const cut = Math.min(out[i].amount, r2(total - limit));
+          out[i].amount = r2(out[i].amount - cut);
+          total = r2(total - cut);
+        }
+        return out.filter(a => a.amount > 0);
+      };
+      if (empData.childSupport != null && csAlloc.length > 0) {
+        const target = Math.max(0, r2(parseFloat(empData.childSupport) || 0));
+        const base = csAlloc.reduce((s, a) => s + a.amount, 0);
+        let acc = 0;
+        csAlloc = csAlloc.map((a, i) => {
+          // Clamp every share to the remaining target so rounding can never push
+          // the sum past the requested total (or the last share negative).
+          const amt = i === csAlloc.length - 1 ? r2(target - acc) : Math.min(r2((a.amount / base) * target), r2(target - acc));
+          acc = r2(acc + amt);
+          return { ...a, amount: amt };
+        }).filter(a => a.amount > 0);
+      }
+
+      // Net pay = gross - taxes - deductions - garnishments - child support + reimbursements.
+      // Child support can only take what's actually left after everything else — a
+      // light pay period must not drive net pay negative (a negative ACH amount) or
+      // book a liability for money that was never withheld.
+      const netBeforeCS = Math.round((taxes.netPay
         - parseFloat(empData.deduction    || 0)
         - parseFloat(empData.garnishment  || 0)
         + parseFloat(empData.reimbursement || 0)
       ) * 100) / 100;
+      csAlloc = capAlloc(csAlloc, Math.max(0, netBeforeCS));
+      const csTotal = r2(csAlloc.reduce((s, a) => s + a.amount, 0));
+      taxes.netPay = Math.max(0, r2(netBeforeCS - csTotal));
 
       // Atomically get + increment check number inside the same transaction
       const checkNum = db.prepare('SELECT next_check_number FROM clients WHERE id = ?').get(clientId).next_check_number || 1001;
@@ -1711,6 +1766,7 @@ router.post('/payroll-run', (req, res) => {
         parseFloat(empData.reimbursement || 0),
         parseFloat(empData.deduction     || 0),
         parseFloat(empData.garnishment   || 0),
+        csTotal,
         parseFloat(empData.reportedTips  || 0),
         'draft',
         calcSettlementDueDate(settlementDate || payPeriodEnd, client.deposit_schedule || 'monthly'),
@@ -1723,12 +1779,16 @@ router.post('/payroll-run', (req, res) => {
           li.hours ? parseFloat(li.hours) : null, li.rate ? parseFloat(li.rate) : null,
           parseFloat(li.amount || 0));
       }
+      for (const a of csAlloc) {
+        insertCS.run(clientId, stubId, emp.id, a.order.id, a.order.vendor_name, a.order.case_number || null, a.amount);
+      }
 
       upsertYTD.run(emp.id, year, computedGross,
         taxes.ssWagesThisPeriod || 0, taxes.futaTaxable || 0, taxes.sutaTaxable || 0);
 
       created.push({
         id: stubId, employeeId: emp.id, employeeName, checkNumber: checkNum,
+        childSupport: csTotal,
         grossWages: taxes.grossWages, netPay: taxes.netPay,
         totalDeposit: taxes.totalDeposit, fitWithholding: taxes.fitWithholding,
         employeeSS: taxes.employeeSS, employeeMedicare: taxes.employeeMedicare,
@@ -2087,6 +2147,7 @@ router.get('/run-pdf/:runId', (req, res) => {
       ['State Income Tax', stub.state_income_tax],
       ['Deductions', stub.deduction],
       ['Garnishments', stub.garnishment],
+      ['Child Support', stub.child_support],
     ];
     const employerRows = [
       ['Social Security Match', stub.employer_ss],
@@ -2107,7 +2168,7 @@ router.get('/run-pdf/:runId', (req, res) => {
     y += 14;
     doc.font('Helvetica').fontSize(8).fillColor(GRAY)
       .text('Total Deductions', ML + 4, y)
-      .text(`-$${Number(stub.fit_withholding + stub.employee_ss + stub.employee_medicare + (stub.state_income_tax || 0) + (stub.deduction || 0) + (stub.garnishment || 0)).toFixed(2)}`, ML + 4, y, { width: TW - 8, align: 'right' });
+      .text(`-$${Number(stub.fit_withholding + stub.employee_ss + stub.employee_medicare + (stub.state_income_tax || 0) + (stub.deduction || 0) + (stub.garnishment || 0) + (stub.child_support || 0)).toFixed(2)}`, ML + 4, y, { width: TW - 8, align: 'right' });
     y += 14;
     if (stub.reimbursement > 0) {
       doc.text('Reimbursements', ML + 4, y)
@@ -2842,6 +2903,9 @@ router.post('/:id/void', (req, res) => {
 
   db.transaction(() => {
     // Mark paystub as voided
+    // Cancel this check's unpaid child-support withholdings — a voided paycheck
+    // withheld nothing, so nothing must remain payable in Pay Liabilities.
+    db.prepare(`UPDATE child_support_withholdings SET status = 'cancelled' WHERE paystub_id = ? AND status = 'pending'`).run(stub.id);
     db.prepare(`
       UPDATE paystubs SET check_status = 'voided', voided_at = ?, void_reason = ? WHERE id = ?
     `).run(now, reason || null, stub.id);
