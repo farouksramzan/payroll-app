@@ -253,6 +253,8 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
   const [csForm, setCsForm]     = useState(null); // { vendorName, caseNumber, amount } | null (add form open)
   const [csBusy, setCsBusy]     = useState(false);
   const [csErr, setCsErr]       = useState('');
+  // Sectioned drawer: one short tab per topic instead of a single long scroll
+  const [tab, setTab] = useState('personal');
   const [ddForm, setDdForm]     = useState({ routingNumber: '', accountNumber: '', confirmAccount: '', bankAccountType: 'checking' });
   const [ddEdit, setDdEdit]     = useState(false);
   const [ddSaving, setDdSaving] = useState(false);
@@ -264,6 +266,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
 
   useEffect(() => {
     if (!empId) return;
+    setTab('personal');
     api.getEmployeeChildSupport(empId).then(setCsOrders).catch(() => {});
     api.getDirectDeposit(empId).then(setDd).catch(() => {});
     api.getEmployee(empId, true).then(emp => setForm({
@@ -437,9 +440,67 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
     <>
       <div className="drawer-overlay" onClick={requestClose} />
       <div className="drawer" role="dialog" aria-modal="true" aria-label={form ? `Edit ${form.firstName} ${form.lastName}` : 'Edit employee'}>
-        <div className="drawer-header">
-          <div className="drawer-title">{form ? `${form.firstName} ${form.lastName}` : 'Employee'}</div>
-          <button className="drawer-close" onClick={requestClose} aria-label="Close">×</button>
+        <div className="drawer-header" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 0, paddingBottom: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+            {form && (
+              <div aria-hidden="true" style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--accent-light)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15, flexShrink: 0 }}>
+                {(form.firstName[0] || '') + (form.lastName[0] || '')}
+              </div>
+            )}
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="drawer-title" style={{ marginBottom: form ? 5 : 0 }}>{form ? `${form.firstName} ${form.lastName}` : 'Employee'}</div>
+              {form && (
+                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <button type="button"
+                    onClick={() => { dirtyRef.current = true; setForm(f => ({ ...f, isActive: !f.isActive })); }}
+                    title="Click to toggle active status (saved with Save Changes)"
+                    style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 9px', borderRadius: 99, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.04em',
+                      border: `1px solid ${form.isActive ? '#86efac' : '#d1d5db'}`,
+                      background: form.isActive ? '#f0fdf4' : 'var(--bg-secondary)', color: form.isActive ? '#16a34a' : 'var(--text-muted)' }}>
+                    {form.isActive ? '● Active' : '○ Inactive'}
+                  </button>
+                  <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>
+                    {form.payType === 'salary'
+                      ? `${form.annualSalary ? fmt(parseFloat(form.annualSalary)) : '—'}/yr`
+                      : `${form.hourlyRate ? fmt(parseFloat(form.hourlyRate)) : '—'}/hr`}
+                    <span style={{ color: 'var(--text-muted)', fontWeight: 400 }}> · {FREQ_LABEL[form.payFrequency] || form.payFrequency}</span>
+                  </span>
+                  {form.payGroupId && (() => {
+                    const g = payGroups.find(x => String(x.id) === String(form.payGroupId));
+                    return g ? <span style={{ fontSize: 11, color: 'var(--text-muted)', background: 'var(--bg-secondary)', border: '1px solid var(--border)', padding: '1px 8px', borderRadius: 99 }}>{g.name}</span> : null;
+                  })()}
+                  {form.fitExempt && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--warning)', background: 'var(--warning-light)', padding: '2px 8px', borderRadius: 99 }}>EXEMPT</span>}
+                </div>
+              )}
+            </div>
+            <button className="drawer-close" onClick={requestClose} aria-label="Close">×</button>
+          </div>
+          {form && (
+            <div role="tablist" aria-label="Employee profile sections" style={{ display: 'flex', gap: 2, marginTop: 12, overflowX: 'auto' }}>
+              {[
+                ['personal', 'Personal'],
+                ['pay', 'Pay'],
+                ['w4', 'W-4 Tax'],
+                ['dd', 'Direct Deposit'],
+                ['cs', 'Child Support'],
+              ].map(([k, label]) => {
+                const active = tab === k;
+                const marker = k === 'dd'
+                  ? <span aria-hidden="true" style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', marginLeft: 5, background: dd?.status === 'active' ? '#16a34a' : dd?.status === 'pending' ? '#d97706' : dd?.status === 'failed' ? '#dc2626' : '#d1d5db' }} />
+                  : k === 'cs' && csOrders.length > 0
+                    ? <span style={{ marginLeft: 5, fontSize: 10, fontWeight: 700, background: active ? 'var(--accent)' : 'var(--bg-tertiary)', color: active ? '#fff' : 'var(--text-muted)', borderRadius: 99, padding: '0 6px' }}>{csOrders.length}</span>
+                    : null;
+                return (
+                  <button key={k} role="tab" aria-selected={active} onClick={() => setTab(k)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px 11px', fontSize: 12.5, whiteSpace: 'nowrap',
+                      fontWeight: active ? 700 : 500, color: active ? 'var(--accent)' : 'var(--text-muted)',
+                      borderBottom: `2px solid ${active ? 'var(--accent)' : 'transparent'}`, marginBottom: -1 }}>
+                    {label}{marker}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
         <div className="drawer-body">
           {err && <div className="alert alert-error" style={{ marginBottom: 16 }}><span>⚠</span>{err}</div>}
@@ -447,7 +508,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
             <div style={{ padding: 40, textAlign: 'center' }}><div className="spinner spinner-dark" style={{ width: 28, height: 28 }} /></div>
           ) : (
             <>
-              <p className="form-section-title" style={{ marginTop: 0 }}>Personal Information</p>
+              {tab === 'personal' && (<>
               <div className="form-grid">
                 <div className="form-group"><label className="form-label">First Name</label><input className="form-input" value={form.firstName} onChange={set('firstName')} /></div>
                 <div className="form-group"><label className="form-label">Last Name</label><input className="form-input" value={form.lastName} onChange={set('lastName')} /></div>
@@ -476,7 +537,17 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                 </select>
               </div>
 
-              <p className="form-section-title">Pay Group</p>
+              <div className="form-group" style={{ marginTop: 14, maxWidth: 180 }}><label className="form-label">Hire Date</label><input className="form-input" type="date" value={form.hireDate} onChange={set('hireDate')} /></div>
+              <div style={{ marginTop: 22, borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Leaving the company? Use the Active toggle above — deleting erases pay history.</span>
+                <button className="btn btn-danger btn-sm" onClick={handleDelete} disabled={deleting} style={{ fontSize: 12, flexShrink: 0 }}>
+                  {deleting ? <span className="spinner" /> : 'Delete Employee'}
+                </button>
+              </div>
+              </>)}
+
+              {tab === 'pay' && (<>
+              <p className="form-section-title" style={{ marginTop: 0 }}>Pay Group</p>
               <div className="form-group" style={{ marginBottom: 8 }}>
                 <label className="form-label">Assigned Pay Group</label>
                 <select className="form-select" value={showNewGroup ? '__new__' : (form.payGroupId || '')} onChange={handleGroupChange}>
@@ -567,7 +638,9 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                 </div>
               )}
 
-              <p className="form-section-title">W-4 Withholding</p>
+              </>)}
+
+              {tab === 'w4' && (<>
               <div className="form-group">
                 <label className="form-label">Filing Status</label>
                 <select className="form-select" value={form.filingStatus} onChange={set('filingStatus')} style={{ maxWidth: 340 }}>
@@ -601,10 +674,10 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                 </div>
                 <p className="form-hint">{form.fitExempt ? 'Ignored while Exempt is checked.' : 'Withheld as additional federal income tax on every paycheck, on top of the calculated amount.'}</p>
               </div>
-              <div className="form-group" style={{ maxWidth: 180 }}><label className="form-label">Hire Date</label><input className="form-input" type="date" value={form.hireDate} onChange={set('hireDate')} /></div>
+              </>)}
 
               {/* ── Child Support ── */}
-              <p className="form-section-title">Child Support</p>
+              {tab === 'cs' && (<>
               {csErr && <div className="alert alert-error" role="alert" style={{ marginBottom: 10, fontSize: 12 }}><span>⚠</span>{csErr}</div>}
               {csOrders.length === 0 && !csForm && (
                 <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '0 0 10px' }}>No withholding orders. Add one to withhold child support from every paycheck automatically.</p>
@@ -646,8 +719,11 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                 </button>
               )}
 
+              </>)}
+
               {/* ── Direct Deposit ── */}
-              <p className="form-section-title">Direct Deposit</p>
+              {tab === 'dd' && (<>
+              {!dd && <p style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Loading…</p>}
               {dd && (
                 <div style={{ marginBottom: 16 }}>
                   {/* Status badge + info */}
@@ -763,21 +839,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                   )}
                 </div>
               )}
-
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={form.isActive} onChange={set('isActive')} style={{ accentColor: 'var(--accent)', width: 14, height: 14 }} />
-                  <span style={{ fontSize: 13 }}>Employee is active</span>
-                </label>
-                <button
-                  className="btn btn-danger btn-sm"
-                  onClick={handleDelete}
-                  disabled={deleting}
-                  style={{ fontSize: 12 }}
-                >
-                  {deleting ? <span className="spinner" /> : 'Delete Employee'}
-                </button>
-              </div>
+              </>)}
             </>
           )}
         </div>
