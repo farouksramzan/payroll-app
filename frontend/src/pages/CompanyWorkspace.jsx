@@ -4995,6 +4995,7 @@ function PayLiabilitiesTab({ clientId, client }) {
   const [jobStatus,        setJobStatus]        = useState(null);   // 'enrollment_pending' | 'completed' | 'failed'
   const [jobMessage,       setJobMessage]       = useState('');
   const [twcPayModal,      setTwcPayModal]      = useState(null); // { amount, defaultDate } | null
+  const [eftpsPayModal,    setEftpsPayModal]    = useState(null); // { period, taxType } | null
   const [twcPayJob,        setTwcPayJob]        = useState(null); // { id, status, confirmationNumber, error } | null
   const twcPollRef = useRef(null);
   const pollRef = useRef(null);
@@ -5132,8 +5133,12 @@ function PayLiabilitiesTab({ clientId, client }) {
   function creditForPeriod(period, taxType) {
     const credit = taxType === '941' ? credit941 : taxType === '940' ? credit940 : 0;
     if (!credit || !period) return 0;
+    if (period.status === 'completed') return 0;        // sent-history rows never get pending credit
     const list = taxType === '941' ? periods941 : taxType === '940' ? periods940 : [];
-    if (!list.length || list[0] !== period) return 0;   // history rows are different objects → 0
+    // Match the earliest pending period BY VALUE — the period lists are rebuilt
+    // every render, so an object captured at click time (e.g. by the pay dialog)
+    // never matches by identity.
+    if (!list.length || list[0].due !== period.due) return 0;
     return Math.max(credit, -period.total);             // credit is negative; never push below $0
   }
   const totalSUI = periodsSUI.reduce((s, p) => s + p.total, 0);
@@ -5186,16 +5191,17 @@ function PayLiabilitiesTab({ clientId, client }) {
       finally { setSubmitting(null); }
       return;
     }
+    // 941/940 → the pay dialog picks a valid settlement date (a late liability's
+    // original due date is in the past, which EFTPS rejects outright).
+    setEftpsPayModal({ period, taxType });
+  }
+
+  async function submitEftpsPeriod(period, taxType, settlementDate) {
     const ids = period.stubs.map(s => s.id);
-    const credit = creditForPeriod(period, taxType);
-    const amt = period.total + credit;
-    const msg = credit
-      ? `Submit ${taxType.toUpperCase()} deposit to EFTPS?\n\nPeriod total ${fmt(period.total)}\n− credit ${fmt(-credit)}\n= ${fmt(amt)} to submit`
-      : `Submit ${taxType.toUpperCase()} deposit of ${fmt(amt)} to EFTPS?`;
-    if (!window.confirm(msg)) return;
     setSubmitting(taxType); setResult(null);
     try {
-      const res = await api.batchSubmitPaystubs({ clientId, paystubIds: ids, taxType });
+      const res = await api.batchSubmitPaystubs({ clientId, paystubIds: ids, taxType, settlementDate });
+      setEftpsPayModal(null);
       setResult(res);
       if (res.jobId) {
         setActiveJobId(res.jobId);
@@ -5846,6 +5852,18 @@ function PayLiabilitiesTab({ clientId, client }) {
         />
       )}
 
+      {/* EFTPS pay dialog (settlement-date picker; handles late liabilities) */}
+      {eftpsPayModal && (
+        <EftpsPayModal
+          period={eftpsPayModal.period}
+          taxType={eftpsPayModal.taxType}
+          credit={creditForPeriod(eftpsPayModal.period, eftpsPayModal.taxType)}
+          submitting={submitting !== null}
+          onSubmit={(date) => submitEftpsPeriod(eftpsPayModal.period, eftpsPayModal.taxType, date)}
+          onClose={() => { if (submitting === null) setEftpsPayModal(null); }}
+        />
+      )}
+
       {/* TWC Payment modal */}
       {twcPayModal && (
         <TwcPaymentModal
@@ -5997,6 +6015,72 @@ function TwcPaymentModal({ client, defaultAmount, defaultDate, twcPayJob, onSubm
         </div>
       </div>
     </div>
+  );
+}
+
+// ── EFTPS pay dialog ─────────────────────────────────────────────────────────
+// Replaces the plain confirm for 941/940 payments. Its job: a valid settlement
+// date every time. EFTPS rejects past dates outright, so paying a LATE liability
+// defaults to the earliest acceptable business day and the date stays editable.
+function EftpsPayModal({ period, taxType, credit, submitting, onSubmit, onClose }) {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const minBiz = (() => { let d = addDays(new Date(), 1); while (!isBizDay(d)) d = addDays(d, 1); return d.toISOString().slice(0, 10); })();
+  const isLate = !!(period.due && period.due < todayStr);
+  const [date, setDate] = useState(() => (period.due && period.due >= minBiz) ? period.due : minBiz);
+  const amt = r2(period.total + (credit || 0));
+  const label = taxType === '940' ? 'Federal 940 (FUTA)' : 'Federal 941';
+  const dateObj = date ? new Date(date + 'T00:00:00') : null;
+  const nonBiz = dateObj && !isBizDay(dateObj);
+  const tooEarly = date && date < minBiz;
+  const suggested = dateObj && nonBiz ? nextBizDay(dateObj).toISOString().slice(0, 10) : null;
+  const invalid = !date || nonBiz || tooEarly;
+
+  return (
+    <ModalOverlay onClose={onClose}>
+      <div className="card" style={{ width: 460, maxWidth: '94vw', padding: 24 }}>
+        <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>Pay {label} to EFTPS</div>
+        <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 14 }}>
+          {period.stubs.length} check{period.stubs.length === 1 ? '' : 's'}
+          {period.due ? <> · originally due <strong style={{ color: isLate ? '#dc2626' : 'inherit' }}>{fmtDate(period.due)}</strong></> : null}
+        </div>
+
+        {isLate && (
+          <div className="alert alert-warning" style={{ marginBottom: 14, fontSize: 12.5 }}>
+            <span>⚠</span>
+            <span>This deposit&rsquo;s due date has passed — EFTPS won&rsquo;t accept a past date. It will settle on the day you pick below (earliest: {fmtDate(minBiz)}). Late-deposit penalties/interest, if any, are assessed by the IRS separately.</span>
+          </div>
+        )}
+
+        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', padding: '10px 14px', marginBottom: 14, fontSize: 13 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Period total</span><span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>{fmt(period.total)}</span></div>
+          {credit ? (
+            <>
+              <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--success)' }}><span>Credit applied</span><span style={{ fontFamily: 'JetBrains Mono, monospace' }}>−{fmt(-credit)}</span></div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid var(--border)', marginTop: 6, paddingTop: 6, fontWeight: 700 }}><span>To submit</span><span style={{ fontFamily: 'JetBrains Mono, monospace' }}>{fmt(amt)}</span></div>
+            </>
+          ) : null}
+        </div>
+
+        <div className="form-group" style={{ marginBottom: 6 }}>
+          <label className="form-label">Settlement date <span style={{ fontWeight: 400, fontSize: 10, textTransform: 'none', color: 'var(--text-muted)' }}>(when the IRS pulls the money)</span></label>
+          <input className="form-input" type="date" value={date} min={minBiz} onChange={e => setDate(e.target.value)} style={{ maxWidth: 200 }} />
+        </div>
+        {tooEarly && <p style={{ fontSize: 12, color: '#dc2626', margin: '0 0 8px' }}>Earliest possible settlement is {fmtDate(minBiz)} — EFTPS needs at least one business day.</p>}
+        {!tooEarly && nonBiz && suggested && (
+          <p style={{ fontSize: 12, color: '#d97706', margin: '0 0 8px' }}>
+            That&rsquo;s a weekend or federal holiday — use{' '}
+            <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontWeight: 700, fontSize: 12, padding: 0 }} onClick={() => setDate(suggested)}>{fmtDate(suggested)}</button>
+          </p>
+        )}
+
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 14 }}>
+          <button className="btn btn-ghost" onClick={onClose} disabled={submitting}>Cancel</button>
+          <button className="btn btn-primary" disabled={submitting || invalid} onClick={() => onSubmit(date)}>
+            {submitting ? 'Submitting…' : `Submit ${fmt(amt)}`}
+          </button>
+        </div>
+      </div>
+    </ModalOverlay>
   );
 }
 

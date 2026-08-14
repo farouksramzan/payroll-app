@@ -10,7 +10,7 @@ const { calculateWithholding, getTaxPeriod } = require('../services/taxCalculato
 const { submitToEFTPS } = require('../services/eftpsAutomation');
 const bridgeManager = require('../ws/bridge');
 const moov = require('../services/moovService');
-const { calcSettlementDueDate, calcIrsDepositDue } = require('../services/federalHolidays');
+const { calcSettlementDueDate, calcIrsDepositDue, isBusinessDay } = require('../services/federalHolidays');
 
 // GnuMICR E-13B font path — embed for proper MICR line rendering on check printers
 const MICR_FONT = path.join(__dirname, '../assets/fonts/micr.ttf');
@@ -2426,9 +2426,49 @@ router.post('/batch-submit', async (req, res) => {
     // The employee pay date (settlement_date) is NOT the ACH settlement date —
     // the settlement date for EFTPS is when the tax deposit must arrive at the IRS.
     const lastStub = pending[pending.length - 1];
-    const irsSettlementDate = lastStub.eftps_settlement_date || calcIrsDepositDue(
+    // Roll any date forward to the next business day (weekends/federal holidays).
+    // Parse at NOON UTC so the calendar date is identical in local time and UTC —
+    // midnight-UTC parsing made Saturdays read as Friday in US timezones and
+    // slip through the weekend check.
+    const rollToBizDay = (s) => {
+      const d = new Date(s + 'T12:00:00Z');
+      while (!isBusinessDay(d)) d.setUTCDate(d.getUTCDate() + 1);
+      return d.toISOString().slice(0, 10);
+    };
+    // Earliest date EFTPS will accept: the next business day after today.
+    const minSettlement = (() => {
+      const todayLocal = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD in local tz
+      const d = new Date(todayLocal + 'T12:00:00Z');
+      d.setUTCDate(d.getUTCDate() + 1);
+      while (!isBusinessDay(d)) d.setUTCDate(d.getUTCDate() + 1);
+      return d.toISOString().slice(0, 10);
+    })();
+
+    // Optional caller-chosen settlement date — used when paying a LATE liability,
+    // whose computed due date is in the past (EFTPS rejects past dates outright).
+    const requestedDate = req.body.settlementDate;
+    if (requestedDate !== undefined && requestedDate !== null && requestedDate !== '') {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(String(requestedDate))) {
+        db.prepare(`UPDATE paystubs SET ${processingCol} = 'pending' WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids);
+        return res.status(400).json({ error: 'settlementDate must be YYYY-MM-DD' });
+      }
+      const horizon = new Date(); horizon.setUTCDate(horizon.getUTCDate() + 366);
+      if (String(requestedDate) > horizon.toISOString().slice(0, 10)) {
+        db.prepare(`UPDATE paystubs SET ${processingCol} = 'pending' WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids);
+        return res.status(400).json({ error: 'Settlement date can be at most one year out' });
+      }
+    }
+
+    let irsSettlementDate = (requestedDate && String(requestedDate)) || lastStub.eftps_settlement_date || calcIrsDepositDue(
       lastStub.pay_period_end, lastStub.settlement_date, taxType, client.deposit_schedule
     );
+    // Never hand the bridge a past, same-day, weekend, or holiday settlement date —
+    // Batch Provider rejects them ("due date is before current date"). Late
+    // liabilities automatically move to the earliest acceptable business day.
+    if (irsSettlementDate) {
+      irsSettlementDate = rollToBizDay(irsSettlementDate);
+      if (irsSettlementDate < minSettlement) irsSettlementDate = minSettlement;
+    }
     // Warn if batch spans multiple IRS deposit periods (settlement date may not cover all stubs)
     if (pending.length > 1) {
       const dueDates = new Set(pending.map(p =>
@@ -2508,6 +2548,7 @@ router.post('/batch-submit', async (req, res) => {
         submitted: ids.length,
         taxType,
         totalDeposit: Math.round(totalDeposit * 100) / 100,
+        settlementDate: irsSettlementDate,
         status:  'processing',
         message: 'Bridge job queued — polling for updates',
       });
@@ -2573,6 +2614,7 @@ router.post('/batch-submit', async (req, res) => {
       submitted: ids.length,
       taxType,
       totalDeposit: Math.round(totalAmount * 100) / 100,
+      settlementDate: irsSettlementDate,
       confirmation,
       paystubs: updated,
       result,
