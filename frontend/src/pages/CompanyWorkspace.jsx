@@ -2710,7 +2710,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
     );
   }
 
-function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick = 0 }) {
+function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmployees, refreshTick = 0 }) {
   const [showPaycheckImport, setShowPaycheckImport] = useState(false);
   // Active child-support order totals per employee — auto-withheld on every run,
   // editable per check in the detail modal.
@@ -2810,8 +2810,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshTick =
       const stubs = await api.getPaystubs(clientId);
       setPaystubs(stubs);
     } catch {}
-    // employees is a prop owned by the parent — ask it to refresh
-    if (onRefresh) onRefresh();
+    // employees is a prop owned by the parent — refresh it WITHOUT the parent's
+    // full refresh: that bumps refreshTick, whose effect calls reloadStubs again
+    // (infinite request loop).
+    if (refreshEmployees) refreshEmployees();
   }
 
   const activeEmps    = employees.filter(e => e.isActive);
@@ -4970,7 +4972,7 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
 }
 
 // ── Pay Liabilities Tab ───────────────────────────────────────────────────────
-function PayLiabilitiesTab({ clientId, client }) {
+function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
   const [paystubs, setPaystubs]     = useState([]);
   const [credits, setCredits]       = useState([]);
   const [csWithholdings, setCsWithholdings] = useState([]); // child support rows joined w/ paycheck
@@ -5029,7 +5031,8 @@ function PayLiabilitiesTab({ clientId, client }) {
       }
     }
   }
-  useEffect(() => { reload().finally(() => setLoading(false)); }, [clientId]);
+  // refreshTick: re-fetch when data changes elsewhere (imports, drawer saves, ↻)
+  useEffect(() => { reload().finally(() => setLoading(false)); }, [clientId, refreshTick]);
 
   const pending941 = paystubs.filter(s => ISSUED.has(s.check_status) && UNPAID_941(s));
   const pending940 = paystubs.filter(s => ISSUED.has(s.check_status) && UNPAID_940(s) && s.futa_tax > 0);
@@ -6125,7 +6128,7 @@ function FileFormsTab({ clientId }) {
 
 
 // ── Payroll Tab ───────────────────────────────────────────────────────────────
-function PayrollTab({ clientId, client, employees, onRefresh, refreshTick = 0 }) {
+function PayrollTab({ clientId, client, employees, onRefresh, refreshEmployees, refreshTick = 0 }) {
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
   const [sub, setSub] = useState(() => searchParams.get('tab') === 'liabilities' ? 'liabilities' : 'pay');
@@ -6138,7 +6141,7 @@ function PayrollTab({ clientId, client, employees, onRefresh, refreshTick = 0 })
       <div className="pay-subtabs" role="tablist" aria-label="Payroll sections">
         {subTabs.map(([k, label]) => <button key={k} role="tab" aria-selected={sub === k} data-tour-id={k === 'liabilities' ? 'tour-liabilities-tab' : undefined} className={`pay-subtab${sub === k ? ' active' : ''}`} onClick={() => setSub(k)}>{label}</button>)}
       </div>
-      {sub === 'pay'         && <PayEmployeesTab clientId={clientId} client={client} employees={employees} onRefresh={onRefresh} refreshTick={refreshTick} />}
+      {sub === 'pay'         && <PayEmployeesTab clientId={clientId} client={client} employees={employees} onRefresh={onRefresh} refreshEmployees={refreshEmployees} refreshTick={refreshTick} />}
       {sub === 'liabilities' && <PayLiabilitiesTab clientId={clientId} client={client} refreshTick={refreshTick} />}
       {sub === 'forms'       && <FileFormsTab clientId={clientId} />}
     </div>
@@ -6528,9 +6531,9 @@ export default function CompanyWorkspace({ clientMode = false }) {
         </div>
       </div>
       <div className="workspace-body">
-        {activeTab === 'employees' && <EmployeesTab clientId={id} employees={employees} onRefresh={loadAll} clientMode={clientMode} />}
+        {activeTab === 'employees' && <EmployeesTab clientId={id} employees={employees} onRefresh={handleRefresh} clientMode={clientMode} />}
         {activeTab === 'company'   && <CompanyTab client={client} onSaved={loadAll} />}
-        {activeTab === 'payroll'   && <PayrollTab clientId={id} client={client} employees={employees} onRefresh={loadAll} refreshTick={refreshTick} />}
+        {activeTab === 'payroll'   && <PayrollTab clientId={id} client={client} employees={employees} onRefresh={handleRefresh} refreshEmployees={loadAll} refreshTick={refreshTick} />}
         {activeTab === 'accountants' && <AccountantsPanel clientId={id} />}
         {activeTab === 'users'     && user?.username === 'admin' && <UsersPanel />}
       </div>
