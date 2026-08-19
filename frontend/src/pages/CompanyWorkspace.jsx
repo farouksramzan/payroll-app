@@ -1564,15 +1564,21 @@ function CompanyTab({ client, onSaved }) {
                 </div>
               </>
             ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 13px', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', minHeight: 46 }}>
-                <span className="mono" style={{ color: form.bankAccountLast4 ? 'var(--text-primary)' : 'var(--text-muted)', letterSpacing: '0.05em' }}>
-                  {form.bankAccountLast4 ? `···· ${form.bankAccountLast4}` : 'No account on file'}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 13px', background: form.bankAccountLast4 ? 'var(--bg-secondary)' : '#fef2f2', border: `1px solid ${form.bankAccountLast4 ? 'var(--border)' : '#fca5a5'}`, borderRadius: 'var(--radius)', minHeight: 46 }}>
+                <span className="mono" style={{ color: form.bankAccountLast4 ? 'var(--text-primary)' : '#dc2626', fontWeight: form.bankAccountLast4 ? 400 : 700, letterSpacing: '0.05em' }}>
+                  {form.bankAccountLast4 ? `···· ${form.bankAccountLast4}` : 'Required — no account on file'}
                 </span>
                 <button type="button" onClick={() => { setChangingAccount(true); setAccountDraft(''); setShowAccountNum(true); }}
-                  style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--accent)', fontWeight: 600, padding: 0 }}>
-                  {form.bankAccountLast4 ? 'Change' : 'Add'}
+                  className={form.bankAccountLast4 ? undefined : 'btn btn-primary btn-sm'}
+                  style={form.bankAccountLast4
+                    ? { marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--accent)', fontWeight: 600, padding: 0 }
+                    : { marginLeft: 'auto', fontSize: 12 }}>
+                  {form.bankAccountLast4 ? 'Change' : 'Add Account Number'}
                 </button>
               </div>
+            )}
+            {!form.bankAccountLast4 && !changingAccount && (
+              <p className="form-hint" style={{ color: '#dc2626' }}>Paychecks and EFTPS tax payments are drawn from this account — payments can&rsquo;t be submitted without it.</p>
             )}
           </div>
           <div>

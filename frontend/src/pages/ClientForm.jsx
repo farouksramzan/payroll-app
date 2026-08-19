@@ -139,7 +139,12 @@ export default function ClientForm() {
     if (!form.businessAddress.trim()) e.businessAddress = 'Required';
     if (!form.businessCity.trim()) e.businessCity = 'Required';
     if (!form.businessZip.trim()) e.businessZip = 'Required';
-    if (form.bankRoutingNumber && !/^\d{9}$/.test(form.bankRoutingNumber)) e.bankRoutingNumber = 'Must be 9 digits';
+    // Bank account is what paychecks and EFTPS tax payments are drawn from —
+    // required when creating a company. On edit, blank means "keep current".
+    if (!isEdit && !form.bankAccountNumber.trim()) e.bankAccountNumber = 'Required — paychecks and tax payments are drawn from this account';
+    else if (form.bankAccountNumber && !/^\d{4,17}$/.test(form.bankAccountNumber.trim())) e.bankAccountNumber = 'Must be 4–17 digits';
+    if (!isEdit && !form.bankRoutingNumber.trim()) e.bankRoutingNumber = 'Required';
+    else if (form.bankRoutingNumber && !/^\d{9}$/.test(form.bankRoutingNumber)) e.bankRoutingNumber = 'Must be 9 digits';
     return e;
   }
 
@@ -148,7 +153,7 @@ export default function ClientForm() {
     const errs = validate();
     if (Object.keys(errs).length) {
       setErrors(errs);
-      const order = ['businessName', 'ein', 'businessAddress', 'businessCity', 'businessZip', 'bankRoutingNumber'];
+      const order = ['businessName', 'ein', 'businessAddress', 'businessCity', 'businessZip', 'bankAccountNumber', 'bankRoutingNumber'];
       const first = order.find((k) => errs[k]);
       const el = first && document.getElementById(`field-${first}`);
       if (el) {
@@ -297,17 +302,19 @@ export default function ClientForm() {
 
             <div className="form-grid">
               <div className="form-group">
-                <label className="form-label">Account Number</label>
+                <label className="form-label">Account Number{!isEdit && <span style={{ color: '#dc2626' }}> *</span>}</label>
                 <input
+                  id="field-bankAccountNumber"
                   className="form-input mono"
                   type="password"
                   value={form.bankAccountNumber}
                   onChange={set('bankAccountNumber')}
                   placeholder={isEdit ? '(leave blank to keep current)' : 'Account number'}
                 />
+                {errors.bankAccountNumber && <p className="form-error-msg">{errors.bankAccountNumber}</p>}
               </div>
               <div className="form-group">
-                <label className="form-label">Routing Number</label>
+                <label className="form-label">Routing Number{!isEdit && <span style={{ color: '#dc2626' }}> *</span>}</label>
                 <input id="field-bankRoutingNumber" className="form-input mono" value={form.bankRoutingNumber} onChange={set('bankRoutingNumber')} placeholder="9-digit routing number" maxLength={9} />
                 {errors.bankRoutingNumber && <p className="form-error-msg">{errors.bankRoutingNumber}</p>}
               </div>

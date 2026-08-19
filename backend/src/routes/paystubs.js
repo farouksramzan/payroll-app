@@ -2482,6 +2482,14 @@ router.post('/batch-submit', async (req, res) => {
     if (bridgeManager.isConnected) {
       const accountNumber = client.bank_account_number_encrypted
         ? decrypt(client.bank_account_number_encrypted) : null;
+      // The ACH file is drawn on the company's bank account — without it the
+      // bridge would produce an invalid file that EFTPS rejects downstream.
+      if (!accountNumber || !client.bank_routing_number) {
+        db.prepare(`UPDATE paystubs SET ${processingCol} = 'pending' WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids);
+        return res.status(400).json({
+          error: `${client.business_name} has no bank ${!accountNumber ? 'account' : 'routing'} number on file. Add it in Company → Bank Account, then submit again.`,
+        });
+      }
       if (!irsSettlementDate) {
         db.prepare(`UPDATE paystubs SET ${processingCol} = 'pending' WHERE id IN (${ids.map(() => '?').join(',')})`).run(...ids);
         return res.status(400).json({ error: 'Could not determine IRS deposit due date — paystubs are missing pay period end date' });
