@@ -486,15 +486,15 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
               ].map(([k, label]) => {
                 const active = tab === k;
                 const marker = k === 'dd'
-                  ? <span aria-hidden="true" style={{ display: 'inline-block', width: 7, height: 7, borderRadius: '50%', marginLeft: 5, background: dd?.status === 'active' ? '#16a34a' : dd?.status === 'pending' ? '#d97706' : dd?.status === 'failed' ? '#dc2626' : '#d1d5db' }} />
+                  ? <span aria-hidden="true" style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', marginLeft: 6, background: dd?.status === 'active' ? '#16a34a' : dd?.status === 'pending' ? '#d97706' : dd?.status === 'failed' ? '#dc2626' : '#d1d5db' }} />
                   : k === 'cs' && csOrders.length > 0
-                    ? <span style={{ marginLeft: 5, fontSize: 10, fontWeight: 700, background: active ? 'var(--accent)' : 'var(--bg-tertiary)', color: active ? '#fff' : 'var(--text-muted)', borderRadius: 99, padding: '0 6px' }}>{csOrders.length}</span>
+                    ? <span style={{ marginLeft: 6, fontSize: 11.5, fontWeight: 700, background: active ? 'var(--accent)' : 'var(--bg-tertiary)', color: active ? '#fff' : 'var(--text-muted)', borderRadius: 99, padding: '0 7px' }}>{csOrders.length}</span>
                     : null;
                 return (
                   <button key={k} role="tab" aria-selected={active} onClick={() => setTab(k)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '8px 11px', fontSize: 12.5, whiteSpace: 'nowrap',
-                      fontWeight: active ? 700 : 500, color: active ? 'var(--accent)' : 'var(--text-muted)',
-                      borderBottom: `2px solid ${active ? 'var(--accent)' : 'transparent'}`, marginBottom: -1 }}>
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '9px 13px', fontSize: 15, whiteSpace: 'nowrap',
+                      fontWeight: active ? 700 : 500, color: active ? 'var(--accent)' : 'var(--text-secondary)',
+                      borderBottom: `3px solid ${active ? 'var(--accent)' : 'transparent'}`, marginBottom: -1 }}>
                     {label}{marker}
                   </button>
                 );

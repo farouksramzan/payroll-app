@@ -550,9 +550,9 @@ html, body, #root {
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; }
 .form-grid-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 0 20px; }
 .form-section-title {
-  font-size: 12px;
+  font-size: 13.5px; /* readable for low-vision users — was 12px */
   font-weight: 700;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.8px;
   margin: 24px 0 14px;
