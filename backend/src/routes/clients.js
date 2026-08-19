@@ -296,6 +296,9 @@ router.post('/', (req, res) => {
     suiRateQ1, suiRateQ2, suiRateQ3, suiRateQ4, suiAccountNumber,
     contactName, contactEmail, contactPhone,
     payrollFrequency, nextPayrollDate, nextCheckNumber,
+    // The Add Company form requires the address — dropping these here meant a
+    // freshly created company always showed a blank address afterward.
+    businessAddress, businessCity, businessZip, countyCode,
     twcUsername, twcPassword } = req.body;
 
   if (!businessName || !ein) {
@@ -315,8 +318,9 @@ router.post('/', (req, res) => {
       bank_account_type, batch_provider_pin_encrypted, eftps_internet_password_encrypted, eftps_enrollment_number,
       deposit_schedule, suta_rate, sui_rate_q1, sui_rate_q2, sui_rate_q3, sui_rate_q4, sui_account_number,
       contact_name, contact_email, contact_phone,
-      payroll_frequency, next_payroll_date, next_check_number, twc_username, twc_password_encrypted, join_code)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      payroll_frequency, next_payroll_date, next_check_number, twc_username, twc_password_encrypted, join_code,
+      business_address, business_city, business_zip, county_code)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
     req.user.id,
     businessName.trim(),
@@ -344,6 +348,10 @@ router.post('/', (req, res) => {
     twcUsername || null,
     twcPassword ? encrypt(twcPassword) : null,
     joinCode,
+    businessAddress || null,
+    businessCity    || null,
+    businessZip     || null,
+    countyCode      || null,
   );
 
   const client = db.prepare('SELECT * FROM clients WHERE id = ?').get(result.lastInsertRowid);
