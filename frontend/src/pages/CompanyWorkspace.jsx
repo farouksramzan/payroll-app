@@ -2724,7 +2724,14 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
     }).catch(() => {});
   }, [clientId, refreshTick, csRefetch]);
   const [payGroups, setPayGroups]     = useState([]);
-  const [currentGroupId, setCurrentGroupId] = useState(null);
+  const [currentGroupId, setCurrentGroupId] = useState(() => {
+    // Restore the group the user last had open for this company.
+    const s = sessionStorage.getItem(`payGroup_${clientId}`);
+    if (!s) return null;
+    if (s === '__unassigned__') return s;
+    const n = parseInt(s, 10);
+    return Number.isNaN(n) ? null : n;
+  });
   const [archiveMenuOpen, setArchiveMenuOpen] = useState(false);
   const [groupsLoading, setGroupsLoading]   = useState(true);
   const [editGroup, setEditGroup]     = useState(null);
@@ -2792,13 +2799,25 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
     api.getPayGroups(clientId)
       .then(groups => {
         setPayGroups(groups);
-        // Open on the first ACTIVE group — never auto-land on an archived one.
+        // Keep whatever the user had open (including a restored selection) as
+        // long as it still exists; only default to the first ACTIVE group when
+        // there's no valid selection — never auto-land on an archived one.
         const firstActive = groups.find(g => !g.deletedAt);
-        if (firstActive) setCurrentGroupId(prev => prev ?? firstActive.id);
+        setCurrentGroupId(prev => {
+          if (prev === '__unassigned__') return prev;
+          if (prev != null && groups.some(g => g.id === prev)) return prev;
+          return firstActive ? firstActive.id : prev;
+        });
       })
       .catch(() => {})
       .finally(() => setGroupsLoading(false));
   }, [clientId, refreshTick]);
+
+  // Remember the selected group per company so refreshes and tab switches come
+  // back to the same screen instead of the first group.
+  useEffect(() => {
+    if (currentGroupId != null) sessionStorage.setItem(`payGroup_${clientId}`, String(currentGroupId));
+  }, [currentGroupId, clientId]);
 
   useEffect(() => {
     // Sweep draft checks with a past pay date → 'late' in the DB, then reload.
@@ -6131,7 +6150,12 @@ function FileFormsTab({ clientId }) {
 function PayrollTab({ clientId, client, employees, onRefresh, refreshEmployees, refreshTick = 0 }) {
   const [searchParams] = useSearchParams();
   const { user } = useAuth();
-  const [sub, setSub] = useState(() => searchParams.get('tab') === 'liabilities' ? 'liabilities' : 'pay');
+  // Deep link wins, then the sub-tab the user last had open for this company —
+  // refreshes and workspace-tab switches must come back to the same screen.
+  const [sub, setSub] = useState(() =>
+    searchParams.get('tab') === 'liabilities' ? 'liabilities'
+    : (sessionStorage.getItem(`paySub_${clientId}`) || 'pay'));
+  useEffect(() => { sessionStorage.setItem(`paySub_${clientId}`, sub); }, [sub, clientId]);
   // File Forms navigates to admin-only report pages — a dead end for business-owner
   // (client-ROLE) logins, so don't offer it to them. Gate on role, not the /company
   // route: accountants can open /company/:id too and must keep File Forms.
