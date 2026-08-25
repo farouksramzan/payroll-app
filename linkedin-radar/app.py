@@ -343,6 +343,22 @@ def unipile_notify():
     return jsonify(ok=True)
 
 
+@app.post("/api/set-account")
+def set_account():
+    """Capture account_id from the hosted-auth success redirect (?account_id=…).
+
+    On localhost the notify_url callback can't reach us, but the browser lands
+    back here with the id in the query string, so the frontend posts it here.
+    """
+    if not authed():
+        return jsonify(error="unauthorized"), 401
+    account_id = (request.json or {}).get("account_id", "").strip()
+    if not account_id:
+        return jsonify(error="no account_id"), 400
+    set_setting("account_id", account_id)
+    return jsonify(ok=True)
+
+
 @app.post("/api/register-webhook")
 def register_webhook():
     if not authed():

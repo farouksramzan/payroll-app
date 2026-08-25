@@ -324,6 +324,17 @@ async function act(id, action) {
   } catch (e) { toast('❌ ' + e.message); }
 }
 
+// Hosted-auth success redirects back with ?account_id=… — capture it, since
+// Unipile's server-to-server notify callback can't reach localhost.
+async function captureAccountFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const acc = params.get('account_id');
+  if (!acc) return;
+  try { await api('/api/set-account', {account_id: acc}); toast('LinkedIn linked ✓'); }
+  catch (e) { /* if not authed yet, refresh after login will not re-run this */ }
+  window.history.replaceState({}, '', window.location.pathname);  // strip the id from the URL
+}
+
 if (PW_MISSING) {
   document.body.innerHTML = '<div class="wrap"><div class="card"><h2>⚠️ Set RADAR_PASSWORD</h2>' +
     '<p class="hint" style="margin-top:10px">This deployment has no dashboard password. ' +
@@ -331,7 +342,7 @@ if (PW_MISSING) {
 } else if (NEEDS_LOGIN) {
   document.getElementById('loginOverlay').classList.add('show');
 } else {
-  refresh();
+  captureAccountFromUrl().then(refresh);
 }
 setInterval(() => { if (state) refresh(); }, 20000);
 </script>
