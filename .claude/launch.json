@@ -21,6 +21,12 @@
       "autoPort": true
     },
     {
+      "name": "email-tool",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "email-tool/.venv/bin/python email-tool/app.py"],
+      "port": 5599
+    },
+    {
       "name": "dc-outreach-radar",
       "runtimeExecutable": "sh",
       "runtimeArgs": ["-c", "python3 dc-outreach-radar/serve.py"],

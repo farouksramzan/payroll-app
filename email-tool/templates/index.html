@@ -1,0 +1,394 @@
+{% raw %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mail Blast</title>
+<style>
+  :root {
+    --bg: #f4f6fb; --card: #ffffff; --ink: #17233b; --muted: #66708a;
+    --line: #e3e8f2; --accent: #2563eb; --accent-ink: #ffffff;
+    --ok: #16a34a; --bad: #dc2626; --soft: #eef3ff;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--ink); padding: 32px 16px 80px;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 26px; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); margin: 6px 0 28px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 22px 24px; margin-bottom: 18px; box-shadow: 0 1px 2px rgba(23,35,59,.04);
+  }
+  .step-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .badge {
+    width: 30px; height: 30px; border-radius: 999px; background: var(--soft);
+    color: var(--accent); font-weight: 700; display: flex; align-items: center;
+    justify-content: center; flex: none; font-size: 15px;
+  }
+  .badge.done { background: var(--ok); color: #fff; }
+  .step-head h2 { font-size: 17px; }
+  .hint { color: var(--muted); font-size: 13.5px; }
+  button {
+    font: inherit; border: 1px solid var(--line); background: #fff; color: var(--ink);
+    border-radius: 10px; padding: 10px 16px; cursor: pointer; font-weight: 600;
+  }
+  button:hover { border-color: #c9d3e6; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button.primary:hover { filter: brightness(1.07); }
+  button.big { padding: 13px 22px; font-size: 16px; border-radius: 12px; }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  input[type=text], textarea {
+    font: inherit; width: 100%; border: 1px solid var(--line); border-radius: 10px;
+    padding: 11px 13px; background: #fff; color: var(--ink);
+  }
+  input:focus, textarea:focus { outline: 2px solid #bcd0fa; border-color: var(--accent); }
+  textarea { min-height: 170px; resize: vertical; line-height: 1.5; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .google-btn { display: inline-flex; align-items: center; gap: 10px; }
+  .google-btn img { width: 18px; height: 18px; }
+  .connected { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .pill {
+    background: #eafaf0; color: var(--ok); border: 1px solid #bfe8cd;
+    padding: 6px 12px; border-radius: 999px; font-weight: 600; font-size: 14px;
+  }
+  .setup { background: #fff8e6; border: 1px solid #f3dfa0; border-radius: 10px;
+           padding: 14px 16px; font-size: 14px; line-height: 1.65; }
+  .setup ol { margin: 8px 0 0 20px; }
+  code { background: #f0f2f8; padding: 1px 6px; border-radius: 6px; font-size: 13px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; }
+  th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12.5px;
+       text-transform: uppercase; letter-spacing: .04em; }
+  th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); }
+  td .rm { border: none; background: none; color: var(--muted); font-size: 16px; padding: 2px 6px; }
+  td .rm:hover { color: var(--bad); }
+  .count { font-weight: 700; color: var(--accent); }
+  .preview {
+    background: #fafbfe; border: 1px dashed var(--line); border-radius: 10px;
+    padding: 14px 16px; font-size: 14px; white-space: pre-wrap; line-height: 1.55;
+  }
+  label { font-size: 13px; font-weight: 600; color: var(--muted); display: block; margin: 14px 0 6px; }
+  /* modal */
+  .overlay { position: fixed; inset: 0; background: rgba(15,23,42,.5); display: none;
+             align-items: center; justify-content: center; padding: 20px; z-index: 50; }
+  .overlay.show { display: flex; }
+  .modal { background: #fff; border-radius: 16px; max-width: 640px; width: 100%;
+           max-height: 86vh; overflow: auto; padding: 26px; }
+  .modal h3 { font-size: 19px; margin-bottom: 4px; }
+  .send-list { margin: 14px 0; max-height: 200px; overflow: auto; border: 1px solid var(--line);
+               border-radius: 10px; }
+  .send-list div { padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 14px;
+                   display: flex; justify-content: space-between; gap: 10px; }
+  .send-list div:last-child { border-bottom: none; }
+  .status-ok { color: var(--ok); font-weight: 700; }
+  .status-bad { color: var(--bad); font-weight: 700; }
+  .progress { height: 8px; background: var(--soft); border-radius: 999px; overflow: hidden; margin: 12px 0; }
+  .progress i { display: block; height: 100%; width: 0%; background: var(--accent); transition: width .3s; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+           background: var(--ink); color: #fff; padding: 12px 20px; border-radius: 10px;
+           font-size: 14px; display: none; z-index: 60; }
+  .muted-sm { font-size: 13px; color: var(--muted); }
+  .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+  .tabs button.active { background: var(--soft); border-color: var(--accent); color: var(--accent); }
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📮 Mail Blast</h1>
+  <p class="sub">Send one message to many people — individually, with a confirmation step before anything goes out.</p>
+
+  <!-- STEP 1 -->
+  <div class="card" id="step1">
+    <div class="step-head"><div class="badge" id="b1">1</div><h2>Connect your Gmail</h2></div>
+    <div id="setupNeeded" class="setup hidden">
+      <b>One-time setup needed:</b> this tool sends from <i>your</i> Gmail, so Google requires an app key.
+      <ol>
+        <li>Go to <a href="https://console.cloud.google.com/" target="_blank">console.cloud.google.com</a> → create a project (any name).</li>
+        <li>Search "Gmail API" → <b>Enable</b>.</li>
+        <li>APIs &amp; Services → OAuth consent screen → External → add yourself as a <b>test user</b>.</li>
+        <li>Credentials → Create credentials → <b>OAuth client ID</b> → Web application → add redirect URI <code>http://localhost:5599/oauth2callback</code>.</li>
+        <li>Download the JSON and save it as <code>email-tool/credentials.json</code>, then refresh this page.</li>
+      </ol>
+    </div>
+    <div id="notConnected" class="hidden">
+      <button class="primary big google-btn" onclick="location.href='/auth'">
+        <img alt="" src="https://www.gstatic.com/marketing-cms/assets/images/d5/dc/cfe9ce8b4425b410b49b7f2dd3f3/g.webp=s48-fcrop64=1,00000000ffffffff-rw">
+        Sign in with Google
+      </button>
+      <p class="hint" style="margin-top:10px">You'll be taken to Google's own permission page to approve
+      sending and reading email on your behalf. This tool never sees your password.</p>
+    </div>
+    <div id="connectedBox" class="connected hidden">
+      <span class="pill">✓ Connected: <span id="who"></span></span>
+      <button onclick="logout()">Disconnect</button>
+    </div>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="card" id="step2">
+    <div class="step-head"><div class="badge" id="b2">2</div><h2>Add recipients</h2>
+      <span class="hint" id="recipCount"></span></div>
+    <div class="tabs">
+      <button id="tabOutreach" onclick="loadOutreach()">📇 Load my outreach list</button>
+      <button onclick="document.getElementById('csvFile').click()">📄 Upload CSV</button>
+      <button onclick="togglePaste()">✏️ Paste emails</button>
+      <button onclick="clearRecipients()" id="clearBtn" class="hidden">Clear all</button>
+    </div>
+    <input type="file" id="csvFile" accept=".csv,.txt" class="hidden" onchange="uploadCsv(this)">
+    <div id="pasteBox" class="hidden">
+      <textarea id="pasteText" style="min-height:90px"
+        placeholder="One per line — plain emails, or 'Name <email@x.com>', or CSV with name,email columns"></textarea>
+      <div class="row" style="margin-top:8px"><button class="primary" onclick="parsePaste()">Add these</button></div>
+    </div>
+    <div id="recipTableWrap" class="hidden">
+      <table><thead><tr><th>Name</th><th>Email</th><th></th></tr></thead>
+      <tbody id="recipRows"></tbody></table>
+    </div>
+    <p class="hint" id="recipEmpty">No recipients yet — pick an option above.</p>
+  </div>
+
+  <!-- STEP 3 -->
+  <div class="card" id="step3">
+    <div class="step-head"><div class="badge" id="b3">3</div><h2>Compose your message</h2></div>
+    <label>Subject</label>
+    <input type="text" id="subject" placeholder="Quick hello from Farouk" oninput="updatePreview()">
+    <label>Message &nbsp;<span class="muted-sm" style="font-weight:400">— use
+      <code>{{first_name}}</code> or <code>{{name}}</code> to personalize each email</span></label>
+    <textarea id="body" oninput="updatePreview()" placeholder="Hi {{first_name}},&#10;&#10;..."></textarea>
+    <label>Preview (as the first recipient will see it)</label>
+    <div class="preview" id="previewPane">Add a recipient and start typing to see a live preview.</div>
+    <div class="row" style="margin-top:18px">
+      <button class="primary big" id="reviewBtn" onclick="openReview()" disabled>Review &amp; send →</button>
+      <span class="hint" id="whyDisabled"></span>
+    </div>
+  </div>
+
+  <!-- Replies -->
+  <div class="card hidden" id="repliesCard">
+    <div class="step-head"><div class="badge">✉</div><h2>Replies from your list</h2>
+      <button onclick="checkReplies()" style="margin-left:auto">Refresh</button></div>
+    <div id="repliesBox" class="muted-sm">Checking…</div>
+  </div>
+</div>
+
+<!-- Review / send modal -->
+<div class="overlay" id="overlay">
+  <div class="modal">
+    <div id="reviewStage">
+      <h3>Confirm before sending</h3>
+      <p class="muted-sm">Each person gets their <b>own individual email</b> — no one sees the other recipients.</p>
+      <label>Subject</label>
+      <div class="preview" id="rvSubject"></div>
+      <label>Message (personalized example for <span id="rvSampleName"></span>)</label>
+      <div class="preview" id="rvBody"></div>
+      <label>Going to <span class="count" id="rvCount"></span> people</label>
+      <div class="send-list" id="rvList"></div>
+      <div class="row" style="justify-content:flex-end; margin-top:16px">
+        <button onclick="closeReview()">Cancel</button>
+        <button class="primary big" id="confirmBtn" onclick="doSend()">Yes, send <span id="rvCount2"></span></button>
+      </div>
+    </div>
+    <div id="sendStage" class="hidden">
+      <h3 id="sendTitle">Sending…</h3>
+      <div class="progress"><i id="bar"></i></div>
+      <div class="send-list" id="sendList"></div>
+      <div class="row" style="justify-content:flex-end; margin-top:16px">
+        <button class="primary hidden" id="doneBtn" onclick="closeReview(true)">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let recipients = [];
+let connected = false;
+
+const $ = id => document.getElementById(id);
+const esc = s => (s || "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.style.display = "block";
+  clearTimeout(t._h); t._h = setTimeout(() => t.style.display = "none", 3500);
+}
+
+function personalize(tpl, r) {
+  const name = r.name || "there";
+  const first = r.name ? r.name.split(" ")[0] : "there";
+  return tpl.replaceAll("{{name}}", name).replaceAll("{{first_name}}", first)
+            .replaceAll("{{email}}", r.email);
+}
+
+async function refreshStatus() {
+  const s = await (await fetch("/api/status")).json();
+  connected = s.connected;
+  $("setupNeeded").classList.toggle("hidden", s.has_credentials_file);
+  $("notConnected").classList.toggle("hidden", !s.has_credentials_file || s.connected);
+  $("connectedBox").classList.toggle("hidden", !s.connected);
+  $("tabOutreach").classList.toggle("hidden", !s.outreach_list_available);
+  if (s.connected) {
+    $("who").textContent = s.email;
+    $("b1").textContent = "✓"; $("b1").classList.add("done");
+    $("repliesCard").classList.remove("hidden");
+    checkReplies();
+  } else {
+    $("b1").textContent = "1"; $("b1").classList.remove("done");
+    $("repliesCard").classList.add("hidden");
+  }
+  updateGate();
+}
+
+async function logout() {
+  await fetch("/api/logout", {method: "POST"});
+  refreshStatus();
+}
+
+/* ---------------- recipients ---------------- */
+function renderRecipients() {
+  const has = recipients.length > 0;
+  $("recipTableWrap").classList.toggle("hidden", !has);
+  $("recipEmpty").classList.toggle("hidden", has);
+  $("clearBtn").classList.toggle("hidden", !has);
+  $("recipCount").innerHTML = has ? `<span class="count">${recipients.length}</span> loaded` : "";
+  $("b2").textContent = has ? "✓" : "2";
+  $("b2").classList.toggle("done", has);
+  $("recipRows").innerHTML = recipients.map((r, i) =>
+    `<tr><td>${esc(r.name) || "<span class='muted-sm'>—</span>"}</td><td>${esc(r.email)}</td>
+     <td><button class="rm" title="Remove" onclick="removeRecipient(${i})">✕</button></td></tr>`).join("");
+  updatePreview(); updateGate();
+}
+
+function addRecipients(list) {
+  const seen = new Set(recipients.map(r => r.email));
+  let added = 0;
+  for (const r of list) if (!seen.has(r.email)) { seen.add(r.email); recipients.push(r); added++; }
+  renderRecipients();
+  toast(added ? `Added ${added} recipient${added === 1 ? "" : "s"}` : "No new recipients found");
+}
+
+function removeRecipient(i) { recipients.splice(i, 1); renderRecipients(); }
+function clearRecipients() { recipients = []; renderRecipients(); }
+
+async function loadOutreach() {
+  const d = await (await fetch("/api/outreach-list")).json();
+  addRecipients(d.recipients || []);
+}
+
+function togglePaste() { $("pasteBox").classList.toggle("hidden"); }
+
+async function parsePaste() {
+  const d = await (await fetch("/api/parse", {method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({text: $("pasteText").value})})).json();
+  addRecipients(d.recipients || []);
+  $("pasteText").value = "";
+}
+
+async function uploadCsv(input) {
+  const fd = new FormData(); fd.append("file", input.files[0]);
+  const d = await (await fetch("/api/parse", {method: "POST", body: fd})).json();
+  addRecipients(d.recipients || []);
+  input.value = "";
+}
+
+/* ---------------- compose ---------------- */
+function updatePreview() {
+  const body = $("body").value, subj = $("subject").value;
+  const ready = body.trim() && subj.trim();
+  $("b3").textContent = ready ? "✓" : "3";
+  $("b3").classList.toggle("done", !!ready);
+  if (!recipients.length || !body.trim()) {
+    $("previewPane").textContent = "Add a recipient and start typing to see a live preview.";
+  } else {
+    const r = recipients[0];
+    $("previewPane").textContent =
+      `To: ${r.name ? r.name + " <" + r.email + ">" : r.email}\nSubject: ${personalize(subj, r)}\n\n${personalize(body, r)}`;
+  }
+  updateGate();
+}
+
+function updateGate() {
+  const problems = [];
+  if (!connected) problems.push("connect Gmail");
+  if (!recipients.length) problems.push("add recipients");
+  if (!$("subject").value.trim() || !$("body").value.trim()) problems.push("write your message");
+  $("reviewBtn").disabled = problems.length > 0;
+  $("whyDisabled").textContent = problems.length ? "To send: " + problems.join(" · ") : "";
+}
+
+/* ---------------- review + send ---------------- */
+function openReview() {
+  const r = recipients[0];
+  $("rvSubject").textContent = personalize($("subject").value, r);
+  $("rvSampleName").textContent = r.name || r.email;
+  $("rvBody").textContent = personalize($("body").value, r);
+  $("rvCount").textContent = recipients.length;
+  $("rvCount2").textContent = `${recipients.length} email${recipients.length === 1 ? "" : "s"}`;
+  $("rvList").innerHTML = recipients.map(x =>
+    `<div><span>${esc(x.name) || "—"}</span><span class="muted-sm">${esc(x.email)}</span></div>`).join("");
+  $("reviewStage").classList.remove("hidden");
+  $("sendStage").classList.add("hidden");
+  $("overlay").classList.add("show");
+}
+
+function closeReview(reset) {
+  $("overlay").classList.remove("show");
+  if (reset) { $("subject").value = ""; $("body").value = ""; updatePreview(); checkReplies(); }
+}
+
+async function doSend() {
+  $("reviewStage").classList.add("hidden");
+  $("sendStage").classList.remove("hidden");
+  $("sendTitle").textContent = `Sending 0 of ${recipients.length}…`;
+  $("sendList").innerHTML = recipients.map((r, i) =>
+    `<div id="sr${i}"><span>${esc(r.email)}</span><span class="muted-sm">waiting…</span></div>`).join("");
+  $("bar").style.width = "3%";
+
+  try {
+    const resp = await fetch("/api/send", {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({subject: $("subject").value, body: $("body").value, recipients})});
+    const d = await resp.json();
+    if (d.error) throw new Error(d.error);
+    d.results.forEach((res, i) => {
+      $("sr" + i).lastElementChild.outerHTML = res.ok
+        ? '<span class="status-ok">✓ sent</span>'
+        : `<span class="status-bad" title="${esc(res.error)}">✕ failed</span>`;
+    });
+    $("bar").style.width = "100%";
+    $("sendTitle").textContent = d.failed
+      ? `Done — ${d.sent} sent, ${d.failed} failed`
+      : `🎉 All ${d.sent} emails sent`;
+  } catch (e) {
+    $("sendTitle").textContent = "Send failed: " + e.message;
+    $("bar").style.width = "100%";
+  }
+  $("doneBtn").classList.remove("hidden");
+}
+
+/* ---------------- replies ---------------- */
+async function checkReplies() {
+  if (!connected) return;
+  const emails = recipients.map(r => r.email);
+  if (!emails.length) { $("repliesBox").textContent = "Load recipients above, then refresh to see replies from them."; return; }
+  $("repliesBox").textContent = "Checking…";
+  const d = await (await fetch("/api/replies", {method: "POST",
+    headers: {"Content-Type": "application/json"}, body: JSON.stringify({emails})})).json();
+  if (d.error) { $("repliesBox").textContent = "Couldn't check replies: " + d.error; return; }
+  if (!d.replies.length) { $("repliesBox").textContent = "No replies from your list yet."; return; }
+  $("repliesBox").innerHTML = d.replies.map(m =>
+    `<div style="padding:8px 0;border-bottom:1px solid var(--line)">
+       <b>${esc(m.from)}</b> <span class="muted-sm">${esc(m.date)}</span><br>
+       <span>${esc(m.subject)}</span><br><span class="muted-sm">${esc(m.snippet)}</span></div>`).join("");
+}
+
+refreshStatus();
+if (location.search.includes("auth=ok")) toast("Gmail connected ✓");
+if (location.search.includes("auth=denied")) toast("Google sign-in was cancelled");
+</script>
+</body>
+</html>{% endraw %}
