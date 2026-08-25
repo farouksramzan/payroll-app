@@ -22,6 +22,7 @@ from pathlib import Path
 from flask import Flask, jsonify, redirect, render_template, request, session
 
 os.environ.setdefault("OAUTHLIB_INSECURE_TRANSPORT", "1")  # http://localhost redirect
+os.environ.setdefault("OAUTHLIB_RELAX_TOKEN_SCOPE", "1")  # tolerate scope reordering
 
 from google.auth.transport.requests import Request as GoogleRequest
 from google.oauth2.credentials import Credentials
@@ -109,6 +110,7 @@ def auth():
         access_type="offline", include_granted_scopes="true", prompt="consent"
     )
     session["oauth_state"] = state
+    session["code_verifier"] = flow.code_verifier  # PKCE: reuse in the callback
     return redirect(auth_url)
 
 
@@ -122,6 +124,7 @@ def oauth2callback():
         state=session.get("oauth_state"),
         redirect_uri=REDIRECT_URI,
     )
+    flow.code_verifier = session.get("code_verifier")
     flow.fetch_token(authorization_response=request.url)
     TOKEN_FILE.write_text(flow.credentials.to_json())
     return redirect("/?auth=ok")
