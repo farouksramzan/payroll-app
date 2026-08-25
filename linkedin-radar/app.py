@@ -316,7 +316,8 @@ def connect_linkedin():
                 "type": "create",
                 "providers": ["LINKEDIN"],
                 "api_url": unipile_base(),
-                "expiresOn": iso(now_utc() + timedelta(hours=2)),
+                # Unipile validates this strictly: ISO 8601 with milliseconds
+                "expiresOn": (now_utc() + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S.000Z"),
                 "notify_url": f"{BASE_URL}/api/unipile/notify",
                 "name": "linkedin-radar",
                 "success_redirect_url": BASE_URL,
