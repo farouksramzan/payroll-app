@@ -127,6 +127,29 @@ def oauth2callback():
     return redirect("/?auth=ok")
 
 
+@app.route("/api/upload-credentials", methods=["POST"])
+def api_upload_credentials():
+    """Accept the OAuth client JSON downloaded from Google Cloud Console."""
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No file received"}), 400
+    try:
+        data = json.loads(f.read().decode("utf-8"))
+    except Exception:
+        return jsonify({"error": "That file isn't valid JSON"}), 400
+    if "web" not in data and "installed" not in data:
+        return jsonify({"error": "That doesn't look like a Google OAuth client file "
+                                 "(missing 'web' or 'installed' section)"}), 400
+    client = data.get("web") or data.get("installed")
+    uris = client.get("redirect_uris") or []
+    warning = None
+    if REDIRECT_URI not in uris:
+        warning = (f"Heads up: this client has no redirect URI {REDIRECT_URI} — "
+                   "add it in Google Cloud Console if sign-in fails.")
+    CREDENTIALS_FILE.write_text(json.dumps(data, indent=2))
+    return jsonify({"ok": True, "warning": warning})
+
+
 @app.route("/api/logout", methods=["POST"])
 def api_logout():
     if TOKEN_FILE.exists():

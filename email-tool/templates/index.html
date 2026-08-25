@@ -110,8 +110,15 @@
         <li>Search "Gmail API" → <b>Enable</b>.</li>
         <li>APIs &amp; Services → OAuth consent screen → External → add yourself as a <b>test user</b>.</li>
         <li>Credentials → Create credentials → <b>OAuth client ID</b> → Web application → add redirect URI <code>http://localhost:5599/oauth2callback</code>.</li>
-        <li>Download the JSON and save it as <code>email-tool/credentials.json</code>, then refresh this page.</li>
+        <li>Click <b>Download JSON</b> in the dialog Google shows (it saves a file named like
+            <code>client_secret_….json</code> to your Downloads).</li>
+        <li>Then click this button and pick that file — that's it:</li>
       </ol>
+      <div class="row" style="margin-top:12px">
+        <button class="primary" onclick="document.getElementById('credFile').click()">
+          📁 Choose the downloaded file</button>
+      </div>
+      <input type="file" id="credFile" accept=".json" class="hidden" onchange="uploadCredentials(this)">
     </div>
     <div id="notConnected" class="hidden">
       <button class="primary big google-btn" onclick="location.href='/auth'">
@@ -240,6 +247,16 @@ async function refreshStatus() {
     $("repliesCard").classList.add("hidden");
   }
   updateGate();
+}
+
+async function uploadCredentials(input) {
+  if (!input.files[0]) return;
+  const fd = new FormData(); fd.append("file", input.files[0]);
+  const d = await (await fetch("/api/upload-credentials", {method: "POST", body: fd})).json();
+  input.value = "";
+  if (d.error) { toast("❌ " + d.error); return; }
+  toast(d.warning || "Key installed ✓ — now sign in with Google");
+  refreshStatus();
 }
 
 async function logout() {
