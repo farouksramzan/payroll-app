@@ -1,0 +1,339 @@
+{% raw %}<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LinkedIn Radar</title>
+<style>
+  :root {
+    --bg: #f4f6fb; --card: #ffffff; --ink: #17233b; --muted: #66708a;
+    --line: #e3e8f2; --accent: #0a66c2; --accent-ink: #ffffff;
+    --ok: #16a34a; --bad: #dc2626; --warn: #b45309; --soft: #eaf2fb;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg); color: var(--ink); padding: 32px 16px 80px;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  h1 { font-size: 26px; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); margin: 6px 0 28px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 22px 24px; margin-bottom: 18px; box-shadow: 0 1px 2px rgba(23,35,59,.04);
+  }
+  .step-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
+  .badge {
+    width: 30px; height: 30px; border-radius: 999px; background: var(--soft);
+    color: var(--accent); font-weight: 700; display: flex; align-items: center;
+    justify-content: center; flex: none; font-size: 15px;
+  }
+  .badge.done { background: var(--ok); color: #fff; }
+  .step-head h2 { font-size: 17px; }
+  .hint { color: var(--muted); font-size: 13.5px; line-height: 1.55; }
+  button {
+    font: inherit; border: 1px solid var(--line); background: #fff; color: var(--ink);
+    border-radius: 10px; padding: 10px 16px; cursor: pointer; font-weight: 600;
+  }
+  button:hover { border-color: #c9d3e6; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button.primary:hover { filter: brightness(1.07); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  input[type=text], input[type=password], input[type=number], textarea {
+    font: inherit; width: 100%; border: 1px solid var(--line); border-radius: 10px;
+    padding: 11px 13px; background: #fff; color: var(--ink);
+  }
+  input:focus, textarea:focus { outline: 2px solid #bcd0fa; border-color: var(--accent); }
+  textarea { min-height: 140px; resize: vertical; line-height: 1.5; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .grid3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+  .pill {
+    background: #eafaf0; color: var(--ok); border: 1px solid #bfe8cd;
+    padding: 6px 12px; border-radius: 999px; font-weight: 600; font-size: 14px;
+  }
+  .pill.off { background: #fdf1f1; color: var(--bad); border-color: #f2c8c8; }
+  .pill.warn { background: #fff8e6; color: var(--warn); border-color: #f3dfa0; }
+  .setup { background: #fff8e6; border: 1px solid #f3dfa0; border-radius: 10px;
+           padding: 14px 16px; font-size: 14px; line-height: 1.65; }
+  .setup ol { margin: 8px 0 0 20px; }
+  code { background: #f0f2f8; padding: 1px 6px; border-radius: 6px; font-size: 13px; word-break: break-all; }
+  table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 14px; }
+  th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12.5px;
+       text-transform: uppercase; letter-spacing: .04em; }
+  th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  label { font-size: 13px; font-weight: 600; color: var(--muted); display: block; margin: 14px 0 6px; }
+  .preview {
+    background: #fafbfe; border: 1px dashed var(--line); border-radius: 10px;
+    padding: 14px 16px; font-size: 14px; white-space: pre-wrap; line-height: 1.55;
+  }
+  .toggle { display: flex; align-items: center; gap: 10px; font-size: 14.5px; font-weight: 600;
+            margin-top: 14px; cursor: pointer; }
+  .toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
+  .status-sent { color: var(--ok); font-weight: 700; }
+  .status-failed { color: var(--bad); font-weight: 700; }
+  .status-queued { color: var(--accent); font-weight: 700; }
+  .status-dry_run { color: var(--warn); font-weight: 700; }
+  .status-skipped { color: var(--muted); font-weight: 700; }
+  .mini { border: none; background: none; color: var(--accent); font-size: 13px;
+          padding: 2px 6px; font-weight: 600; }
+  .mini:hover { text-decoration: underline; border: none; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+           background: var(--ink); color: #fff; padding: 12px 20px; border-radius: 10px;
+           font-size: 14px; display: none; z-index: 60; }
+  .overlay { position: fixed; inset: 0; background: rgba(15,23,42,.55); display: none;
+             align-items: center; justify-content: center; padding: 20px; z-index: 50; }
+  .overlay.show { display: flex; }
+  .modal { background: #fff; border-radius: 16px; max-width: 420px; width: 100%; padding: 26px; }
+  .hidden { display: none !important; }
+  .stat { font-size: 13.5px; color: var(--muted); }
+  .stat b { color: var(--ink); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>📡 LinkedIn Radar</h1>
+  <p class="sub">When someone accepts your connection request, they get your opener — after a human-like delay, under a daily cap, only when auto-send is on.</p>
+
+  <!-- STEP 1: Unipile -->
+  <div class="card">
+    <div class="step-head"><div class="badge" id="b1">1</div><h2>Connect Unipile</h2></div>
+    <div class="setup" id="unipileHelp">
+      <b>One-time setup:</b> this tool talks to LinkedIn through your own
+      <a href="https://www.unipile.com" target="_blank">Unipile</a> account (7-day free trial, then ~€49/mo).
+      <ol>
+        <li>Create a Unipile account → open the dashboard.</li>
+        <li>Copy your <b>DSN</b> (looks like <code>apiXX.unipile.com:1XXXX</code>).</li>
+        <li>Create an <b>API key</b> (Access Tokens page) and paste both below.</li>
+      </ol>
+    </div>
+    <div class="grid2" style="margin-top:12px">
+      <div><label>Unipile DSN</label><input type="text" id="dsn" placeholder="api8.unipile.com:13851"></div>
+      <div><label>API key <span id="keyState" class="hint"></span></label>
+           <input type="password" id="apiKey" placeholder="paste key (stored server-side)"></div>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="primary" onclick="saveCreds()">Save</button>
+      <span id="unipileStatus"></span>
+    </div>
+  </div>
+
+  <!-- STEP 2: LinkedIn account -->
+  <div class="card">
+    <div class="step-head"><div class="badge" id="b2">2</div><h2>Connect your LinkedIn</h2></div>
+    <p class="hint">Opens Unipile's hosted sign-in — you log into LinkedIn on their page; this app only receives an account id.</p>
+    <div class="row" style="margin-top:12px">
+      <button class="primary" onclick="connectLinkedIn()">🔗 Connect LinkedIn</button>
+      <span id="accountStatus"></span>
+    </div>
+  </div>
+
+  <!-- STEP 3: Webhook -->
+  <div class="card">
+    <div class="step-head"><div class="badge" id="b3">3</div><h2>Turn on acceptance alerts</h2></div>
+    <p class="hint">Registers a Unipile webhook so every accepted connection request pings
+       <code id="whUrl"></code> instantly.</p>
+    <div class="row" style="margin-top:12px">
+      <button class="primary" onclick="registerWebhook()">📶 Register webhook</button>
+      <span id="webhookStatus"></span>
+    </div>
+  </div>
+
+  <!-- STEP 4: Message + safety -->
+  <div class="card">
+    <div class="step-head"><div class="badge">4</div><h2>Opener message &amp; safety rails</h2></div>
+    <label>Message template — <code>{{first_name}}</code> and <code>{{name}}</code> are filled in per person</label>
+    <textarea id="template" oninput="renderPreview()"></textarea>
+    <label>Preview</label>
+    <div class="preview" id="preview"></div>
+    <div class="grid3" style="margin-top:4px">
+      <div><label>Delay after accept (min, minutes)</label><input type="number" id="delayMin" min="0"></div>
+      <div><label>Delay max (minutes)</label><input type="number" id="delayMax" min="1"></div>
+      <div><label>Daily send cap</label><input type="number" id="dailyCap" min="1"></div>
+    </div>
+    <label class="toggle"><input type="checkbox" id="dryRun">
+      Dry run — log what <i>would</i> send, but send nothing</label>
+    <label class="toggle"><input type="checkbox" id="autoSend">
+      Auto-send — actually message people automatically</label>
+    <div class="row" style="margin-top:16px">
+      <button class="primary" onclick="saveMessage()">Save settings</button>
+      <span class="stat" id="capStat"></span>
+    </div>
+  </div>
+
+  <!-- Activity -->
+  <div class="card">
+    <div class="step-head"><div class="badge">5</div><h2>Activity</h2></div>
+    <table>
+      <thead><tr><th>Person</th><th>Accepted</th><th>Status</th><th>Detail</th><th></th></tr></thead>
+      <tbody id="log"><tr><td colspan="5" class="hint">Nothing yet — accepted connections show up here.</td></tr></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="overlay" id="loginOverlay">
+  <div class="modal">
+    <h3 style="margin-bottom:6px">🔒 LinkedIn Radar</h3>
+    <p class="hint">Enter the dashboard password (the <code>RADAR_PASSWORD</code> you set on Railway).</p>
+    <input type="password" id="pw" style="margin:14px 0" onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="primary" onclick="doLogin()">Unlock</button>
+    <p class="hint" id="loginErr" style="color:var(--bad);margin-top:10px"></p>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const NEEDS_LOGIN = {% endraw %}{{ 'true' if needs_login else 'false' }}{% raw %};
+const PW_MISSING  = {% endraw %}{{ 'true' if password_missing else 'false' }}{% raw %};
+let state = null;
+
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg; el.style.display = 'block';
+  clearTimeout(el._t); el._t = setTimeout(() => el.style.display = 'none', 3500);
+}
+async function api(path, body) {
+  const resp = await fetch(path, body === undefined ? {} : {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+  return data;
+}
+
+async function doLogin() {
+  try {
+    await api('/api/login', {password: document.getElementById('pw').value});
+    document.getElementById('loginOverlay').classList.remove('show');
+    refresh();
+  } catch (e) { document.getElementById('loginErr').textContent = e.message; }
+}
+
+function fmtTime(isoStr) {
+  if (!isoStr) return '';
+  return new Date(isoStr).toLocaleString([], {month:'short', day:'numeric', hour:'numeric', minute:'2-digit'});
+}
+
+function renderPreview() {
+  const t = document.getElementById('template').value || '';
+  document.getElementById('preview').textContent =
+    t.replaceAll('{{first_name}}', 'Sam').replaceAll('{{name}}', 'Sam Rivera');
+}
+
+async function refresh() {
+  try { state = await api('/api/state'); } catch (e) { return; }
+  document.getElementById('dsn').value = state.dsn;
+  document.getElementById('keyState').textContent = state.api_key_set ? '(saved — paste to replace)' : '';
+  document.getElementById('whUrl').textContent = state.webhook_url;
+  const configured = state.dsn && state.api_key_set;
+  document.getElementById('b1').className = 'badge' + (configured ? ' done' : '');
+  document.getElementById('b1').textContent = configured ? '✓' : '1';
+  document.getElementById('unipileHelp').classList.toggle('hidden', configured);
+  document.getElementById('unipileStatus').innerHTML = configured
+    ? '<span class="pill">Unipile connected</span>' : '';
+  document.getElementById('b2').className = 'badge' + (state.account_id ? ' done' : '');
+  document.getElementById('b2').textContent = state.account_id ? '✓' : '2';
+  document.getElementById('accountStatus').innerHTML = state.account_id
+    ? `<span class="pill">LinkedIn linked · ${state.account_id.slice(0,10)}…</span>`
+    : '<span class="pill off">Not linked</span>';
+  document.getElementById('b3').className = 'badge' + (state.webhook_id ? ' done' : '');
+  document.getElementById('b3').textContent = state.webhook_id ? '✓' : '3';
+  document.getElementById('webhookStatus').innerHTML = state.webhook_id
+    ? '<span class="pill">Webhook active</span>'
+    : (state.is_local ? '<span class="pill warn">Needs a public URL (deploy first)</span>'
+                      : '<span class="pill off">Not registered</span>');
+  if (document.activeElement.id !== 'template') {
+    document.getElementById('template').value = state.template || '';
+    renderPreview();
+  }
+  for (const [id, key] of [['delayMin','delay_min'],['delayMax','delay_max'],['dailyCap','daily_cap']])
+    if (document.activeElement.id !== id) document.getElementById(id).value = state[key];
+  document.getElementById('dryRun').checked = state.dry_run;
+  document.getElementById('autoSend').checked = state.auto_send;
+  document.getElementById('capStat').innerHTML =
+    `Sent today: <b>${state.sent_today}</b> / ${state.daily_cap}` +
+    (state.dry_run ? ' · <b style="color:var(--warn)">dry run — nothing actually sends</b>' : '') +
+    (!state.auto_send ? ' · auto-send is <b>off</b>' : '');
+
+  const rows = state.queue.map(q => {
+    const who = q.profile_url
+      ? `<a href="${q.profile_url}" target="_blank">${q.full_name || q.provider_id}</a>`
+      : (q.full_name || q.provider_id);
+    const detail = q.status === 'queued'
+      ? `sends ~${fmtTime(q.scheduled_at)}`
+      : (q.error ? q.error : (q.message_text || ''));
+    const actions = q.status === 'queued'
+      ? `<button class="mini" onclick="act(${q.id},'send-now')">send now</button>
+         <button class="mini" onclick="act(${q.id},'skip')">skip</button>`
+      : (['skipped','failed','dry_run'].includes(q.status)
+         ? `<button class="mini" onclick="act(${q.id},'requeue')">requeue</button>` : '');
+    return `<tr><td>${who}</td><td>${fmtTime(q.received_at)}</td>
+      <td class="status-${q.status}">${q.status.replace('_',' ')}</td>
+      <td class="hint" style="max-width:280px">${detail}</td><td>${actions}</td></tr>`;
+  });
+  document.getElementById('log').innerHTML = rows.length ? rows.join('')
+    : '<tr><td colspan="5" class="hint">Nothing yet — accepted connections show up here.</td></tr>';
+}
+
+async function saveCreds() {
+  try {
+    await api('/api/settings', {
+      dsn: document.getElementById('dsn').value,
+      api_key: document.getElementById('apiKey').value,
+    });
+    document.getElementById('apiKey').value = '';
+    toast('Saved'); refresh();
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
+async function saveMessage() {
+  try {
+    await api('/api/settings', {
+      template: document.getElementById('template').value,
+      delay_min: +document.getElementById('delayMin').value,
+      delay_max: +document.getElementById('delayMax').value,
+      daily_cap: +document.getElementById('dailyCap').value,
+      dry_run: document.getElementById('dryRun').checked,
+      auto_send: document.getElementById('autoSend').checked,
+    });
+    toast('Settings saved'); refresh();
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
+async function connectLinkedIn() {
+  try {
+    const {url} = await api('/api/connect', {});
+    window.open(url, '_blank');
+    toast('Finish signing in on the Unipile tab, then come back.');
+    setTimeout(refresh, 8000);
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
+async function registerWebhook() {
+  try { await api('/api/register-webhook', {}); toast('Webhook registered ✓'); refresh(); }
+  catch (e) { toast('❌ ' + e.message); }
+}
+
+async function act(id, action) {
+  try {
+    const r = await api(`/api/queue/${id}/${action}`, {});
+    if (action === 'send-now') toast(r.ok ? 'Done ✓' : ('❌ ' + (r.error || r.status)));
+    refresh();
+  } catch (e) { toast('❌ ' + e.message); }
+}
+
+if (PW_MISSING) {
+  document.body.innerHTML = '<div class="wrap"><div class="card"><h2>⚠️ Set RADAR_PASSWORD</h2>' +
+    '<p class="hint" style="margin-top:10px">This deployment has no dashboard password. ' +
+    'Add a <code>RADAR_PASSWORD</code> environment variable on Railway and redeploy before using it.</p></div></div>';
+} else if (NEEDS_LOGIN) {
+  document.getElementById('loginOverlay').classList.add('show');
+} else {
+  refresh();
+}
+setInterval(() => { if (state) refresh(); }, 20000);
+</script>
+</body>
+</html>{% endraw %}

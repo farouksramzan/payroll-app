@@ -27,6 +27,12 @@
       "port": 5599
     },
     {
+      "name": "linkedin-radar",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd linkedin-radar && .venv/bin/python app.py"],
+      "port": 5601
+    },
+    {
       "name": "dc-outreach-radar",
       "runtimeExecutable": "sh",
       "runtimeArgs": ["-c", "python3 dc-outreach-radar/serve.py"],
