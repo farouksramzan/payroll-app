@@ -43,7 +43,7 @@ const FILING_OPTIONS = [
     desc: 'You and your spouse combine income on one tax return.',
   },
   {
-    value: 'head',
+    value: 'hoh',
     label: 'Head of household',
     desc: 'You\'re unmarried and pay more than half the cost of a home for a qualifying person.',
   },

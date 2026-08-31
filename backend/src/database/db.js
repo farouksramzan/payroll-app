@@ -699,6 +699,22 @@ function migrate() {
     )
   `);
 
+  // ── form_filings — per-client tax form status tracking (generated/filed) ─────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS form_filings (
+      id         INTEGER PRIMARY KEY AUTOINCREMENT,
+      client_id  INTEGER NOT NULL,
+      form_key   TEXT NOT NULL,
+      status     TEXT NOT NULL,
+      updated_at TEXT,
+      UNIQUE(client_id, form_key),
+      FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
+    )
+  `);
+
+  // Normalize legacy 'head' filing status to 'hoh' — idempotent
+  db.exec("UPDATE employees SET filing_status='hoh' WHERE filing_status='head'");
+
   // ── Global: link unlinked paystubs to employees by fuzzy first+last name ─────
   // Runs on every startup; idempotent (only touches rows where employee_id IS NULL).
   // Fixes imported paychecks that had middle initials in QB names (e.g. "SHADI D AHVAZI").

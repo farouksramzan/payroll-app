@@ -94,6 +94,9 @@ export default function ImportEmployeesModal({ clientId, onClose, onImported }) 
                 : <><div style={{ fontWeight: 600, marginBottom: 4 }}>Click to select file</div><div style={{ fontSize: 12, color: 'var(--text-muted)' }}>QuickBooks Employee List export (.xlsx) or CSV</div></>
               }
             </div>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: -8, marginBottom: 16 }}>
+              Existing employees are matched by name and skipped — the import never updates them, so no duplicates are created unless you uncheck the skip option.
+            </p>
 
             {loading && (
               <div style={{ textAlign: 'center', padding: 20 }}>

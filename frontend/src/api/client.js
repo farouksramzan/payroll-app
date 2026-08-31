@@ -284,6 +284,11 @@ const api = {
   getPreparerInfo: () => request('/auth/preparer'),
   savePreparerInfo: (data) => request('/auth/preparer', { method: 'PUT', body: JSON.stringify(data) }),
 
+  // System
+  getNotificationConfig: () => request('/system/notification-config'),
+  getFormFilings: (clientId) => request(`/system/clients/${clientId}/form-filings`),
+  setFormFiling: (clientId, formKey, status) => request(`/system/clients/${clientId}/form-filings`, { method: 'PUT', body: JSON.stringify({ formKey, status }) }),
+
   // User management (admin only)
   getUsers: () => request('/auth/users'),
   createUser: (username, password) => request('/auth/users', { method: 'POST', body: JSON.stringify({ username, password }) }),

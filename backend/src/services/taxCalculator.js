@@ -75,6 +75,7 @@ function calculateWithholding({
   sutaRate      = null, // override; falls back to state's new-employer rate
 }) {
   const periods = PAY_PERIODS[payFrequency] || 26;
+  if (filingStatus === 'head') filingStatus = 'hoh'; // legacy alias
 
   // ── Federal Income Tax ────────────────────────────────────────────────────────
   const adjustedAnnual = grossWages * periods + (step4a || 0);
@@ -180,7 +181,7 @@ function calculateStateSIT(grossWages, periods, state, filingStatus = 'single') 
   }
 
   if (sit.type === 'brackets') {
-    const fs = filingStatus === 'hoh' ? 'hoh' : (filingStatus === 'married' ? 'married' : 'single');
+    const fs = (filingStatus === 'hoh' || filingStatus === 'head') ? 'hoh' : (filingStatus === 'married' ? 'married' : 'single');
     const brackets = sit.brackets?.[fs] || sit.brackets?.single || [];
     const stdDed = sit.standardDeduction?.[fs] || 0;
 

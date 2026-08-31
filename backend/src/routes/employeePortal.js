@@ -72,6 +72,8 @@ router.patch('/me', (req, res) => {
       updates[col] = req.body[bodyKey];
     }
   }
+  // Legacy alias from older W-4 forms — the tax engine and UI use 'hoh'.
+  if (updates.filing_status === 'head') updates.filing_status = 'hoh';
 
   // SSN — encrypt before storing
   if (req.body.ssn) {

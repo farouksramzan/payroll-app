@@ -18,7 +18,8 @@
   --error-light:   #fee2e2;
   --text-primary:  #0f172a;
   --text-secondary:#475569;
-  --text-muted:    #94a3b8;
+  --text-muted:    #64748b;
+  --text-faint:    #94a3b8;
   --border:        #b8c4d0;
   --border-light:  #d4dce6;
   --shadow:        0 1px 3px rgba(0,0,0,0.10);
@@ -468,9 +469,9 @@ html, body, #root {
   white-space: nowrap;
   letter-spacing: 0.02em;
 }
-.badge-success  { background: var(--success-light);  color: var(--success); }
-.badge-warning  { background: var(--warning-light);  color: var(--warning); }
-.badge-error    { background: var(--error-light);    color: var(--error); }
+.badge-success  { background: var(--success-light);  color: #065f46; }
+.badge-warning  { background: var(--warning-light);  color: #92400e; }
+.badge-error    { background: var(--error-light);    color: #991b1b; }
 .badge-neutral  { background: var(--bg-tertiary);    color: var(--text-secondary); border: 1px solid var(--border); }
 .badge-accent   { background: var(--accent-light);   color: var(--accent); }
 

@@ -116,12 +116,21 @@ const STATUS_TONES = {
   warn:    { bg: '#fef3c7', color: '#92400e', dot: '#d97706', title: 'A pay date or tax deposit is coming up soon' },
   ok:      { bg: '#e9f5ec', color: '#1a7a3a', dot: '#2fb457', title: 'No overdue payroll or taxes' },
 };
-function StatusPill({ tone, label }) {
+function StatusPill({ tone, label, to }) {
   const t = STATUS_TONES[tone];
+  const style = { display: 'inline-flex', alignItems: 'center', gap: 5, background: t.bg, color: t.color, fontSize: 10.5, fontWeight: 700, padding: '3px 9px', borderRadius: 999, whiteSpace: 'nowrap', lineHeight: 1.35 };
+  const inner = <>
+    <span style={{ width: 5, height: 5, borderRadius: 999, background: t.dot, flexShrink: 0 }} />
+    {label}
+  </>;
+  if (to) return (
+    <Link to={to} title={t.title} onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()} style={{ ...style, textDecoration: 'none' }}>
+      {inner}
+    </Link>
+  );
   return (
-    <span title={t.title} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, background: t.bg, color: t.color, fontSize: 10.5, fontWeight: 700, padding: '3px 9px', borderRadius: 999, whiteSpace: 'nowrap', lineHeight: 1.35 }}>
-      <span style={{ width: 5, height: 5, borderRadius: 999, background: t.dot, flexShrink: 0 }} />
-      {label}
+    <span title={t.title} style={style}>
+      {inner}
     </span>
   );
 }
@@ -131,7 +140,12 @@ function StatusPill({ tone, label }) {
 // so an overdue payroll subsumes the tax flag: only the upstream signal shows.
 function companyStatus(client) {
   const ps = payrollStatus(client.nextPayDate);
-  if (ps && ps.cls === 'badge-error')       return { tone: 'payroll', label: 'Payroll overdue' };
+  if (ps && ps.cls === 'badge-error') {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const daysLate = Math.max(1, Math.floor((today - new Date(client.nextPayDate + 'T00:00:00')) / 86400000));
+    const lateStr = daysLate < 30 ? `${daysLate} day${daysLate === 1 ? '' : 's'}` : `${Math.floor(daysLate / 30)} mo`;
+    return { tone: 'payroll', label: `Payroll overdue ${lateStr}` };
+  }
   if (client.liabilityStatus === 'overdue') return { tone: 'tax',     label: 'Tax overdue' };
   if (ps)                                   return { tone: 'warn',    label: ps.label };
   if (client.liabilityStatus === 'due-soon') return { tone: 'warn',   label: 'Tax due soon' };
@@ -177,10 +191,10 @@ function LiabilityDetailModal({ row, onClose, onAction }) {
           {status === 'submitted'
             ? <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={() => onAction('reset', taxType)}>↩ Mark as Pending</button>
             : status === 'processing'
-              ? <span style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>Processing via bridge — check back in ~15 min</span>
+              ? <span style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>The payment computer is sending this — check back in ~15 min</span>
               : <>
                   <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={() => onAction('markSent', taxType)}>Mark as Sent</button>
-                  <button className="btn btn-primary" style={{ fontSize: 11 }} onClick={() => onAction('submit', taxType)}>Submit via Bridge</button>
+                  <button className="btn btn-primary" style={{ fontSize: 11 }} onClick={() => onAction('submit', taxType)}>Send via Payment Computer</button>
                 </>
           }
         </div>
@@ -373,12 +387,12 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
     try {
       const bs = await api.getBridgeStatus();
       if (!bs.connected) {
-        alert('EFTPS bridge is not connected.\n\nStart the bridge service on your local machine to submit tax deposits.');
+        alert('The payment computer isn\'t connected, so tax payments can\'t be sent right now.\n\nTurn on the payment computer, then try again.');
         return false;
       }
       return true;
     } catch {
-      alert('Could not reach the server to verify bridge status.');
+      alert('Couldn\'t check whether the payment computer is connected. Check your internet connection, then try again.');
       return false;
     }
   }
@@ -412,7 +426,7 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
         await api.batchSubmitPaystubs({ clientId, paystubIds: ids, taxType });
       }
       setSelectedLiab(new Set());
-      alert(`${groups.length} ${taxType.toUpperCase()} submission${groups.length > 1 ? 's' : ''} queued (one per deposit period). The bridge is processing — check back in ~15 minutes.`);
+      alert(`${groups.length} ${taxType.toUpperCase()} submission${groups.length > 1 ? 's' : ''} queued (one per deposit period). The payment computer is sending them — check back in ~15 minutes.`);
     } catch (e) { alert(`Submission failed: ${e.message}`); }
     finally { setSubmitting(null); triggerReload(); }
   }
@@ -443,7 +457,7 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
         }
       }
       setSelectedLiab(new Set());
-      alert(`${totalGroups} submission${totalGroups !== 1 ? 's' : ''} queued across all tax types. The bridge is processing — check back in ~15 minutes.`);
+      alert(`${totalGroups} submission${totalGroups !== 1 ? 's' : ''} queued across all tax types. The payment computer is sending them — check back in ~15 minutes.`);
     } catch (e) { alert(`Submission failed: ${e.message}`); }
     finally { setSubmitting(null); triggerReload(); }
   }
@@ -469,7 +483,7 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
       for (const { clientId, ids } of groups) {
         await api.batchSubmitPaystubs({ clientId, paystubIds: ids, taxType });
       }
-      alert(`${taxType.toUpperCase()} submission queued. The bridge is processing — check back in ~15 minutes.`);
+      alert(`${taxType.toUpperCase()} submission queued. The payment computer is sending it — check back in ~15 minutes.`);
     } catch (e) { alert(`Submission failed: ${e.message}`); }
     finally { triggerReload(); }
   }
@@ -495,7 +509,7 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
   function toggleLiab(id) { setSelectedLiab(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
 
   const DueCell = ({ due, late, dueSoon }) => (
-    <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11,
+    <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13,
       color: late ? '#dc2626' : dueSoon ? '#d97706' : 'var(--text-muted)', fontWeight: (late || dueSoon) ? 700 : 400 }}>
       {due ? fmtShort(due) : '—'}
     </td>
@@ -544,9 +558,9 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
             {submitted ? (
               <PopBtn onClick={() => { setPopover(null); handleResetOneTax(r.id, taxType); }}>↩ Mark as Pending</PopBtn>
             ) : processing ? (
-              <div style={{ padding:'10px 14px', fontSize:12, color:'var(--text-muted)', fontStyle:'italic' }}>Processing via bridge.<br/>Check back in ~15 min.</div>
+              <div style={{ padding:'10px 14px', fontSize:12, color:'var(--text-muted)', fontStyle:'italic' }}>The payment computer is sending this.<br/>Check back in ~15 min.</div>
             ) : <>
-              <PopBtn accent onClick={() => { setPopover(null); handleSubmitOne(r.id, taxType); }}>Submit via Bridge</PopBtn>
+              <PopBtn accent onClick={() => { setPopover(null); handleSubmitOne(r.id, taxType); }}>Send via Payment Computer</PopBtn>
               <PopBtn onClick={() => { setPopover(null); handleMarkSentOne(r.id, taxType); }}>Mark as Sent (manual)</PopBtn>
               {failed && <PopBtn onClick={() => { setPopover(null); handleResetOneTax(r.id, taxType); }}>Reset to Pending</PopBtn>}
             </>}
@@ -643,14 +657,15 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
           )}
 
           {visibleRows.length > 0 && (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <div className="table-scroll">
+            <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
                   <th style={{ width: 36, padding: '7px 10px', textAlign: 'center' }}>
                     <input type="checkbox" checked={allVis} onChange={e => setSelectedLiab(e.target.checked ? new Set(visibleRows.map(r => r.id)) : new Set())} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
                   </th>
                   {['Company', 'Employee', 'Period', '941', '941 Send By', '940', '940 Send By', 'SUI', 'SUI Send By'].map(h => (
-                    <th key={h} style={{ padding: '7px 8px', textAlign: h.endsWith('941') || h === '940' || h === 'SUI' ? 'right' : 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
+                    <th key={h} style={{ padding: '7px 8px', textAlign: h.endsWith('941') || h === '940' || h === 'SUI' ? 'right' : 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -677,9 +692,9 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
                         <td style={{ padding: '7px 10px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                           <input type="checkbox" checked={selSet.has(r.id)} onChange={() => toggleLiab(r.id)} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
                         </td>
-                        <td style={{ padding: '7px 8px', color: 'var(--text-muted)', fontSize: 11 }}></td>
+                        <td style={{ padding: '7px 8px', color: 'var(--text-muted)', fontSize: 13 }}></td>
                         <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{r.employee_name || '—'}</td>
-                        <td style={{ padding: '7px 8px', fontSize: 11, whiteSpace: 'nowrap', color: '#555' }}>{fmtPeriod(r.pay_period_start, r.pay_period_end)}</td>
+                        <td style={{ padding: '7px 8px', fontSize: 13, whiteSpace: 'nowrap', color: '#555' }}>{fmtPeriod(r.pay_period_start, r.pay_period_end)}</td>
                         <TaxCell r={r} taxType="941" amount={r.total_deposit}
                           pending={r._pending941} processing={r._processing941} failed={r._failed941} submitted={r._submitted941}
                           late={r._late941} dueSoon={r._dueSoon941} sendBy={r._sendBy941} />
@@ -709,6 +724,7 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
                 </tr>
               </tfoot>
             </table>
+            </div>
           )}
         </>)}
       </div>
@@ -723,6 +739,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
   const [loading, setLoading]   = useState(false);
   const [selected, setSelected] = useState(new Set());
   const [submitting, setSubmitting] = useState(false);
+  const [printing, setPrinting]     = useState(false);
   const [detailStub, setDetailStub] = useState(null);
   const [debugInfo, setDebugInfo]   = useState([]);
   const [hoursEdits, setHoursEdits] = useState({}); // { [rowId]: { reg, ot } }
@@ -947,8 +964,16 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
       if (!byClient[r._clientId]) byClient[r._clientId] = [];
       byClient[r._clientId].push(r.id);
     });
-    for (const [cid, ids] of Object.entries(byClient)) {
-      try { await api.printSelectedChecks(Number(cid), ids); } catch (e) { alert(`Print failed: ${e.message}`); }
+    setPrinting(true);
+    const failures = [];
+    try {
+      for (const [cid, ids] of Object.entries(byClient)) {
+        try { await api.printSelectedChecks(Number(cid), ids); }
+        catch (e) { failures.push(`${rows.find(r => r._clientId == cid)?._clientName || 'Unknown company'}: ${e.message}`); }
+      }
+    } finally { setPrinting(false); }
+    if (failures.length) {
+      alert(`Couldn't prepare PDFs for ${failures.length} ${failures.length === 1 ? 'company' : 'companies'}:\n\n${failures.join('\n')}`);
     }
   }
 
@@ -1017,7 +1042,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
             )}
             {selCount > 0 && <>
               <span style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-secondary)', marginLeft: rows.some(r => r._isLate) ? 8 : 0 }}>{selCount} selected</span>
-              {selStored.length > 0 && <button style={bulkBtn({ background: '#374151', border: '1px solid #1f2937', color: '#fff' })} onClick={handlePrint}>Print PDF ({selStored.length})</button>}
+              {selStored.length > 0 && <button style={bulkBtn({ background: '#374151', border: '1px solid #1f2937', color: '#fff' })} onClick={handlePrint} disabled={printing}>{printing ? 'Preparing PDFs…' : `Print PDF (${selStored.length})`}</button>}
               {selStored.length > 0 && <button style={bulkBtn({ background: '#2563eb', border: '1px solid #1d4ed8', color: '#fff' })} onClick={handleDD} disabled={submitting}>{submitting ? 'Updating…' : `Mark as Direct Deposited (${selStored.length})`}</button>}
               <button style={{ ...bulkBtn(), marginLeft: 'auto', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-secondary)' }} onClick={() => setSelected(new Set())}>Clear</button>
             </>}
@@ -1026,7 +1051,8 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
             <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No pending paychecks.</div>
           )}
           {rows.length > 0 && (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <div className="table-scroll">
+            <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
                   <th style={{ width: 36, padding: '7px 10px', textAlign: 'center' }}>
@@ -1043,7 +1069,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                     { label: 'Net Pay',      align: 'right' },
                     { label: 'Status',       align: 'left'  },
                   ].map(({ label, align }) => (
-                    <th key={label} style={{ padding: '7px 10px', textAlign: align, fontWeight: 600, color: 'var(--text-muted)', fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</th>
+                    <th key={label} style={{ padding: '7px 10px', textAlign: align, fontWeight: 600, color: 'var(--text-muted)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</th>
                   ))}
                 </tr>
               </thead>
@@ -1084,38 +1110,38 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                             {r.check_number && <span style={{ marginLeft: 6, color: 'var(--text-muted)', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }}>#{r.check_number}</span>}
                           </td>
                           {/* Period Start */}
-                          <td style={{ padding: '7px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, whiteSpace: 'nowrap', color: '#374151' }}>{fmtDate(r.pay_period_start)}</td>
+                          <td style={{ padding: '7px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, whiteSpace: 'nowrap', color: '#374151' }}>{fmtDate(r.pay_period_start)}</td>
                           {/* Period End */}
-                          <td style={{ padding: '7px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, whiteSpace: 'nowrap', color: '#374151' }}>{fmtDate(r.pay_period_end)}</td>
+                          <td style={{ padding: '7px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, whiteSpace: 'nowrap', color: '#374151' }}>{fmtDate(r.pay_period_end)}</td>
                           {/* Pay Date */}
-                          <td style={{ padding: '7px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, fontWeight: r._isLate || r._isDueSoon ? 700 : 400, color: r._isLate ? '#dc2626' : r._isDueSoon ? '#d97706' : '#374151', whiteSpace: 'nowrap' }}>{fmtDate(r._payDate)}</td>
+                          <td style={{ padding: '7px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: r._isLate || r._isDueSoon ? 700 : 400, color: r._isLate ? '#dc2626' : r._isDueSoon ? '#d97706' : '#374151', whiteSpace: 'nowrap' }}>{fmtDate(r._payDate)}</td>
                           {/* Reg Hrs */}
                           <td style={{ padding: '4px 8px', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
                             {isHourly
                               ? r._isPending
                                 ? <input type="number" min="0" step="0.5" value={hoursEdits[r.id]?.reg ?? ''} placeholder="0"
-                                    style={{ width: 54, fontSize: 11, padding: '2px 4px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 0 }}
+                                    style={{ width: 70, fontSize: 14, padding: '8px 6px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 0 }}
                                     disabled={savingHours.has(r.id)}
                                     onChange={e => setHours(r.id, 'reg', e.target.value)}
                                   />
-                                : <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{regHrs > 0 ? regHrs : '—'}</span>
-                              : <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>}
+                                : <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>{regHrs > 0 ? regHrs : '—'}</span>
+                              : <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>—</span>}
                           </td>
                           {/* OT Hrs */}
                           <td style={{ padding: '4px 8px', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
                             {isHourly
                               ? r._isPending
                                 ? <input type="number" min="0" step="0.5" value={hoursEdits[r.id]?.ot ?? ''} placeholder="0"
-                                    style={{ width: 54, fontSize: 11, padding: '2px 4px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 0 }}
+                                    style={{ width: 70, fontSize: 14, padding: '8px 6px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 0 }}
                                     disabled={savingHours.has(r.id)}
                                     onChange={e => setHours(r.id, 'ot', e.target.value)}
                                   />
-                                : <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 11 }}>{otHrs > 0 ? otHrs : '—'}</span>
-                              : <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>—</span>}
+                                : <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>{otHrs > 0 ? otHrs : '—'}</span>
+                              : <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>—</span>}
                           </td>
                           {/* Rate */}
-                          <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: '#374151' }}>
-                            {isHourly && rate ? Number(rate).toFixed(2) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                          <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: '#374151' }}>
+                            {isHourly && rate ? '$' + Number(rate).toFixed(2) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
                           </td>
                           {/* Net Pay */}
                           <td style={{ padding: '7px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: r.net_pay != null && r.net_pay > 0 ? '#16a34a' : 'var(--text-muted)' }}>
@@ -1125,7 +1151,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                           <td style={{ padding: '7px 10px' }}>
                             {r._isPending && isHourly && (parseFloat(hoursEdits[r.id]?.reg || 0) + parseFloat(hoursEdits[r.id]?.ot || 0) > 0)
                               ? <button onClick={e => { e.stopPropagation(); handleRunPending(r); }} disabled={savingHours.has(r.id)}
-                                  style={{ fontSize: 11, padding: '3px 10px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 700 }}>
+                                  style={{ fontSize: 13, padding: '3px 10px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 700 }}>
                                   {savingHours.has(r.id) ? '…' : '▶ Run'}
                                 </button>
                               : r._isLate
@@ -1141,6 +1167,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
           {debugInfo.some(d => d.error) && (
             <div style={{ padding: '10px 14px', borderTop: '1px solid var(--border)' }}>
@@ -1214,7 +1241,6 @@ export default function Dashboard() {
   const [deleteTarget, setDeleteTarget] = useState(null);   // client pending delete confirmation
   const [deleteInfo, setDeleteInfo]     = useState(null);   // { employees, paystubs } — null while loading
   const [deleteNameInput, setDeleteNameInput] = useState('');
-  const [hoverTile, setHoverTile]   = useState(null);
   const [sort, setSort]             = useState({ key: 'urgency', dir: 'asc' });
   const [pollFailed, setPollFailed] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
@@ -1642,13 +1668,10 @@ export default function Dashboard() {
           {visibleClients.map(client => {
             const st = companyStatus(client);
             const isSel = selected.has(client.id);
-            const checkboxVisible = isSel || hoverTile === client.id || selected.size > 0;
             return (
               <div key={client.id} className="company-tile"
                 onClick={() => navigate(`/clients/${client.id}`)}
                 role="button" tabIndex={0}
-                onMouseEnter={() => setHoverTile(client.id)}
-                onMouseLeave={() => setHoverTile(h => h === client.id ? null : h)}
                 style={{ outline: isSel ? '2px solid var(--accent)' : undefined, outlineOffset: 2 }}
                 onKeyDown={e => e.key === 'Enter' && navigate(`/clients/${client.id}`)}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 14 }}>
@@ -1656,9 +1679,8 @@ export default function Dashboard() {
                     onChange={() => toggleSelect(client.id)}
                     onClick={e => e.stopPropagation()}
                     aria-label={`Select ${client.businessName}`}
-                    style={{ accentColor: 'var(--accent)', width: 15, height: 15, cursor: 'pointer', flexShrink: 0, marginTop: 14,
-                      visibility: checkboxVisible ? 'visible' : 'hidden' }} />
-                  <div style={{ position: 'relative', flexShrink: 0 }} onClick={e => { e.stopPropagation(); toggleSelect(client.id); }}>
+                    style={{ accentColor: 'var(--accent)', width: 15, height: 15, cursor: 'pointer', flexShrink: 0, marginTop: 14 }} />
+                  <div style={{ position: 'relative', flexShrink: 0 }}>
                     <div style={{ width: 44, height: 44, borderRadius: 10, background: 'var(--accent-light)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800 }}>
                       {initials(client.businessName)}
                     </div>
@@ -1669,8 +1691,8 @@ export default function Dashboard() {
                     <div className="tile-ein">EIN: {client.ein}</div>
                   </div>
                   <button className="btn btn-ghost btn-sm" onClick={e => handleDelete(e, client)} disabled={deleting === client.id}
-                    style={{ flexShrink: 0, opacity: 0.4, fontSize: 14, padding: '4px 7px' }} title={`Delete ${client.businessName}`} aria-label={`Delete ${client.businessName}`}>
-                    {deleting === client.id ? <span className="spinner spinner-dark" style={{ width: 12, height: 12 }} /> : '✕'}
+                    style={{ flexShrink: 0, opacity: 0.4, fontSize: 12, padding: '4px 7px' }} title={`Delete ${client.businessName}`} aria-label={`Delete ${client.businessName}`}>
+                    {deleting === client.id ? <span className="spinner spinner-dark" style={{ width: 12, height: 12 }} /> : '🗑'}
                   </button>
                 </div>
                 {client.overdueAmount > 0 && st?.tone === 'tax' && (
@@ -1679,7 +1701,8 @@ export default function Dashboard() {
                   </div>
                 )}
                 <div className="tile-badges">
-                  {st && <StatusPill tone={st.tone} label={st.label} />}
+                  {st && <StatusPill tone={st.tone} label={st.label}
+                    to={st.tone === 'payroll' ? `/clients/${client.id}?tab=pay` : st.tone === 'tax' ? `/clients/${client.id}?tab=liabilities` : undefined} />}
                   <span className="badge badge-neutral" style={{ textTransform: 'capitalize' }}>{client.payrollFrequency || 'biweekly'}</span>
                   <span className="badge badge-neutral">{client.state || 'TX'}</span>
                 </div>
@@ -1757,7 +1780,7 @@ export default function Dashboard() {
                       {initials(client.businessName)}
                     </div>
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{client.businessName}</div>
+                      <div title={client.businessName} style={{ fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{client.businessName}</div>
                       <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace' }}>{client.ein}</div>
                     </div>
                   </div>
@@ -1772,7 +1795,8 @@ export default function Dashboard() {
                       // Shared prioritized status — same rule as tile view.
                       const st = companyStatus(client);
                       return st
-                        ? <StatusPill tone={st.tone} label={st.label} />
+                        ? <StatusPill tone={st.tone} label={st.label}
+                            to={st.tone === 'payroll' ? `/clients/${client.id}?tab=pay` : st.tone === 'tax' ? `/clients/${client.id}?tab=liabilities` : undefined} />
                         : <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>—</span>;
                     })()}
                   </div>
@@ -1781,7 +1805,7 @@ export default function Dashboard() {
                   <div onClick={e => e.stopPropagation()}>
                     <button className="btn btn-ghost btn-sm" onClick={e => handleDelete(e, client)} disabled={deleting === client.id}
                       style={{ opacity: 0.35, fontSize: 13, padding: '3px 6px' }} title={`Delete ${client.businessName}`} aria-label={`Delete ${client.businessName}`}>
-                      {deleting === client.id ? <span className="spinner spinner-dark" style={{ width: 11, height: 11 }} /> : '✕'}
+                      {deleting === client.id ? <span className="spinner spinner-dark" style={{ width: 11, height: 11 }} /> : '🗑'}
                     </button>
                   </div>
                 </div>

@@ -136,7 +136,7 @@ function buildSteps(client) {
     {
       // Step 5 — Pending checks
       title: '⏳ Pending Pay Periods',
-      body: 'At the top of the Payroll tab are pending pay periods — the next upcoming payroll. Enter hours and rates inline; net pay and all taxes update in real time. Click "Run Payroll" when ready to deposit.',
+      body: 'At the top of the Payroll tab are pending pay periods — the next upcoming payroll. Enter hours and rates inline; net pay and all taxes update in real time. Select the employees to pay, then click Print Paycheck or Direct Deposit to run payroll for the period.',
       hint: 'The pending section is highlighted at the top of the Payroll tab.',
       spotlight: 'tour-pending-section',
       doNav: false, to: null, toState: null,

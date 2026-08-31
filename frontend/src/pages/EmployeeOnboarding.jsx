@@ -2,17 +2,9 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../api/client';
+import { validRoutingNumber } from '../utils/validators';
 
 const US_STATES = ['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY'];
-
-// ABA routing-number checksum — catches most single-digit typos before a
-// paycheck gets misrouted.
-function validRoutingNumber(rn) {
-  if (!/^\d{9}$/.test(rn)) return false;
-  const d = rn.split('').map(Number);
-  const sum = 3 * (d[0] + d[3] + d[6]) + 7 * (d[1] + d[4] + d[7]) + (d[2] + d[5] + d[8]);
-  return sum % 10 === 0;
-}
 
 const INPUT = {
   width: '100%', boxSizing: 'border-box',
@@ -25,7 +17,7 @@ const INPUT = {
 const FILING_OPTIONS = [
   { value: 'single',  label: 'Single or Married filing separately', desc: 'You file taxes on your own, or married but file separate returns.' },
   { value: 'married', label: 'Married filing jointly',              desc: 'You and your spouse combine income on one tax return.' },
-  { value: 'head',    label: 'Head of household',                   desc: "You're unmarried and pay more than half the cost of a home for a qualifying person." },
+  { value: 'hoh',     label: 'Head of household',                   desc: "You're unmarried and pay more than half the cost of a home for a qualifying person." },
 ];
 
 const STEPS = [

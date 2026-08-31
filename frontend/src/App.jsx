@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Routes, Route, Navigate, Link } from 'react-router-dom';
+import { Routes, Route, Navigate, Link, useParams, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
@@ -11,7 +11,6 @@ import ClientDetail from './pages/ClientDetail';
 import CompanyWorkspace from './pages/CompanyWorkspace';
 import PayrollEntry from './pages/PayrollEntry';
 import SubmissionHistory from './pages/SubmissionHistory';
-import Employees from './pages/Employees';
 import EmployeeForm from './pages/EmployeeForm';
 import Reports from './pages/Reports';
 import Paystubs from './pages/Paystubs';
@@ -30,6 +29,21 @@ function ClientRedirect() {
   if (!user) return <Navigate to="/login" replace />;
   if (user.role === 'client') return <Navigate to={`/company/${user.clientId}`} replace />;
   return <Navigate to="/" replace />;
+}
+
+// Redirect legacy standalone employee list → workspace Employees tab
+function EmployeesRedirect() {
+  const { id } = useParams();
+  return <Navigate to={`/clients/${id}?tab=employees`} replace />;
+}
+
+// /company/:id is client chrome — send logged-in admins to the admin workspace instead
+function CompanyRoute() {
+  const { user } = useAuth();
+  const { id } = useParams();
+  const location = useLocation();
+  if (user?.role !== 'client') return <Navigate to={`/clients/${id}${location.search}`} replace />;
+  return <CompanyWorkspace clientMode />;
 }
 
 // Friendly 404 — bad or stale URLs land here instead of silently redirecting home
@@ -105,7 +119,7 @@ export default function App() {
         {/* Client company workspace — full self-service portal (no admin sidebar) */}
         <Route path="/company/:id" element={
           <ProtectedRoute roles={['client', 'admin']}>
-            <CompanyWorkspace clientMode />
+            <CompanyRoute />
           </ProtectedRoute>
         } />
 
@@ -151,7 +165,7 @@ export default function App() {
           <Route path="clients/:id/payroll/new" element={<PayrollEntry />} />
           <Route path="clients/:id/payroll/run" element={<PayrollRun />} />
           <Route path="clients/:id/submissions" element={<SubmissionHistory />} />
-          <Route path="clients/:id/employees" element={<Employees />} />
+          <Route path="clients/:id/employees" element={<EmployeesRedirect />} />
           <Route path="clients/:id/employees/new" element={<EmployeeForm />} />
           <Route path="clients/:id/employees/:empId" element={<EmployeeDetail />} />
           <Route path="clients/:id/employees/:empId/edit" element={<EmployeeForm />} />

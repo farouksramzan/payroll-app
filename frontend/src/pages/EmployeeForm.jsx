@@ -39,7 +39,7 @@ function calcStartFromEnd(endDate, freq) {
 function fmtDate(s) { if (!s) return '—'; const [y, m, d] = s.split('-'); return `${m}/${d}/${y}`; }
 
 const EMPTY = {
-  firstName: '', middleName: '', lastName: '', ssn: '',
+  firstName: '', middleName: '', lastName: '', ssn: '', ssnOnFile: false,
   address: '', city: '', state: 'TX', zip: '',
   workState: '',
   filingStatus: 'single', step2Checkbox: false, fitExempt: false,
@@ -74,7 +74,7 @@ export default function EmployeeForm() {
 
   useEffect(() => {
     const tasks = [api.getClient(id)];
-    if (isEdit) tasks.push(api.getEmployee(empId, true));
+    if (isEdit) tasks.push(api.getEmployee(empId));
     Promise.all(tasks)
       .then(([c, emp]) => {
         setClient(c);
@@ -83,7 +83,7 @@ export default function EmployeeForm() {
             firstName:  emp.firstName  || '',
             middleName: emp.middleName || '',
             lastName:   emp.lastName   || '',
-            ssn: emp.ssn || '',
+            ssn: '', ssnOnFile: !!emp.hasSSN,
             address: emp.address || '', city: emp.city || '',
             state: emp.state || 'TX', zip: emp.zip || '',
             workState: emp.workState || '',
@@ -173,13 +173,14 @@ export default function EmployeeForm() {
         annualSalary: parseFloat(form.annualSalary || 0),
         payGroupId: form.payGroupId ? parseInt(form.payGroupId) : null,
       };
+      delete payload.ssnOnFile;
       if (!payload.ssn) delete payload.ssn;
       if (isEdit) {
         await api.updateEmployee(empId, payload);
       } else {
         await api.createEmployee(payload);
       }
-      navigate(isClientMode ? `/company/${id}` : `/clients/${id}/employees`);
+      navigate(isClientMode ? `/company/${id}` : `/clients/${id}?tab=employees`);
     } catch (err) {
       setApiError(err.message);
     } finally {
@@ -200,7 +201,7 @@ export default function EmployeeForm() {
           {isClientMode ? (
             <><Link to={`/company/${id}`}>{client?.businessName}</Link><span>/</span></>
           ) : (
-            <><Link to="/">Dashboard</Link><span>/</span><Link to={`/clients/${id}`}>{client?.businessName}</Link><span>/</span><Link to={`/clients/${id}/employees`}>Employees</Link><span>/</span></>
+            <><Link to="/">Dashboard</Link><span>/</span><Link to={`/clients/${id}`}>{client?.businessName}</Link><span>/</span><Link to={`/clients/${id}?tab=employees`}>Employees</Link><span>/</span></>
           )}
           <span>{isEdit ? 'Edit Employee' : 'Add Employee'}</span>
         </div>
@@ -238,7 +239,7 @@ export default function EmployeeForm() {
             </div>
 
             <div className="form-group" style={{ maxWidth: 280 }}>
-              <label className="form-label">Social Security Number {isEdit && <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>(leave blank to keep current)</span>}</label>
+              <label className="form-label">Social Security Number {isEdit && <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>{form.ssnOnFile ? '(on file — type here only to replace it)' : '(none on file yet)'}</span>}</label>
               <div style={{ position: 'relative' }}>
                 <input className="form-input mono" type={showSsn ? 'text' : 'password'} value={form.ssn} onChange={set('ssn')} placeholder="###-##-####" maxLength={11} style={{ paddingRight: 36 }} />
                 <button type="button" onClick={() => setShowSsn(v => !v)} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 15, lineHeight: 1, padding: 0 }} title={showSsn ? 'Hide SSN' : 'Show SSN'}>
@@ -441,7 +442,7 @@ export default function EmployeeForm() {
           </div>
 
           <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
-            <Link to={isClientMode ? `/company/${id}` : `/clients/${id}/employees`} className="btn btn-secondary">Cancel</Link>
+            <Link to={isClientMode ? `/company/${id}` : `/clients/${id}?tab=employees`} className="btn btn-secondary">Cancel</Link>
             <button className="btn btn-primary btn-lg" type="submit" disabled={saving}>
               {saving ? <span className="spinner" /> : isEdit ? 'Save Changes' : 'Add Employee'}
             </button>

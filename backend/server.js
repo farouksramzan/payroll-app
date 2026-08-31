@@ -27,6 +27,7 @@ const childSupportRoutes   = require('./src/routes/childSupport');
 const twcPaymentRoutes     = require('./src/routes/twcPayments');
 const clientPortalRoutes   = require('./src/routes/clientPortal');
 const employeePortalRoutes = require('./src/routes/employeePortal');
+const systemRoutes         = require('./src/routes/system');
 const { requireAuth }  = require('./src/middleware/auth');
 
 const app  = express();
@@ -177,6 +178,7 @@ app.use('/api/child-support',    childSupportRoutes);
 app.use('/api/twc-payments',     twcPaymentRoutes);
 app.use('/api/client-portal',   clientPortalRoutes);
 app.use('/api/employee-portal', employeePortalRoutes);
+app.use('/api/system',          systemRoutes);
 app.get('/api/twc-bridge/status', requireAuth, (req, res) => res.json({ connected: bridgeTwc.isConnected, version: bridgeTwc.bridgeVersion || null }));
 app.post('/api/twc-bridge/kill',  requireAuth, (req, res) => {
   try { res.json({ ok: true, ...bridgeTwc.killJob() }); }

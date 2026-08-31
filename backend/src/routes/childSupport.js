@@ -211,7 +211,17 @@ router.post('/print-check', requireAdmin, (req, res) => {
   let cy = CY + 56;
   doc.font('Helvetica').fontSize(8).fillColor(GRAY).text('PAY TO THE ORDER OF', CX, cy); cy += 12;
   doc.rect(CX, cy, CW - 120, 22).stroke(BORDER);
-  doc.font('Helvetica-Bold').fontSize(10).fillColor(DARK).text(vendor, CX + 6, cy + 6, { width: CW - 130 });
+  doc.font('Helvetica-Bold').fillColor(DARK);
+  let vendorSize = 10;
+  while (vendorSize > 8 && doc.fontSize(vendorSize).widthOfString(vendor) > CW - 130) vendorSize--;
+  doc.fontSize(vendorSize); // apply the final size — the loop exits before ever measuring at 8
+  let vendorStr = vendor;
+  if (doc.widthOfString(vendorStr) > CW - 130) {
+    while (vendorStr.length && doc.widthOfString(vendorStr + '…') > CW - 130) vendorStr = vendorStr.slice(0, -1);
+    vendorStr += '…';
+  }
+  doc.text(vendorStr, CX + 6, cy + 6, { width: CW - 130, lineBreak: false });
+  doc.fontSize(10);
   doc.rect(CX + CW - 114, cy, 114, 22).fill('#f8fafc').stroke(BORDER);
   doc.font('Helvetica-Bold').fontSize(11).fillColor(DARK).text(`$${amount.toFixed(2)}`, CX + CW - 110, cy + 5, { width: 106, align: 'right' });
   cy += 30;
@@ -234,14 +244,25 @@ router.post('/print-check', requireAdmin, (req, res) => {
   y += 12; doc.rect(ML, y, TW, 1).fill(BORDER); y += 6;
   doc.font('Helvetica').fontSize(8.5).fillColor(DARK);
   for (const w of rows) {
+    if (y > 740) {
+      doc.addPage();
+      y = 40;
+      doc.font('Helvetica-Bold').fontSize(8).fillColor(GRAY);
+      doc.text('EMPLOYEE', ML, y, { width: 160 }).text('CASE #', ML + 170, y, { width: 140 })
+        .text('PAY DATE', ML + 320, y, { width: 90 }).text('AMOUNT', ML, y, { width: TW, align: 'right' });
+      y += 12; doc.rect(ML, y, TW, 1).fill(BORDER); y += 6;
+      doc.font('Helvetica').fontSize(8.5).fillColor(DARK);
+    }
     doc.text(w.employee_name || '—', ML, y, { width: 160 })
       .text(w.case_number || '—', ML + 170, y, { width: 140 })
       .text(w.settlement_date || w.pay_period_end || '—', ML + 320, y, { width: 90 })
       .text(`$${r2(w.amount).toFixed(2)}`, ML, y, { width: TW, align: 'right' });
     y += 14;
   }
-  y += 4; doc.rect(ML, y, TW, 1).fill(BORDER); y += 6;
-  doc.font('Helvetica-Bold').fontSize(9).text('TOTAL', ML, y).text(`$${amount.toFixed(2)}`, ML, y, { width: TW, align: 'right' });
+  y += 4;
+  if (y > 740) { doc.addPage(); y = 40; }
+  doc.rect(ML, y, TW, 1).fill(BORDER); y += 6;
+  doc.font('Helvetica-Bold').fontSize(9).fillColor(DARK).text('TOTAL', ML, y).text(`$${amount.toFixed(2)}`, ML, y, { width: TW, align: 'right' });
 
   doc.end();
 });

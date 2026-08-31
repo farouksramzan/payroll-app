@@ -454,8 +454,17 @@ function drawCheckSection(doc, stub, client, routingNumber, accountNumber, check
 
   // Payee name with underline — aligned with "Order of" row, flows with ruleY
   const nameX = CX + 54, nameW = CW - 54 - 138;
-  doc.font('Helvetica-Bold').fontSize(11).fillColor(BLACK)
-    .text(empName, nameX, ruleY + 28, { width: nameW });
+  doc.font('Helvetica-Bold').fillColor(BLACK);
+  let nameSize = 11;
+  while (nameSize > 8 && doc.fontSize(nameSize).widthOfString(empName) > nameW) nameSize--;
+  doc.fontSize(nameSize); // apply the final size — the loop exits before ever measuring at 8
+  let nameStr = empName;
+  if (doc.widthOfString(nameStr) > nameW) {
+    while (nameStr.length && doc.widthOfString(nameStr + '…') > nameW) nameStr = nameStr.slice(0, -1);
+    nameStr += '…';
+  }
+  doc.text(nameStr, nameX, ruleY + 28, { width: nameW, lineBreak: false });
+  doc.fontSize(11);
   doc.rect(nameX, ruleY + 43, nameW, 0.5).fill(BLACK);
 
   // Amount box  $**AMOUNT* — right side, spans "Pay to the" / "Order of" rows

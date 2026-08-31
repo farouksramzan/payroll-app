@@ -5,12 +5,14 @@ import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import ImportEmployeesModal from '../components/ImportEmployeesModal';
 import ImportPaychecksModal from '../components/ImportPaychecksModal';
+import { deleteCheckConfirm } from '../utils/checkConfirm';
+import { validRoutingNumber } from '../utils/validators';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const EE_SS_RATE       = 0.062;
 const EE_MEDICARE_RATE = 0.0145;
 
-function fmt(n) { return `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
+function fmt(n) { const v = Number(n || 0); return `${v < 0 ? '-' : ''}$${Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 function fmtDate(d) { if (!d) return '—'; return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
 function fmtShort(d) { if (!d) return '—'; return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' }); }
 function fmtPeriod(start, end) {
@@ -25,6 +27,21 @@ function fmtPeriod(start, end) {
   return `${sStr} – ${eStr}`;
 }
 function r2(n) { return Math.round((n || 0) * 100) / 100; }
+function cleanDecimal(s) {
+  const v = String(s).replace(/[^0-9.]/g, '');
+  const i = v.indexOf('.');
+  return i === -1 ? v : v.slice(0, i + 1) + v.slice(i + 1).replace(/\./g, '');
+}
+function periodDateWarning(start, end, pay) {
+  if (start && end && end < start) return 'Period ends before it starts';
+  if (end && pay && pay < end) return 'Pay date is before the period end';
+  if (end && pay) {
+    const d = new Date(end + 'T00:00:00');
+    d.setDate(d.getDate() + 60);
+    if (pay > d.toISOString().slice(0, 10)) return 'Pay date is more than 60 days after the period end — double-check the year';
+  }
+  return null;
+}
 // Per-period salary for a pending row: honor row.salaryOverride when it's a
 // usable number (commas stripped, negatives clamped to 0); otherwise fall back
 // to annual/ppy. A blank or non-numeric override reverts to the default rather
@@ -234,7 +251,7 @@ const STATUS_CFG = {
 };
 function StatusBadge({ status }) {
   const cfg = STATUS_CFG[status] || { label: status, cls: 'badge-neutral' };
-  return <span className={`badge ${cfg.cls}`} style={{ fontWeight: 700, textTransform: 'uppercase', fontSize: 10 }}>{cfg.label}</span>;
+  return <span className={`badge ${cfg.cls}`} style={{ fontWeight: 700, textTransform: 'uppercase', fontSize: 12 }}>{cfg.label}</span>;
 }
 
 // ── Employee Drawer ───────────────────────────────────────────────────────────
@@ -244,6 +261,9 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
   const [deleting, setDeleting] = useState(false);
   const [showSsn, setShowSsn]   = useState(false);
   const [err, setErr]           = useState('');
+  const [errField, setErrField] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [delAck, setDelAck]     = useState(false);
   const [payGroups, setPayGroups] = useState([]);
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [newGroup, setNewGroup] = useState({ name: '', frequency: 'biweekly', firstPayPeriodEnd: '', payDate: '' });
@@ -293,8 +313,12 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
   }, [empId]);
 
   const dirtyRef = useRef(false); // unsaved edits — guard against silent discard on overlay click
+  const mainDirtyRef = useRef(false); // main-form edits only — so a DD/CS sub-form save/cancel can't disarm the guard for them
+  const drawerRef = useRef(null);
+  const confirmDeleteRef = useRef(false);
+  confirmDeleteRef.current = confirmDelete;
 
-  function set(field) { return e => { const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value; dirtyRef.current = true; setForm(f => ({ ...f, [field]: v })); }; }
+  function set(field) { return e => { const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value; dirtyRef.current = true; mainDirtyRef.current = true; setForm(f => ({ ...f, [field]: v })); }; }
   function setNG(field) { return e => setNewGroup(g => ({ ...g, [field]: e.target.value })); }
 
   function requestClose() {
@@ -302,12 +326,73 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
     onClose();
   }
 
-  // Escape closes the drawer (with the same unsaved-changes guard)
+  // Escape closes the drawer (with the same unsaved-changes guard); Tab cycles
+  // inside the drawer so keyboard focus can't escape to the page behind it.
   useEffect(() => {
-    const onKey = e => { if (e.key === 'Escape') requestClose(); };
+    const onKey = e => {
+      if (confirmDeleteRef.current) return; // the delete confirm dialog owns the keyboard
+      if (e.key === 'Escape') { requestClose(); return; }
+      if (e.key !== 'Tab' || !drawerRef.current) return;
+      const focusables = Array.from(drawerRef.current.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'))
+        .filter(el => !el.disabled && el.offsetParent !== null);
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last  = focusables[focusables.length - 1];
+      const active = document.activeElement;
+      const inside = drawerRef.current.contains(active);
+      if (e.shiftKey) {
+        if (!inside || active === first) { e.preventDefault(); last.focus(); }
+      } else {
+        if (!inside || active === last) { e.preventDefault(); first.focus(); }
+      }
+    };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Move focus into the drawer on open, restore it on close.
+  useEffect(() => {
+    const prev = document.activeElement;
+    drawerRef.current?.focus({ preventScroll: true });
+    return () => { prev?.focus?.(); };
+  }, []);
+
+  // Browser Back closes the drawer (through the unsaved-changes guard) instead
+  // of leaving the workspace and losing edits. The marker is pushed from a
+  // timeout and gated on armedRef so StrictMode's mount/cleanup/mount cycle
+  // can't leave a stray entry whose history.back() instantly closes the drawer.
+  const poppedRef = useRef(false);
+  const armedRef = useRef(false);
+  useEffect(() => {
+    const t = setTimeout(() => {
+      window.history.pushState({ empDrawer: true }, '');
+      armedRef.current = true;
+    }, 0);
+    const onPop = () => {
+      if (!armedRef.current) return;
+      poppedRef.current = true;
+      if (dirtyRef.current && !window.confirm('You have unsaved changes. Discard them?')) {
+        window.history.pushState({ empDrawer: true }, '');
+        poppedRef.current = false;
+        return;
+      }
+      armedRef.current = false;
+      onClose();
+    };
+    window.addEventListener('popstate', onPop);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener('popstate', onPop);
+      if (armedRef.current && !poppedRef.current && window.history.state?.empDrawer) window.history.back();
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const warn = e => { if (!dirtyRef.current) return; e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
   }, []);
   function setNGEndDate(val) { setNewGroup(g => ({ ...g, firstPayPeriodEnd: val, payDate: val ? calcDefaultPayDate(val) : '' })); }
 
@@ -346,13 +431,19 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
     setForm(f => ({ ...f, payGroupId: val, ...(targetGroup ? { payFrequency: targetGroup.frequency } : {}) }));
   }
 
+  function failSave(message, tabKey, field) { setTab(tabKey); setErrField(field); setErr(message); }
+
   async function handleSave() {
+    setErrField('');
+    if (ddEdit && (ddForm.routingNumber || ddForm.accountNumber || ddForm.confirmAccount)) { setTab('dd'); setErr('Finish or cancel the bank account form first.'); return; }
     // The drawer previously saved with zero validation — blanked names silently
-    // reverted server-side and malformed SSNs were stored as-is.
-    if (!form.firstName.trim() || !form.lastName.trim()) { setErr('First and last name are required.'); return; }
-    if (form.ssn && !/^\d{3}-?\d{2}-?\d{4}$/.test(form.ssn.trim())) { setErr('SSN must be 9 digits (XXX-XX-XXXX). Leave it blank to keep the current one.'); return; }
-    if (form.payType === 'hourly' && form.hourlyRate && !(parseFloat(form.hourlyRate) > 0)) { setErr('Hourly rate must be a positive number.'); return; }
-    if (form.payType === 'salary' && form.annualSalary && !(parseFloat(form.annualSalary) > 0)) { setErr('Annual salary must be a positive number.'); return; }
+    // reverted server-side and malformed SSNs were stored as-is. Each error
+    // switches to the tab that owns the field so it's never hidden off-screen.
+    if (!form.firstName.trim()) { failSave('First and last name are required.', 'personal', 'firstName'); return; }
+    if (!form.lastName.trim()) { failSave('First and last name are required.', 'personal', 'lastName'); return; }
+    if (form.ssn && !/^\d{3}-?\d{2}-?\d{4}$/.test(form.ssn.trim())) { failSave('SSN must be 9 digits (XXX-XX-XXXX). Leave it blank to keep the current one.', 'personal', 'ssn'); return; }
+    if (form.payType === 'hourly' && form.hourlyRate && !(parseFloat(form.hourlyRate) > 0)) { failSave('Hourly rate must be a positive number.', 'pay', 'hourlyRate'); return; }
+    if (form.payType === 'salary' && form.annualSalary && !(parseFloat(form.annualSalary) > 0)) { failSave('Annual salary must be a positive number.', 'pay', 'annualSalary'); return; }
     setSaving(true); setErr('');
     try {
       const payload = { clientId, ...form,
@@ -365,6 +456,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
       if (!payload.ssn) delete payload.ssn;
       await api.updateEmployee(empId, payload);
       dirtyRef.current = false;
+      mainDirtyRef.current = false;
       onSaved();
     } catch (e) { setErr(e.message); }
     finally { setSaving(false); }
@@ -373,6 +465,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
   async function handleSaveDd() {
     if (ddForm.accountNumber !== ddForm.confirmAccount) { setDdErr('Account numbers do not match'); return; }
     if (!/^\d{9}$/.test(ddForm.routingNumber)) { setDdErr('Routing number must be 9 digits'); return; }
+    if (!validRoutingNumber(ddForm.routingNumber)) { setDdErr('That routing number doesn\'t look right'); return; }
     if (!/^\d{4,17}$/.test(ddForm.accountNumber)) { setDdErr('Account number must be 4–17 digits'); return; }
     setDdSaving(true); setDdErr('');
     try {
@@ -380,6 +473,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
       setDd(result);
       setDdEdit(false);
       setDdForm({ routingNumber: '', accountNumber: '', confirmAccount: '', bankAccountType: 'checking' });
+      dirtyRef.current = mainDirtyRef.current;
     } catch (e) { setDdErr(e.message); }
     finally { setDdSaving(false); }
   }
@@ -404,6 +498,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
       const created = await api.createChildSupportOrder({ employeeId: empId, vendorName: csForm.vendorName, caseNumber: csForm.caseNumber, amount: amt });
       setCsOrders(prev => [...prev, created]);
       setCsForm(null);
+      dirtyRef.current = mainDirtyRef.current;
     } catch (e) { setCsErr(e.message); }
     finally { setCsBusy(false); }
   }
@@ -423,23 +518,35 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
     } catch (e) { setCsErr(e.message); }
   }
 
-  async function handleDelete() {
-    if (!window.confirm(
-      `Delete ${form?.firstName} ${form?.lastName}?\n\n` +
-      `This permanently removes the employee AND all of their paychecks, pay stubs, and W-2 wage history from every report. ` +
-      `If they simply stopped working here, mark them Inactive instead (Status → Inactive) so their history is kept.\n\nThis cannot be undone.`
-    )) return;
+  function handleDelete() { setDelAck(false); setConfirmDelete(true); }
+
+  async function handleDeleteConfirmed() {
     setDeleting(true);
     try {
       await api.deleteEmployee(empId);
-      onDeleted?.();
-    } catch (e) { setErr(e.message); setDeleting(false); }
+      setConfirmDelete(false);
+      setDeleting(false);
+      dirtyRef.current = false;
+      mainDirtyRef.current = false;
+      if (onDeleted) onDeleted(); else onClose();
+    } catch (e) { setErr(e.message); setDeleting(false); setConfirmDelete(false); }
+  }
+
+  async function handleMarkInactive() {
+    setSaving(true); setErr('');
+    try {
+      await api.updateEmployee(empId, { clientId, isActive: false });
+      dirtyRef.current = false;
+      setConfirmDelete(false);
+      onSaved();
+    } catch (e) { setErr(e.message); setConfirmDelete(false); }
+    finally { setSaving(false); }
   }
 
   return (
     <>
       <div className="drawer-overlay" onClick={requestClose} />
-      <div className="drawer" role="dialog" aria-modal="true" aria-label={form ? `Edit ${form.firstName} ${form.lastName}` : 'Edit employee'}>
+      <div className="drawer" ref={drawerRef} tabIndex={-1} role="dialog" aria-modal="true" aria-label={form ? `Edit ${form.firstName} ${form.lastName}` : 'Edit employee'}>
         <div className="drawer-header" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 0, paddingBottom: 0 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
             {form && (
@@ -452,7 +559,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
               {form && (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                   <button type="button"
-                    onClick={() => { dirtyRef.current = true; setForm(f => ({ ...f, isActive: !f.isActive })); }}
+                    onClick={() => { dirtyRef.current = true; mainDirtyRef.current = true; setForm(f => ({ ...f, isActive: !f.isActive })); }}
                     title="Click to toggle active status (saved with Save Changes)"
                     style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 9px', borderRadius: 99, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.04em',
                       border: `1px solid ${form.isActive ? '#86efac' : '#d1d5db'}`,
@@ -476,7 +583,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
             <button className="drawer-close" onClick={requestClose} aria-label="Close">×</button>
           </div>
           {form && (
-            <div role="tablist" aria-label="Employee profile sections" style={{ display: 'flex', gap: 2, marginTop: 12, overflowX: 'auto' }}>
+            <div role="tablist" aria-label="Employee profile sections" style={{ display: 'flex', gap: 2, marginTop: 12, flexWrap: 'wrap' }}>
               {[
                 ['personal', 'Personal'],
                 ['pay', 'Pay'],
@@ -485,8 +592,13 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                 ['cs', 'Child Support'],
               ].map(([k, label]) => {
                 const active = tab === k;
+                const ddStatusLabel = dd?.status === 'active' ? 'Direct deposit active' : dd?.status === 'pending' ? 'Direct deposit pending' : dd?.status === 'failed' ? 'Direct deposit failed' : undefined;
                 const marker = k === 'dd'
-                  ? <span aria-hidden="true" style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', marginLeft: 6, background: dd?.status === 'active' ? '#16a34a' : dd?.status === 'pending' ? '#d97706' : dd?.status === 'failed' ? '#dc2626' : '#d1d5db' }} />
+                  ? <span title={ddStatusLabel} aria-label={ddStatusLabel} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 6 }}>
+                      <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: dd?.status === 'active' ? '#16a34a' : dd?.status === 'pending' ? '#d97706' : dd?.status === 'failed' ? '#dc2626' : '#d1d5db' }} />
+                      {dd?.status === 'failed' && <span style={{ fontSize: 11.5, fontWeight: 800, color: '#dc2626' }}>!</span>}
+                      {dd?.status === 'active' && <span style={{ fontSize: 11.5, fontWeight: 800, color: '#16a34a' }}>✓</span>}
+                    </span>
                   : k === 'cs' && csOrders.length > 0
                     ? <span style={{ marginLeft: 6, fontSize: 11.5, fontWeight: 700, background: active ? 'var(--accent)' : 'var(--bg-tertiary)', color: active ? '#fff' : 'var(--text-muted)', borderRadius: 99, padding: '0 7px' }}>{csOrders.length}</span>
                     : null;
@@ -510,13 +622,13 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
             <>
               {tab === 'personal' && (<>
               <div className="form-grid">
-                <div className="form-group"><label className="form-label">First Name</label><input className="form-input" value={form.firstName} onChange={set('firstName')} /></div>
-                <div className="form-group"><label className="form-label">Last Name</label><input className="form-input" value={form.lastName} onChange={set('lastName')} /></div>
+                <div className="form-group"><label className="form-label">First Name <span>*</span></label><input className="form-input" value={form.firstName} onChange={set('firstName')} style={errField === 'firstName' ? { borderColor: 'var(--error)' } : undefined} /></div>
+                <div className="form-group"><label className="form-label">Last Name <span>*</span></label><input className="form-input" value={form.lastName} onChange={set('lastName')} style={errField === 'lastName' ? { borderColor: 'var(--error)' } : undefined} /></div>
               </div>
               <div className="form-group">
                 <label className="form-label">SSN <span style={{ fontWeight: 400, fontSize: 10, color: 'var(--text-muted)', textTransform: 'none' }}>{form.ssnOnFile ? '(on file — type here only to replace it)' : '(none on file yet)'}</span></label>
                 <div style={{ position: 'relative' }}>
-                  <input className="form-input mono" type={showSsn ? 'text' : 'password'} value={form.ssn} onChange={set('ssn')} placeholder={form.ssnOnFile ? 'leave blank to keep current' : 'XXX-XX-XXXX'} maxLength={11} style={{ paddingRight: 36 }} />
+                  <input className="form-input mono" type={showSsn ? 'text' : 'password'} value={form.ssn} onChange={set('ssn')} placeholder={form.ssnOnFile ? 'leave blank to keep current' : 'XXX-XX-XXXX'} maxLength={11} style={{ paddingRight: 36, ...(errField === 'ssn' ? { borderColor: 'var(--error)' } : {}) }} />
                   <button type="button" onClick={() => setShowSsn(v => !v)} aria-label={showSsn ? 'Hide SSN' : 'Show SSN'} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 15, lineHeight: 1, padding: 0 }} title={showSsn ? 'Hide SSN' : 'Show SSN'}>
                     {showSsn ? '🙈' : '👁'}
                   </button>
@@ -625,7 +737,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                   <label className="form-label">Hourly Rate</label>
                   <div style={{ position: 'relative' }}>
                     <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 13 }}>$</span>
-                    <input className="form-input mono" type="number" min="0" step="0.01" value={form.hourlyRate} onChange={set('hourlyRate')} style={{ paddingLeft: 24 }} />
+                    <input className="form-input mono" type="number" min="0" step="0.01" value={form.hourlyRate} onChange={set('hourlyRate')} style={{ paddingLeft: 24, ...(errField === 'hourlyRate' ? { borderColor: 'var(--error)' } : {}) }} />
                   </div>
                 </div>
               ) : (
@@ -633,7 +745,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                   <label className="form-label">Annual Salary</label>
                   <div style={{ position: 'relative' }}>
                     <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 13 }}>$</span>
-                    <input className="form-input mono" type="number" min="0" step="1000" value={form.annualSalary} onChange={set('annualSalary')} style={{ paddingLeft: 24 }} />
+                    <input className="form-input mono" type="number" min="0" step="1000" value={form.annualSalary} onChange={set('annualSalary')} style={{ paddingLeft: 24, ...(errField === 'annualSalary' ? { borderColor: 'var(--error)' } : {}) }} />
                   </div>
                 </div>
               )}
@@ -696,20 +808,20 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                 <div style={{ background: 'var(--accent-light)', border: '1px solid var(--accent-mid)', padding: '12px 12px 10px', marginBottom: 14 }}>
                   <div className="form-group" style={{ marginBottom: 8 }}>
                     <label className="form-label" style={{ fontSize: 11 }}>Vendor (check payable to)</label>
-                    <input className="form-input" value={csForm.vendorName} onChange={e => setCsForm(f => ({ ...f, vendorName: e.target.value }))} placeholder="e.g. TX Child Support SDU" />
+                    <input className="form-input" value={csForm.vendorName} onChange={e => { dirtyRef.current = true; setCsForm(f => ({ ...f, vendorName: e.target.value })); }} placeholder="e.g. TX Child Support SDU" />
                   </div>
                   <div className="form-grid" style={{ marginBottom: 8 }}>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: 11 }}>Case / Cause #</label>
-                      <input className="form-input mono" value={csForm.caseNumber} onChange={e => setCsForm(f => ({ ...f, caseNumber: e.target.value }))} placeholder="optional" />
+                      <input className="form-input mono" value={csForm.caseNumber} onChange={e => { dirtyRef.current = true; setCsForm(f => ({ ...f, caseNumber: e.target.value })); }} placeholder="optional" />
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label" style={{ fontSize: 11 }}>Amount per paycheck ($)</label>
-                      <input className="form-input mono" type="number" min="0.01" step="0.01" value={csForm.amount} onChange={e => setCsForm(f => ({ ...f, amount: e.target.value }))} placeholder="150.00" />
+                      <input className="form-input mono" type="number" min="0.01" step="0.01" value={csForm.amount} onChange={e => { dirtyRef.current = true; setCsForm(f => ({ ...f, amount: e.target.value })); }} placeholder="150.00" />
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setCsForm(null); setCsErr(''); }}>Cancel</button>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setCsForm(null); setCsErr(''); dirtyRef.current = mainDirtyRef.current; }}>Cancel</button>
                     <button type="button" className="btn btn-primary btn-sm" disabled={csBusy} onClick={handleCsAdd}>{csBusy ? 'Adding…' : 'Add Order'}</button>
                   </div>
                 </div>
@@ -760,10 +872,11 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                         <span className="ref-num"><span className="ref-num-label">{dd.bankAccountType === 'savings' ? 'Savings' : 'Checking'}</span>···· {dd.last4}</span>
                       </div>
                       <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-                        <button className="btn btn-primary btn-sm" style={{ fontSize: 11 }} onClick={async () => { setDdSaving(true); setDdErr(''); try { const r = await api.activateDirectDeposit(empId); setDd(r); } catch(e) { setDdErr(e.message); } finally { setDdSaving(false); } }} disabled={ddSaving}>{ddSaving ? <span className="spinner" style={{ width: 10, height: 10 }} /> : 'Retry Moov Connection'}</button>
+                        <button className="btn btn-primary btn-sm" style={{ fontSize: 11 }} onClick={async () => { setDdSaving(true); setDdErr(''); try { const r = await api.activateDirectDeposit(empId); setDd(r); } catch(e) { setDdErr(e.message); } finally { setDdSaving(false); } }} disabled={ddSaving}>{ddSaving ? <span className="spinner" style={{ width: 10, height: 10 }} /> : 'Retry Bank Verification'}</button>
                         <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => { setDdEdit(true); setDdErr(''); }}>Change Account</button>
                         <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, color: '#dc2626' }} onClick={handleRemoveDd} disabled={ddSaving}>Remove</button>
                       </div>
+                      <p className="form-hint" style={{ marginTop: 8, marginBottom: 0 }}>Verification is handled by our payment partner (Moov).</p>
                     </div>
                   )}
                   {dd.status === 'failed' && !ddEdit && (
@@ -794,7 +907,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                         <div className="form-group" style={{ marginBottom: 0 }}>
                           <label className="form-label">Routing Number</label>
                           <input className="form-input mono" type="text" inputMode="numeric" maxLength={9} value={ddForm.routingNumber}
-                            onChange={e => setDdForm(f => ({ ...f, routingNumber: e.target.value.replace(/\D/g, '') }))}
+                            onChange={e => { dirtyRef.current = true; setDdForm(f => ({ ...f, routingNumber: e.target.value.replace(/\D/g, '') })); }}
                             placeholder="9 digits" />
                           <div className="form-hint" style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <span>{ddForm.routingNumber ? ddForm.routingNumber.replace(/(\d{4})(\d{4})(\d{1})/, '$1 $2 $3') : 'e.g. 0210 0002 8'}</span>
@@ -803,7 +916,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                         </div>
                         <div className="form-group" style={{ marginBottom: 0 }}>
                           <label className="form-label">Account Type</label>
-                          <select className="form-select" value={ddForm.bankAccountType} onChange={e => setDdForm(f => ({ ...f, bankAccountType: e.target.value }))}>
+                          <select className="form-select" value={ddForm.bankAccountType} onChange={e => { dirtyRef.current = true; setDdForm(f => ({ ...f, bankAccountType: e.target.value })); }}>
                             <option value="checking">Checking</option>
                             <option value="savings">Savings</option>
                           </select>
@@ -812,7 +925,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                       <div className="form-group" style={{ marginBottom: 12 }}>
                         <label className="form-label">Account Number</label>
                         <input className="form-input mono" type="password" value={ddForm.accountNumber}
-                          onChange={e => setDdForm(f => ({ ...f, accountNumber: e.target.value.replace(/\D/g, '') }))}
+                          onChange={e => { dirtyRef.current = true; setDdForm(f => ({ ...f, accountNumber: e.target.value.replace(/\D/g, '') })); }}
                           placeholder="Account number" />
                       </div>
                       <div className="form-group" style={{ marginBottom: 14 }}>
@@ -825,14 +938,14 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                           )}
                         </label>
                         <input className="form-input mono" type="text" value={ddForm.confirmAccount}
-                          onChange={e => setDdForm(f => ({ ...f, confirmAccount: e.target.value.replace(/\D/g, '') }))}
+                          onChange={e => { dirtyRef.current = true; setDdForm(f => ({ ...f, confirmAccount: e.target.value.replace(/\D/g, '') })); }}
                           placeholder="Re-enter account number" />
                       </div>
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button className="btn btn-primary btn-sm" onClick={handleSaveDd} disabled={ddSaving}>
                           {ddSaving ? <span className="spinner" style={{ width: 12, height: 12 }} /> : 'Save & Connect'}
                         </button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => { setDdEdit(false); setDdErr(''); }}>Cancel</button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => { setDdEdit(false); setDdErr(''); setDdForm({ routingNumber: '', accountNumber: '', confirmAccount: '', bankAccountType: 'checking' }); dirtyRef.current = mainDirtyRef.current; }}>Cancel</button>
                       </div>
                       <p className="form-hint" style={{ marginTop: 10 }}>Account info is encrypted with AES-256.</p>
                     </div>
@@ -845,11 +958,32 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
         </div>
         {form && (
           <div className="drawer-footer">
-            <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+            <button className="btn btn-secondary" onClick={requestClose}>Cancel</button>
             <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? <span className="spinner" /> : 'Save Changes'}</button>
           </div>
         )}
       </div>
+      {confirmDelete && (
+        <ModalOverlay onClose={() => setConfirmDelete(false)}>
+          <div className="card" style={{ width: 440, maxWidth: '92vw', padding: 24 }}>
+            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>Delete {form?.firstName} {form?.lastName} permanently?</div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 14 }}>
+              All of their paychecks and wage history will be deleted from every report. If they simply stopped working here, mark them Inactive instead so their history is kept.
+            </div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 16, fontSize: 12.5 }}>
+              <input type="checkbox" checked={delAck} onChange={e => setDelAck(e.target.checked)} style={{ accentColor: '#dc2626', width: 14, height: 14 }} />
+              I understand this cannot be undone
+            </label>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <button className="btn btn-primary btn-sm" onClick={handleMarkInactive} disabled={saving || deleting}>{saving ? <span className="spinner" /> : 'Mark Inactive instead'}</button>
+              <button className="btn btn-ghost btn-sm" onClick={() => setConfirmDelete(false)} disabled={deleting}>Cancel</button>
+              <button className="btn btn-ghost btn-sm" style={{ marginLeft: 'auto', color: '#dc2626', opacity: delAck ? 1 : 0.5 }} onClick={handleDeleteConfirmed} disabled={!delAck || deleting}>
+                {deleting ? <span className="spinner" /> : 'Delete permanently'}
+              </button>
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
     </>
   );
 }
@@ -1166,12 +1300,23 @@ function EmployeesTab({ clientId, employees, onRefresh, clientMode = false }) {
   const [editGroup, setEditGroup]         = useState(null);
   const [payGroups, setPayGroups]         = useState([]);
   const [showImport, setShowImport]       = useState(false);
+  const [empSearch, setEmpSearch]         = useState('');
+  const [empFilter, setEmpFilter]         = useState('all'); // 'all' | 'active' | 'inactive'
 
   useEffect(() => {
     api.getPayGroups(clientId).then(setPayGroups).catch(() => {});
   }, [clientId]);
 
   function handleGroupSaved() { setEditGroup(null); onRefresh(); api.getPayGroups(clientId).then(setPayGroups); }
+
+  const visibleEmployees = [...employees]
+    .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`))
+    .filter(e => empFilter === 'all' ? true : empFilter === 'active' ? e.isActive !== false : e.isActive === false)
+    .filter(e => {
+      const q = empSearch.trim().toLowerCase();
+      if (!q) return true;
+      return `${e.firstName} ${e.lastName}`.toLowerCase().includes(q) || (e.payGroupName || '').toLowerCase().includes(q);
+    });
 
 
   return (
@@ -1187,6 +1332,33 @@ function EmployeesTab({ clientId, employees, onRefresh, clientMode = false }) {
         <button className="btn btn-secondary" onClick={() => setShowImport(true)}>Import from Excel</button>
         <Link to={clientMode ? `/company/${clientId}/employees/new` : `/clients/${clientId}/employees/new`} className="btn btn-primary">+ Add Employee</Link>
       </div>
+      {(employees.length > 10 || empSearch || empFilter !== 'all') && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', maxWidth: '100%' }}>
+            <span style={{ position: 'absolute', left: 10, fontSize: 13, color: 'var(--text-muted)', pointerEvents: 'none' }}>🔍</span>
+            <input
+              type="text"
+              value={empSearch}
+              onChange={e => setEmpSearch(e.target.value)}
+              placeholder="Search employees…"
+              aria-label="Search employees by name or pay group"
+              style={{ fontSize: 13, padding: '6px 28px 6px 30px', borderRadius: 0, border: '1px solid var(--border)', background: '#fff', width: 220, maxWidth: '100%', outline: 'none' }} />
+            {empSearch && (
+              <button onClick={() => setEmpSearch('')} aria-label="Clear search"
+                style={{ position: 'absolute', right: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14, lineHeight: 1, padding: 4 }}>×</button>
+            )}
+          </div>
+          <div style={{ display: 'flex', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: 3, gap: 2 }}>
+            {[['all', 'All'], ['active', 'Active'], ['inactive', 'Inactive']].map(([k, label]) => (
+              <button key={k} onClick={() => setEmpFilter(k)}
+                style={{ padding: '5px 9px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12, lineHeight: 1, fontWeight: 600,
+                  background: empFilter === k ? '#fff' : 'transparent',
+                  color: empFilter === k ? 'var(--accent)' : 'var(--text-muted)',
+                  boxShadow: empFilter === k ? '0 1px 4px rgba(0,0,0,0.1)' : 'none' }}>{label}</button>
+            ))}
+          </div>
+        </div>
+      )}
       {employees.length === 0 ? (
         <div className="card">
           <div className="empty-state" style={{ padding: '40px 20px' }}>
@@ -1198,8 +1370,12 @@ function EmployeesTab({ clientId, employees, onRefresh, clientMode = false }) {
         </div>
       ) : (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          {employees.map(emp => {
+          {visibleEmployees.length === 0 && (
+            <div style={{ padding: '20px 16px', fontSize: 13, color: 'var(--text-muted)', textAlign: 'center' }}>No employees match.</div>
+          )}
+          {visibleEmployees.map(emp => {
             const isSalary = emp.payType === 'salary';
+            const rateUnset = !(isSalary ? emp.annualSalary : emp.hourlyRate);
             const rate = isSalary ? `${fmt(emp.annualSalary)}/yr` : `${fmt(emp.hourlyRate)}/hr`;
             const groupObj = payGroups.find(g => g.id === emp.payGroupId);
             return (
@@ -1222,7 +1398,7 @@ function EmployeesTab({ clientId, employees, onRefresh, clientMode = false }) {
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 13, color: 'var(--accent)' }}>{rate}</div>
+                  <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 13, color: rateUnset ? 'var(--warning)' : 'var(--accent)' }}>{rateUnset ? 'Rate not set' : rate}</div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{emp.filingStatus === 'married' ? 'Married' : emp.filingStatus === 'hoh' ? 'HoH' : 'Single'}</div>
                 </div>
                 <span className={`badge ${emp.isActive !== false ? 'badge-success' : 'badge-neutral'}`}>{emp.isActive !== false ? 'Active' : 'Inactive'}</span>
@@ -1263,10 +1439,14 @@ function CompanyTab({ client, onSaved }) {
   const [accountDraft, setAccountDraft]       = useState('');
   const [showAccountNum, setShowAccountNum]   = useState(true);
   const [accountSaving, setAccountSaving]     = useState(false);
+  const [accountErr, setAccountErr]           = useState('');
   const [pinDraft, setPinDraft]   = useState('');
   const [pinSaving, setPinSaving] = useState(false);
   const [pinMsg, setPinMsg]       = useState('');
+  const [invalidField, setInvalidField] = useState(null);
+  const [notifConfig, setNotifConfig]   = useState(null);
   const saveTimerRef = useRef(null);
+  const flushDraftsRef = useRef(null);
   const loadedClientIdRef = useRef(null); // re-init the form only when SWITCHING companies
   const saveChainRef = useRef(Promise.resolve()); // serializes autosaves so a slow old save can't overwrite a newer one
 
@@ -1277,10 +1457,12 @@ function CompanyTab({ client, onSaved }) {
     // in-flight edits, PIN drafts, and the bank-account draft. Only rebuild when the
     // user actually opens a different company.
     if (loadedClientIdRef.current === client.id) return;
+    if (loadedClientIdRef.current != null && flushDraftsRef.current) flushDraftsRef.current(loadedClientIdRef.current);
     loadedClientIdRef.current = client.id;
     touchedRef.current = new Set();
     setChangingAccount(false);
     setAccountDraft('');
+    setAccountErr('');
     setShowAccountNum(true);
     setPinDraft(''); setPinMsg(''); setPinSaving(false);
     setForm({
@@ -1310,20 +1492,25 @@ function CompanyTab({ client, onSaved }) {
     });
   }, [client]);
 
+  useEffect(() => {
+    api.getNotificationConfig().then(setNotifConfig).catch(() => {});
+  }, []);
+
   // Don't autosave invalid compliance data — a half-typed EIN or 5-digit routing
   // number silently persisting would poison EFTPS files and tax forms downstream.
   function validateForSave(f) {
-    if (!f.businessName.trim()) return 'Business name can’t be empty — not saved yet';
-    if (f.ein && !/^\d{2}-?\d{7}$/.test(f.ein.trim())) return 'EIN must be 9 digits (XX-XXXXXXX) — not saved yet';
-    if (f.bankRoutingNumber && !/^\d{9}$/.test(f.bankRoutingNumber.trim())) return 'Routing number must be exactly 9 digits — not saved yet';
-    if (f.businessZip && !/^\d{5}(-\d{4})?$/.test(f.businessZip.trim())) return 'ZIP must be 5 digits — not saved yet';
+    if (!f.businessName.trim()) return { field: 'businessName', msg: 'Business name can’t be empty — not saved yet' };
+    if (f.ein && !/^\d{2}-?\d{7}$/.test(f.ein.trim())) return { field: 'ein', msg: 'EIN must be 9 digits (XX-XXXXXXX) — not saved yet' };
+    if (f.bankRoutingNumber && !/^\d{9}$/.test(f.bankRoutingNumber.trim())) return { field: 'bankRoutingNumber', msg: 'Routing number must be exactly 9 digits — not saved yet' };
+    if (f.bankRoutingNumber && !validRoutingNumber(f.bankRoutingNumber.trim())) return { field: 'bankRoutingNumber', msg: 'That routing number doesn’t look right — check it against a voided check.' };
+    if (f.businessZip && !/^\d{5}(-\d{4})?$/.test(f.businessZip.trim())) return { field: 'businessZip', msg: 'ZIP must be 5 digits — not saved yet' };
     return null;
   }
 
   function doSave(currentForm) {
     const invalid = validateForSave(currentForm);
-    if (invalid) { setErr(invalid); setSaveStatus('error'); return; }
-    setSaveStatus('saving'); setErr('');
+    if (invalid) { setErr(invalid.msg); setInvalidField(invalid.field); setSaveStatus('error'); return; }
+    setSaveStatus('saving'); setErr(''); setInvalidField(null);
     // Chain saves: overlapping requests could land out of order server-side and
     // let a stale payload overwrite a newer one.
     saveChainRef.current = saveChainRef.current.then(async () => {
@@ -1365,11 +1552,13 @@ function CompanyTab({ client, onSaved }) {
   }
 
   async function saveAccountNumber() {
-    if (!accountDraft.trim()) return;
-    setAccountSaving(true); setErr('');
+    const clean = accountDraft.replace(/[\s-]/g, '');
+    if (!clean) return;
+    if (!/^\d{4,17}$/.test(clean)) { setAccountErr('Account numbers are 4–17 digits'); return; }
+    setAccountSaving(true); setErr(''); setAccountErr('');
     try {
-      await api.updateClient(client.id, { bankAccountNumber: accountDraft.trim() });
-      const last4 = accountDraft.trim().slice(-4);
+      await api.updateClient(client.id, { bankAccountNumber: clean });
+      const last4 = clean.slice(-4);
       setForm(f => ({ ...f, bankAccountLast4: last4 }));
       setChangingAccount(false);
       setAccountDraft('');
@@ -1382,6 +1571,23 @@ function CompanyTab({ client, onSaved }) {
   const pendingFormRef = useRef(null); // last form still inside the debounce window
   const touchedRef = useRef(new Set()); // fields the user actually edited in THIS tab
 
+  flushDraftsRef.current = (forClientId) => {
+    if (!accountDraft.trim() && !pinDraft) return;
+    const cleanAcct = accountDraft.replace(/[\s-]/g, '');
+    const cleanPin  = String(pinDraft).replace(/\D/g, '');
+    const acctOk = accountDraft.trim() !== '' && /^\d{4,17}$/.test(cleanAcct);
+    const pinOk  = pinDraft !== '' && /^\d{4}$/.test(cleanPin);
+    if ((accountDraft.trim() && !acctOk) || (pinDraft && !pinOk)) {
+      window.alert('The bank account number / EFTPS PIN you typed isn’t valid, so it wasn’t saved. Re-enter it on the Company tab when you’re ready.');
+    }
+    if (!acctOk && !pinOk) return;
+    if (!window.confirm('You typed a bank account number / EFTPS PIN but didn’t save it. Save it now? (Cancel discards it.)')) return;
+    const jobs = [];
+    if (acctOk) jobs.push(api.updateClient(forClientId, { bankAccountNumber: cleanAcct }));
+    if (pinOk)  jobs.push(api.updateClientPin(forClientId, cleanPin));
+    Promise.all(jobs).then(() => onSaved?.()).catch(e => window.alert(`Couldn’t save: ${e.message || 'try again on the Company tab.'}`));
+  };
+
   function set(field) {
     return e => {
       const val = e.target.value;
@@ -1389,7 +1595,7 @@ function CompanyTab({ client, onSaved }) {
       setForm(f => {
         const newForm = { ...f, [field]: val };
         pendingFormRef.current = newForm;
-        setSaveStatus('idle'); setErr('');
+        setSaveStatus('idle'); setErr(''); setInvalidField(null);
         clearTimeout(saveTimerRef.current);
         saveTimerRef.current = setTimeout(() => { pendingFormRef.current = null; doSave(newForm); }, 1400);
         return newForm;
@@ -1402,6 +1608,7 @@ function CompanyTab({ client, onSaved }) {
   useEffect(() => () => {
     clearTimeout(saveTimerRef.current);
     if (pendingFormRef.current) doSave(pendingFormRef.current);
+    if (loadedClientIdRef.current != null && flushDraftsRef.current) flushDraftsRef.current(loadedClientIdRef.current);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1428,14 +1635,14 @@ function CompanyTab({ client, onSaved }) {
       <div className="card" style={{ marginBottom: 16 }}>
         <p className="form-section-title" style={{ marginTop: 0 }}>Business Information</p>
         <div className="form-grid">
-          <F label="Business Name"><input className="form-input" value={form.businessName} onChange={set('businessName')} /></F>
-          <F label="EIN"><input className="form-input mono" value={form.ein} onChange={set('ein')} placeholder="12-3456789" /></F>
+          <F label="Business Name"><input className="form-input" style={invalidField === 'businessName' ? { borderColor: '#dc2626' } : undefined} value={form.businessName} onChange={set('businessName')} />{invalidField === 'businessName' && <p className="form-hint" style={{ color: '#dc2626' }}>{err}</p>}</F>
+          <F label="EIN"><input className="form-input mono" style={invalidField === 'ein' ? { borderColor: '#dc2626' } : undefined} value={form.ein} onChange={set('ein')} placeholder="12-3456789" />{invalidField === 'ein' && <p className="form-hint" style={{ color: '#dc2626' }}>{err}</p>}</F>
         </div>
         <F label="Street Address"><input className="form-input" value={form.businessAddress} onChange={set('businessAddress')} /></F>
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12 }}>
           <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">City</label><input className="form-input" value={form.businessCity} onChange={set('businessCity')} /></div>
           <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">State</label><select className="form-select" value={form.state} onChange={set('state')}>{US_STATES.map(([c, n]) => <option key={c} value={c}>{c} — {n}</option>)}</select></div>
-          <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">ZIP</label><input className="form-input mono" value={form.businessZip} onChange={set('businessZip')} maxLength={10} /></div>
+          <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">ZIP</label><input className="form-input mono" style={invalidField === 'businessZip' ? { borderColor: '#dc2626' } : undefined} value={form.businessZip} onChange={set('businessZip')} maxLength={10} />{invalidField === 'businessZip' && <p className="form-hint" style={{ color: '#dc2626' }}>{err}</p>}</div>
         </div>
         <div style={{ marginTop: 14 }}>
           <F label="IRS 941 Deposit Schedule" hint="Monthly: taxes due by the 15th of the following month. Semi-weekly: taxes due Wed or Fri after each payroll.">
@@ -1536,8 +1743,8 @@ function CompanyTab({ client, onSaved }) {
                     className="form-input mono"
                     type={showAccountNum ? 'text' : 'password'}
                     value={accountDraft}
-                    onChange={e => setAccountDraft(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter') saveAccountNumber(); if (e.key === 'Escape') { setChangingAccount(false); setAccountDraft(''); } }}
+                    onChange={e => { setAccountDraft(e.target.value); setAccountErr(''); }}
+                    onKeyDown={e => { if (e.key === 'Enter') saveAccountNumber(); if (e.key === 'Escape') { setChangingAccount(false); setAccountDraft(''); setAccountErr(''); } }}
                     placeholder="Enter account number"
                     autoFocus
                     style={{ paddingRight: 40 }}
@@ -1549,6 +1756,7 @@ function CompanyTab({ client, onSaved }) {
                     title={showAccountNum ? 'Hide' : 'Show'}
                   >{showAccountNum ? '🙈' : '👁'}</button>
                 </div>
+                {accountErr && <p className="form-hint" style={{ color: '#dc2626' }}>{accountErr}</p>}
                 <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
                   <button
                     type="button"
@@ -1559,7 +1767,7 @@ function CompanyTab({ client, onSaved }) {
                   <button
                     type="button"
                     className="btn btn-secondary btn-sm"
-                    onClick={() => { setChangingAccount(false); setAccountDraft(''); }}
+                    onClick={() => { setChangingAccount(false); setAccountDraft(''); setAccountErr(''); }}
                   >Cancel</button>
                 </div>
               </>
@@ -1568,7 +1776,7 @@ function CompanyTab({ client, onSaved }) {
                 <span className="mono" style={{ color: form.bankAccountLast4 ? 'var(--text-primary)' : '#dc2626', fontWeight: form.bankAccountLast4 ? 400 : 700, letterSpacing: '0.05em' }}>
                   {form.bankAccountLast4 ? `···· ${form.bankAccountLast4}` : 'Required — no account on file'}
                 </span>
-                <button type="button" onClick={() => { setChangingAccount(true); setAccountDraft(''); setShowAccountNum(true); }}
+                <button type="button" onClick={() => { setChangingAccount(true); setAccountDraft(''); setAccountErr(''); setShowAccountNum(true); }}
                   className={form.bankAccountLast4 ? undefined : 'btn btn-primary btn-sm'}
                   style={form.bankAccountLast4
                     ? { marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--accent)', fontWeight: 600, padding: 0 }
@@ -1583,7 +1791,8 @@ function CompanyTab({ client, onSaved }) {
           </div>
           <div>
             <label className="form-label">Routing Number</label>
-            <input className="form-input mono" value={form.bankRoutingNumber} onChange={set('bankRoutingNumber')} maxLength={9} />
+            <input className="form-input mono" style={invalidField === 'bankRoutingNumber' ? { borderColor: '#dc2626' } : undefined} value={form.bankRoutingNumber} onChange={set('bankRoutingNumber')} maxLength={9} />
+            {invalidField === 'bankRoutingNumber' && <p className="form-hint" style={{ color: '#dc2626' }}>{err}</p>}
             {form.bankRoutingNumber && (
               <div className="form-hint" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.08em' }}>
@@ -1623,10 +1832,10 @@ function CompanyTab({ client, onSaved }) {
           Email and SMS reminders 5 days and 2 days before each 941 deposit due date, and immediately when overdue.
         </p>
         <div className="form-grid">
-          <F label="Notification Email" hint="Requires SendGrid — set SENDGRID_API_KEY in .env">
+          <F label="Notification Email" hint={notifConfig && !notifConfig.emailConfigured ? 'Email reminders aren’t set up on this server yet — ask your administrator to enable them.' : undefined}>
             <input className="form-input" type="email" value={form.notificationEmail} onChange={set('notificationEmail')} placeholder="accountant@firm.com" />
           </F>
-          <F label="Notification Phone (SMS)" hint="Requires Twilio — set TWILIO_* in .env. Include country code: +15550000000">
+          <F label="Notification Phone (SMS)" hint={notifConfig && !notifConfig.smsConfigured ? 'Text reminders aren’t set up on this server yet — ask your administrator to enable them.' : undefined}>
             <input className="form-input" type="tel" value={form.notificationPhone} onChange={set('notificationPhone')} placeholder="+15550000000" />
           </F>
         </div>
@@ -1779,6 +1988,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
       }
       useEffect(() => {
         if (!pendingDirty) return;
+        if (dateForm.start && dateForm.end && dateForm.end < dateForm.start) { setPendSaveStatus('idle'); return; }
         if (pendSaveTimerRef.current) clearTimeout(pendSaveTimerRef.current);
         setPendSaveStatus('saving');
         pendSaveTimerRef.current = setTimeout(() => savePending(), 800);
@@ -1962,6 +2172,11 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
                   </div>
                 ))}
               </div>
+              {periodDateWarning(dateForm.start, dateForm.end, dateForm.payDate) && (
+                <div style={{ color: 'var(--error)', fontSize: 11, fontWeight: 600, marginTop: 6 }}>
+                  {periodDateWarning(dateForm.start, dateForm.end, dateForm.payDate)}
+                </div>
+              )}
             </div>
 
             {/* Body: Employee Summary | Company Summary side-by-side (matches the printed-check "Ali Faisal" format) */}
@@ -2020,6 +2235,9 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
                     editValue={row.medOverride !== undefined ? row.medOverride : String(estMedCalc)} onEditChange={v => setField('medOverride', v)} />
                   <TR label="Federal Income Tax"     amount={dispFIT      ?? 'calculating…'} ytdAmount={ytdWithCurrent.fit}      negative={dispFIT != null}      color={dispFIT != null && dispFIT > 0 ? '#dc2626' : 'var(--text-muted)'}
                     editValue={row.fitOverride !== undefined ? row.fitOverride : (estFITCalc != null ? String(estFITCalc) : '')} onEditChange={v => setField('fitOverride', v)} />
+                  {(emp.step4c || 0) > 0 && (
+                    <tr><td colSpan={3} style={{ padding: '0 0 4px', fontSize: 10, color: 'var(--text-muted)' }}>includes {fmt(emp.step4c)} extra withholding (W-4)</td></tr>
+                  )}
                   <TR label="State Income Tax"       amount={dispStateTax ?? '—'}            ytdAmount={ytdWithCurrent.stateTax} negative={dispStateTax != null} color={dispStateTax != null && dispStateTax > 0 ? '#dc2626' : 'var(--text-muted)'}
                     editValue={row.stateOverride !== undefined ? row.stateOverride : (estStateTaxCalc != null ? String(estStateTaxCalc) : '')} onEditChange={v => setField('stateOverride', v)} />
                 </tbody>
@@ -2058,7 +2276,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
             <div style={{ margin: '16px 24px 0', borderTop: '2px solid var(--border)' }} />
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px 8px' }}>
               <div style={{ fontSize: 15, fontWeight: 700 }}>Check Amount (est.)</div>
-              <div style={{ ...MODAL_MONO, fontSize: 22, fontWeight: 800, color: '#16a34a' }}>{fmt(estNetFull)}</div>
+              <div style={{ ...MODAL_MONO, fontSize: 22, fontWeight: 800, color: r2(estNetFull) === 0 ? 'var(--warning)' : '#16a34a' }}>{r2(estNetFull) === 0 ? '⚠ ' : ''}{fmt(estNetFull)}</div>
             </div>
             {/* Other Payroll Items */}
             {hiddenPendingItems.length > 0 && (
@@ -2085,7 +2303,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
             <div style={{ position: 'sticky', bottom: 0, background: '#fff', borderTop: '2px solid var(--border)', padding: '12px 24px', display: 'flex', justifyContent: 'flex-end', gap: 8, alignItems: 'center', boxShadow: '0 -2px 10px rgba(0,0,0,0.07)', zIndex: 10 }}>
               <button
                 onClick={() => {
-                  if (!window.confirm(`Remove ${emp.fullName} from this pay run? They can be added back by refreshing.`)) return;
+                  if (!window.confirm(`Remove ${emp.fullName} from this pay period? They won't appear for this period again (future periods are unaffected).`)) return;
                   skipPending(period.end, emp.id);
                   onClose();
                 }}
@@ -2339,6 +2557,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
     // Autosave: debounce 900ms after any form value changes
     useEffect(() => {
       if (!isDirty) return;
+      if (dateForm.start && dateForm.end && dateForm.end < dateForm.start) { setSaveStatus('idle'); return; }
       if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
       autoSaveTimerRef.current = setTimeout(() => saveEdits(), 900);
       return () => { if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current); };
@@ -2492,7 +2711,8 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
     // edit — flush any dirty state before the modal unmounts.
     const closeWithSave = () => {
       if (autoSaveTimerRef.current) { clearTimeout(autoSaveTimerRef.current); autoSaveTimerRef.current = null; }
-      if (isDirty) saveEdits();
+      // Same guard as the autosave: never persist an inverted period range.
+      if (isDirty && !(dateForm.start && dateForm.end && dateForm.end < dateForm.start)) saveEdits();
       onClose();
     };
 
@@ -2530,6 +2750,11 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
                 </div>
               ))}
             </div>
+            {!isVoided && periodDateWarning(dateForm.start, dateForm.end, dateForm.payDate) && (
+              <div style={{ color: 'var(--error)', fontSize: 11, fontWeight: 600, marginTop: 6 }}>
+                {periodDateWarning(dateForm.start, dateForm.end, dateForm.payDate)}
+              </div>
+            )}
           </div>
 
           {/* Two-column body */}
@@ -2625,7 +2850,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
             {!isVoided && (
               <button onClick={async () => {
                 const who = stub.employee_name || 'this employee';
-                if (!window.confirm(`Delete ${who}'s ${fmt(stub.gross_wages || 0)} check${stub.check_number ? ` (#${stub.check_number})` : ''}?\n\nIts wages and tax liabilities are removed from every report. This cannot be undone.`)) return;
+                if (!window.confirm(deleteCheckConfirm({ name: who, amount: fmt(r2(stub.net_pay || 0)), checkNumber: stub.check_number }))) return;
                 try { await api.deletePaystub(stub.id); onClose(); reloadStubs(); }
                 catch (e) {
                   // The backend blocks deleting checks whose 941/940 deposit was
@@ -2716,7 +2941,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
     );
   }
 
-function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmployees, refreshTick = 0 }) {
+function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmployees, refreshTick = 0, onGoToEmployees }) {
   const [showPaycheckImport, setShowPaycheckImport] = useState(false);
   // Active child-support order totals per employee — auto-withheld on every run,
   // editable per check in the detail modal.
@@ -2742,6 +2967,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
   const [groupsLoading, setGroupsLoading]   = useState(true);
   const [editGroup, setEditGroup]     = useState(null);
   const [paystubs, setPaystubs]                   = useState([]);
+  const [stubsLoaded, setStubsLoaded]             = useState(false);
+  const [stubsError, setStubsError]               = useState(false);
   // pendingRows[periodEnd][empId] = { regHours, otHours, rate, selected }
   const [pendingRows, setPendingRows] = useState(() => {
     try {
@@ -2781,11 +3008,13 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
   const [detailModal, setDetailModal]             = useState(null); // rowData object
   const [showPrinted, setShowPrinted]             = useState(true);
   const [printModal, setPrintModal]               = useState(null); // { ids: [], mode: 'paycheck'|'paystub' }
+  const [printModalBusy, setPrintModalBusy]       = useState(null); // 'paycheck' | 'paystub' | null
+  const [printModalErr, setPrintModalErr]         = useState('');
   const [drawerEmpId, setDrawerEmpId]             = useState(null);
   const [periodEdit, setPeriodEdit]               = useState(null); // { id, start, end, payDate }
   const [savingPeriod, setSavingPeriod]           = useState(false);
   const [empStatusDrop, setEmpStatusDrop]         = useState(null); // { stub, top, right }
-  const [empStatusBusy, setEmpStatusBusy]         = useState(false); // guards double-fire → duplicate paycheck
+  const [empStatusBusy, setEmpStatusBusy]         = useState(null); // the in-flight drop — guards double-fire → duplicate paycheck
   const [periodOverrides, setPeriodOverrides]     = useState(() => { // { [periodEnd]: { start, end, payDate } }
     try { const s = localStorage.getItem(`periodOverrides_${clientId}`); return s ? JSON.parse(s) : {}; } catch { return {}; }
   });
@@ -2834,7 +3063,11 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
     try {
       const stubs = await api.getPaystubs(clientId);
       setPaystubs(stubs);
-    } catch {}
+      setStubsLoaded(true);
+      setStubsError(false);
+    } catch {
+      setStubsError(true);
+    }
     // employees is a prop owned by the parent — refresh it WITHOUT the parent's
     // full refresh: that bumps refreshTick, whose effect calls reloadStubs again
     // (infinite request loop).
@@ -2862,6 +3095,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
   // Returns ALL unpaid periods from the anchor: late periods (pay date passed) first,
   // then at most one upcoming period (pay date in the future).
   function getPendingPeriods() {
+    if (!stubsLoaded || stubsError) return [];
     const g = currentGroup;
     if (!g || g.id === UNASSIGNED_ID || !g.firstPayPeriodEnd || g.deletedAt) return [];
     const anchor = g.firstPayPeriodStart || calcStartFromEnd(g.firstPayPeriodEnd, g.frequency);
@@ -3041,6 +3275,35 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
     }));
   }
 
+  // Shared estimate for a pending row — used by the grid cells and the tfoot totals
+  // so the two can never disagree.
+  function pendingRowEst(periodEnd, emp) {
+    const row      = getRow(periodEnd, emp.id);
+    const isSalary = emp.payType === 'salary';
+    const salAmt   = effPeriodSalary(row, emp, ppy);
+    const rate     = parseFloat(row.rate) || emp.hourlyRate || 0;
+    const regH     = parseFloat(row.regHours || 0);
+    const otH      = parseFloat(row.otHours  || 0);
+    const tipsAmt  = parseFloat(row.tips || 0);
+    const bonusAmt = parseFloat(row.bonus || 0);
+    const commAmt  = parseFloat(row.commission || 0);
+    const basePay  = isSalary ? salAmt : r2(regH * rate + otH * rate * 1.5);
+    const grossPreview = r2(basePay + tipsAmt + bonusAmt + commAmt);
+    const estEeSS    = r2(grossPreview * EE_SS_RATE);
+    const estEeMed   = r2(grossPreview * EE_MEDICARE_RATE);
+    const cached     = calcCache[`${emp.id}_${periodEnd}_${Math.round(grossPreview * 100)}`];
+    const estFIT     = emp.fitExempt ? 0 : cached != null ? (cached.fitWithholding || 0) : Math.round(((taxAnn => taxAnn <= 12225 ? taxAnn * 0.10 : 1222.5 + (Math.min(taxAnn, 49675) - 12225) * 0.12 + Math.max(0, taxAnn - 49675) * 0.22)(Math.max(0, grossPreview * ppy - 16100))) / ppy);
+    const estStateTax = cached != null ? (cached.stateIncomeTax || 0) : 0;
+    const dispEeSS    = row.ssOverride    !== undefined ? parseFloat(row.ssOverride    || 0) : estEeSS;
+    const dispEeMed   = row.medOverride   !== undefined ? parseFloat(row.medOverride   || 0) : estEeMed;
+    const dispFITest  = row.fitOverride   !== undefined ? parseFloat(row.fitOverride   || 0) : estFIT;
+    const dispStateEst= row.stateOverride !== undefined ? parseFloat(row.stateOverride || 0) : estStateTax;
+    const cashAdvEst  = parseFloat(row.cashAdvance || 0);
+    const csEst       = csEffectiveAmount(row, csTotals[emp.id]);
+    const estNetPay   = r2(grossPreview - dispEeSS - dispEeMed - dispFITest - dispStateEst - cashAdvEst - csEst);
+    return { row, regH, otH, grossPreview, estNetPay };
+  }
+
   // Pre-compute real FIT+state tax per pending row via the calculate API (same as the check detail modal).
   // Keyed by `${empId}_${periodEnd}_${grossCents}` so stale entries are ignored.
   // Debounced 300ms so rapid keystrokes don't spawn a wave of API calls on every character,
@@ -3100,8 +3363,17 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
         if (emp.payType !== 'salary') {
           const regH = parseFloat(row.regHours || 0);
           const otH  = parseFloat(row.otHours  || 0);
+          if (isNaN(regH) || isNaN(otH) || (row.rate !== undefined && String(row.rate).trim() !== '' && isNaN(parseFloat(row.rate)))) {
+            setRunErr(`The hours or rate for ${emp.firstName} ${emp.lastName} aren't a valid number — fix them before processing payroll.`);
+            return;
+          }
           if (regH === 0 && otH === 0) {
             setRunErr(`Please enter hours for ${emp.firstName} ${emp.lastName} before processing payroll.`);
+            return;
+          }
+          const effRate = parseFloat(row.rate) || emp.hourlyRate || 0;
+          if (effRate <= 0) {
+            setRunErr(`Please enter an hourly rate for ${emp.firstName} ${emp.lastName} before processing payroll.`);
             return;
           }
         } else {
@@ -3282,8 +3554,15 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
   useEffect(() => {
     if (!empStatusDrop) return;
     const close = () => setEmpStatusDrop(null);
+    const onKey = e => { if (e.key === 'Escape') close(); };
     document.addEventListener('click', close);
-    return () => document.removeEventListener('click', close);
+    document.addEventListener('keydown', onKey);
+    document.addEventListener('scroll', close, true);
+    return () => {
+      document.removeEventListener('click', close);
+      document.removeEventListener('keydown', onKey);
+      document.removeEventListener('scroll', close, true);
+    };
   }, [empStatusDrop]);
 
   async function handleEmpStatusChange(drop, newStatus) {
@@ -3295,7 +3574,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
       const ok = window.confirm(`This runs payroll for ${emp.firstName} ${emp.lastName} (creates the check and its tax liabilities), then marks it ${newStatus === 'printed' ? 'Printed' : 'Deposited'}. Continue?`);
       if (!ok) return;
     }
-    setEmpStatusBusy(true);
+    setEmpStatusBusy(drop);
     try {
       if (drop.stub) {
         // History row — just update the status
@@ -3362,7 +3641,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
       }
       await reloadStubs();
     } catch (e) { alert(e.message || 'Failed to update status'); }
-    finally { setEmpStatusBusy(false); }
+    finally { setEmpStatusBusy(null); }
   }
 
   // Select-all helper — selects Late + Due Soon (within 5 days), toggles on repeat click
@@ -3577,15 +3856,43 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
       }
     }
 
+    // Column totals for the rendered rows (voided checks excluded)
+    const totals = { reg: 0, ot: 0, net: 0 };
+    const selTotals = { reg: 0, ot: 0, net: 0, count: 0 };
+    rows.forEach(r => {
+      let regH = 0, otH = 0, net = 0, sel = false;
+      if (r.type === 'pending') {
+        const est = pendingRowEst(r.period.end, r.emp);
+        regH = est.regH || 0;
+        otH  = est.otH  || 0;
+        net  = est.grossPreview > 0 && !isNaN(est.estNetPay) ? est.estNetPay : 0;
+        sel  = !!est.row.selected;
+      } else {
+        const s = r.stub;
+        if (s.check_status === 'voided') return;
+        regH = s.regular_hours || 0;
+        otH  = s.overtime_hours || 0;
+        net  = s.net_pay != null ? s.net_pay : r2(
+          (s.gross_wages || 0) - (s.fit_withholding || 0) - (s.employee_ss || 0) - (s.employee_medicare || 0)
+          - (s.additional_medicare || 0) - (s.state_income_tax || 0) - (s.deduction || 0) - (s.garnishment || 0)
+          + (s.reimbursement || 0));
+        sel  = selectedHistoryStubs.has(s.id) || selectedLateStubs.has(s.id);
+      }
+      totals.reg += regH; totals.ot += otH; totals.net += net;
+      if (sel) { selTotals.reg += regH; selTotals.ot += otH; selTotals.net += net; selTotals.count++; }
+    });
+    const footCell = { padding: '10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, fontSize: 13 };
+
     return (
       /* min-width stops the fixed columns collapsing into each other on phones —
          the grid scrolls sideways inside .table-scroll instead of overlapping text */
       <div className="table-scroll">
       {/* fixed cols total 730px — keep ≥160px for the employee-name column */}
-      <table style={{ width: '100%', minWidth: 890, borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 15 }}>
+      <table style={{ width: '100%', minWidth: 960, borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 15 }}>
         <colgroup>
           <col style={{ width: 40 }} />
           <col />
+          <col style={{ width: 70 }} />
           <col style={{ width: 96 }} />
           <col style={{ width: 96 }} />
           <col style={{ width: 96 }} />
@@ -3605,6 +3912,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
               )}
             </th>
             <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Employee</th>
+            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Check #</th>
             <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Period Start</th>
             <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Period End</th>
             <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Pay Date</th>
@@ -3624,33 +3932,11 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
               // Apply any saved date overrides from the detail modal
               const ov = periodOverrides[rawPeriod.end] || {};
               const period = { ...rawPeriod, start: ov.start || rawPeriod.start, end: ov.end || rawPeriod.end, payDate: ov.payDate || rawPeriod.payDate };
-              const row      = getRow(rawPeriod.end, emp.id);
               const isSalary = emp.payType === 'salary';
-              const salAmt   = effPeriodSalary(row, emp, ppy);
-              const rate     = parseFloat(row.rate) || emp.hourlyRate || 0;
-              const regH     = parseFloat(row.regHours || 0);
-              const otH      = parseFloat(row.otHours  || 0);
-              const tipsAmt  = parseFloat(row.tips || 0);
-              const bonusAmt = parseFloat(row.bonus || 0);
-              const commAmt  = parseFloat(row.commission || 0);
-              const basePay  = isSalary ? salAmt : r2(regH * rate + otH * rate * 1.5);
-              const grossPreview = r2(basePay + tipsAmt + bonusAmt + commAmt);
-              const estEeSS    = r2(grossPreview * EE_SS_RATE);
-              const estEeMed   = r2(grossPreview * EE_MEDICARE_RATE);
-              const cacheKey   = `${emp.id}_${rawPeriod.end}_${Math.round(grossPreview * 100)}`;
-              const cached     = calcCache[cacheKey];
-              const estFIT     = emp.fitExempt ? 0 : cached != null ? (cached.fitWithholding || 0) : Math.round(((taxAnn => taxAnn <= 12225 ? taxAnn * 0.10 : 1222.5 + (Math.min(taxAnn, 49675) - 12225) * 0.12 + Math.max(0, taxAnn - 49675) * 0.22)(Math.max(0, grossPreview * ppy - 16100))) / ppy);
-              const estStateTax = cached != null ? (cached.stateIncomeTax || 0) : 0;
-              // Respect the manual overrides the detail modal writes to the row, so
+              // Respects the manual overrides the detail modal writes to the row, so
               // this inline net pay equals the modal's "Net Pay (est.)" instead of
               // ignoring an edited FIT/SS/Medicare/state value.
-              const dispEeSS    = row.ssOverride    !== undefined ? parseFloat(row.ssOverride    || 0) : estEeSS;
-              const dispEeMed   = row.medOverride   !== undefined ? parseFloat(row.medOverride   || 0) : estEeMed;
-              const dispFITest  = row.fitOverride   !== undefined ? parseFloat(row.fitOverride   || 0) : estFIT;
-              const dispStateEst= row.stateOverride !== undefined ? parseFloat(row.stateOverride || 0) : estStateTax;
-              const cashAdvEst  = parseFloat(row.cashAdvance || 0);
-              const csEst       = csEffectiveAmount(row, csTotals[emp.id]);
-              const estNetPay  = r2(grossPreview - dispEeSS - dispEeMed - dispFITest - dispStateEst - cashAdvEst - csEst);
+              const { row, grossPreview, estNetPay } = pendingRowEst(rawPeriod.end, emp);
               const daysToPayDate = daysUntil(period.payDate);
               const isLate   = period.payDate < new Date().toISOString().slice(0, 10);
               const status   = isLate ? 'late' : (daysToPayDate !== null && daysToPayDate <= 5 ? 'due-soon' : 'upcoming');
@@ -3673,6 +3959,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                       {emp.firstName} {emp.lastName}
                     </button>
                   </td>
+                  <td style={{ padding: '12px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: 'var(--text-muted)' }}>—</td>
                   <td style={{ padding: '12px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600, color: ov.start ? 'var(--accent)' : '#222' }}>{fmtDate(period.start)}</td>
                   <td style={{ padding: '12px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600, color: ov.end ? 'var(--accent)' : '#222' }}>{fmtDate(period.end)}</td>
                   <td style={{ padding: '12px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600, color: isLate ? '#dc2626' : ov.payDate ? 'var(--accent)' : '#222' }}>{fmtDate(period.payDate)}</td>
@@ -3684,21 +3971,21 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                     <>
                       <td style={{ padding: '4px 6px' }}>
                         <input className="form-input mono" type="text" inputMode="decimal" value={row.regHours} placeholder="0"
-                          onChange={ev => setRow(rawPeriod.end, emp.id, 'regHours', ev.target.value)}
+                          onChange={ev => setRow(rawPeriod.end, emp.id, 'regHours', cleanDecimal(ev.target.value))}
                           onFocus={ev => ev.target.select()}
-                          style={{ width: '100%', height: 46, fontSize: 16, textAlign: 'right', padding: '0 8px', borderRadius: 0, border: '2px solid #b0bec5', fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
+                          style={{ width: '100%', height: 46, fontSize: 16, textAlign: 'right', padding: '0 8px', borderRadius: 0, border: `2px solid ${row.regHours && isNaN(parseFloat(row.regHours)) ? 'var(--error)' : '#b0bec5'}`, fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
                       </td>
                       <td style={{ padding: '4px 6px' }}>
                         <input className="form-input mono" type="text" inputMode="decimal" value={row.otHours} placeholder="0"
-                          onChange={ev => setRow(rawPeriod.end, emp.id, 'otHours', ev.target.value)}
+                          onChange={ev => setRow(rawPeriod.end, emp.id, 'otHours', cleanDecimal(ev.target.value))}
                           onFocus={ev => ev.target.select()}
-                          style={{ width: '100%', height: 46, fontSize: 16, textAlign: 'right', padding: '0 8px', borderRadius: 0, border: '2px solid #b0bec5', fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
+                          style={{ width: '100%', height: 46, fontSize: 16, textAlign: 'right', padding: '0 8px', borderRadius: 0, border: `2px solid ${row.otHours && isNaN(parseFloat(row.otHours)) ? 'var(--error)' : '#b0bec5'}`, fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
                       </td>
                       <td style={{ padding: '4px 6px' }}>
                         <input className="form-input mono" type="text" inputMode="decimal"
                           value={row.rate !== undefined ? row.rate : String(emp.hourlyRate || '')}
                           placeholder={String(emp.hourlyRate || '')}
-                          onChange={ev => setRow(rawPeriod.end, emp.id, 'rate', ev.target.value)}
+                          onChange={ev => setRow(rawPeriod.end, emp.id, 'rate', cleanDecimal(ev.target.value))}
                           onFocus={ev => ev.target.select()}
                           onBlur={ev => {
                             const entered = parseFloat(ev.target.value);
@@ -3710,7 +3997,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                               }
                             }
                           }}
-                          style={{ width: '100%', height: 46, fontSize: 16, textAlign: 'right', padding: '0 8px', borderRadius: 0, border: '2px solid #b0bec5', fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
+                          style={{ width: '100%', height: 46, fontSize: 16, textAlign: 'right', padding: '0 8px', borderRadius: 0, border: `2px solid ${row.rate !== undefined && String(row.rate).trim() !== '' && isNaN(parseFloat(row.rate)) ? 'var(--error)' : '#b0bec5'}`, fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
                       </td>
                     </>
                   )}
@@ -3719,10 +4006,20 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                     {grossPreview > 0 ? <>{fmt(estNetPay)}<span style={{ fontSize: 10, fontWeight: 500, color: '#9ca3af', marginLeft: 3 }}>est.</span></> : '—'}
                   </td>
                   <td style={{ padding: '8px 10px', textAlign: 'right' }}>
-                    <span style={{ cursor: 'pointer' }} title="Click to change status"
-                      onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setEmpStatusDrop(empStatusDrop?.period?.end === period.end && empStatusDrop?.emp?.id === emp.id ? null : { period, emp, top: r.bottom + 4, right: window.innerWidth - r.right }); }}>
+                    {empStatusBusy && !empStatusBusy.stub && empStatusBusy.period?.end === period.end && empStatusBusy.emp?.id === emp.id ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-secondary)' }}>
+                        <span className="spinner spinner-dark" style={{ width: 12, height: 12 }} /> Creating check…
+                      </span>
+                    ) : (
+                    <button type="button" title="Click to change status"
+                      aria-label={`Change status for ${emp.firstName} ${emp.lastName}`}
+                      aria-expanded={!!(empStatusDrop?.period?.end === period.end && empStatusDrop?.emp?.id === emp.id)}
+                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}
+                      onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); const openUp = r.bottom + 200 > window.innerHeight; setEmpStatusDrop(empStatusDrop?.period?.end === period.end && empStatusDrop?.emp?.id === emp.id ? null : { period, emp, ...(openUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }), right: window.innerWidth - r.right }); }}>
                       <StatusBadge status={status} />
-                    </span>
+                      <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>▾</span>
+                    </button>
+                    )}
                   </td>
                 </tr>
                 </React.Fragment>
@@ -3763,7 +4060,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                   ) : (
                     <span style={{ fontWeight: 700, fontSize: 13, color: '#111', textDecoration: isVoided ? 'line-through' : 'none' }}>{stub.employee_name}</span>
                   )}
-                  {stub.check_number && <span style={{ marginLeft: 6, fontFamily: 'JetBrains Mono, monospace', fontSize: 11, color: 'var(--accent)', fontWeight: 700 }}>#{stub.check_number}</span>}
+                </td>
+                <td style={{ padding: '14px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 700, color: stub.check_number ? 'var(--accent)' : 'var(--text-muted)' }}>
+                  {stub.check_number ? `#${stub.check_number}` : '—'}
                 </td>
                 {isEditingPeriod ? (
                   <td colSpan={3} style={{ padding: '8px 10px' }} onClick={e => e.stopPropagation()}>
@@ -3780,23 +4079,33 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                         onChange={e => setPeriodEdit(p => ({ ...p, payDate: e.target.value }))}
                         style={{ height: 36, fontSize: 13, border: '1px solid var(--border)', borderRadius: 0, padding: '0 4px' }} />
                       <button className="btn btn-primary btn-sm" style={{ fontSize: 10, padding: '0 8px', height: 26 }}
-                        onClick={() => handleSavePeriod(stub.id)} disabled={savingPeriod}>
+                        onClick={() => handleSavePeriod(stub.id)}
+                        disabled={savingPeriod || !!(periodEdit.start && periodEdit.end && periodEdit.end < periodEdit.start)}>
                         {savingPeriod ? <span className="spinner" style={{ width: 10, height: 10 }} /> : 'Save'}
                       </button>
                       <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, padding: '0 6px', height: 26 }}
                         onClick={() => setPeriodEdit(null)}>×</button>
+                      {periodDateWarning(periodEdit.start, periodEdit.end, periodEdit.payDate) && (
+                        <span style={{ color: 'var(--error)', fontSize: 11, fontWeight: 600, width: '100%' }}>
+                          {periodDateWarning(periodEdit.start, periodEdit.end, periodEdit.payDate)}
+                        </span>
+                      )}
                     </div>
                   </td>
                 ) : (
                   <>
-                    <td style={{ padding: '14px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600, color: '#222',
-                      cursor: canEditPeriod ? 'pointer' : 'default' }}
-                      onClick={canEditPeriod ? e => { e.stopPropagation(); setPeriodEdit({ id: stub.id, start: stub.pay_period_start || '', end: stub.pay_period_end || '', payDate: stub.settlement_date || '' }); } : undefined}
-                      title={canEditPeriod ? 'Click to edit period' : ''}>
-                      {fmtDate(stub.pay_period_start)}{canEditPeriod && <span style={{ marginLeft: 3, opacity: 0.35, fontSize: 9 }}>✏</span>}
+                    <td style={{ padding: '14px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600, color: '#222' }}>
+                      {fmtDate(stub.pay_period_start)}
                     </td>
                     <td style={{ padding: '14px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600, color: '#222' }}>{fmtDate(stub.pay_period_end)}</td>
-                    <td style={{ padding: '14px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600, color: displayStatus === 'late' ? '#dc2626' : '#222' }}>{fmtDate(stub.settlement_date)}</td>
+                    <td style={{ padding: '14px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600, color: displayStatus === 'late' ? '#dc2626' : '#222' }}>
+                      {fmtDate(stub.settlement_date)}
+                      {canEditPeriod && (
+                        <button type="button" aria-label="Edit pay period" title="Edit pay period"
+                          onClick={e => { e.stopPropagation(); setPeriodEdit({ id: stub.id, start: stub.pay_period_start || '', end: stub.pay_period_end || '', payDate: stub.settlement_date || '' }); }}
+                          style={{ background: 'none', border: 'none', padding: '4px 8px', cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)', marginLeft: 2 }}>✎</button>
+                      )}
+                    </td>
                   </>
                 )}
                 <td style={{ padding: '14px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: 14 }}>{stub.regular_hours != null ? stub.regular_hours : '—'}</td>
@@ -3825,21 +4134,32 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                 </td>
                 <td style={{ padding: '8px 10px', textAlign: 'right' }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
-                    {!isVoided ? (
-                      <span style={{ cursor: 'pointer' }} title="Click to change status"
-                        onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); setEmpStatusDrop(empStatusDrop?.stub?.id === stub.id ? null : { stub, top: r.bottom + 4, right: window.innerWidth - r.right }); }}>
-                        <StatusBadge status={displayStatus} />
+                    {empStatusBusy?.stub?.id === stub.id ? (
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-secondary)' }}>
+                        <span className="spinner spinner-dark" style={{ width: 12, height: 12 }} /> Updating…
                       </span>
+                    ) : !isVoided ? (
+                      <button type="button" title="Click to change status"
+                        aria-label={`Change status for ${stub.employee_name}`}
+                        aria-expanded={!!(empStatusDrop?.stub?.id === stub.id)}
+                        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}
+                        onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); const openUp = r.bottom + 200 > window.innerHeight; setEmpStatusDrop(empStatusDrop?.stub?.id === stub.id ? null : { stub, ...(openUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }), right: window.innerWidth - r.right }); }}>
+                        <StatusBadge status={displayStatus} />
+                        <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>▾</span>
+                      </button>
                     ) : (
                       <StatusBadge status={displayStatus} />
                     )}
                     {!isVoided && (
                       <button
                         className="btn btn-ghost btn-sm"
-                        style={{ fontSize: 11, color: '#6b7280', padding: '1px 6px', height: 'auto', lineHeight: 1.4 }}
-                        onClick={e => { e.stopPropagation(); if (window.confirm(`Delete check #${stub.check_number || stub.id} for ${stub.employee_name}?\n\nThis will reverse all associated tax liabilities.`)) { api.deletePaystub(stub.id).then(reloadStubs).catch(er => alert(er.message)); } }}
+                        style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '5px 10px', height: 'auto', lineHeight: 1.4 }}
+                        onMouseEnter={e => { e.currentTarget.style.color = 'var(--error)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary)'; }}
+                        aria-label={`Delete check #${stub.check_number || stub.id} for ${stub.employee_name}`}
+                        onClick={e => { e.stopPropagation(); if (window.confirm(deleteCheckConfirm({ name: stub.employee_name, amount: fmt(r2(stub.net_pay || 0)), checkNumber: stub.check_number }))) { api.deletePaystub(stub.id).then(reloadStubs).catch(er => alert(er.message)); } }}
                         title="Delete check and reverse tax liabilities"
-                      >Del</button>
+                      >Delete</button>
                     )}
                   </div>
                 </td>
@@ -3847,6 +4167,26 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
             );
           })}
         </tbody>
+        <tfoot>
+          <tr style={{ borderTop: '2px solid var(--border)' }}>
+            <td colSpan={6} style={{ ...footCell, fontFamily: 'inherit', fontSize: 12, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total</td>
+            <td style={footCell}>{r2(totals.reg)}</td>
+            <td style={footCell}>{r2(totals.ot)}</td>
+            <td />
+            <td style={footCell}>{fmt(r2(totals.net))}</td>
+            <td />
+          </tr>
+          {selTotals.count > 0 && (
+            <tr>
+              <td colSpan={6} style={{ ...footCell, paddingTop: 0, fontFamily: 'inherit', fontSize: 12, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Selected ({selTotals.count})</td>
+              <td style={{ ...footCell, paddingTop: 0, color: 'var(--accent)' }}>{r2(selTotals.reg)}</td>
+              <td style={{ ...footCell, paddingTop: 0, color: 'var(--accent)' }}>{r2(selTotals.ot)}</td>
+              <td />
+              <td style={{ ...footCell, paddingTop: 0, color: 'var(--accent)' }}>{fmt(r2(selTotals.net))}</td>
+              <td />
+            </tr>
+          )}
+        </tfoot>
       </table>
       </div>
     );
@@ -3931,7 +4271,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
             + Ungrouped Check
           </button>
         )}
-        {!isGroupDeleted && (
+        {!isGroupDeleted && empsInGroup.length > 0 && (
           <div style={{ display: 'flex', gap: 6 }}>
             <button
               className="btn btn-secondary"
@@ -3950,7 +4290,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
               {running ? <span className="spinner" /> : `📄 Print Paystub${totalActionCount > 0 ? ` (${totalActionCount})` : ''}`}
             </button>
             <button
-              className="btn btn-primary"
+              className={running || totalActionCount === 0 ? 'btn btn-secondary' : 'btn btn-primary'}
               onClick={() => handleRunPayroll('dd')}
               disabled={running || totalActionCount === 0}
               title="Process payroll and send via direct deposit"
@@ -3978,6 +4318,17 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
           }))
         );
 
+        const selEstNet = r2(
+          pendingPeriods.reduce((sum, period) => sum + empsInGroup.reduce((s2, emp) => {
+            const est = pendingRowEst(period.end, emp);
+            return est.row.selected && est.grossPreview > 0 && !isNaN(est.estNetPay) ? s2 + est.estNetPay : s2;
+          }, 0), 0)
+          + [...new Set([...selectedHistoryStubs, ...selectedLateStubs])].reduce((sum, id) => {
+            const stub = history.flatMap(p => p.stubs).find(s => s.id === id);
+            return stub ? sum + (stub.net_pay || 0) : sum;
+          }, 0)
+        );
+
         async function handlePendingStatus(newStatus) {
           if (selectedPendingData.length === 0) return;
           // Only "voided" is allowed for pending rows — any other status (Printed, Deposited)
@@ -3985,7 +4336,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
           // creates $0 paystub records which is the root cause of the "everything went to $0" bug.
           if (newStatus !== 'voided') {
             const label = newStatus === 'printed' ? 'Printed' : newStatus === 'direct_deposit_cleared' ? 'Deposited' : newStatus;
-            alert(`Cannot mark pending checks as "${label}".\n\nPending periods have no payroll data yet. Run payroll for these periods first (use the Run Payroll button), then change the status of the created checks.`);
+            alert(`Cannot mark pending checks as "${label}".\n\nPending periods have no payroll data yet. Run payroll for these periods first using the Print Paycheck / Direct Deposit buttons above the table, then change the status of the created checks.`);
             return;
           }
           setBulkBusy(true);
@@ -4020,7 +4371,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
 
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#15803d', color: '#fff', padding: '9px 16px', borderRadius: 10, marginBottom: 12, flexWrap: 'wrap', boxShadow: '0 2px 12px rgba(21,128,61,0.25)' }}>
-            <span style={{ fontWeight: 700, fontSize: 13 }}>✓ {totalSel} check{totalSel !== 1 ? 's' : ''} selected</span>
+            <span style={{ fontWeight: 700, fontSize: 13 }}>✓ {totalSel} check{totalSel !== 1 ? 's' : ''} selected · est. net {fmt(selEstNet)}</span>
             <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
 
             {/* Download PDFs — history checks only */}
@@ -4052,8 +4403,14 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                 try {
                   // Update history checks inline (without handleBulkStatusChange which double-manages bulkBusy)
                   if (selectedHistoryStubs.size > 0) {
-                    await Promise.all([...selectedHistoryStubs].map(id => api.updatePaystub(id, { checkStatus: value })));
-                    setSelectedHistoryStubs(new Set());
+                    const ids = [...selectedHistoryStubs];
+                    const results = await Promise.allSettled(ids.map(id => api.updatePaystub(id, { checkStatus: value })));
+                    const failedIds = ids.filter((id, i) => results[i].status === 'rejected');
+                    setSelectedHistoryStubs(new Set(failedIds));
+                    if (failedIds.length > 0) {
+                      const firstErr = results.find(r => r.status === 'rejected')?.reason?.message || 'unknown error';
+                      alert(`${ids.length - failedIds.length} of ${ids.length} checks updated. ${failedIds.length} failed: ${firstErr}\nThe failed checks stay selected.`);
+                    }
                   }
                   // Mark pending periods with the chosen status
                   if (selectedPendingData.length > 0) await handlePendingStatus(value);
@@ -4066,13 +4423,23 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
 
             {/* Delete */}
             <button disabled={bulkBusy} onClick={async () => {
-              if (!window.confirm(`Delete ${totalSel} check${totalSel !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+              const histIds = [...selectedHistoryStubs];
+              const allStubs = history.flatMap(p => p.stubs);
+              const histNet = r2(histIds.reduce((sum, id) => sum + (allStubs.find(s => s.id === id)?.net_pay || 0), 0));
+              const pendCount = selectedPendingData.length;
+              const parts = [];
+              if (histIds.length > 0) parts.push(`Delete ${histIds.length} issued check${histIds.length !== 1 ? 's' : ''} (total net ${fmt(histNet)})? Their wages and tax liabilities are removed from every report.`);
+              if (pendCount > 0) parts.push(`${pendCount} pending period${pendCount !== 1 ? 's' : ''} will be voided instead.`);
+              parts.push('This cannot be undone.');
+              if (!window.confirm(parts.join(' '))) return;
               setBulkBusy(true);
               try {
                 // Delete history checks inline
-                if (selectedHistoryStubs.size > 0) {
-                  for (const id of selectedHistoryStubs) await api.deletePaystub(id).catch(() => {});
-                  setSelectedHistoryStubs(new Set());
+                if (histIds.length > 0) {
+                  const results = await Promise.allSettled(histIds.map(id => api.deletePaystub(id)));
+                  const failedIds = histIds.filter((id, i) => results[i].status === 'rejected');
+                  setSelectedHistoryStubs(new Set(failedIds));
+                  if (failedIds.length > 0) alert(`Deleted ${histIds.length - failedIds.length} of ${histIds.length} checks — ${failedIds.length} failed.`);
                 }
                 // Void pending periods so they disappear from the schedule
                 if (selectedPendingData.length > 0) await handlePendingStatus('voided');
@@ -4096,8 +4463,42 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
       {runErr     && <div className="alert alert-error"   style={{ marginBottom: 10 }}><span>⚠</span>{runErr}<button onClick={() => setRunErr('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button></div>}
       {runSuccess && <div className="alert alert-success" style={{ marginBottom: 10 }}><span>✓</span>{runSuccess}<button onClick={() => setRunSuccess('')} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button></div>}
 
+      {stubsError && (
+        <div className="alert alert-error" style={{ marginBottom: 12 }}>
+          <span>⚠</span> Couldn&apos;t load paychecks —
+          <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} onClick={reloadStubs}>Retry</button>
+        </div>
+      )}
+      {!stubsLoaded && !stubsError && (
+        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '18px 20px', marginBottom: 12, fontSize: 13, color: 'var(--text-secondary)' }}>
+          <span className="spinner spinner-dark" style={{ width: 14, height: 14 }} /> Loading paychecks…
+        </div>
+      )}
+
+      {stubsLoaded && (() => {
+        // Only count skips whose period would actually generate a row right now —
+        // keys for periods since paid/voided are stale and restoring them is a no-op.
+        const currentEnds = new Set(pendingPeriods.map(p => p.end));
+        const skippedForGroup = [...skippedPending].filter(k => {
+          const cut = k.lastIndexOf('_');
+          const empId = Number(k.slice(cut + 1));
+          return currentEnds.has(k.slice(0, cut)) && empsInGroup.some(e => e.id === empId);
+        });
+        if (skippedForGroup.length === 0) return null;
+        return (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+            <span>Removed from this run: {skippedForGroup.length}</span>
+            <span>·</span>
+            <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }}
+              onClick={() => setSkippedPending(prev => { const next = new Set(prev); skippedForGroup.forEach(k => next.delete(k)); return next; })}>
+              Restore
+            </button>
+          </div>
+        );
+      })()}
+
       {/* Main table: pending + late checks */}
-      {mainRows.length > 0 && (
+      {stubsLoaded && mainRows.length > 0 && (
         <div className="card" data-tour-id="tour-pending-section" style={{ padding: 0, overflow: 'visible', marginBottom: 12 }}>
           <div style={{ overflowX: 'auto' }}>
             {renderTable(mainRows, 0)}
@@ -4106,18 +4507,36 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
       )}
 
       {/* Empty state */}
-      {mainRows.length === 0 && printedRows.length === 0 && (
+      {stubsLoaded && !stubsError && mainRows.length === 0 && printedRows.length === 0 && (
         <div className="card">
           <div className="empty-state" style={{ padding: '32px 20px' }}>
-            <div className="empty-state-icon">📋</div>
-            <h3>No payroll history</h3>
-            <p>Set up this pay group with a first period end date to get started.</p>
+            {employees.length === 0 ? (
+              <>
+                <div className="empty-state-icon">👤</div>
+                <h3>Add employees first</h3>
+                <p>Payroll needs at least one employee. Add your team on the Employees tab.</p>
+                {onGoToEmployees && <button className="btn btn-primary" onClick={onGoToEmployees}>Go to Employees</button>}
+              </>
+            ) : activeGroups.length === 0 ? (
+              <>
+                <div className="empty-state-icon">📋</div>
+                <h3>Create a pay group</h3>
+                <p>Pay groups set the pay schedule. Create one from an employee&apos;s profile (Pay Group field).</p>
+                {onGoToEmployees && <button className="btn btn-primary" onClick={onGoToEmployees}>Go to Employees</button>}
+              </>
+            ) : (
+              <>
+                <div className="empty-state-icon">📋</div>
+                <h3>No payroll history</h3>
+                <p>Set up this pay group with a first period end date to get started.</p>
+              </>
+            )}
           </div>
         </div>
       )}
 
       {/* Collapsible: Printed & Deposited Checks */}
-      {printedRows.length > 0 && (
+      {stubsLoaded && printedRows.length > 0 && (
         <div style={{ marginTop: 8 }}>
           <button
             data-tour-id="tour-printed-toggle"
@@ -4145,7 +4564,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
 
       {/* Rate change confirmation */}
       {rateUpdatePrompt && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}>
+        <ModalOverlay onClose={() => setRateUpdatePrompt(null)}>
           <div className="card" style={{ width: 380, padding: 28, borderRadius: 12, textAlign: 'center' }}>
             <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>Rate Changed to ${(rateUpdatePrompt.newRate || 0).toFixed(2)}/hr</div>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 24, lineHeight: 1.5 }}>
@@ -4171,13 +4590,13 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
               </button>
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       )}
 
       {/* Employee status dropdown — fixed so it's never clipped by overflow:hidden */}
       {empStatusDrop && (
         <div onClick={e => e.stopPropagation()}
-          style={{ position: 'fixed', top: empStatusDrop.top, right: empStatusDrop.right, zIndex: 9999, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 20px rgba(0,0,0,0.15)', minWidth: 230, padding: '4px 0' }}>
+          style={{ position: 'fixed', top: empStatusDrop.top, bottom: empStatusDrop.bottom, right: empStatusDrop.right, zIndex: 9999, background: '#fff', border: '1px solid var(--border)', borderRadius: 8, boxShadow: '0 4px 20px rgba(0,0,0,0.15)', minWidth: 230, padding: '4px 0' }}>
           {[
             { value: 'draft',                  label: 'Upcoming / Due Soon / Late', badge: 'upcoming'              },
             { value: 'printed',                label: 'Printed',                    badge: 'printed'               },
@@ -4188,7 +4607,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
             // A pending row has no check yet — choosing a status RUNS payroll first. Say so.
             const isPendingRun = !empStatusDrop.stub && value !== 'draft';
             return (
-              <button key={value} disabled={empStatusBusy} onClick={() => handleEmpStatusChange(empStatusDrop, value)}
+              <button key={value} disabled={!!empStatusBusy} onClick={() => handleEmpStatusChange(empStatusDrop, value)}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '8px 14px', background: isCur ? 'var(--accent-light)' : 'none', border: 'none', cursor: empStatusBusy ? 'wait' : 'pointer', textAlign: 'left', opacity: empStatusBusy ? 0.6 : 1 }}>
                 <StatusBadge status={badge} />
                 <span style={{ fontSize: 12, fontWeight: isCur ? 700 : 400 }}>{isPendingRun ? `Run payroll & mark ${label}` : label}</span>
@@ -4202,7 +4621,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
       {drawerEmpId && (
         <EmployeeDrawer clientId={clientId} empId={drawerEmpId}
           onClose={() => { setDrawerEmpId(null); setCsRefetch(t => t + 1); }}
-          onSaved={() => { setDrawerEmpId(null); setCsRefetch(t => t + 1); onRefresh?.(); }} />
+          onSaved={() => { setDrawerEmpId(null); setCsRefetch(t => t + 1); onRefresh?.(); }}
+          onDeleted={() => { setDrawerEmpId(null); setCsRefetch(t => t + 1); onRefresh?.(); }} />
       )}
 
       {/* Pay Group Editor */}
@@ -4242,21 +4662,27 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
 
       {/* Print Checks Modal */}
       {printModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.55)' }}
-          onClick={e => { if (e.target === e.currentTarget) setPrintModal(null); }}>
+        <ModalOverlay onClose={() => { if (printModalBusy) return; setPrintModal(null); setPrintModalErr(''); }}>
           <div className="card" style={{ width: 420, maxWidth: '92vw', padding: 28, textAlign: 'center' }}>
             <div style={{ fontSize: 36, marginBottom: 10 }}>✅</div>
             <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 6 }}>Payroll Complete!</div>
             <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 22 }}>
               {printModal.ids.length} check{printModal.ids.length !== 1 ? 's' : ''} processed and marked as printed.
             </div>
+            {printModalErr && (
+              <div style={{ fontSize: 12, color: '#dc2626', fontWeight: 600, marginBottom: 12 }}>⚠ {printModalErr}</div>
+            )}
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
-                <button className="btn btn-primary" style={{ borderRadius: '6px 0 0 6px', borderRight: 'none' }} onClick={async () => {
-                  try { await api.printSelectedChecks(clientId, printModal.ids, localStorage.getItem('checkDesign') || 'classic'); } catch (e) { alert(e.message); }
-                  setPrintModal(null);
+                <button className="btn btn-primary" disabled={!!printModalBusy} style={{ borderRadius: '6px 0 0 6px', borderRight: 'none' }} onClick={async () => {
+                  setPrintModalBusy('paycheck'); setPrintModalErr('');
+                  try {
+                    await api.printSelectedChecks(clientId, printModal.ids, localStorage.getItem('checkDesign') || 'classic');
+                    setPrintModal(null);
+                  } catch (e) { setPrintModalErr(e.message || 'Download failed — try again.'); }
+                  finally { setPrintModalBusy(null); }
                 }}>
-                  ↓ Download Paycheck
+                  {printModalBusy === 'paycheck' ? 'Preparing PDF…' : '↓ Download Paycheck'}
                 </button>
                 <select
                   defaultValue={localStorage.getItem('checkDesign') || 'classic'}
@@ -4267,16 +4693,20 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                   <option value="top">Top Check</option>
                 </select>
               </div>
-              <button className="btn btn-secondary" onClick={async () => {
-                try { await api.printSelectedPaystubs(clientId, printModal.ids); } catch (e) { alert(e.message); }
-                setPrintModal(null);
+              <button className="btn btn-secondary" disabled={!!printModalBusy} onClick={async () => {
+                setPrintModalBusy('paystub'); setPrintModalErr('');
+                try {
+                  await api.printSelectedPaystubs(clientId, printModal.ids);
+                  setPrintModal(null);
+                } catch (e) { setPrintModalErr(e.message || 'Download failed — try again.'); }
+                finally { setPrintModalBusy(null); }
               }}>
-                ↓ Download Paystub
+                {printModalBusy === 'paystub' ? 'Preparing PDF…' : '↓ Download Paystub'}
               </button>
-              <button className="btn btn-ghost" onClick={() => setPrintModal(null)}>Not Now</button>
+              <button className="btn btn-ghost" onClick={() => { setPrintModal(null); setPrintModalErr(''); }}>Not Now</button>
             </div>
           </div>
-        </div>
+        </ModalOverlay>
       )}
 
       {showPaycheckImport && (
@@ -4285,15 +4715,14 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
 
       {/* Ungrouped Payroll Modal */}
       {ungroupedModal && (
-        <div style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.55)' }}
-          onClick={e => { if (e.target === e.currentTarget) { setUngroupedModal(false); setUgPreview(null); setUgOtherOpen(false); } }}>
+        <ModalOverlay onClose={() => { setUngroupedModal(false); setUgPreview(null); setUgOtherOpen(false); }}>
 
           {/* ── Step 1: Form ── */}
           {!ugPreview && (
             <div className="card" style={{ width: 480, maxWidth: '95vw', padding: 24 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
                 <div style={{ fontWeight: 700, fontSize: 15 }}>Ungrouped Check</div>
-                <button onClick={() => { setUngroupedModal(false); setUgOtherOpen(false); }} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+                <button className="drawer-close" aria-label="Close" onClick={() => { setUngroupedModal(false); setUgOtherOpen(false); }}>×</button>
               </div>
               {ugErr && <div className="alert alert-error" style={{ marginBottom: 10, fontSize: 12 }}>{ugErr}</div>}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -4424,8 +4853,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                       <div style={{ fontWeight: 800, fontSize: 20 }}>{emp.firstName} {emp.lastName}</div>
                       <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>{isSalary ? 'Salary' : 'Hourly'} · Ungrouped Check · Preview</div>
                     </div>
-                    <button onClick={() => { setUngroupedModal(false); setUgPreview(null); setUgOtherOpen(false); }}
-                      style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+                    <button className="drawer-close" aria-label="Close" onClick={() => { setUngroupedModal(false); setUgPreview(null); setUgOtherOpen(false); }}>×</button>
                   </div>
                   <div style={{ display: 'flex', marginTop: 14, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
                     {[['Period Start', ugForm.start], ['Period End', ugForm.end], ['Pay Date', ugForm.payDate]].map(([label, val], i, arr) => (
@@ -4524,7 +4952,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
               </div>
             );
           })()}
-        </div>
+        </ModalOverlay>
       )}
     </div>
   );
@@ -4577,6 +5005,7 @@ function LiabilityCheckEditor({ stub, clientId, client, onUpdated, onClose }) {
   }
 
   async function handleSave() {
+    if (form.payPeriodStart && form.payPeriodEnd && form.payPeriodEnd < form.payPeriodStart) return;
     setSaving(true); setErr('');
     try {
       await api.updatePaystub(stub.id, {
@@ -4639,6 +5068,11 @@ function LiabilityCheckEditor({ stub, clientId, client, onUpdated, onClose }) {
               )}
             </div>
           </div>
+          {periodDateWarning(form.payPeriodStart, form.payPeriodEnd, form.settlementDate) && (
+            <div style={{ color: 'var(--error)', fontSize: 11, fontWeight: 600, marginTop: -6, marginBottom: 12 }}>
+              {periodDateWarning(form.payPeriodStart, form.payPeriodEnd, form.settlementDate)}
+            </div>
+          )}
           {taxes && (
             <div style={{ background: '#fff', borderRadius: 8, padding: '10px 12px', border: '1px solid var(--border)', marginBottom: 12, display: 'flex', gap: 24, flexWrap: 'wrap', fontSize: 12 }}>
               {[['FIT', taxes.fitWithholding],['SS', taxes.employeeSS],['Medicare', taxes.employeeMedicare],['State Tax', taxes.stateIncomeTax || 0],['FUTA', taxes.futaTax || 0],['SUI', taxes.sutaTax || 0],['941 Total', taxes.totalDeposit],['Net Pay', taxes.netPay]].map(([l, v]) => (
@@ -4647,7 +5081,7 @@ function LiabilityCheckEditor({ stub, clientId, client, onUpdated, onClose }) {
             </div>
           )}
           <div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>{saving ? <span className="spinner" /> : 'Save Changes'}</button>
+            <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving || !!(form.payPeriodStart && form.payPeriodEnd && form.payPeriodEnd < form.payPeriodStart)}>{saving ? <span className="spinner" /> : 'Save Changes'}</button>
             <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
           </div>
         </>
@@ -4824,8 +5258,7 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
   const dateColor = liabStatus === 'late' ? '#dc2626' : liabStatus === 'due-soon' ? '#d97706' : 'var(--text-secondary)';
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}
-      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+    <ModalOverlay onClose={onClose}>
       <div className="card" style={{ width: 700, maxWidth: '96vw', maxHeight: '92vh', overflowY: 'auto', padding: 0, borderRadius: 12 }}>
 
         {/* ── Header ── */}
@@ -4840,7 +5273,7 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
                 {stub.check_number && <span style={{ ...MONO, fontSize: 13, color: 'var(--accent)', fontWeight: 700 }}>Check #{stub.check_number}</span>}
               </div>
             </div>
-            <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1, padding: '0 4px' }}>×</button>
+            <button className="drawer-close" aria-label="Close" onClick={onClose}>×</button>
           </div>
 
           {/* Pay period strip */}
@@ -4992,7 +5425,7 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
           ))}
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 
@@ -5003,6 +5436,7 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
   const [csWithholdings, setCsWithholdings] = useState([]); // child support rows joined w/ paycheck
   const [csBusyKey, setCsBusyKey]   = useState(null);       // vendor|payDate while paying/printing
   const [loading,  setLoading]      = useState(true);
+  const [loadError, setLoadError]   = useState(null);
   const [submitting, setSubmitting] = useState(null);
   const [result,   setResult]       = useState(null);
   const [periodModal, setPeriodModal] = useState(null); // { period, taxType } | null
@@ -5013,7 +5447,14 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
   const [sched940, setSched940State] = useState(() => localStorage.getItem(`sched940_${clientId}`) || 'quarterly');
   const [schedSUI, setSchedSUIState] = useState(() => localStorage.getItem(`schedSUI_${clientId}`) || 'quarterly');
   useEffect(() => { if (client?.depositSchedule) setSched941State(client.depositSchedule); }, [client?.depositSchedule]);
-  const setSched941 = v => { setSched941State(v); api.updateClient(clientId, { depositSchedule: v }).catch(() => {}); };
+  const setSched941 = v => {
+    const prev = sched941;
+    setSched941State(v);
+    api.updateClient(clientId, { depositSchedule: v }).catch(() => {
+      setSched941State(prev);
+      alert('Couldn’t save the deposit schedule — try again.');
+    });
+  };
   const setSched940 = v => { setSched940State(v); localStorage.setItem(`sched940_${clientId}`, v); };
   const setSchedSUI = v => { setSchedSUIState(v); localStorage.setItem(`schedSUI_${clientId}`, v); };
   const [activeJobId,      setActiveJobId]      = useState(null);
@@ -5035,11 +5476,18 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
   const UNPAID_SUI = (s) => (s.status_sui || 'pending') === 'pending' || s.status_sui === 'processing' || s.status_sui === 'failed';
 
   async function reload({ keepSelections = false, skipJobRestore = false } = {}) {
-    const [stubs, crds, csw] = await Promise.all([
-      api.getPaystubs(clientId),
-      api.getPaystubCredits(clientId),
-      api.getChildSupportWithholdings(clientId).catch(() => []),
-    ]);
+    let stubs, crds, csw;
+    try {
+      [stubs, crds, csw] = await Promise.all([
+        api.getPaystubs(clientId),
+        api.getPaystubCredits(clientId),
+        api.getChildSupportWithholdings(clientId).catch(() => []),
+      ]);
+    } catch (e) {
+      setLoadError(e.message || 'Load failed');
+      return;
+    }
+    setLoadError(null);
     setPaystubs(stubs); setCredits(crds); setCsWithholdings(csw);
     if (!skipJobRestore) {
       const processingStub = stubs.find(s =>
@@ -5209,6 +5657,7 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
 
   // Clear polling on unmount
   useEffect(() => () => clearInterval(pollRef.current), []);
+  useEffect(() => () => clearInterval(twcPollRef.current), []);
 
   async function handleSubmitPeriod(period, taxType) {
     if (taxType === 'sui') {
@@ -5277,6 +5726,11 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
     // sections: array of { title, taxType, periods, credit }
     const hasAny = sections.some(sec => sec.periods.length > 0);
     if (!hasAny) return null;
+
+    const csPendingTotal = r2(csPendingGroups.reduce((s, g) => s + g.total, 0));
+    // Clamp each section at 0 — a credit larger than what's owed never produces a
+    // negative payment (the pay dialogs cap applied credit the same way).
+    const grandTotal = r2(sections.reduce((s, sec) => sec.periods.length === 0 ? s : s + Math.max(0, sec.periods.reduce((a, p) => a + p.total, 0) + sec.credit), 0) + csPendingTotal);
 
     const TH = {
       padding: '8px 14px',
@@ -5409,6 +5863,18 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
                 </React.Fragment>
               );
             })}
+
+            {/* Total due row */}
+            <tr style={{ background: '#fff', borderTop: '2px solid #9faab6' }}>
+              <td colSpan={4} style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 700, fontSize: 13, color: '#374151' }}>Total due</td>
+              <td style={{ padding: '12px 14px', textAlign: 'right' }}>
+                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 15, color: '#111' }}>{fmt(grandTotal)}</div>
+                {csPendingTotal > 0 && (
+                  <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2, whiteSpace: 'nowrap' }}>incl. child support: {fmt(csPendingTotal)}</div>
+                )}
+              </td>
+              <td />
+            </tr>
           </tbody>
         </table>
       </div>
@@ -5426,12 +5892,14 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
 
     async function toggleAllStatus(newDbStatus) {
       setStatusBusy(true);
-      try {
-        await Promise.all(period.stubs.map(s => api.updatePaystubStatus(s.id, newDbStatus, taxType)));
-        onClose();
-        await reload();
-      } catch (e) { alert(e.message); }
-      finally { setStatusBusy(false); }
+      const results = await Promise.allSettled(period.stubs.map(s => api.updatePaystubStatus(s.id, newDbStatus, taxType)));
+      setStatusBusy(false);
+      const failed = results.filter(r => r.status === 'rejected');
+      if (failed.length) {
+        alert(`${results.length - failed.length} of ${results.length} checks updated. ${failed.length} failed: ${failed[0].reason?.message || 'unknown error'}\nThe list reflects what actually saved.`);
+      }
+      onClose();
+      await reload();
     }
 
     return (
@@ -5621,23 +6089,37 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
       {result && !activeJobId && jobStatus !== 'completed' && jobStatus !== 'failed' && (
         <div className={`alert ${result.error ? 'alert-error' : 'alert-success'}`} style={{ marginBottom: 16 }}>
           <span>{result.error ? '⚠' : '✓'}</span>
-          <span>{result.error ? result.error : `Submitted ${result.submitted} paystub${result.submitted !== 1 ? 's' : ''} — ${fmt(result.totalDeposit)}${result.confirmation ? ` · Conf: ${result.confirmation}` : ''}`}</span>
+          <span>{result.error ? result.error : `Payment submitted — ${fmt(result.totalDeposit)} covering ${result.submitted} check${result.submitted !== 1 ? 's' : ''}${result.confirmation ? ` · Conf: ${result.confirmation}` : ''}`}</span>
           <button onClick={() => setResult(null)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}>×</button>
         </div>
       )}
 
+      {loadError && (
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="empty-state" style={{ padding: '32px 20px' }}>
+            <div className="empty-state-icon">⚠</div>
+            <h3>Couldn&rsquo;t load liabilities</h3>
+            <p>Check your connection, then try again.</p>
+            <button className="btn btn-primary btn-sm" style={{ marginTop: 8 }}
+              onClick={() => { setLoading(true); reload().finally(() => setLoading(false)); }}>
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Pending liabilities — single unified card */}
-      <LiabilitySection
+      {!loadError && <LiabilitySection
         sections={[
           { title: 'Federal 941',        taxType: '941', periods: periods941, credit: credit941 },
           { title: 'Federal 940 (FUTA)', taxType: '940', periods: periods940, credit: credit940 },
           { title: 'State SUI',          taxType: 'sui', periods: periodsSUI,  credit: 0 },
         ]}
         togglePeriodStatus={togglePeriodStatus}
-      />
+      />}
 
       {/* Child support — vendor remittance checks, due 7 days after each pay date */}
-      {csPendingGroups.length > 0 && (
+      {!loadError && csPendingGroups.length > 0 && (
         <div className="table-scroll" style={{ background: '#fff', border: '1.5px solid #9faab6', borderRadius: 4, marginBottom: 16 }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
             <thead>
@@ -5702,7 +6184,7 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
         </div>
       )}
 
-      {periods941.length === 0 && periods940.length === 0 && periodsSUI.length === 0 && csPendingGroups.length === 0 && (
+      {!loadError && periods941.length === 0 && periods940.length === 0 && periodsSUI.length === 0 && csPendingGroups.length === 0 && (
         <div className="card">
           <div className="empty-state" style={{ padding: '32px 20px' }}>
             <div className="empty-state-icon">✓</div>
@@ -5917,18 +6399,23 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
             } catch (e) { alert(e.message); }
           }}
           onClose={() => {
+            // While a payment is live (processing / awaiting CAPTCHA) the modal is the
+            // only progress view and the Pay TWC button is disabled — don't let a stray
+            // Escape or backdrop click dismiss it.
+            if (twcPayJob && twcPayJob.status !== 'completed' && twcPayJob.status !== 'failed' && !twcPayJob.bridgeOffline) return;
             setTwcPayModal(null);
             // Clear finished jobs so the next open shows a fresh form, not a stale result.
             setTwcPayJob(prev => prev && (prev.status === 'completed' || prev.status === 'failed') ? null : prev);
           }}
           onReset={() => setTwcPayJob(null)}
+          onCancelled={() => setTwcPayJob(prev => prev ? { ...prev, status: 'failed', error: 'Cancelled by user' } : prev)}
         />
       )}
     </div>
   );
 }
 
-function TwcPaymentModal({ client, defaultAmount, defaultDate, twcPayJob, onSubmit, onClose, onReset }) {
+function TwcPaymentModal({ client, defaultAmount, defaultDate, twcPayJob, onSubmit, onClose, onReset, onCancelled }) {
   const [amount, setAmount]           = useState(defaultAmount ? defaultAmount.toFixed(2) : '');
   const [paymentDate, setPaymentDate] = useState(defaultDate || '');
   const [submitting, setSubmitting]   = useState(false);
@@ -5946,8 +6433,8 @@ function TwcPaymentModal({ client, defaultAmount, defaultDate, twcPayJob, onSubm
   }
 
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-      <div style={{ background: 'var(--bg-card)', borderRadius: 12, padding: 28, width: '100%', maxWidth: 480, boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+    <ModalOverlay onClose={onClose}>
+      <div style={{ background: 'var(--bg-card)', borderRadius: 12, padding: 28, width: 480, maxWidth: '94vw', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
           <div>
             <h3 style={{ margin: 0, fontSize: 18 }}>Pay TWC SUI Online</h3>
@@ -5955,7 +6442,7 @@ function TwcPaymentModal({ client, defaultAmount, defaultDate, twcPayJob, onSubm
               ACH debit via TWC Unemployment Tax Services
             </p>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+          <button className="drawer-close" aria-label="Close" onClick={onClose}>×</button>
         </div>
 
         {/* Account info */}
@@ -5980,7 +6467,7 @@ function TwcPaymentModal({ client, defaultAmount, defaultDate, twcPayJob, onSubm
               <div style={{ color: '#dc2626', fontWeight: 600 }}>Failed: {twcPayJob.error || 'Unknown error'}</div>
             )}
             {twcPayJob.status === 'needs_captcha' && (
-              <div style={{ color: '#92400e', fontWeight: 600 }}>Waiting for CAPTCHA — solve it in the browser window on Computer 2, then click Logon.</div>
+              <div style={{ color: '#92400e', fontWeight: 600 }}>Waiting for CAPTCHA — solve it in the browser window on the payment computer, then click Logon.</div>
             )}
             {twcPayJob.status === 'queued' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#0369a1' }}>
@@ -5991,21 +6478,21 @@ function TwcPaymentModal({ client, defaultAmount, defaultDate, twcPayJob, onSubm
             {twcPayJob.status === 'processing' && !twcPayJob.confirmationNumber && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, color: '#0369a1' }}>
                 <span className="spinner spinner-dark" style={{ width: 14, height: 14, flexShrink: 0 }} />
-                <span style={{ flex: 1 }}>Browser automation in progress on Computer 2…</span>
+                <span style={{ flex: 1 }}>Browser automation in progress on the payment computer…</span>
                 <button
                   style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '3px 9px', fontSize: 12, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
                   onClick={async () => {
-                    if (!window.confirm('Kill the running payment automation? The browser on Computer 2 will close.')) return;
+                    if (!window.confirm('Cancel this TWC payment? If it already reached the state site it may still go through — check TWC before retrying.')) return;
                     try { await api.killTwcBridgeJob(); } catch (_) {}
-                    setTwcPayJob(prev => ({ ...prev, status: 'failed', error: 'Killed by user' }));
+                    onCancelled();
                   }}>
-                  Kill
+                  Cancel Payment
                 </button>
               </div>
             )}
             {twcPayJob.bridgeOffline && (
               <div style={{ color: '#92400e' }}>
-                <strong>TWC Bridge offline.</strong> Start bridge.js on Computer 2 — the job is saved and will run when the bridge reconnects.
+                <strong>The payment computer is offline.</strong> Start it — the job is saved and will run when it reconnects.
               </div>
             )}
           </div>
@@ -6024,7 +6511,7 @@ function TwcPaymentModal({ client, defaultAmount, defaultDate, twcPayJob, onSubm
               </div>
             </div>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
-              The bank on file in TWC will be used. Computer 2 must be online with the bridge running.
+              The bank on file in TWC will be used. The payment computer must be online for the payment to run.
             </div>
           </>
         )}
@@ -6042,7 +6529,7 @@ function TwcPaymentModal({ client, defaultAmount, defaultDate, twcPayJob, onSubm
           )}
         </div>
       </div>
-    </div>
+    </ModalOverlay>
   );
 }
 
@@ -6117,6 +6604,23 @@ function FileFormsTab({ clientId }) {
   const navigate    = useNavigate();
   const currentYear = new Date().getFullYear();
   const [year, setYear] = useState(currentYear);
+  const [filings, setFilings] = useState({});
+  useEffect(() => {
+    let live = true;
+    setFilings({}); // never show the previous company's filing badges while (re)loading
+    api.getFormFilings(clientId)
+      .then(rows => { if (live && Array.isArray(rows)) setFilings(Object.fromEntries(rows.map(r => [r.formKey, r.status]))); })
+      .catch(() => {});
+    return () => { live = false; };
+  }, [clientId, year]);
+  const setFiling = (formKey, status, quiet = false) => {
+    const prev = filings[formKey];
+    setFilings(f => { const next = { ...f }; if (status) next[formKey] = status; else delete next[formKey]; return next; });
+    api.setFormFiling(clientId, formKey, status).catch(e => {
+      setFilings(f => { const next = { ...f }; if (prev) next[formKey] = prev; else delete next[formKey]; return next; });
+      if (!quiet) window.alert(`Couldn’t update the filing status: ${e.message || 'try again.'}`);
+    });
+  };
   const qDue = { 1: 'Apr 30', 2: 'Jul 31', 3: 'Oct 31', 4: 'Jan 31' };
   const statusCls = { Past: 'badge-neutral', Due: 'badge-warning', Upcoming: 'badge-neutral' };
   // Status comes from the actual filing window, not the calendar quarter: a form is
@@ -6142,10 +6646,29 @@ function FileFormsTab({ clientId }) {
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
         <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Tax Year</span>
         <select className="form-select" value={year} onChange={e => setYear(parseInt(e.target.value))} style={{ width: 120 }}>{[currentYear - 1, currentYear, currentYear + 1].map(y => <option key={y} value={y}>{y}</option>)}</select>
-        <button className="btn btn-secondary btn-sm" onClick={() => navigate('/reports?tab=preparer')}>Preparer Info</button>
+        <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/reports?clientId=${clientId}&tab=preparer`)}>Preparer Info</button>
       </div>
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        {forms.map(f => <div key={f.id} className="form-file-row"><div style={{ flex: 1 }}><div style={{ fontWeight: 600, fontSize: 13 }}>{f.name}</div><div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{f.desc}</div></div><span className={`badge ${statusCls[f.status]}`}>{f.status}</span><div style={{ fontSize: 12, color: 'var(--text-muted)', flexShrink: 0 }}>Due {f.due}</div><button className="btn btn-secondary btn-sm" onClick={f.action}>Generate / View</button></div>)}
+        {forms.map(f => {
+          const filing = filings[f.id];
+          return (
+            <div key={f.id} className="form-file-row">
+              <div style={{ flex: 1 }}><div style={{ fontWeight: 600, fontSize: 13 }}>{f.name}</div><div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{f.desc}</div></div>
+              {filing === 'filed'
+                ? <span className="badge badge-success">Filed ✓</span>
+                : f.status === 'Past'
+                  ? <span className="badge badge-error">Past — not filed</span>
+                  : filing === 'generated'
+                    ? <span className="badge badge-neutral">Generated</span>
+                    : <span className={`badge ${statusCls[f.status]}`}>{f.status}</span>}
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', flexShrink: 0 }}>Due {f.due}</div>
+              <button type="button" onClick={() => setFiling(f.id, filing === 'filed' ? null : 'filed')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--accent)', fontWeight: 600, padding: 0, flexShrink: 0 }}>
+                {filing === 'filed' ? 'Mark not filed' : 'Mark filed'}
+              </button>
+              <button className="btn btn-secondary btn-sm" onClick={() => { if (!filing) setFiling(f.id, 'generated', true); f.action(); }}>Generate / View</button>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -6153,15 +6676,22 @@ function FileFormsTab({ clientId }) {
 
 
 // ── Payroll Tab ───────────────────────────────────────────────────────────────
-function PayrollTab({ clientId, client, employees, onRefresh, refreshEmployees, refreshTick = 0 }) {
-  const [searchParams] = useSearchParams();
+function PayrollTab({ clientId, client, employees, onRefresh, refreshEmployees, refreshTick = 0, onGoToEmployees }) {
+  const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useAuth();
   // Deep link wins, then the sub-tab the user last had open for this company —
   // refreshes and workspace-tab switches must come back to the same screen.
-  const [sub, setSub] = useState(() =>
-    searchParams.get('tab') === 'liabilities' ? 'liabilities'
-    : (sessionStorage.getItem(`paySub_${clientId}`) || 'pay'));
+  const [sub, setSub] = useState(() => {
+    const t = searchParams.get('tab');
+    if (t === 'pay' || t === 'liabilities' || (t === 'forms' && user?.role !== 'client')) return t;
+    return sessionStorage.getItem(`paySub_${clientId}`) || 'pay';
+  });
   useEffect(() => { sessionStorage.setItem(`paySub_${clientId}`, sub); }, [sub, clientId]);
+  // While Payroll is active this component owns ?tab= so sub-tabs deep-link.
+  useEffect(() => {
+    setSearchParams(prev => { prev.set('tab', sub); return prev; }, { replace: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sub]);
   // File Forms navigates to admin-only report pages — a dead end for business-owner
   // (client-ROLE) logins, so don't offer it to them. Gate on role, not the /company
   // route: accountants can open /company/:id too and must keep File Forms.
@@ -6171,7 +6701,7 @@ function PayrollTab({ clientId, client, employees, onRefresh, refreshEmployees, 
       <div className="pay-subtabs" role="tablist" aria-label="Payroll sections">
         {subTabs.map(([k, label]) => <button key={k} role="tab" aria-selected={sub === k} data-tour-id={k === 'liabilities' ? 'tour-liabilities-tab' : undefined} className={`pay-subtab${sub === k ? ' active' : ''}`} onClick={() => setSub(k)}>{label}</button>)}
       </div>
-      {sub === 'pay'         && <PayEmployeesTab clientId={clientId} client={client} employees={employees} onRefresh={onRefresh} refreshEmployees={refreshEmployees} refreshTick={refreshTick} />}
+      {sub === 'pay'         && <PayEmployeesTab clientId={clientId} client={client} employees={employees} onRefresh={onRefresh} refreshEmployees={refreshEmployees} refreshTick={refreshTick} onGoToEmployees={onGoToEmployees} />}
       {sub === 'liabilities' && <PayLiabilitiesTab clientId={clientId} client={client} refreshTick={refreshTick} />}
       {sub === 'forms'       && <FileFormsTab clientId={clientId} />}
     </div>
@@ -6399,6 +6929,7 @@ function UsersPanel() {
 export default function CompanyWorkspace({ clientMode = false }) {
   const { user, logout } = useAuth();
   const { id: paramId } = useParams(), location = useLocation(), navigate = useNavigate();
+  const [, setSearchParams] = useSearchParams();
   // In clientMode, use the param id (which equals user.clientId via routing)
   const id = paramId || (clientMode ? String(user?.clientId) : null);
 
@@ -6416,16 +6947,18 @@ export default function CompanyWorkspace({ clientMode = false }) {
     let t = new URLSearchParams(window.location.search).get('tab');
     if (t === 'liabilities' || t === 'pay' || t === 'forms') t = 'payroll'; // sub-tab deep links live under Payroll
     if (t && KNOWN.includes(t)) return t;
-    const fallback = location.state?.tab || sessionStorage.getItem(WS_TAB_KEY) || 'employees';
+    const fallback = location.state?.tab || sessionStorage.getItem(`${WS_TAB_KEY}_${id}`) || 'employees';
     return KNOWN.includes(fallback) ? fallback : 'employees';
   });
 
   useEffect(() => {
-    sessionStorage.setItem(WS_TAB_KEY, activeTab);
-    // Keep the URL in sync (replace, not push — tab flips shouldn't spam history)
-    const url = new URL(window.location.href);
-    url.searchParams.set('tab', activeTab);
-    window.history.replaceState({}, '', url);
+    sessionStorage.setItem(`${WS_TAB_KEY}_${id}`, activeTab);
+    // Keep the URL in sync (replace, not push — tab flips shouldn't spam history).
+    // While Payroll is active its sub-tabs own ?tab= ('pay' | 'liabilities' |
+    // 'forms') — PayrollTab writes it, so don't clobber it with 'payroll'.
+    if (activeTab === 'payroll') return;
+    setSearchParams(prev => { prev.set('tab', activeTab); return prev; }, { replace: true });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
   useEffect(() => { if (id) loadAll(); }, [id]);
 
@@ -6563,7 +7096,7 @@ export default function CompanyWorkspace({ clientMode = false }) {
       <div className="workspace-body">
         {activeTab === 'employees' && <EmployeesTab clientId={id} employees={employees} onRefresh={handleRefresh} clientMode={clientMode} />}
         {activeTab === 'company'   && <CompanyTab client={client} onSaved={loadAll} />}
-        {activeTab === 'payroll'   && <PayrollTab clientId={id} client={client} employees={employees} onRefresh={handleRefresh} refreshEmployees={loadAll} refreshTick={refreshTick} />}
+        {activeTab === 'payroll'   && <PayrollTab clientId={id} client={client} employees={employees} onRefresh={handleRefresh} refreshEmployees={loadAll} refreshTick={refreshTick} onGoToEmployees={() => setActiveTab('employees')} />}
         {activeTab === 'accountants' && <AccountantsPanel clientId={id} />}
         {activeTab === 'users'     && user?.username === 'admin' && <UsersPanel />}
       </div>

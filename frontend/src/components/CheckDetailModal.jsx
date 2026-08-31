@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import api from '../api/client';
+import { deleteCheckConfirm } from '../utils/checkConfirm';
 
 const MONO = { fontFamily: 'JetBrains Mono, monospace' };
 function r2(n) { return Math.round((n || 0) * 100) / 100; }
-function fmt(n) { return `$${Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
+function fmt(n) { const v = Number(n || 0); return `${v < 0 ? '-' : ''}$${Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`; }
 function fmtDate(d) { if (!d) return '—'; return new Date(d + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); }
 
 const STATUS_COLORS = {
@@ -29,7 +30,7 @@ const TR = ({ label, amount, ytdAmount, color, bold, borderTop, negative, editVa
   const display = negative ? (amount > 0 ? -amount : amount) : amount;
   return (
     <tr style={{ borderTop: borderTop ? '2px solid var(--border)' : undefined }}>
-      <td style={{ padding: '5px 0', fontSize: 13, color: bold ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: bold ? 700 : 400, whiteSpace: 'nowrap' }}>{label}</td>
+      <td style={{ padding: '5px 0', fontSize: 13, color: bold ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: bold ? 700 : 400 }}>{label}</td>
       <td style={{ padding: '3px 0 3px 12px', textAlign: 'right', ...MONO, fontSize: 13, fontWeight: bold ? 700 : 500, color: color || (negative && amount > 0 ? '#dc2626' : 'inherit') }}>
         {onEditChange
           ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end' }}>
@@ -358,7 +359,7 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
         </div>
 
         {/* Two-column body */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
           {/* Left — Employee Summary */}
           <div style={{ padding: '18px 20px 16px 24px', borderRight: '1px solid var(--border)' }}>
             <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Employee Summary</div>
@@ -438,7 +439,7 @@ export default function CheckDetailModal({ stub, clientId, onClose, onSaved }) {
           <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: 12 }}>Close</button>
           {clientId && !isVoided && !stub._isPending && (
             <button className="btn btn-ghost" style={{ fontSize: 12, color: '#dc2626' }} onClick={async () => {
-              if (!window.confirm('Delete this check? This cannot be undone.')) return;
+              if (!window.confirm(deleteCheckConfirm({ name: stub.employee_name, amount: fmt(stub.net_pay || 0), checkNumber: stub.check_number }))) return;
               try { await api.deletePaystub(stub.id); onSaved && onSaved(); onClose(); } catch (e) { alert(e.message); }
             }}>Delete</button>
           )}
