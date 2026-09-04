@@ -1781,7 +1781,7 @@ export default function Dashboard() {
         /* ── List view ── */
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
             {/* Header row */}
-            <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr 160px 130px 70px 100px 36px', alignItems: 'center', padding: '9px 16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)', gap: 8 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '40px 1fr 160px 130px 70px 200px 36px', alignItems: 'center', padding: '9px 16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)', gap: 8 }}>
               <div>
                 <input type="checkbox" checked={allSelected}
                   onChange={toggleSelectAllVisible}
@@ -1816,7 +1816,7 @@ export default function Dashboard() {
                 <div key={client.id}
                   role="button" tabIndex={0}
                   aria-label={`Open ${client.businessName}`}
-                  style={{ display: 'grid', gridTemplateColumns: '40px 1fr 160px 130px 70px 100px 36px', alignItems: 'center', padding: '10px 16px', gap: 8,
+                  style={{ display: 'grid', gridTemplateColumns: '40px 1fr 160px 130px 70px 200px 36px', alignItems: 'center', padding: '10px 16px', gap: 8,
                     background: isSel ? 'var(--accent-light)' : i % 2 === 0 ? '#fff' : '#f8fafc',
                     borderBottom: '1px solid var(--border)', cursor: 'pointer', transition: 'background 0.1s' }}
                   onClick={() => navigate(`/clients/${client.id}`)}
