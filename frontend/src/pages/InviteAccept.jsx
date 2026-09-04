@@ -13,10 +13,10 @@ const CARD_STYLE = { maxWidth: 440, width: '100%', padding: '32px 36px' };
 function Brand() {
   return (
     <div style={{ textAlign: 'center', marginBottom: 24 }}>
-      <div style={{ fontSize: 20, fontWeight: 800, letterSpacing: '-0.5px', color: 'var(--text-primary)' }}>
+      <div style={{ fontSize: '1.3333rem', fontWeight: 800, letterSpacing: '-0.5px', color: 'var(--text-primary)' }}>
         Payroll<span style={{ color: 'var(--accent)' }}>Tax</span> Pro
       </div>
-      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+      <div style={{ fontSize: '0.7333rem', color: 'var(--text-muted)', marginTop: 2, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
         Federal Payroll Tax Engine
       </div>
     </div>
@@ -69,7 +69,7 @@ export default function InviteAccept() {
     <div style={PAGE_STYLE}>
       <div style={{ textAlign: 'center' }}>
         <span className="spinner spinner-dark" style={{ width: 28, height: 28, borderWidth: 3 }} />
-        <div style={{ marginTop: 12, fontSize: 13, color: 'var(--text-secondary)' }}>Checking your invite…</div>
+        <div style={{ marginTop: 12, fontSize: '0.8667rem', color: 'var(--text-secondary)' }}>Checking your invite…</div>
       </div>
     </div>
   );
@@ -79,15 +79,15 @@ export default function InviteAccept() {
     <div style={PAGE_STYLE}>
       <div className="card" style={CARD_STYLE}>
         <Brand />
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 10px', textAlign: 'center' }}>
+        <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 10px', textAlign: 'center' }}>
           This invite link isn't valid
         </h2>
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0 0 8px', textAlign: 'center' }}>
+        <p style={{ fontSize: '0.8667rem', color: 'var(--text-secondary)', lineHeight: 1.6, margin: '0 0 8px', textAlign: 'center' }}>
           The link may have expired, already been used, or been copied incompletely.
           Ask your accountant or employer to send you a new invite, then open the newest link.
         </p>
         {loadError && (
-          <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: '0 0 20px', textAlign: 'center' }}>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', margin: '0 0 20px', textAlign: 'center' }}>
             {loadError}
           </p>
         )}
@@ -108,10 +108,10 @@ export default function InviteAccept() {
       <div className="card" style={CARD_STYLE}>
         <Brand />
         <div style={{ textAlign: 'center', marginBottom: 20 }}>
-          <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 4px' }}>
+          <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 4px' }}>
             Welcome{info.name ? `, ${info.name}` : ''}!
           </h2>
-          <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
+          <p style={{ fontSize: '0.8667rem', color: 'var(--text-secondary)', margin: 0 }}>
             {info.role === 'client'
               ? `Set up your company portal account${info.clientName ? ` for ${info.clientName}` : ''}`
               : `Set up your employee portal account${info.clientName ? ` for ${info.clientName}` : ''}`}
@@ -137,7 +137,7 @@ export default function InviteAccept() {
               required
               autoComplete="email"
             />
-            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 5 }}>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 5 }}>
               This will be your login username.
             </p>
           </div>
@@ -178,7 +178,7 @@ export default function InviteAccept() {
           </button>
         </form>
 
-        <p style={{ marginTop: 18, fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
+        <p style={{ marginTop: 18, fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center' }}>
           Already have an account?{' '}
           <a href="/login" style={{ color: 'var(--accent)', fontWeight: 600, textDecoration: 'none' }}>Sign in</a>
         </p>

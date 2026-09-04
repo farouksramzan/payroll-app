@@ -31,14 +31,14 @@ function Field({ label, hint, value, onChange, readOnly }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--border)' }}>
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>{label}</div>
-        {hint && <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{hint}</div>}
+        <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>{label}</div>
+        {hint && <div style={{ fontSize: '0.6667rem', color: 'var(--text-muted)' }}>{hint}</div>}
       </div>
       {readOnly
-        ? <div style={{ ...MONO, fontSize: 13, fontWeight: 700, color: 'var(--accent)', minWidth: 100, textAlign: 'right' }}>{fmt(parseFloat(value) || 0)}</div>
+        ? <div style={{ ...MONO, fontSize: '0.8667rem', fontWeight: 700, color: 'var(--accent)', minWidth: 100, textAlign: 'right' }}>{fmt(parseFloat(value) || 0)}</div>
         : <input type="number" min="0" step="0.01" value={value}
             onChange={e => onChange(e.target.value)}
-            style={{ ...MONO, width: 110, textAlign: 'right', fontSize: 13, fontWeight: 600, border: '1px solid var(--border)', borderRadius: 0, padding: '4px 8px', background: 'var(--bg-secondary)', outline: 'none' }}
+            style={{ ...MONO, width: 110, textAlign: 'right', fontSize: '0.8667rem', fontWeight: 600, border: '1px solid var(--border)', borderRadius: 0, padding: '4px 8px', background: 'var(--bg-secondary)', outline: 'none' }}
           />
       }
     </div>
@@ -111,8 +111,8 @@ export default function PaystubEditModal({ paystub, onClose, onSaved }) {
       <div style={{ position: 'fixed', inset: 0, zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)' }}
         onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
         <div className="card" style={{ width: 420, maxWidth: '95vw', padding: 28 }}>
-          <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>Modify Printed Check?</div>
-          <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 20 }}>
+          <div style={{ fontSize: '1.2rem', fontWeight: 800, marginBottom: 8 }}>Modify Printed Check?</div>
+          <div style={{ fontSize: '0.8667rem', color: 'var(--text-secondary)', lineHeight: 1.6, marginBottom: 20 }}>
             <strong>{paystub.employee_name}</strong> — {paystub.check_status} check
             {paystub.check_number ? ` #${paystub.check_number}` : ''}.
             <br /><br />
@@ -137,19 +137,19 @@ export default function PaystubEditModal({ paystub, onClose, onSaved }) {
         {/* Header */}
         <div style={{ padding: '18px 22px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
           <div>
-            <div style={{ fontWeight: 800, fontSize: 17 }}>{paystub.employee_name || '—'}</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, display: 'flex', gap: 8, alignItems: 'center' }}>
+            <div style={{ fontWeight: 800, fontSize: '1.1333rem' }}>{paystub.employee_name || '—'}</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 4, display: 'flex', gap: 8, alignItems: 'center' }}>
               <span style={{ textTransform: 'capitalize', fontWeight: 600, color: paystub.check_status === 'draft' ? '#2563eb' : '#16a34a' }}>{paystub.check_status}</span>
               {paystub.check_number && <span style={{ ...MONO }}>Check #{paystub.check_number}</span>}
               {paystub.pay_period_end && <span>{new Date(paystub.pay_period_end + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>}
             </div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '1.4667rem', cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
         </div>
 
         {/* Fields */}
         <div style={{ padding: '14px 22px' }}>
-          <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Gross Pay Components</div>
+          <div style={{ fontSize: '0.6667rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Gross Pay Components</div>
           <Field label="Base Pay / Compensation" value={comp}  onChange={setComp}  />
           <Field label="Reported Tips"            hint="taxable" value={tips}  onChange={setTips}  />
           <Field label="Bonus"                    hint="taxable" value={bonus} onChange={setBonus} />
@@ -158,34 +158,34 @@ export default function PaystubEditModal({ paystub, onClose, onSaved }) {
 
           {/* Gross Pay computed */}
           <div style={{ display: 'flex', alignItems: 'center', padding: '9px 0 5px', borderTop: '2px solid var(--border)', marginTop: 2 }}>
-            <div style={{ flex: 1, fontWeight: 800, fontSize: 13 }}>Gross Pay</div>
-            <div style={{ ...MONO, fontWeight: 800, fontSize: 15, color: 'var(--accent)' }}>{fmt(totalGross)}</div>
+            <div style={{ flex: 1, fontWeight: 800, fontSize: '0.8667rem' }}>Gross Pay</div>
+            <div style={{ ...MONO, fontWeight: 800, fontSize: '1rem', color: 'var(--accent)' }}>{fmt(totalGross)}</div>
           </div>
 
-          <div style={{ fontSize: 10, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '14px 0 8px' }}>Tax Withholding</div>
+          <div style={{ fontSize: '0.6667rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', margin: '14px 0 8px' }}>Tax Withholding</div>
           <Field label="Federal Income Tax" value={fit} onChange={setFit} />
-          <div style={{ display: 'flex', alignItems: 'center', padding: '6px 0', color: 'var(--text-muted)', fontSize: 12 }}>
-            <div style={{ flex: 1 }}>Social Security (6.2%) <span style={{ fontSize: 10 }}>est.</span></div>
+          <div style={{ display: 'flex', alignItems: 'center', padding: '6px 0', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
+            <div style={{ flex: 1 }}>Social Security (6.2%) <span style={{ fontSize: '0.6667rem' }}>est.</span></div>
             <div style={{ ...MONO }}>{fmt(eeSS)}</div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', padding: '6px 0', color: 'var(--text-muted)', fontSize: 12, borderBottom: '1px solid var(--border)' }}>
-            <div style={{ flex: 1 }}>Medicare (1.45%) <span style={{ fontSize: 10 }}>est.</span></div>
+          <div style={{ display: 'flex', alignItems: 'center', padding: '6px 0', color: 'var(--text-muted)', fontSize: '0.8rem', borderBottom: '1px solid var(--border)' }}>
+            <div style={{ flex: 1 }}>Medicare (1.45%) <span style={{ fontSize: '0.6667rem' }}>est.</span></div>
             <div style={{ ...MONO }}>{fmt(eeMed)}</div>
           </div>
 
           {/* Totals */}
           <div style={{ display: 'flex', gap: 12, marginTop: 12, padding: '10px 0', borderTop: '2px solid var(--border)' }}>
             <div style={{ flex: 1, textAlign: 'center' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>Net Pay (est.)</div>
-              <div style={{ ...MONO, fontWeight: 800, fontSize: 14, color: '#16a34a' }}>{fmt(netEst)}</div>
+              <div style={{ fontSize: '0.6667rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>Net Pay (est.)</div>
+              <div style={{ ...MONO, fontWeight: 800, fontSize: '0.9333rem', color: '#16a34a' }}>{fmt(netEst)}</div>
             </div>
             <div style={{ flex: 1, textAlign: 'center' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>941 Deposit (est.)</div>
-              <div style={{ ...MONO, fontWeight: 800, fontSize: 14, color: 'var(--accent)' }}>{fmt(depEst)}</div>
+              <div style={{ fontSize: '0.6667rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 2 }}>941 Deposit (est.)</div>
+              <div style={{ ...MONO, fontWeight: 800, fontSize: '0.9333rem', color: 'var(--accent)' }}>{fmt(depEst)}</div>
             </div>
           </div>
 
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4, textAlign: 'center' }}>SS/Medicare shown are estimates — backend recalculates exactly on save.</div>
+          <div style={{ fontSize: '0.6667rem', color: 'var(--text-muted)', marginTop: 4, textAlign: 'center' }}>SS/Medicare shown are estimates — backend recalculates exactly on save.</div>
         </div>
 
         {/* Footer */}

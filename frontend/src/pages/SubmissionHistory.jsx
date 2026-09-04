@@ -85,7 +85,7 @@ export default function SubmissionHistory() {
               {submittedReal.length}
             </div>
             {dryRuns.length > 0 && (
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+              <div style={{ fontSize: '0.7333rem', color: 'var(--text-muted)', marginTop: 2 }}>
                 + {dryRuns.length} dry run{dryRuns.length !== 1 ? 's' : ''} (not counted)
               </div>
             )}
@@ -98,9 +98,9 @@ export default function SubmissionHistory() {
           </div>
           <div className="stat-card">
             <div className="stat-label">Total Deposited</div>
-            <div className="stat-value" style={{ fontSize: 20, color: 'var(--accent)' }}>{fmtAmt(totalDeposited)}</div>
+            <div className="stat-value" style={{ fontSize: '1.3333rem', color: 'var(--accent)' }}>{fmtAmt(totalDeposited)}</div>
             {totalDryRun > 0 && (
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+              <div style={{ fontSize: '0.7333rem', color: 'var(--text-muted)', marginTop: 2 }}>
                 Dry runs: {fmtAmt(totalDryRun)} — no money moved
               </div>
             )}
@@ -152,19 +152,19 @@ export default function SubmissionHistory() {
                             onClick={(e) => { e.stopPropagation(); setExpanded(expanded === s.id ? null : s.id); }}
                             style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', font: 'inherit', padding: 0, display: 'inline-flex', alignItems: 'center', gap: 4 }}
                           >
-                            <span aria-hidden="true" style={{ fontSize: 10 }}>{expanded === s.id ? '▾' : '▸'}</span>
+                            <span aria-hidden="true" style={{ fontSize: '0.6667rem' }}>{expanded === s.id ? '▾' : '▸'}</span>
                             #{s.id}
                           </button>
                         </td>
                         {!clientId && <td style={{ color: 'var(--text-primary)', fontWeight: 500 }}>{s.business_name}</td>}
-                        <td className="mono" style={{ fontSize: 12 }}>{s.pay_period_start}<br />{s.pay_period_end}</td>
+                        <td className="mono" style={{ fontSize: '0.8rem' }}>{s.pay_period_start}<br />{s.pay_period_end}</td>
                         <td className="amount">{fmtAmt(s.gross_wages)}</td>
                         <td className="amount">{fmtAmt(s.fit_withholding)}</td>
                         <td className="amount">{fmtAmt(s.employee_ss + s.employer_ss)}</td>
                         <td className="amount">{fmtAmt(s.employee_medicare + s.employer_medicare)}</td>
                         <td className="amount" style={{ color: 'var(--accent)' }}>{fmtAmt(s.total_deposit)}</td>
                         <td>{statusBadge(s.eftps_status)}</td>
-                        <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                        <td style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
                           {s.eftps_submitted_at ? new Date(s.eftps_submitted_at).toLocaleDateString() : '—'}
                         </td>
                         <td>
@@ -182,7 +182,7 @@ export default function SubmissionHistory() {
                       {expanded === s.id && (
                         <tr key={`${s.id}-detail`}>
                           <td colSpan={clientId ? 10 : 11} style={{ background: 'var(--bg-primary)', padding: '12px 20px' }}>
-                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12, fontSize: 12.5 }}>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 12, fontSize: '0.8333rem' }}>
                               <div>
                                 <div style={{ color: 'var(--text-muted)' }}>Filing Status</div>
                                 <div style={{ color: 'var(--text-primary)', fontWeight: 500 }}>

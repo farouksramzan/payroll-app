@@ -26,38 +26,38 @@ function fmtAmt(n) { return `$${fmtZ(n)}`; }
 
 // ── Shared IRS form styles ─────────────────────────────────────────────────────
 const F = {
-  page:     { fontFamily: 'Arial, Helvetica, sans-serif', fontSize: 9, color: '#000', background: '#fff', border: '2px solid #000', marginBottom: 24 },
+  page:     { fontFamily: 'Arial, Helvetica, sans-serif', fontSize: '0.6rem', color: '#000', background: '#fff', border: '2px solid #000', marginBottom: 24 },
   topbar:   { borderBottom: '2px solid #000', display: 'flex', alignItems: 'stretch' },
   topLeft:  { flex: 1, padding: '5px 8px', borderRight: '1px solid #000' },
   topRight: { padding: '5px 8px', minWidth: 195 },
-  formNum:  { fontSize: 20, fontWeight: 900, letterSpacing: -0.5 },
-  formSub:  { fontSize: 8.5, color: '#333' },
-  dept:     { fontSize: 8, color: '#555', marginTop: 1 },
-  omb:      { fontSize: 8, marginTop: 2 },
-  qLabel:   { fontSize: 8, fontWeight: 700, marginBottom: 3 },
-  qOpt:     { display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2, fontSize: 8 },
-  qBox:     { width: 10, height: 10, border: '1px solid #000', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 7, flexShrink: 0 },
-  fieldLbl: { fontSize: 7, color: '#444', marginBottom: 1 },
-  fieldVal: { fontSize: 10, fontWeight: 700, fontFamily: '"Courier New",monospace', borderBottom: '1px solid #aaa', minHeight: 13, paddingBottom: 1, marginBottom: 3 },
-  partHdr:  { background: '#b8b8b8', borderTop: '1px solid #000', borderBottom: '1px solid #000', padding: '2px 8px', fontWeight: 700, fontSize: 8.5, pageBreakAfter: 'avoid' },
-  note:     { padding: '2px 8px', fontSize: 7.5, color: '#444', borderBottom: '1px solid #ccc', background: '#f5f5f5' },
+  formNum:  { fontSize: '1.3333rem', fontWeight: 900, letterSpacing: -0.5 },
+  formSub:  { fontSize: '0.5667rem', color: '#333' },
+  dept:     { fontSize: '0.5333rem', color: '#555', marginTop: 1 },
+  omb:      { fontSize: '0.5333rem', marginTop: 2 },
+  qLabel:   { fontSize: '0.5333rem', fontWeight: 700, marginBottom: 3 },
+  qOpt:     { display: 'flex', alignItems: 'center', gap: 4, marginBottom: 2, fontSize: '0.5333rem' },
+  qBox:     { width: 10, height: 10, border: '1px solid #000', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.4667rem', flexShrink: 0 },
+  fieldLbl: { fontSize: '0.4667rem', color: '#444', marginBottom: 1 },
+  fieldVal: { fontSize: '0.6667rem', fontWeight: 700, fontFamily: '"Courier New",monospace', borderBottom: '1px solid #aaa', minHeight: 13, paddingBottom: 1, marginBottom: 3 },
+  partHdr:  { background: '#b8b8b8', borderTop: '1px solid #000', borderBottom: '1px solid #000', padding: '2px 8px', fontWeight: 700, fontSize: '0.5667rem', pageBreakAfter: 'avoid' },
+  note:     { padding: '2px 8px', fontSize: '0.5rem', color: '#444', borderBottom: '1px solid #ccc', background: '#f5f5f5' },
   line:     { display: 'flex', borderBottom: '1px solid #ccc', alignItems: 'stretch', minHeight: 17 },
-  lineNum:  { width: 24, background: '#f0f0f0', borderRight: '1px solid #ccc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 7.5, fontWeight: 700, flexShrink: 0, color: '#222' },
-  lineLbl:  { flex: 1, padding: '2px 6px', fontSize: 8.5, display: 'flex', alignItems: 'center' },
-  lineVal:  { width: 110, borderLeft: '1px solid #999', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '2px 6px', fontFamily: '"Courier New",monospace', fontSize: 9.5, fontWeight: 600 },
+  lineNum:  { width: 24, background: '#f0f0f0', borderRight: '1px solid #ccc', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.5rem', fontWeight: 700, flexShrink: 0, color: '#222' },
+  lineLbl:  { flex: 1, padding: '2px 6px', fontSize: '0.5667rem', display: 'flex', alignItems: 'center' },
+  lineVal:  { width: 110, borderLeft: '1px solid #999', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '2px 6px', fontFamily: '"Courier New",monospace', fontSize: '0.6333rem', fontWeight: 600 },
   lineValHL:{ background: '#e8eeff', fontWeight: 800 },
   ssLine:   { display: 'flex', borderBottom: '1px solid #ccc', alignItems: 'center', minHeight: 19, padding: '1px 0' },
-  ssNum:    { width: 24, textAlign: 'center', fontSize: 7.5, fontWeight: 700, color: '#222', flexShrink: 0 },
-  ssLbl:    { flex: 1, fontSize: 8.5, padding: '0 6px' },
-  ssCol1:   { width: 90, textAlign: 'right', fontFamily: '"Courier New",monospace', fontSize: 9, paddingRight: 4 },
-  ssMult:   { width: 68, textAlign: 'center', fontSize: 7.5, color: '#444' },
-  ssCol2:   { width: 90, textAlign: 'right', fontFamily: '"Courier New",monospace', fontSize: 9, borderLeft: '1px solid #999', paddingLeft: 6, paddingRight: 4 },
+  ssNum:    { width: 24, textAlign: 'center', fontSize: '0.5rem', fontWeight: 700, color: '#222', flexShrink: 0 },
+  ssLbl:    { flex: 1, fontSize: '0.5667rem', padding: '0 6px' },
+  ssCol1:   { width: 90, textAlign: 'right', fontFamily: '"Courier New",monospace', fontSize: '0.6rem', paddingRight: 4 },
+  ssMult:   { width: 68, textAlign: 'center', fontSize: '0.5rem', color: '#444' },
+  ssCol2:   { width: 90, textAlign: 'right', fontFamily: '"Courier New",monospace', fontSize: '0.6rem', borderLeft: '1px solid #999', paddingLeft: 6, paddingRight: 4 },
 };
 
 // Tiny checkbox (■ or □)
 function Chk({ checked }) {
   return (
-    <span style={{ border: '1px solid #000', width: 10, height: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 7, flexShrink: 0, background: checked ? '#000' : '#fff', color: '#fff', marginTop: 1 }}>
+    <span style={{ border: '1px solid #000', width: 10, height: 10, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.4667rem', flexShrink: 0, background: checked ? '#000' : '#fff', color: '#fff', marginTop: 1 }}>
       {checked ? '✓' : ''}
     </span>
   );
@@ -69,7 +69,7 @@ function IrsLine({ num, label, value, highlight, wide }) {
     <div style={{ ...F.line, background: highlight ? '#eef1ff' : 'transparent' }}>
       <div style={F.lineNum}>{num}</div>
       <div style={F.lineLbl}>{label}</div>
-      <div style={{ ...F.lineNum, borderLeft: '1px solid #999', width: wide ? 20 : 18, fontWeight: 400, fontSize: 7, color: '#444' }}>{num}</div>
+      <div style={{ ...F.lineNum, borderLeft: '1px solid #999', width: wide ? 20 : 18, fontWeight: 400, fontSize: '0.4667rem', color: '#444' }}>{num}</div>
       <div style={{ ...F.lineVal, ...(highlight ? F.lineValHL : {}) }}>{value}</div>
     </div>
   );
@@ -93,7 +93,7 @@ function EntityBlock940({ client }) {
       <div style={{ display: 'flex' }}>
         <div style={{ flex: 1, padding: '4px 8px', borderRight: '1px solid #000' }}>
           <div style={F.fieldLbl}>Employer identification number (EIN)</div>
-          <div style={{ ...F.fieldVal, fontFamily: '"Courier New",monospace', fontSize: 12 }}>{client.ein}</div>
+          <div style={{ ...F.fieldVal, fontFamily: '"Courier New",monospace', fontSize: '0.8rem' }}>{client.ein}</div>
           <div style={F.fieldLbl}>Name (not your trade name)</div>
           <div style={F.fieldVal}>{client.businessName}</div>
           <div style={F.fieldLbl}>Trade name (if any)</div>
@@ -130,8 +130,8 @@ function EntityBlock940({ client }) {
           </div>
         </div>
         <div style={{ padding: '4px 8px', minWidth: 195 }}>
-          <div style={{ fontSize: 7.5, fontWeight: 700, marginBottom: 4 }}>Type of Return</div>
-          <div style={{ fontSize: 7.5, marginBottom: 2 }}>(Check all that apply.)</div>
+          <div style={{ fontSize: '0.5rem', fontWeight: 700, marginBottom: 4 }}>Type of Return</div>
+          <div style={{ fontSize: '0.5rem', marginBottom: 2 }}>(Check all that apply.)</div>
           {[
             'a. Amended',
             'b. Successor employer',
@@ -140,8 +140,8 @@ function EntityBlock940({ client }) {
           ].map((opt) => (
             <div key={opt} style={F.qOpt}><Chk checked={false} /><span>{opt}</span></div>
           ))}
-          <div style={{ marginTop: 8, fontSize: 7.5, fontWeight: 700 }}>Aggregate Return Filers Only</div>
-          <div style={{ fontSize: 7, marginTop: 2, marginBottom: 2 }}>Type of filer (check one):</div>
+          <div style={{ marginTop: 8, fontSize: '0.5rem', fontWeight: 700 }}>Aggregate Return Filers Only</div>
+          <div style={{ fontSize: '0.4667rem', marginTop: 2, marginBottom: 2 }}>Type of filer (check one):</div>
           {['Section 3504 Agent', 'Certified Professional Employer\nOrganization (CPEO)', 'Other Third Party'].map((o) => (
             <div key={o} style={F.qOpt}><Chk checked={o === 'Other Third Party'} /><span style={{ whiteSpace: 'pre-line' }}>{o}</span></div>
           ))}
@@ -169,7 +169,7 @@ function Entity941({ client, quarter, year }) {
         </div>
         <div style={{ padding: '4px 8px', borderRight: '1px solid #000', minWidth: 175 }}>
           <div style={F.fieldLbl}>Employer identification number (EIN)</div>
-          <div style={{ ...F.fieldVal, fontFamily: '"Courier New",monospace', fontSize: 12 }}>{client.ein}</div>
+          <div style={{ ...F.fieldVal, fontFamily: '"Courier New",monospace', fontSize: '0.8rem' }}>{client.ein}</div>
           <div style={{ marginTop: 6 }}>
             <div style={F.fieldLbl}>Report for this Quarter of {year} (Check one.)</div>
             {[1, 2, 3, 4].map((n) => (
@@ -180,10 +180,10 @@ function Entity941({ client, quarter, year }) {
             ))}
           </div>
           <div style={{ marginTop: 4, borderTop: '1px solid #ccc', paddingTop: 3 }}>
-            <div style={{ fontSize: 7, color: '#444', marginBottom: 2 }}>Aggregate Return Filers Only</div>
-            <div style={{ fontSize: 7, color: '#444', marginBottom: 1 }}>Type of filer (check one):</div>
+            <div style={{ fontSize: '0.4667rem', color: '#444', marginBottom: 2 }}>Aggregate Return Filers Only</div>
+            <div style={{ fontSize: '0.4667rem', color: '#444', marginBottom: 1 }}>Type of filer (check one):</div>
             {['Section 3504 Agent', 'Certified Professional Employer\nOrganization (CPEO)', 'Other Third Party'].map((o) => (
-              <div key={o} style={F.qOpt}><Chk checked={o === 'Other Third Party'} /><span style={{ fontSize: 7, whiteSpace: 'pre-line' }}>{o}</span></div>
+              <div key={o} style={F.qOpt}><Chk checked={o === 'Other Third Party'} /><span style={{ fontSize: '0.4667rem', whiteSpace: 'pre-line' }}>{o}</span></div>
             ))}
           </div>
         </div>
@@ -224,16 +224,16 @@ function Entity941({ client, quarter, year }) {
 
 function MiniHeader941({ client, pageCode }) {
   return (
-    <div style={{ background: '#f0f0f0', borderBottom: '1px solid #000', padding: '3px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 8 }}>
-      <span style={{ fontWeight: 700, fontSize: 9 }}>{pageCode}</span>
+    <div style={{ background: '#f0f0f0', borderBottom: '1px solid #000', padding: '3px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.5333rem' }}>
+      <span style={{ fontWeight: 700, fontSize: '0.6rem' }}>{pageCode}</span>
       <div style={{ display: 'flex', gap: 24 }}>
         <div>
           <div style={F.fieldLbl}>Name (not your trade name)</div>
-          <div style={{ fontWeight: 700, fontSize: 9.5 }}>{client.businessName}</div>
+          <div style={{ fontWeight: 700, fontSize: '0.6333rem' }}>{client.businessName}</div>
         </div>
         <div>
           <div style={F.fieldLbl}>Employer identification number (EIN)</div>
-          <div style={{ fontFamily: '"Courier New",monospace', fontWeight: 700, fontSize: 9.5 }}>{client.ein}</div>
+          <div style={{ fontFamily: '"Courier New",monospace', fontWeight: 700, fontSize: '0.6333rem' }}>{client.ein}</div>
         </div>
       </div>
     </div>
@@ -246,7 +246,7 @@ function DesigneeSection({ pr }) {
   const checkNo  = !hasInfo && !!pr?.noDesignee;
   const pin = (pr?.desgPin || '').toString().split('').slice(0, 5);
   return (
-    <div style={{ padding: '5px 8px', fontSize: 8, borderBottom: '1px solid #ccc' }}>
+    <div style={{ padding: '5px 8px', fontSize: '0.5333rem', borderBottom: '1px solid #ccc' }}>
       <div style={{ marginBottom: 4 }}>
         Do you want to allow an employee, a paid tax preparer, or another person to discuss this return with the IRS? See the instructions for details.
       </div>
@@ -270,10 +270,10 @@ function DesigneeSection({ pr }) {
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <div style={{ fontSize: 7.5 }}>Select a 5-digit personal identification number (PIN) to use when talking to the IRS.</div>
+          <div style={{ fontSize: '0.5rem' }}>Select a 5-digit personal identification number (PIN) to use when talking to the IRS.</div>
           <div style={{ display: 'flex', gap: 2 }}>
             {[0, 1, 2, 3, 4].map((i) => (
-              <span key={i} style={{ border: '1px solid #000', width: 14, height: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, fontWeight: 700 }}>
+              <span key={i} style={{ border: '1px solid #000', width: 14, height: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 700 }}>
                 {pin[i] || ''}
               </span>
             ))}
@@ -290,12 +290,12 @@ function DesigneeSection({ pr }) {
 
 function SignatureBlock({ pr }) {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0, borderBottom: '1px solid #ccc', fontSize: 8 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0, borderBottom: '1px solid #ccc', fontSize: '0.5333rem' }}>
       <div style={{ padding: '4px 8px', borderRight: '1px solid #ccc' }}>
         <div style={F.fieldLbl}>Sign your name here</div>
-        <div style={{ borderBottom: '1px solid #000', height: 18, marginBottom: 4, fontSize: 7.5, color: '#888', paddingTop: 4 }}>EF ONLY—You do not need to sign this form</div>
+        <div style={{ borderBottom: '1px solid #000', height: 18, marginBottom: 4, fontSize: '0.5rem', color: '#888', paddingTop: 4 }}>EF ONLY—You do not need to sign this form</div>
         <div style={F.fieldLbl}>Print your name here</div>
-        <div style={{ fontWeight: 700, fontSize: 9.5, borderBottom: '1px solid #ccc', minHeight: 14, marginBottom: 3 }}>{pr?.name || ''}</div>
+        <div style={{ fontWeight: 700, fontSize: '0.6333rem', borderBottom: '1px solid #ccc', minHeight: 14, marginBottom: 3 }}>{pr?.name || ''}</div>
         <div style={F.fieldLbl}>Print your title here</div>
         <div style={{ borderBottom: '1px solid #ccc', minHeight: 14, marginBottom: 3 }}>{pr?.title || ''}</div>
         <div style={F.fieldLbl}>Best daytime phone</div>
@@ -314,8 +314,8 @@ function SignatureBlock({ pr }) {
 function PreparerBlock({ pr }) {
   const addr = [pr?.firmAddress, pr?.firmCity, pr?.firmState, pr?.firmZip].filter(Boolean).join(', ');
   return (
-    <div style={{ borderTop: '1px solid #000', fontSize: 8, background: '#fafafa' }}>
-      <div style={{ padding: '3px 8px', fontWeight: 700, fontSize: 8.5, borderBottom: '1px solid #ccc', background: '#e8e8e8' }}>
+    <div style={{ borderTop: '1px solid #000', fontSize: '0.5333rem', background: '#fafafa' }}>
+      <div style={{ padding: '3px 8px', fontWeight: 700, fontSize: '0.5667rem', borderBottom: '1px solid #ccc', background: '#e8e8e8' }}>
         Paid Preparer Use Only
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
@@ -345,7 +345,7 @@ function PreparerBlock({ pr }) {
         </div>
         <div style={{ padding: '4px 8px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 3 }}>
-            <Chk checked={false} /> <span style={{ fontSize: 7.5 }}>Check if you're self-employed</span>
+            <Chk checked={false} /> <span style={{ fontSize: '0.5rem' }}>Check if you're self-employed</span>
           </div>
           <div style={F.fieldLbl}>PTIN</div>
           <div style={{ borderBottom: '1px solid #ccc', minHeight: 13, marginBottom: 3 }}>{pr?.ptin || ''}</div>
@@ -358,6 +358,57 @@ function PreparerBlock({ pr }) {
           <div style={F.fieldLbl}>Phone</div>
           <div style={{ borderBottom: '1px solid #ccc', minHeight: 13 }}>{pr?.firmPhone || ''}</div>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Verification summary card ─────────────────────────────────────────────────
+function FormSummary({ data }) {
+  const { client, period, lines } = data;
+  let title, items;
+  if (data.reportType === '941') {
+    const totalTax = lines.line6_totalTaxes || 0;
+    const deposited = lines.line13_deposited || 0;
+    title = `Form 941 — Q${period.quarter} ${period.year} — check these numbers before filing`;
+    items = [
+      ['EIN', client.ein],
+      ['Quarter', `Q${period.quarter} ${period.year}`],
+      ['Total wages (line 2)', fmtAmt(lines.line2_wages)],
+      ['Total tax after credits (line 12)', fmtAmt(totalTax)],
+      ['Total deposits (line 13a)', fmtAmt(deposited)],
+    ];
+  } else if (data.reportType === '940') {
+    const netFuta = lines.line12_netFuta || 0;
+    title = `Form 940 — ${period.year} — check these numbers before filing`;
+    items = [
+      ['EIN', client.ein],
+      ['Total payments to employees (line 3)', fmtAmt(lines.line3_totalPayments)],
+      ['Taxable FUTA wages (line 7)', fmtAmt(lines.line5_futaTaxableWages)],
+      ['Total FUTA tax (line 12)', fmtAmt(netFuta)],
+      ['FUTA tax deposited (line 13)', fmtAmt(netFuta)],
+    ];
+  } else if (data.reportType === 'TWC') {
+    title = `TWC Quarterly Report — Q${period.quarter} ${period.year} — check these numbers before filing`;
+    items = [
+      ['FEIN', client.ein],
+      ['Total state wages', fmtAmt(lines.totalWages)],
+      ['Taxable wages', fmtAmt(lines.sutaTaxableWages)],
+      ['UI tax rate', `${fmtPct(data.sutaRate)}%`],
+      ['Total payment due', fmtAmt(lines.sutaTax)],
+    ];
+  } else {
+    return null;
+  }
+  return (
+    <div className="card no-print" style={{ marginBottom: 16, padding: '16px 20px' }}>
+      <div style={{ fontSize: '0.9333rem', fontWeight: 700, marginBottom: 8 }}>{title}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {items.map(([label, value]) => (
+          <div key={label} style={{ fontSize: '1.0667rem', fontVariantNumeric: 'tabular-nums' }}>
+            {label} — <strong>{value}</strong>
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -384,7 +435,7 @@ function Report941({ data, pr }) {
               <span style={F.formNum}>941</span>
               <span style={F.formSub}>for {period.year}: (Rev. March 2026)</span>
             </div>
-            <div style={{ fontSize: 11, fontWeight: 700, marginTop: 1 }}>Employer's QUARTERLY Federal Tax Return</div>
+            <div style={{ fontSize: '0.7333rem', fontWeight: 700, marginTop: 1 }}>Employer's QUARTERLY Federal Tax Return</div>
             <div style={F.dept}>Department of the Treasury — Internal Revenue Service</div>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 3 }}>
               <span style={F.omb}>950126</span>
@@ -409,7 +460,7 @@ function Report941({ data, pr }) {
             Number of employees who received wages, tips, or other compensation for the pay period
             including: Mar. 12 (Quarter 1), June 12 (Quarter 2), Sept. 12 (Quarter 3), or Dec. 12 (Quarter 4)
           </div>
-          <div style={{ ...F.lineNum, borderLeft: '1px solid #999', width: 18, fontWeight: 400, fontSize: 7, color: '#444' }}>1</div>
+          <div style={{ ...F.lineNum, borderLeft: '1px solid #999', width: 18, fontWeight: 400, fontSize: '0.4667rem', color: '#444' }}>1</div>
           <div style={{ ...F.lineVal, width: 72 }}>{lines.line1_employees || ''}</div>
         </div>
 
@@ -427,7 +478,7 @@ function Report941({ data, pr }) {
         </div>
 
         {/* SS/Medicare column headers */}
-        <div style={{ display: 'flex', background: '#e8e8e8', borderBottom: '1px solid #ccc', padding: '2px 0 2px 24px', alignItems: 'center', fontSize: 7.5, fontWeight: 700 }}>
+        <div style={{ display: 'flex', background: '#e8e8e8', borderBottom: '1px solid #ccc', padding: '2px 0 2px 24px', alignItems: 'center', fontSize: '0.5rem', fontWeight: 700 }}>
           <div style={{ flex: 1, paddingLeft: 6 }}>&nbsp;</div>
           <div style={{ width: 90, textAlign: 'center' }}>Column 1</div>
           <div style={{ width: 68 }}></div>
@@ -483,10 +534,10 @@ function Report941({ data, pr }) {
 
         {/* Part 2 */}
         <div style={F.partHdr}>Part 2:&nbsp; Tell us about your deposit schedule and tax liability for this quarter.</div>
-        <div style={{ padding: '4px 8px', fontSize: 8, borderBottom: '1px solid #ccc' }}>
+        <div style={{ padding: '4px 8px', fontSize: '0.5333rem', borderBottom: '1px solid #ccc' }}>
           If you're unsure about whether you're a monthly schedule depositor or a semiweekly schedule depositor, see section 11 of Pub. 15.
         </div>
-        <div style={{ padding: '4px 8px', fontSize: 8, borderBottom: '1px solid #ccc' }}>
+        <div style={{ padding: '4px 8px', fontSize: '0.5333rem', borderBottom: '1px solid #ccc' }}>
           <strong>16</strong>&nbsp; Check one:
           <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 3 }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: 6 }}>
@@ -497,7 +548,7 @@ function Report941({ data, pr }) {
               <Chk checked={false} />
               <div>
                 <span>You were a monthly schedule depositor for the entire quarter. Enter your tax liability for each month and total liability for the quarter, then go to Part 3.</span>
-                <div style={{ display: 'flex', gap: 24, marginTop: 4, fontSize: 8 }}>
+                <div style={{ display: 'flex', gap: 24, marginTop: 4, fontSize: '0.5333rem' }}>
                   {['Month 1', 'Month 2', 'Month 3'].map((m) => (
                     <div key={m}>
                       <div style={F.fieldLbl}>Tax liability: {m}</div>
@@ -520,19 +571,19 @@ function Report941({ data, pr }) {
 
         {/* Part 3 */}
         <div style={F.partHdr}>Part 3:&nbsp; Tell us about your business. If a question does NOT apply to your business, leave it blank.</div>
-        <div style={{ padding: '4px 8px', fontSize: 8, borderBottom: '1px solid #ccc', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ padding: '4px 8px', fontSize: '0.5333rem', borderBottom: '1px solid #ccc', display: 'flex', alignItems: 'center', gap: 6 }}>
           <strong>17</strong>&nbsp;
           If your business has closed or you stopped paying wages&nbsp;.&nbsp;.&nbsp;.&nbsp;.&nbsp;.&nbsp;.&nbsp;.&nbsp;.&nbsp;.&nbsp;.&nbsp;.
           &nbsp;<Chk checked={false} />&nbsp; Check here;&nbsp;
           also attach a statement to your return. See instructions.&nbsp; Enter the final date you paid wages: &nbsp;
           <span style={{ borderBottom: '1px solid #999', display: 'inline-block', minWidth: 90 }}></span>
         </div>
-        <div style={{ padding: '4px 8px', fontSize: 8, borderBottom: '1px solid #ccc', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ padding: '4px 8px', fontSize: '0.5333rem', borderBottom: '1px solid #ccc', display: 'flex', alignItems: 'center', gap: 6 }}>
           <strong>18</strong>&nbsp;
           If you're a seasonal employer and you don't have to file a return for every quarter of the year&nbsp;.&nbsp;.&nbsp;.&nbsp;
           &nbsp;<Chk checked={false} />&nbsp; Check here.
         </div>
-        <div style={{ padding: '4px 8px', fontSize: 8, borderBottom: '1px solid #ccc', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ padding: '4px 8px', fontSize: '0.5333rem', borderBottom: '1px solid #ccc', display: 'flex', alignItems: 'center', gap: 6 }}>
           <strong>19</strong>&nbsp;
           Qualified health plan expenses allocable to qualified sick leave wages&nbsp;.&nbsp;.&nbsp;.&nbsp;.&nbsp;.&nbsp;
           <strong>19</strong>&nbsp;
@@ -555,7 +606,7 @@ function Report941({ data, pr }) {
         <SignatureBlock pr={pr} />
         <PreparerBlock pr={pr} />
 
-        <div style={{ padding: '3px 8px', fontSize: 7.5, borderTop: '1px solid #ccc', textAlign: 'right', color: '#555' }}>
+        <div style={{ padding: '3px 8px', fontSize: '0.5rem', borderTop: '1px solid #ccc', textAlign: 'right', color: '#555' }}>
           Page 2 &nbsp;&nbsp;&nbsp; <strong>Form 941</strong> (Rev. 3-{period.year})
         </div>
       </div>
@@ -563,14 +614,14 @@ function Report941({ data, pr }) {
       {/* ═══ Supporting detail ════════════════════════════════════════════════ */}
       {submissions.length > 0 && (
         <div style={{ ...F.page }} className="irs-page irs-page-2">
-          <div style={{ padding: '4px 8px', background: '#e8e8e8', fontSize: 8.5, fontWeight: 700, borderBottom: '1px solid #ccc' }}>
+          <div style={{ padding: '4px 8px', background: '#e8e8e8', fontSize: '0.5667rem', fontWeight: 700, borderBottom: '1px solid #ccc' }}>
             Supporting Paycheck Detail — {submissions.length} check{submissions.length !== 1 ? 's' : ''} for Q{q} {period.year}
           </div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 8 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.5333rem' }}>
             <thead>
               <tr style={{ background: '#f5f5f5', borderBottom: '1px solid #aaa' }}>
                 {['Pay Period End', 'Employee', 'Gross Wages', 'FIT', 'SS Total', 'Med Total', '941 Deposit', 'EFTPS Status'].map((h) => (
-                  <th key={h} style={{ padding: '3px 5px', fontSize: 7.5, fontWeight: 700, textAlign: h === 'Employee' || h === 'Pay Period End' ? 'left' : 'right' }}>{h}</th>
+                  <th key={h} style={{ padding: '3px 5px', fontSize: '0.5rem', fontWeight: 700, textAlign: h === 'Employee' || h === 'Pay Period End' ? 'left' : 'right' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -583,14 +634,14 @@ function Report941({ data, pr }) {
                     <td key={i} style={{ padding: '3px 5px', fontFamily: 'monospace', textAlign: 'right' }}>{fmtAmt(v)}</td>
                   ))}
                   <td style={{ padding: '3px 5px', textAlign: 'right' }}>
-                    <span style={{ background: s.eftpsStatus === 'submitted' ? '#d1fae5' : s.eftpsStatus === 'pending' ? '#fef3c7' : '#f5f5f5', padding: '1px 4px', borderRadius: 3, fontSize: 7, fontWeight: 700, textTransform: 'uppercase' }}>
+                    <span style={{ background: s.eftpsStatus === 'submitted' ? '#d1fae5' : s.eftpsStatus === 'pending' ? '#fef3c7' : '#f5f5f5', padding: '1px 4px', borderRadius: 3, fontSize: '0.4667rem', fontWeight: 700, textTransform: 'uppercase' }}>
                       {s.eftpsStatus || 'pending'}
                     </span>
                   </td>
                 </tr>
               ))}
               <tr style={{ background: '#f0f0f0', fontWeight: 700, borderTop: '1px solid #aaa' }}>
-                <td colSpan={2} style={{ padding: '3px 5px', fontSize: 7.5 }}>Total</td>
+                <td colSpan={2} style={{ padding: '3px 5px', fontSize: '0.5rem' }}>Total</td>
                 {[
                   submissions.reduce((s, r) => s + r.grossWages, 0),
                   submissions.reduce((s, r) => s + r.fitWithholding, 0),
@@ -640,20 +691,20 @@ function Report940({ data, pr }) {
 
         {/* Part 1 */}
         <div style={F.partHdr}>Part 1:&nbsp; Tell us about your return. If any line does NOT apply, leave it blank. See instructions before completing Part 1.</div>
-        <div style={{ padding: '3px 8px', fontSize: 8, borderBottom: '1px solid #ccc', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ padding: '3px 8px', fontSize: '0.5333rem', borderBottom: '1px solid #ccc', display: 'flex', alignItems: 'center', gap: 6 }}>
           <Chk checked />&nbsp;
           <strong>1a</strong>&nbsp; If you had to pay state unemployment tax in one state only, enter the state abbreviation . . . . . . . . . . 1a &nbsp;
           <span style={{ border: '1px solid #000', padding: '1px 8px', fontFamily: '"Courier New",monospace', fontWeight: 700 }}>{client.state || 'TX'}</span>
         </div>
-        <div style={{ padding: '3px 8px', fontSize: 8, borderBottom: '1px solid #ccc', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ padding: '3px 8px', fontSize: '0.5333rem', borderBottom: '1px solid #ccc', display: 'flex', alignItems: 'center', gap: 6 }}>
           <Chk checked={false} />&nbsp;
           <strong>1b</strong>&nbsp; If you had to pay state unemployment tax in more than one state, you are a multi-state employer . . . . . . 1b &nbsp;
-          <span style={{ fontSize: 7.5, color: '#555' }}>Check here. Complete Schedule A (Form 940).</span>
+          <span style={{ fontSize: '0.5rem', color: '#555' }}>Check here. Complete Schedule A (Form 940).</span>
         </div>
-        <div style={{ padding: '3px 8px', fontSize: 8, borderBottom: '1px solid #ccc', display: 'flex', alignItems: 'center', gap: 6 }}>
+        <div style={{ padding: '3px 8px', fontSize: '0.5333rem', borderBottom: '1px solid #ccc', display: 'flex', alignItems: 'center', gap: 6 }}>
           <Chk checked={false} />&nbsp;
           <strong>2</strong>&nbsp; If you paid wages in a state that is subject to CREDIT REDUCTION . . . . . . . . . . . . . . . . . . . 2 &nbsp;
-          <span style={{ fontSize: 7.5, color: '#555' }}>Check here. Complete Schedule A (Form 940).</span>
+          <span style={{ fontSize: '0.5rem', color: '#555' }}>Check here. Complete Schedule A (Form 940).</span>
         </div>
 
         {/* Part 2 */}
@@ -669,7 +720,7 @@ function Report940({ data, pr }) {
             <Chk checked={false} /> 4d Dependent care &nbsp;
             <Chk checked={false} /> 4e Other
           </div>
-          <div style={{ ...F.lineNum, borderLeft: '1px solid #999', width: 18, fontWeight: 400, fontSize: 7, color: '#444' }}>4</div>
+          <div style={{ ...F.lineNum, borderLeft: '1px solid #999', width: 18, fontWeight: 400, fontSize: '0.4667rem', color: '#444' }}>4</div>
           <div style={F.lineVal}></div>
         </div>
         <IrsLine num="5" label="Total of payments made to each employee in excess of $7,000" value={fmt(excessWages)} />
@@ -699,7 +750,7 @@ function Report940({ data, pr }) {
             <Chk checked={false} /> Send a refund.
           </div>
         </div>
-        <div style={{ padding: '3px 8px', fontSize: 8, borderBottom: '1px solid #ccc', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ padding: '3px 8px', fontSize: '0.5333rem', borderBottom: '1px solid #ccc', display: 'flex', alignItems: 'center', gap: 8 }}>
           <div>
             <strong>15c</strong> Routing number &nbsp;
             <span style={{ borderBottom: '1px solid #999', display: 'inline-block', minWidth: 120 }}></span>
@@ -725,7 +776,7 @@ function Report940({ data, pr }) {
 
         {/* Part 5 */}
         <div style={F.partHdr}>Part 5:&nbsp; Report your FUTA tax liability by quarter only if line 12 is more than $500. If not, go to Part 6.</div>
-        <div style={{ padding: '4px 8px', fontSize: 8, borderBottom: '1px solid #ccc' }}>
+        <div style={{ padding: '4px 8px', fontSize: '0.5333rem', borderBottom: '1px solid #ccc' }}>
           <strong>16</strong>&nbsp; Report the amount of your FUTA tax liability for each quarter; do NOT enter the amount you deposited. If you had no liability for a quarter, leave the line blank.
         </div>
         <IrsLine num="16a" label="1st quarter (January 1 – March 31)" value="" />
@@ -746,7 +797,7 @@ function Report940({ data, pr }) {
         <SignatureBlock pr={pr} />
         <PreparerBlock pr={pr} />
 
-        <div style={{ padding: '3px 8px', fontSize: 7.5, borderTop: '1px solid #ccc', textAlign: 'right', color: '#555' }}>
+        <div style={{ padding: '3px 8px', fontSize: '0.5rem', borderTop: '1px solid #ccc', textAlign: 'right', color: '#555' }}>
           Page 2 &nbsp;&nbsp;&nbsp; <strong>Form 940</strong> ({period.year})
         </div>
       </div>
@@ -754,14 +805,14 @@ function Report940({ data, pr }) {
       {/* FUTA by employee */}
       {byEmployee.length > 0 && (
         <div style={{ ...F.page }} className="irs-page irs-page-2">
-          <div style={{ padding: '4px 8px', background: '#e8e8e8', fontSize: 8.5, fontWeight: 700, borderBottom: '1px solid #ccc' }}>
+          <div style={{ padding: '4px 8px', background: '#e8e8e8', fontSize: '0.5667rem', fontWeight: 700, borderBottom: '1px solid #ccc' }}>
             FUTA Detail by Employee — {period.year}
           </div>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 8 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.5333rem' }}>
             <thead>
               <tr style={{ background: '#f5f5f5', borderBottom: '1px solid #aaa' }}>
                 {['Employee', 'Total Wages', 'FUTA Taxable Wages', 'FUTA Tax (0.6%)'].map((h) => (
-                  <th key={h} style={{ padding: '3px 5px', fontSize: 7.5, textAlign: h === 'Employee' ? 'left' : 'right' }}>{h}</th>
+                  <th key={h} style={{ padding: '3px 5px', fontSize: '0.5rem', textAlign: h === 'Employee' ? 'left' : 'right' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -798,7 +849,7 @@ function ReportTWC({ data, pr }) {
   const empCount    = byEmployee.length || 1;
 
   const Row = ({ label, value, bold }) => (
-    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3, fontSize: 9.5, fontWeight: bold ? 700 : 400 }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 3, fontSize: '0.6333rem', fontWeight: bold ? 700 : 400 }}>
       <span>{label}</span>
       <span style={{ fontFamily: '"Courier New",monospace' }}>{value}</span>
     </div>
@@ -808,24 +859,24 @@ function ReportTWC({ data, pr }) {
     <div style={F.page} className="irs-page">
       {/* Header */}
       <div style={{ borderBottom: '2px solid #000', padding: '5px 8px', textAlign: 'center' }}>
-        <div style={{ fontSize: 13, fontWeight: 900 }}>Texas Unemployment Insurance — Quarterly Contribution Report</div>
-        <div style={{ fontSize: 9, color: '#555', marginTop: 1 }}>Worksheet</div>
-        <div style={{ fontSize: 7.5, color: '#777', marginTop: 1 }}>This is a record of your information to complete your Unemployment Insurance Contribution Report. Do not file the worksheet.</div>
+        <div style={{ fontSize: '0.8667rem', fontWeight: 900 }}>Texas Unemployment Insurance — Quarterly Contribution Report</div>
+        <div style={{ fontSize: '0.6rem', color: '#555', marginTop: 1 }}>Worksheet</div>
+        <div style={{ fontSize: '0.5rem', color: '#777', marginTop: 1 }}>This is a record of your information to complete your Unemployment Insurance Contribution Report. Do not file the worksheet.</div>
       </div>
 
       {/* Row 1: FEIN | Company | Period */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', borderBottom: '1px solid #000' }}>
         <div style={{ padding: '4px 6px', borderRight: '1px solid #000' }}>
           <div style={F.fieldLbl}>FEIN No.</div>
-          <div style={{ fontFamily: '"Courier New",monospace', fontSize: 11, fontWeight: 700 }}>{client.ein}</div>
+          <div style={{ fontFamily: '"Courier New",monospace', fontSize: '0.7333rem', fontWeight: 700 }}>{client.ein}</div>
         </div>
         <div style={{ padding: '4px 6px', borderRight: '1px solid #000' }}>
           <div style={F.fieldLbl}>Company Legal Name</div>
-          <div style={{ fontSize: 10.5, fontWeight: 700 }}>{client.businessName}</div>
+          <div style={{ fontSize: '0.7rem', fontWeight: 700 }}>{client.businessName}</div>
         </div>
         <div style={{ padding: '4px 6px' }}>
           <div style={F.fieldLbl}>Period Ending</div>
-          <div style={{ fontFamily: '"Courier New",monospace', fontSize: 11, fontWeight: 700 }}>{periodEnd}</div>
+          <div style={{ fontFamily: '"Courier New",monospace', fontSize: '0.7333rem', fontWeight: 700 }}>{periodEnd}</div>
         </div>
       </div>
 
@@ -833,15 +884,15 @@ function ReportTWC({ data, pr }) {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 1fr', borderBottom: '1px solid #000' }}>
         <div style={{ padding: '4px 6px', borderRight: '1px solid #000' }}>
           <div style={F.fieldLbl}>Account No.</div>
-          <div style={{ fontSize: 9.5 }}>{client.twcAccountNumber || ''}</div>
+          <div style={{ fontSize: '0.6333rem' }}>{client.twcAccountNumber || ''}</div>
         </div>
         <div style={{ padding: '4px 6px', borderRight: '1px solid #000' }}>
           <div style={F.fieldLbl}>Company Legal Address</div>
-          <div style={{ fontSize: 9 }}>{client.businessAddress || ''}</div>
+          <div style={{ fontSize: '0.6rem' }}>{client.businessAddress || ''}</div>
         </div>
         <div style={{ padding: '4px 6px' }}>
           <div style={F.fieldLbl}>Penalty Date</div>
-          <div style={{ fontFamily: '"Courier New",monospace', fontSize: 10.5, fontWeight: 700 }}>{penaltyDate}</div>
+          <div style={{ fontFamily: '"Courier New",monospace', fontSize: '0.7rem', fontWeight: 700 }}>{penaltyDate}</div>
         </div>
       </div>
 
@@ -849,25 +900,25 @@ function ReportTWC({ data, pr }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr 1fr', borderBottom: '1px solid #000' }}>
         <div style={{ padding: '4px 6px', borderRight: '1px solid #000', minWidth: 80 }}>
           <div style={F.fieldLbl}>NAICS Code</div>
-          <div style={{ fontSize: 9 }}>{client.naicsCode || ''}</div>
+          <div style={{ fontSize: '0.6rem' }}>{client.naicsCode || ''}</div>
         </div>
         <div style={{ padding: '4px 6px', borderRight: '1px solid #000' }}>
           <div style={{ display: 'flex', gap: 12 }}>
-            <div><div style={F.fieldLbl}>City</div><div style={{ fontSize: 9 }}>{client.businessCity || ''}</div></div>
-            <div><div style={F.fieldLbl}>State</div><div style={{ fontSize: 9 }}>{client.state || 'TX'}</div></div>
-            <div><div style={F.fieldLbl}>Zip Code</div><div style={{ fontSize: 9 }}>{client.businessZip || ''}</div></div>
+            <div><div style={F.fieldLbl}>City</div><div style={{ fontSize: '0.6rem' }}>{client.businessCity || ''}</div></div>
+            <div><div style={F.fieldLbl}>State</div><div style={{ fontSize: '0.6rem' }}>{client.state || 'TX'}</div></div>
+            <div><div style={F.fieldLbl}>Zip Code</div><div style={{ fontSize: '0.6rem' }}>{client.businessZip || ''}</div></div>
           </div>
         </div>
         <div style={{ padding: '4px 6px' }}>
           <div style={{ display: 'flex', gap: 16 }}>
-            <div><div style={F.fieldLbl}>Company ID</div><div style={{ fontSize: 9 }}>{client.twcCompanyId || ''}</div></div>
-            <div><div style={F.fieldLbl}>County Code</div><div style={{ fontSize: 9 }}>{client.twcCountyCode || ''}</div></div>
-            <div><div style={F.fieldLbl}>No. of Employees Outside County</div><div style={{ fontSize: 9 }}></div></div>
+            <div><div style={F.fieldLbl}>Company ID</div><div style={{ fontSize: '0.6rem' }}>{client.twcCompanyId || ''}</div></div>
+            <div><div style={F.fieldLbl}>County Code</div><div style={{ fontSize: '0.6rem' }}>{client.twcCountyCode || ''}</div></div>
+            <div><div style={F.fieldLbl}>No. of Employees Outside County</div><div style={{ fontSize: '0.6rem' }}></div></div>
           </div>
         </div>
       </div>
 
-      <div style={{ textAlign: 'center', padding: '2px', background: '#d0d0d0', borderBottom: '1px solid #999', fontSize: 7.5, fontWeight: 700 }}>Do Not Mail — Keep for Your Records</div>
+      <div style={{ textAlign: 'center', padding: '2px', background: '#d0d0d0', borderBottom: '1px solid #999', fontSize: '0.5rem', fontWeight: 700 }}>Do Not Mail — Keep for Your Records</div>
 
       {/* Calculation block */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid #000' }}>
@@ -885,16 +936,16 @@ function ReportTWC({ data, pr }) {
         <div style={{ padding: '8px 12px' }}>
           <Row label="Overpayment (negative) / Bal Due from a previous period" value="$      0.00" />
           <div style={{ borderTop: '1px solid #000', paddingTop: 6, marginBottom: 14, marginTop: 4 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, fontWeight: 700 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', fontWeight: 700 }}>
               <span>Total Payment Due</span>
               <span style={{ fontFamily: '"Courier New",monospace' }}>${fmtZ(lines.sutaTax)}</span>
             </div>
           </div>
           <div style={{ borderTop: '1px solid #ccc', paddingTop: 8 }}>
-            <div style={{ fontSize: 8, color: '#555', marginBottom: 6 }}>
+            <div style={{ fontSize: '0.5333rem', color: '#555', marginBottom: 6 }}>
               Number of employees receiving pay for pay period which includes 12th day of the month
             </div>
-            <div style={{ display: 'flex', gap: 24, fontSize: 9.5 }}>
+            <div style={{ display: 'flex', gap: 24, fontSize: '0.6333rem' }}>
               {['1st Month', '2nd Month', '3rd Month'].map((label) => (
                 <div key={label}>
                   <div style={F.fieldLbl}>{label}</div>
@@ -906,52 +957,52 @@ function ReportTWC({ data, pr }) {
         </div>
       </div>
 
-      <div style={{ textAlign: 'center', padding: '2px', background: '#d0d0d0', borderBottom: '1px solid #999', fontSize: 7.5, fontWeight: 700 }}>Do Not Mail — Keep for Your Records</div>
+      <div style={{ textAlign: 'center', padding: '2px', background: '#d0d0d0', borderBottom: '1px solid #999', fontSize: '0.5rem', fontWeight: 700 }}>Do Not Mail — Keep for Your Records</div>
 
       {/* Wage Report */}
       {byEmployee.length > 0 && (
         <>
           <div style={{ borderTop: '2px solid #000', padding: '5px 8px', textAlign: 'center', borderBottom: '1px solid #000' }}>
-            <div style={{ fontSize: 12, fontWeight: 900 }}>Texas Unemployment Insurance — Wage Report</div>
-            <div style={{ fontSize: 9, color: '#555', marginTop: 1 }}>Worksheet</div>
-            <div style={{ fontSize: 7.5, color: '#777', marginTop: 1 }}>This is a record of your information to complete your Unemployment Insurance Wage Report. Do not file the worksheet.</div>
+            <div style={{ fontSize: '0.8rem', fontWeight: 900 }}>Texas Unemployment Insurance — Wage Report</div>
+            <div style={{ fontSize: '0.6rem', color: '#555', marginTop: 1 }}>Worksheet</div>
+            <div style={{ fontSize: '0.5rem', color: '#777', marginTop: 1 }}>This is a record of your information to complete your Unemployment Insurance Wage Report. Do not file the worksheet.</div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', borderBottom: '1px solid #000' }}>
             <div style={{ padding: '4px 6px', borderRight: '1px solid #000' }}>
               <div style={F.fieldLbl}>Company Legal Name</div>
-              <div style={{ fontSize: 10.5, fontWeight: 700 }}>{client.businessName}</div>
+              <div style={{ fontSize: '0.7rem', fontWeight: 700 }}>{client.businessName}</div>
             </div>
             <div style={{ padding: '4px 6px', borderRight: '1px solid #000' }}>
               <div style={F.fieldLbl}>FEIN</div>
-              <div style={{ fontFamily: '"Courier New",monospace', fontSize: 11, fontWeight: 700 }}>{client.ein}</div>
+              <div style={{ fontFamily: '"Courier New",monospace', fontSize: '0.7333rem', fontWeight: 700 }}>{client.ein}</div>
             </div>
             <div style={{ padding: '4px 6px' }}>
               <div style={F.fieldLbl}>Period Ending</div>
-              <div style={{ fontFamily: '"Courier New",monospace', fontSize: 11, fontWeight: 700 }}>{periodEnd}</div>
+              <div style={{ fontFamily: '"Courier New",monospace', fontSize: '0.7333rem', fontWeight: 700 }}>{periodEnd}</div>
             </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid #000' }}>
             <div style={{ padding: '4px 6px', borderRight: '1px solid #000' }}>
               <div style={F.fieldLbl}>Company ID</div>
-              <div style={{ fontSize: 9 }}>{client.twcAccountNumber || ''}</div>
+              <div style={{ fontSize: '0.6rem' }}>{client.twcAccountNumber || ''}</div>
             </div>
             <div style={{ padding: '4px 6px' }}>
               <div style={F.fieldLbl}>Unemployment No.</div>
-              <div style={{ fontSize: 9 }}>{client.twcAccountNumber || ''}</div>
+              <div style={{ fontSize: '0.6rem' }}>{client.twcAccountNumber || ''}</div>
             </div>
           </div>
 
-          <div style={{ textAlign: 'center', padding: '2px', background: '#d0d0d0', borderBottom: '1px solid #999', fontSize: 7.5, fontWeight: 700 }}>Do Not Mail — Keep for Your Records</div>
+          <div style={{ textAlign: 'center', padding: '2px', background: '#d0d0d0', borderBottom: '1px solid #999', fontSize: '0.5rem', fontWeight: 700 }}>Do Not Mail — Keep for Your Records</div>
 
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 8.5 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.5667rem' }}>
             <thead>
               <tr style={{ background: '#f0f0f0', borderBottom: '1px solid #aaa' }}>
-                <th style={{ padding: '4px 8px', fontSize: 8, textAlign: 'left' }}>Employee Social Security No.</th>
-                <th style={{ padding: '4px 8px', fontSize: 8, textAlign: 'left' }}>Employee Name (Last, First, MI)</th>
-                <th style={{ padding: '4px 8px', fontSize: 8, textAlign: 'right' }}>Total Wages</th>
-                <th style={{ padding: '4px 8px', fontSize: 8, textAlign: 'right' }}>Taxable Wages</th>
+                <th style={{ padding: '4px 8px', fontSize: '0.5333rem', textAlign: 'left' }}>Employee Social Security No.</th>
+                <th style={{ padding: '4px 8px', fontSize: '0.5333rem', textAlign: 'left' }}>Employee Name (Last, First, MI)</th>
+                <th style={{ padding: '4px 8px', fontSize: '0.5333rem', textAlign: 'right' }}>Total Wages</th>
+                <th style={{ padding: '4px 8px', fontSize: '0.5333rem', textAlign: 'right' }}>Taxable Wages</th>
               </tr>
             </thead>
             <tbody>
@@ -964,14 +1015,14 @@ function ReportTWC({ data, pr }) {
                 </tr>
               ))}
               <tr style={{ background: '#f0f0f0', fontWeight: 700, borderTop: '1px solid #aaa' }}>
-                <td colSpan={2} style={{ padding: '4px 8px', fontSize: 7.5 }}>Totals for this page</td>
+                <td colSpan={2} style={{ padding: '4px 8px', fontSize: '0.5rem' }}>Totals for this page</td>
                 <td style={{ padding: '4px 8px', fontFamily: '"Courier New",monospace', textAlign: 'right' }}>{fmtZ(lines.totalWages)}</td>
                 <td style={{ padding: '4px 8px', fontFamily: '"Courier New",monospace', textAlign: 'right' }}>{fmtZ(lines.sutaTaxableWages)}</td>
               </tr>
             </tbody>
           </table>
 
-          <div style={{ textAlign: 'center', padding: '2px', background: '#d0d0d0', borderTop: '1px solid #999', fontSize: 7.5, fontWeight: 700 }}>Do Not Mail — Keep for Your Records</div>
+          <div style={{ textAlign: 'center', padding: '2px', background: '#d0d0d0', borderTop: '1px solid #999', fontSize: '0.5rem', fontWeight: 700 }}>Do Not Mail — Keep for Your Records</div>
         </>
       )}
     </div>
@@ -982,8 +1033,8 @@ function ReportTWC({ data, pr }) {
 function W2Box({ num, label, value, span }) {
   return (
     <div style={{ border: '1px solid #aaa', padding: '2px 4px', background: '#fff', gridColumn: span ? `span ${span}` : undefined }}>
-      <div style={{ fontSize: 6.5, color: '#555' }}>{num ? `${num} ` : ''}{label}</div>
-      <div style={{ fontFamily: '"Courier New",monospace', fontSize: 10, fontWeight: 700, minHeight: 13 }}>{value || ''}</div>
+      <div style={{ fontSize: '0.4333rem', color: '#555' }}>{num ? `${num} ` : ''}{label}</div>
+      <div style={{ fontFamily: '"Courier New",monospace', fontSize: '0.6667rem', fontWeight: 700, minHeight: 13 }}>{value || ''}</div>
     </div>
   );
 }
@@ -997,24 +1048,24 @@ function ReportW2({ data, pr }) {
         <div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
             <span style={F.formNum}>W-2</span>
-            <span style={{ fontSize: 11, fontWeight: 700 }}>Wage and Tax Statement</span>
+            <span style={{ fontSize: '0.7333rem', fontWeight: 700 }}>Wage and Tax Statement</span>
           </div>
           <div style={F.dept}>Department of the Treasury — Internal Revenue Service</div>
-          <div style={{ fontSize: 8, marginTop: 2 }}>Tax Year {period.year} &nbsp;&nbsp; OMB No. 1545-0029</div>
+          <div style={{ fontSize: '0.5333rem', marginTop: 2 }}>Tax Year {period.year} &nbsp;&nbsp; OMB No. 1545-0029</div>
         </div>
-        <div style={{ fontSize: 8, color: '#555', textAlign: 'right', fontStyle: 'italic' }}>
+        <div style={{ fontSize: '0.5333rem', color: '#555', textAlign: 'right', fontStyle: 'italic' }}>
           Copy A — For Social Security Administration
         </div>
       </div>
 
       {/* Employer block */}
       <div style={{ borderBottom: '1px solid #ccc', padding: '4px 8px' }}>
-        <div style={{ fontSize: 8, fontWeight: 700, marginBottom: 2 }}>c Employer's name, address, and ZIP code</div>
-        <div style={{ fontSize: 11, fontWeight: 700 }}>{client.businessName}</div>
-        {client.tradeName && <div style={{ fontSize: 9.5 }}>{client.tradeName}</div>}
-        {client.businessAddress && <div style={{ fontSize: 9.5 }}>{client.businessAddress}</div>}
-        {client.businessCity && <div style={{ fontSize: 9.5 }}>{client.businessCity}, {client.state || 'TX'} {client.businessZip || ''}</div>}
-        <div style={{ marginTop: 4, fontSize: 8.5 }}>
+        <div style={{ fontSize: '0.5333rem', fontWeight: 700, marginBottom: 2 }}>c Employer's name, address, and ZIP code</div>
+        <div style={{ fontSize: '0.7333rem', fontWeight: 700 }}>{client.businessName}</div>
+        {client.tradeName && <div style={{ fontSize: '0.6333rem' }}>{client.tradeName}</div>}
+        {client.businessAddress && <div style={{ fontSize: '0.6333rem' }}>{client.businessAddress}</div>}
+        {client.businessCity && <div style={{ fontSize: '0.6333rem' }}>{client.businessCity}, {client.state || 'TX'} {client.businessZip || ''}</div>}
+        <div style={{ marginTop: 4, fontSize: '0.5667rem' }}>
           <strong>b Employer identification number (EIN): </strong>
           <span style={{ fontFamily: '"Courier New",monospace', fontWeight: 700 }}>{client.ein}</span>
         </div>
@@ -1026,16 +1077,16 @@ function ReportW2({ data, pr }) {
           <div style={{ padding: '4px 8px', borderBottom: '1px solid #ccc', background: '#f9f9f9' }}>
             <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
               <div>
-                <span style={{ fontSize: 8, fontWeight: 700 }}>a Employee's social security number: </span>
-                <span style={{ fontFamily: '"Courier New",monospace', fontWeight: 700, fontSize: 10 }}>{w.ssn}</span>
+                <span style={{ fontSize: '0.5333rem', fontWeight: 700 }}>a Employee's social security number: </span>
+                <span style={{ fontFamily: '"Courier New",monospace', fontWeight: 700, fontSize: '0.6667rem' }}>{w.ssn}</span>
               </div>
               <div>
-                <span style={{ fontSize: 8, fontWeight: 700 }}>e Employee's name: </span>
+                <span style={{ fontSize: '0.5333rem', fontWeight: 700 }}>e Employee's name: </span>
                 <span style={{ fontWeight: 700 }}>{w.firstName} {w.lastName}</span>
               </div>
             </div>
             {w.address && (
-              <div style={{ fontSize: 8, color: '#555', marginTop: 2 }}>
+              <div style={{ fontSize: '0.5333rem', color: '#555', marginTop: 2 }}>
                 f {w.address}{w.city ? `, ${w.city}` : ''}{w.state ? `, ${w.state}` : ''} {w.zip || ''}
               </div>
             )}
@@ -1078,7 +1129,7 @@ function ReportW2({ data, pr }) {
       ))}
 
       {w2s.length === 0 && (
-        <div style={{ padding: '24px', textAlign: 'center', color: '#888', fontSize: 9 }}>
+        <div style={{ padding: '24px', textAlign: 'center', color: '#888', fontSize: '0.6rem' }}>
           No employees with completed paychecks for {period.year}.
         </div>
       )}
@@ -1095,23 +1146,23 @@ function ReportW3({ data, pr }) {
       <div style={{ borderBottom: '2px solid #000', padding: '4px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-            <span style={{ ...F.formNum, fontSize: 22 }}>W-3</span>
-            <span style={{ fontSize: 11, fontWeight: 700 }}>Transmittal of Wage and Tax Statements</span>
+            <span style={{ ...F.formNum, fontSize: '1.4667rem' }}>W-3</span>
+            <span style={{ fontSize: '0.7333rem', fontWeight: 700 }}>Transmittal of Wage and Tax Statements</span>
           </div>
           <div style={F.dept}>Department of the Treasury — Internal Revenue Service</div>
-          <div style={{ fontSize: 8, marginTop: 2 }}>For calendar year {period.year} &nbsp;&nbsp; OMB No. 1545-0029</div>
+          <div style={{ fontSize: '0.5333rem', marginTop: 2 }}>For calendar year {period.year} &nbsp;&nbsp; OMB No. 1545-0029</div>
         </div>
-        <div style={{ fontSize: 8, textAlign: 'right' }}>
+        <div style={{ fontSize: '0.5333rem', textAlign: 'right' }}>
           <div style={{ fontWeight: 700 }}>{totals.employeeCount} W-2 Form{totals.employeeCount !== 1 ? 's' : ''}</div>
-          <div style={{ fontSize: 7, color: '#555' }}>33333</div>
+          <div style={{ fontSize: '0.4667rem', color: '#555' }}>33333</div>
         </div>
       </div>
 
       {/* Kind of payer/employer */}
       <div style={{ borderBottom: '1px solid #000', display: 'flex' }}>
         <div style={{ flex: 1, padding: '4px 8px', borderRight: '1px solid #ccc' }}>
-          <div style={{ fontSize: 8, fontWeight: 700, marginBottom: 2 }}>b Kind of Payer (Check one)</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 16px', fontSize: 7.5 }}>
+          <div style={{ fontSize: '0.5333rem', fontWeight: 700, marginBottom: 2 }}>b Kind of Payer (Check one)</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 16px', fontSize: '0.5rem' }}>
             {[['941 (Most common)', true], ['943', false], ['944', false], ['Household employer', false], ['Medicare govt. employer', false], ['Military', false]].map(([o, chk]) => (
               <div key={o} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                 <Chk checked={chk} /><span>{o}</span>
@@ -1120,8 +1171,8 @@ function ReportW3({ data, pr }) {
           </div>
         </div>
         <div style={{ padding: '4px 8px' }}>
-          <div style={{ fontSize: 8, fontWeight: 700, marginBottom: 2 }}>Kind of Employer (Check one)</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 12px', fontSize: 7.5 }}>
+          <div style={{ fontSize: '0.5333rem', fontWeight: 700, marginBottom: 2 }}>Kind of Employer (Check one)</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '2px 12px', fontSize: '0.5rem' }}>
             {[['None apply', true], ['State/local non-501c', false], ['501c non-govt.', false], ['State/local 501c', false], ['Federal govt.', false]].map(([o, chk]) => (
               <div key={o} style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
                 <Chk checked={chk} /><span>{o}</span>
@@ -1135,7 +1186,7 @@ function ReportW3({ data, pr }) {
       <div style={{ borderBottom: '1px solid #000', display: 'flex' }}>
         <div style={{ flex: 1, padding: '4px 8px', borderRight: '1px solid #ccc' }}>
           <div style={F.fieldLbl}>e Employer identification number (EIN)</div>
-          <div style={{ ...F.fieldVal, fontFamily: '"Courier New",monospace', fontSize: 12, marginBottom: 4 }}>{client.ein}</div>
+          <div style={{ ...F.fieldVal, fontFamily: '"Courier New",monospace', fontSize: '0.8rem', marginBottom: 4 }}>{client.ein}</div>
           <div style={F.fieldLbl}>f Employer's name</div>
           <div style={{ ...F.fieldVal, marginBottom: 4 }}>{client.businessName}</div>
           <div style={F.fieldLbl}>g Employer's address and ZIP code</div>
@@ -1182,7 +1233,7 @@ function ReportW3({ data, pr }) {
       </div>
 
       {/* Signature */}
-      <div style={{ padding: '4px 8px', borderTop: '1px solid #000', fontSize: 7.5 }}>
+      <div style={{ padding: '4px 8px', borderTop: '1px solid #000', fontSize: '0.5rem' }}>
         Under penalties of perjury, I declare that I have examined this return and accompanying documents and, to the best of my knowledge and belief, they are true, correct, and complete.
       </div>
       <SignatureBlock pr={pr} />
@@ -1350,7 +1401,7 @@ export default function Reports() {
                 background: 'transparent',
                 fontWeight: activeTab === tab.key ? 700 : 400,
                 color: activeTab === tab.key ? 'var(--accent)' : 'var(--text-muted)',
-                cursor: 'pointer', fontSize: 14, marginBottom: -2,
+                cursor: 'pointer', fontSize: '0.9333rem', marginBottom: -2,
               }}
             >
               {tab.label}
@@ -1361,18 +1412,18 @@ export default function Reports() {
         {/* ── Preparer Info Tab ── */}
         {activeTab === 'preparer' && (
           <div className="card" style={{ maxWidth: 760, padding: '24px 28px' }}>
-            <h3 style={{ marginBottom: 6, fontSize: 15 }}>Preparer Information</h3>
-            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 20 }}>
+            <h3 style={{ marginBottom: 6, fontSize: '1rem' }}>Preparer Information</h3>
+            <p style={{ fontSize: '0.8667rem', color: 'var(--text-muted)', marginBottom: 20 }}>
               Saved info autofills Parts 4 and 5 (designee, signature, paid preparer) across all tax forms. Leave blank if not applicable.
             </p>
             <form onSubmit={handleSavePreparer}>
               <div style={{ marginBottom: 20, padding: '12px 16px', background: 'var(--bg-subtle, #f8f8f8)', borderRadius: 6, border: '1px solid var(--border)' }}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 14 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: '0.9333rem' }}>
                   <input
                     type="checkbox"
                     checked={!!prForm.noDesignee}
                     onChange={(e) => setPrForm((f) => ({ ...f, noDesignee: e.target.checked }))}
-                    style={{ width: 16, height: 16 }}
+                    style={{ width: 18, height: 18 }}
                   />
                   <span>I do not have a third-party designee — mark <strong>No</strong> in Part 4 of all forms</span>
                 </label>
@@ -1393,8 +1444,8 @@ export default function Reports() {
                 <button className="btn btn-primary" type="submit" disabled={prSaving}>
                   {prSaving ? 'Saving…' : 'Save Preparer Info'}
                 </button>
-                {prSaved && <span style={{ color: 'var(--success)', fontSize: 13, fontWeight: 600 }}>Saved successfully.</span>}
-                {prError && <span style={{ color: 'var(--error)', fontSize: 13 }}>{prError}</span>}
+                {prSaved && <span style={{ color: 'var(--success)', fontSize: '0.8667rem', fontWeight: 600 }}>Saved successfully.</span>}
+                {prError && <span style={{ color: 'var(--error)', fontSize: '0.8667rem' }}>{prError}</span>}
               </div>
             </form>
           </div>
@@ -1449,7 +1500,7 @@ export default function Reports() {
             {data && (
               <>
                 <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 16 }} className="no-print">
-                  {pdfError && <span style={{ fontSize: 12, color: 'var(--error)' }}>{pdfError}</span>}
+                  {pdfError && <span style={{ fontSize: '0.8rem', color: 'var(--error)' }}>{pdfError}</span>}
                   {data.reportType === 'TWC' && (
                     <>
                       <button
@@ -1520,23 +1571,36 @@ export default function Reports() {
                     {twcSubmission.status === 'failed' && <><span>⚠</span><span>Submission failed: {twcSubmission.error || 'Unknown error'}</span></>}
                   </div>
                 )}
-                {data.reportType === '941' && <Report941 data={data} pr={preparer} />}
-                {data.reportType === '940' && <Report940 data={data} pr={preparer} />}
-                {data.reportType === 'TWC' && <ReportTWC data={data} pr={preparer} />}
                 {(data.reportType === 'W-2' || data.reportType === 'W-3') && (
-                  <div className="no-print" style={{ background: '#fffbe6', border: '1px solid #f0c040', borderRadius: 6, padding: '12px 16px', marginBottom: 16, fontSize: 13, color: '#7a5800' }}>
+                  <div className="no-print" style={{ background: '#fffbe6', border: '1px solid #f0c040', borderRadius: 6, padding: '12px 16px', marginBottom: 16, fontSize: '0.8667rem', color: '#7a5800' }}>
                     <strong>Note:</strong> This PDF is for <strong>employee copies (B, C, 2) and employer records only</strong>. W-2 Copy A and W-3 filed with the SSA must be submitted electronically via{' '}
                     <strong>SSA Business Services Online (BSO)</strong>, or printed on official preprinted red-ink forms. Printing this document and mailing it to the SSA is not permitted and may result in penalties.
                   </div>
                 )}
-                {data.reportType === 'W-2' && <ReportW2  data={data} pr={preparer} />}
-                {data.reportType === 'W-3' && <ReportW3  data={data} pr={preparer} />}
+                <FormSummary data={data} />
+                <style>{`
+                  .irs-zoom-wrap { overflow-x: auto; }
+                  .irs-zoom { zoom: 1.5; min-width: 700px; }
+                  @media print {
+                    .irs-zoom-wrap { overflow-x: visible; }
+                    .irs-zoom { zoom: 1; min-width: 0; }
+                  }
+                `}</style>
+                <div className="irs-zoom-wrap">
+                  <div className="irs-zoom">
+                    {data.reportType === '941' && <Report941 data={data} pr={preparer} />}
+                    {data.reportType === '940' && <Report940 data={data} pr={preparer} />}
+                    {data.reportType === 'TWC' && <ReportTWC data={data} pr={preparer} />}
+                    {data.reportType === 'W-2' && <ReportW2  data={data} pr={preparer} />}
+                    {data.reportType === 'W-3' && <ReportW3  data={data} pr={preparer} />}
+                  </div>
+                </div>
               </>
             )}
 
             {!data && !loading && !error && (
               <div className="card" style={{ textAlign: 'center', padding: '48px 24px', color: 'var(--text-muted)' }}>
-                <div style={{ fontSize: 40, marginBottom: 12 }}>📊</div>
+                <div style={{ fontSize: '2.6667rem', marginBottom: 12 }}>📊</div>
                 <p>
                   {clientId
                     ? 'Click "Generate Report" to build the form.'

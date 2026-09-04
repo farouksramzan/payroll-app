@@ -64,15 +64,15 @@ export default function ImportEmployeesModal({ clientId, onClose, onImported }) 
       }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <h3 style={{ margin: 0 }}>Import Employees from Excel</h3>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--text-muted)' }}>×</button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '1.4667rem', cursor: 'pointer', color: 'var(--text-muted)' }}>×</button>
         </div>
 
         {done ? (
           <div style={{ textAlign: 'center', padding: '32px 0' }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>✓</div>
+            <div style={{ fontSize: '3.2rem', marginBottom: 16 }}>✓</div>
             <h3 style={{ marginBottom: 8 }}>{done.imported} employee{done.imported !== 1 ? 's' : ''} imported</h3>
             {done.skipped > 0 && <p style={{ color: 'var(--text-muted)' }}>{done.skipped} skipped (already exist)</p>}
-            <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 8 }}>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.8667rem', marginTop: 8 }}>
               Pay rate, pay type, and filing details will need to be filled in for each employee.
             </p>
             <button className="btn btn-primary" style={{ marginTop: 20 }} onClick={onClose}>Done</button>
@@ -90,11 +90,11 @@ export default function ImportEmployeesModal({ clientId, onClose, onImported }) 
             >
               <input ref={inputRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleFileChange} />
               {file
-                ? <><div style={{ fontWeight: 600 }}>{file.name}</div><div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>Click to change file</div></>
-                : <><div style={{ fontWeight: 600, marginBottom: 4 }}>Click to select file</div><div style={{ fontSize: 12, color: 'var(--text-muted)' }}>QuickBooks Employee List export (.xlsx) or CSV</div></>
+                ? <><div style={{ fontWeight: 600 }}>{file.name}</div><div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 4 }}>Click to change file</div></>
+                : <><div style={{ fontWeight: 600, marginBottom: 4 }}>Click to select file</div><div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>QuickBooks Employee List export (.xlsx) or CSV</div></>
               }
             </div>
-            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: -8, marginBottom: 16 }}>
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: -8, marginBottom: 16 }}>
               Existing employees are matched by name and skipped — the import never updates them, so no duplicates are created unless you uncheck the skip option.
             </p>
 
@@ -109,13 +109,13 @@ export default function ImportEmployeesModal({ clientId, onClose, onImported }) 
             {preview && !loading && (
               <>
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                  <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                  <div style={{ fontSize: '0.8667rem', color: 'var(--text-muted)' }}>
                     Found <strong style={{ color: 'var(--text-primary)' }}>{preview.count}</strong> employees
                     {skipExisting && preview.rows.some(r => r.alreadyExists) && (
                       <span style={{ color: 'var(--warning)' }}> · {preview.rows.filter(r => r.alreadyExists).length} matched by name (will skip)</span>
                     )}
                   </div>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: '0.8667rem', cursor: 'pointer' }}>
                     <input type="checkbox" checked={skipExisting} onChange={e => setSkip(e.target.checked)} />
                     Skip existing employees (matched by name)
                   </label>
@@ -123,22 +123,22 @@ export default function ImportEmployeesModal({ clientId, onClose, onImported }) 
 
                 {preview.rows.some(r => r.alreadyExists) && (
                   skipExisting ? (
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 10 }}>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 10 }}>
                       Matching is by name only. If a row marked "Exists" is really a different person with the same name, uncheck the box above — but that re-imports every matched row.
                     </div>
                   ) : (
-                    <div className="alert alert-warning" style={{ marginBottom: 10, fontSize: 12 }}>
+                    <div className="alert alert-warning" style={{ marginBottom: 10, fontSize: '0.8rem' }}>
                       <span>⚠</span> {preview.rows.filter(r => r.alreadyExists).length} row{preview.rows.filter(r => r.alreadyExists).length !== 1 ? 's' : ''} marked "Exists" will be imported as new, duplicate employee records. Leave the box checked unless these are different people who share a name.
                     </div>
                   )
                 )}
 
                 <div style={{ flex: 1, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8, marginBottom: 16 }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8667rem' }}>
                     <thead>
                       <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)' }}>
                         {['Name', 'SSN', 'Address', 'City', 'State', 'Status'].map(h => (
-                          <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
+                          <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: '0.7333rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -172,7 +172,7 @@ export default function ImportEmployeesModal({ clientId, onClose, onImported }) 
                   </button>
                 </div>
 
-                <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 10, textAlign: 'center' }}>
+                <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 10, textAlign: 'center' }}>
                   Pay rate, pay type, and W-4 details will default to hourly/$0/single — edit each employee after importing.
                 </p>
               </>

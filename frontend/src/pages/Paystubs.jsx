@@ -18,9 +18,9 @@ function StatusLine({ form, status, amount, confirmation, submittedAt }) {
   const isFailed     = status === 'failed';
   const isProcessing = status === 'processing';
 
-  const iconBg    = isSubmitted ? '#10b981' : isFailed ? 'var(--error)' : isProcessing ? 'var(--warning)' : 'transparent';
-  const iconBdr   = isSubmitted ? '#10b981' : isFailed ? 'var(--error)' : isProcessing ? 'var(--warning)' : 'var(--border)';
-  const iconColor = (isSubmitted || isFailed) ? '#fff' : 'var(--text-muted)';
+  const iconBg    = isSubmitted ? '#10b981' : isFailed ? 'var(--error)' : isProcessing ? '#d97706' : 'transparent';
+  const iconBdr   = isSubmitted ? '#10b981' : isFailed ? 'var(--error)' : isProcessing ? '#d97706' : 'var(--border)';
+  const iconColor = (isSubmitted || isFailed || isProcessing) ? '#fff' : 'var(--text-muted)';
   const icon      = isSubmitted ? '✓' : isFailed ? '✕' : isProcessing ? '…' : '·';
 
   const labelColor = isSubmitted ? '#10b981' : isFailed ? 'var(--error)' : 'var(--text-muted)';
@@ -33,24 +33,24 @@ function StatusLine({ form, status, amount, confirmation, submittedAt }) {
       <div style={{
         width: 18, height: 18, borderRadius: '50%', flexShrink: 0, marginTop: 1,
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 10, fontWeight: 800,
+        fontSize: '0.6667rem', fontWeight: 800,
         background: iconBg, border: `1.5px solid ${iconBdr}`, color: iconColor,
       }}>
         {icon}
       </div>
       <div>
-        <div style={{ fontSize: 12, lineHeight: 1.3 }}>
+        <div style={{ fontSize: '0.8rem', lineHeight: 1.3 }}>
           <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>Form {form}</span>
           <span style={{ color: labelColor, fontWeight: 600 }}> — {labelText}</span>
-          <span style={{ color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', marginLeft: 4, fontSize: 11 }}>{fmtAmt(amount)}</span>
+          <span style={{ color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', marginLeft: 4, fontSize: '0.7333rem' }}>{fmtAmt(amount)}</span>
         </div>
         {confirmation && (
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', marginTop: 2, wordBreak: 'break-all' }}>
+          <div style={{ fontSize: '0.6667rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace', marginTop: 2, wordBreak: 'break-all' }}>
             Conf# {confirmation}
           </div>
         )}
         {submittedAt && isSubmitted && !isDryRun && (
-          <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>
+          <div style={{ fontSize: '0.6667rem', color: 'var(--text-muted)', marginTop: 1 }}>
             {new Date(submittedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
           </div>
         )}
@@ -90,22 +90,22 @@ function SUIModal({ stub, onClose }) {
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }} onClick={onClose}>
       <div ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="sui-modal-title" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: 28, maxWidth: 480, width: '100%', outline: 'none' }} onClick={(e) => e.stopPropagation()}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-          <h3 id="sui-modal-title" style={{ margin: 0, fontSize: 16 }}>SUI — State Unemployment Insurance</h3>
-          <button onClick={onClose} aria-label="Close" title="Close" style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: 'var(--text-muted)' }}>×</button>
+          <h3 id="sui-modal-title" style={{ margin: 0, fontSize: '1.0667rem' }}>SUI — State Unemployment Insurance</h3>
+          <button onClick={onClose} aria-label="Close" title="Close" style={{ background: 'none', border: 'none', fontSize: '1.3333rem', cursor: 'pointer', color: 'var(--text-muted)' }}>×</button>
         </div>
         <div className="alert alert-warning" style={{ marginBottom: 16 }}>
           <span>⚠</span>
           <strong>SUI is NOT submitted via EFTPS.</strong>
         </div>
-        <p style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--text-secondary)', marginBottom: 16 }}>
+        <p style={{ fontSize: '0.9333rem', lineHeight: 1.7, color: 'var(--text-secondary)', marginBottom: 16 }}>
           Your <strong>{stub.work_state}</strong> State Unemployment Insurance (SUI) deposit of{' '}
           <strong style={{ color: 'var(--accent)', fontFamily: 'JetBrains Mono, monospace' }}>{fmtAmt(stub.suta_tax)}</strong>{' '}
           is due through your <strong>state unemployment agency</strong> — not EFTPS.
         </p>
-        <p style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+        <p style={{ fontSize: '0.8667rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
           Each state has its own online portal. Examples:
         </p>
-        <ul style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.8, marginTop: 8, paddingLeft: 20 }}>
+        <ul style={{ fontSize: '0.8667rem', color: 'var(--text-muted)', lineHeight: 1.8, marginTop: 8, paddingLeft: 20 }}>
           <li><strong>TX</strong> — Texas Workforce Commission (TWC): twc.texas.gov</li>
           <li><strong>CA</strong> — EDD e-Services for Business: edd.ca.gov</li>
           <li><strong>NY</strong> — NY Department of Labor: labor.ny.gov</li>
@@ -129,7 +129,7 @@ function BatchResultBanner({ result, onDismiss }) {
       ) : (
         <><span>✓</span> Submitted {result.submitted} paystub{result.submitted !== 1 ? 's' : ''} ({result.taxType?.toUpperCase()}) — total {fmtAmt(result.totalDeposit)}{result.confirmation ? ` · Conf: ${result.confirmation}` : ''}</>
       )}
-      <button onClick={onDismiss} aria-label="Dismiss message" title="Dismiss" style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: 16 }}>×</button>
+      <button onClick={onDismiss} aria-label="Dismiss message" title="Dismiss" style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6, fontSize: '1.0667rem' }}>×</button>
     </div>
   );
 }
@@ -244,7 +244,7 @@ export default function Paystubs() {
         <thead>
           <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)' }}>
             {['Check #', 'Employee', 'Pay Period', 'Gross', '941 Deposit', 'FUTA (940)', 'SUI', 'Submission Status', ''].map((h) => (
-              <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>{h}</th>
+              <th key={h} style={{ padding: '10px 12px', textAlign: 'left', fontSize: '0.7333rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>{h}</th>
             ))}
           </tr>
         </thead>
@@ -261,25 +261,25 @@ export default function Paystubs() {
 
             return (
               <tr key={stub.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                <td style={{ padding: '10px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--accent)', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                <td style={{ padding: '10px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8rem', color: 'var(--accent)', fontWeight: 600, whiteSpace: 'nowrap' }}>
                   {stub.check_number ? `#${stub.check_number}` : '—'}
                 </td>
                 <td style={{ padding: '10px 12px' }}>
-                  <div style={{ fontWeight: 600, fontSize: 13 }}>
+                  <div style={{ fontWeight: 600, fontSize: '0.8667rem' }}>
                     {stub.employee_name || (stub.first_name ? `${stub.first_name} ${stub.last_name}` : '—')}
                   </div>
-                  {stub.work_state && <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{stub.work_state}</div>}
+                  {stub.work_state && <div style={{ fontSize: '0.7333rem', color: 'var(--text-muted)' }}>{stub.work_state}</div>}
                 </td>
-                <td style={{ padding: '10px 12px', fontSize: 12, fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap' }}>
+                <td style={{ padding: '10px 12px', fontSize: '0.8rem', fontFamily: 'JetBrains Mono, monospace', whiteSpace: 'nowrap' }}>
                   <div>{fmtDate(stub.pay_period_start)}</div>
                   <div style={{ color: 'var(--text-muted)' }}>→ {fmtDate(stub.pay_period_end)}</div>
                 </td>
-                <td style={{ padding: '10px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>{fmtAmt(stub.gross_wages)}</td>
-                <td style={{ padding: '10px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 700, color: 'var(--accent)' }}>{fmtAmt(stub.total_deposit)}</td>
-                <td style={{ padding: '10px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: hasFUTA ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                <td style={{ padding: '10px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem' }}>{fmtAmt(stub.gross_wages)}</td>
+                <td style={{ padding: '10px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem', fontWeight: 700, color: 'var(--accent)' }}>{fmtAmt(stub.total_deposit)}</td>
+                <td style={{ padding: '10px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem', color: hasFUTA ? 'var(--text-primary)' : 'var(--text-muted)' }}>
                   {hasFUTA ? fmtAmt(stub.futa_tax) : '—'}
                 </td>
-                <td style={{ padding: '10px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: hasSUI ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                <td style={{ padding: '10px 12px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem', color: hasSUI ? 'var(--text-primary)' : 'var(--text-muted)' }}>
                   {hasSUI ? fmtAmt(stub.suta_tax) : '—'}
                 </td>
                 <td style={{ padding: '10px 12px', minWidth: 220 }}>
@@ -395,16 +395,16 @@ export default function Paystubs() {
               { label: 'Total Paystubs',     value: paystubs.length,    sub: client?.businessName },
             ].map(({ label, value, sub, accent }) => (
               <div key={label} className="card" style={{ padding: '14px 18px' }}>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>{label}</div>
-                <div style={{ fontSize: 26, fontWeight: 700, color: accent ? 'var(--warning)' : 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace' }}>{value}</div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{sub}</div>
+                <div style={{ fontSize: '0.6667rem', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>{label}</div>
+                <div style={{ fontSize: '1.7333rem', fontWeight: 700, color: accent ? 'var(--warning)' : 'var(--text-primary)', fontFamily: 'JetBrains Mono, monospace' }}>{value}</div>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 2 }}>{sub}</div>
               </div>
             ))}
           </div>
         )}
 
         {paystubs.length > 0 && (
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
+          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 16 }}>
             EFTPS deposits pay the taxes — they don't file the quarterly Form 941 or annual Form 940 return.{' '}
             <Link to={`/reports?clientId=${id}`} style={{ color: 'var(--accent)', fontWeight: 600 }}>File returns on the File Forms page →</Link>
           </div>
@@ -421,7 +421,7 @@ export default function Paystubs() {
 
         {paystubs.length === 0 ? (
           <div className="card" style={{ textAlign: 'center', padding: '48px 24px' }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>📄</div>
+            <div style={{ fontSize: '2.6667rem', marginBottom: 12 }}>📄</div>
             <h3 style={{ marginBottom: 8 }}>No paystubs yet</h3>
             <p style={{ color: 'var(--text-muted)', marginBottom: 20 }}>Use "Save as Paystub" when entering payroll to build a queue before submitting.</p>
             <Link to={`/clients/${id}/payroll/new`} className="btn btn-primary">New Payroll Entry</Link>
@@ -436,8 +436,8 @@ export default function Paystubs() {
               <div key={key} className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 20 }}>
                 <div style={{ padding: '10px 16px', background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div>
-                    <span style={{ fontWeight: 700, fontSize: 13 }}>{label}</span>
-                    <span style={{ marginLeft: 10, fontSize: 12, color: 'var(--text-muted)' }}>{stubs.length} paystub{stubs.length !== 1 ? 's' : ''} · 941 deposit {fmtAmt(stubs.reduce((s, p) => s + p.total_deposit, 0))}</span>
+                    <span style={{ fontWeight: 700, fontSize: '0.8667rem' }}>{label}</span>
+                    <span style={{ marginLeft: 10, fontSize: '0.8rem', color: 'var(--text-muted)' }}>{stubs.length} paystub{stubs.length !== 1 ? 's' : ''} · 941 deposit {fmtAmt(stubs.reduce((s, p) => s + p.total_deposit, 0))}</span>
                   </div>
                   {qPending941.length > 0 && (
                     <button className="btn btn-primary btn-sm" onClick={() => handleBatch('941', parseInt(year, 10), quarter)} disabled={batching941 || batching940}>

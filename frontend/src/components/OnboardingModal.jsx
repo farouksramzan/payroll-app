@@ -75,7 +75,7 @@ function TourSpotlight({ targetId, padding = 10 }) {
         transform: 'translateX(-50%)',
         background: '#4ade80',
         color: '#052e16',
-        fontSize: 11,
+        fontSize: '0.7333rem',
         fontWeight: 800,
         padding: '4px 12px',
         borderRadius: 20,
@@ -311,13 +311,13 @@ export default function OnboardingModal() {
             <div style={{ height: 4, background: 'linear-gradient(90deg, #16a34a, #4ade80)' }} />
             <div style={{ padding: '32px 36px 28px' }}>
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 20 }}>
-                <button onClick={dismiss} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', fontSize: 12, fontWeight: 600, borderRadius: 20, padding: '4px 12px', cursor: 'pointer' }}>
+                <button onClick={dismiss} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', fontSize: '0.8rem', fontWeight: 600, borderRadius: 20, padding: '4px 12px', cursor: 'pointer' }}>
                   Skip tour ×
                 </button>
               </div>
-              <div style={{ fontSize: 40, marginBottom: 14 }}>👋</div>
-              <h2 style={{ fontSize: 24, fontWeight: 900, color: '#f1f5f9', margin: '0 0 10px', letterSpacing: '-0.3px' }}>Welcome to PayrollTax Pro</h2>
-              <p style={{ fontSize: 14, color: '#94a3b8', lineHeight: 1.75, margin: '0 0 24px' }}>
+              <div style={{ fontSize: '2.6667rem', marginBottom: 14 }}>👋</div>
+              <h2 style={{ fontSize: '1.6rem', fontWeight: 900, color: '#f1f5f9', margin: '0 0 10px', letterSpacing: '-0.3px' }}>Welcome to PayrollTax Pro</h2>
+              <p style={{ fontSize: '0.9333rem', color: '#94a3b8', lineHeight: 1.75, margin: '0 0 24px' }}>
                 {client
                   ? <>We'll walk you through <strong style={{ color: '#4ade80' }}>{client.name}</strong> — the first company in your account.</>
                   : <>We'll walk you through the first company in your account.</>}
@@ -331,16 +331,16 @@ export default function OnboardingModal() {
                   { icon: '👥', text: 'Employees tab — W-4 settings and direct deposit info' },
                 ].map(item => (
                   <div key={item.text} style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                    <span style={{ fontSize: 14, flexShrink: 0, marginTop: 1 }}>{item.icon}</span>
-                    <span style={{ fontSize: 13, color: '#cbd5e1', lineHeight: 1.5 }}>{item.text}</span>
+                    <span style={{ fontSize: '0.9333rem', flexShrink: 0, marginTop: 1 }}>{item.icon}</span>
+                    <span style={{ fontSize: '0.8667rem', color: '#cbd5e1', lineHeight: 1.5 }}>{item.text}</span>
                   </div>
                 ))}
               </div>
               <div style={{ display: 'flex', gap: 10 }}>
-                <button onClick={dismiss} style={{ flex: 1, padding: '11px 0', borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                <button onClick={dismiss} style={{ flex: 1, padding: '11px 0', borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', fontSize: '0.8667rem', fontWeight: 600, cursor: 'pointer' }}>
                   Skip for now
                 </button>
-                <button onClick={() => setStep(1)} style={{ flex: 2, padding: '11px 0', borderRadius: 10, background: 'linear-gradient(135deg, #16a34a, #15803d)', border: 'none', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 20px rgba(22,163,74,0.35)' }}>
+                <button onClick={() => setStep(1)} style={{ flex: 2, padding: '11px 0', borderRadius: 10, background: 'linear-gradient(135deg, #16a34a, #15803d)', border: 'none', color: '#fff', fontSize: '0.9333rem', fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 20px rgba(22,163,74,0.35)' }}>
                   Start Tour →
                 </button>
               </div>
@@ -358,13 +358,13 @@ export default function OnboardingModal() {
         <div style={{ background: '#0f172a', borderRadius: 20, width: '100%', maxWidth: 460, boxShadow: '0 30px 80px rgba(0,0,0,0.5)', border: '1px solid rgba(34,197,94,0.25)', overflow: 'hidden', textAlign: 'center' }}>
           <div style={{ height: 4, background: 'linear-gradient(90deg, #16a34a, #4ade80)' }} />
           <div style={{ padding: '40px 36px 36px' }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>🎉</div>
-            <h2 style={{ fontSize: 22, fontWeight: 900, color: '#f1f5f9', margin: '0 0 12px' }}>You've seen it all!</h2>
-            <p style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.75, margin: '0 0 10px' }}>
+            <div style={{ fontSize: '3.2rem', marginBottom: 16 }}>🎉</div>
+            <h2 style={{ fontSize: '1.4667rem', fontWeight: 900, color: '#f1f5f9', margin: '0 0 12px' }}>You've seen it all!</h2>
+            <p style={{ fontSize: '0.8667rem', color: '#94a3b8', lineHeight: 1.75, margin: '0 0 10px' }}>
               That's the full PayrollTax Pro workflow — real IRS 2026 tax tables, EFTPS submission, ACH direct deposit, and <strong style={{ color: '#4ade80' }}>zero per-check fees</strong>.
             </p>
-            <p style={{ fontSize: 13, color: '#64748b', lineHeight: 1.6, margin: '0 0 28px' }}>Every number in this app uses real IRS logic — nothing is mocked.</p>
-            <button onClick={dismiss} style={{ width: '100%', padding: '12px 0', borderRadius: 10, background: 'linear-gradient(135deg, #16a34a, #15803d)', border: 'none', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 20px rgba(22,163,74,0.3)' }}>
+            <p style={{ fontSize: '0.8667rem', color: '#64748b', lineHeight: 1.6, margin: '0 0 28px' }}>Every number in this app uses real IRS logic — nothing is mocked.</p>
+            <button onClick={dismiss} style={{ width: '100%', padding: '12px 0', borderRadius: 10, background: 'linear-gradient(135deg, #16a34a, #15803d)', border: 'none', color: '#fff', fontSize: '0.9333rem', fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 20px rgba(22,163,74,0.3)' }}>
               Start Exploring →
             </button>
           </div>
@@ -380,16 +380,16 @@ export default function OnboardingModal() {
         <div style={{ background: '#0f172a', borderRadius: 20, width: '100%', maxWidth: 460, boxShadow: '0 30px 80px rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)', overflow: 'hidden', textAlign: 'center' }}>
           <div style={{ height: 4, background: 'linear-gradient(90deg, #16a34a, #4ade80)' }} />
           <div style={{ padding: '40px 36px 36px' }}>
-            <div style={{ fontSize: 48, marginBottom: 16 }}>🏢</div>
-            <h2 style={{ fontSize: 22, fontWeight: 900, color: '#f1f5f9', margin: '0 0 12px' }}>Add your first company</h2>
-            <p style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.75, margin: '0 0 28px' }}>
+            <div style={{ fontSize: '3.2rem', marginBottom: 16 }}>🏢</div>
+            <h2 style={{ fontSize: '1.4667rem', fontWeight: 900, color: '#f1f5f9', margin: '0 0 12px' }}>Add your first company</h2>
+            <p style={{ fontSize: '0.8667rem', color: '#94a3b8', lineHeight: 1.75, margin: '0 0 28px' }}>
               The tour walks through a real company, and this account doesn't have one yet. Add your first company, then start the tour again from the Tutorial button.
             </p>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={dismiss} style={{ flex: 1, padding: '11px 0', borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              <button onClick={dismiss} style={{ flex: 1, padding: '11px 0', borderRadius: 10, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', fontSize: '0.8667rem', fontWeight: 600, cursor: 'pointer' }}>
                 Close
               </button>
-              <button onClick={() => { dismiss(); navigate('/clients/new'); }} style={{ flex: 2, padding: '11px 0', borderRadius: 10, background: 'linear-gradient(135deg, #16a34a, #15803d)', border: 'none', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 20px rgba(22,163,74,0.35)' }}>
+              <button onClick={() => { dismiss(); navigate('/clients/new'); }} style={{ flex: 2, padding: '11px 0', borderRadius: 10, background: 'linear-gradient(135deg, #16a34a, #15803d)', border: 'none', color: '#fff', fontSize: '0.9333rem', fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 20px rgba(22,163,74,0.35)' }}>
                 Add a company →
               </button>
             </div>
@@ -410,11 +410,11 @@ export default function OnboardingModal() {
         <div style={{ background: '#0f172a', borderRadius: 20, width: '100%', maxWidth: 460, boxShadow: '0 30px 80px rgba(0,0,0,0.5)', border: '1px solid rgba(255,255,255,0.1)', overflow: 'hidden', textAlign: 'center' }}>
           <div style={{ height: 4, background: 'linear-gradient(90deg, #16a34a, #4ade80)' }} />
           <div style={{ padding: '40px 36px 36px' }}>
-            <h2 style={{ fontSize: 22, fontWeight: 900, color: '#f1f5f9', margin: '0 0 12px' }}>Tour unavailable right now</h2>
-            <p style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.75, margin: '0 0 28px' }}>
+            <h2 style={{ fontSize: '1.4667rem', fontWeight: 900, color: '#f1f5f9', margin: '0 0 12px' }}>Tour unavailable right now</h2>
+            <p style={{ fontSize: '0.8667rem', color: '#94a3b8', lineHeight: 1.75, margin: '0 0 28px' }}>
               We couldn't load your companies to run the tour. Close this and try again in a minute from the Tutorial button.
             </p>
-            <button onClick={dismiss} style={{ width: '100%', padding: '12px 0', borderRadius: 10, background: 'linear-gradient(135deg, #16a34a, #15803d)', border: 'none', color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 20px rgba(22,163,74,0.3)' }}>
+            <button onClick={dismiss} style={{ width: '100%', padding: '12px 0', borderRadius: 10, background: 'linear-gradient(135deg, #16a34a, #15803d)', border: 'none', color: '#fff', fontSize: '0.9333rem', fontWeight: 700, cursor: 'pointer', boxShadow: '0 4px 20px rgba(22,163,74,0.3)' }}>
               Close
             </button>
           </div>
@@ -455,35 +455,35 @@ export default function OnboardingModal() {
             {/* Top row */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
               <StepDots current={step} total={TOTAL_STEPS} onGoto={n => setStep(n)} />
-              <button onClick={dismiss} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#64748b', fontSize: 11, fontWeight: 600, borderRadius: 20, padding: '3px 10px', cursor: 'pointer' }}>
+              <button onClick={dismiss} style={{ background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#64748b', fontSize: '0.7333rem', fontWeight: 600, borderRadius: 20, padding: '3px 10px', cursor: 'pointer' }}>
                 Skip ×
               </button>
             </div>
 
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#4ade80', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>
+            <div style={{ fontSize: '0.6667rem', fontWeight: 700, color: '#4ade80', letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 4 }}>
               Step {step} of {TOTAL_STEPS}
             </div>
 
             {!current ? (
-              <div style={{ color: '#64748b', fontSize: 13, padding: '6px 0' }}>Loading your company…</div>
+              <div style={{ color: '#64748b', fontSize: '0.8667rem', padding: '6px 0' }}>Loading your company…</div>
             ) : (
               <>
-                <h3 style={{ fontSize: 15, fontWeight: 800, color: '#f1f5f9', margin: '0 0 6px', letterSpacing: '-0.2px' }}>{current.title}</h3>
-                <p style={{ fontSize: 13, color: '#94a3b8', lineHeight: 1.6, margin: '0 0 10px' }}>{current.body}</p>
+                <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#f1f5f9', margin: '0 0 6px', letterSpacing: '-0.2px' }}>{current.title}</h3>
+                <p style={{ fontSize: '0.8667rem', color: '#94a3b8', lineHeight: 1.6, margin: '0 0 10px' }}>{current.body}</p>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 7, background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.2)', borderRadius: 8, padding: '7px 11px', marginBottom: 12 }}>
-                  <span style={{ fontSize: 14, flexShrink: 0 }}>💡</span>
-                  <span style={{ fontSize: 12, color: '#86efac', lineHeight: 1.5 }}>{current.hint}</span>
+                  <span style={{ fontSize: '0.9333rem', flexShrink: 0 }}>💡</span>
+                  <span style={{ fontSize: '0.8rem', color: '#86efac', lineHeight: 1.5 }}>{current.hint}</span>
                 </div>
               </>
             )}
 
             <div style={{ display: 'flex', gap: 8 }}>
               {step > 1 && (
-                <button onClick={goPrev} style={{ padding: '8px 16px', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                <button onClick={goPrev} style={{ padding: '8px 16px', borderRadius: 8, background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)', color: '#94a3b8', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
                   ← Back
                 </button>
               )}
-              <button onClick={goNext} style={{ flex: 1, padding: '9px 0', borderRadius: 8, background: 'linear-gradient(135deg, #16a34a, #15803d)', border: 'none', color: '#fff', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+              <button onClick={goNext} style={{ flex: 1, padding: '9px 0', borderRadius: 8, background: 'linear-gradient(135deg, #16a34a, #15803d)', border: 'none', color: '#fff', fontSize: '0.8667rem', fontWeight: 700, cursor: 'pointer' }}>
                 {step === TOTAL_STEPS ? 'Finish Tour ✓' : 'Next →'}
               </button>
             </div>

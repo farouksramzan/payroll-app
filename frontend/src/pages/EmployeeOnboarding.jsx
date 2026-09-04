@@ -10,7 +10,7 @@ const INPUT = {
   width: '100%', boxSizing: 'border-box',
   padding: '10px 13px', borderRadius: 0,
   border: '1.5px solid var(--border)',
-  fontSize: 14, color: 'var(--text-primary)',
+  fontSize: '0.9333rem', color: 'var(--text-primary)',
   background: 'var(--bg)', outline: 'none',
 };
 
@@ -41,7 +41,7 @@ function RadioCard({ selected, onClick, children }) {
         width: '100%', textAlign: 'left', cursor: 'pointer',
         padding: '14px 16px', borderRadius: 10,
         border: `2px solid ${selected ? 'var(--accent)' : 'var(--border)'}`,
-        background: selected ? 'rgba(30,86,160,0.04)' : 'var(--bg)',
+        background: selected ? 'rgba(45,106,79,0.06)' : 'var(--bg)',
         transition: 'all 0.15s', display: 'flex', alignItems: 'flex-start', gap: 12,
       }}
     >
@@ -62,12 +62,12 @@ function Counter({ value, onChange, min = 0 }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
       <button type="button" onClick={() => onChange(Math.max(min, value - 1))}
-        style={{ width: 36, height: 36, borderRadius: 8, border: '1.5px solid var(--border)', background: 'var(--bg-secondary)', cursor: 'pointer', fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        style={{ width: 36, height: 36, borderRadius: 8, border: '1.5px solid var(--border)', background: 'var(--bg-secondary)', cursor: 'pointer', fontSize: '1.3333rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         −
       </button>
-      <span style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)', minWidth: 32, textAlign: 'center' }}>{value}</span>
+      <span style={{ fontSize: '1.7333rem', fontWeight: 800, color: 'var(--text-primary)', minWidth: 32, textAlign: 'center' }}>{value}</span>
       <button type="button" onClick={() => onChange(value + 1)}
-        style={{ width: 36, height: 36, borderRadius: 8, border: '1.5px solid var(--border)', background: 'var(--bg-secondary)', cursor: 'pointer', fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        style={{ width: 36, height: 36, borderRadius: 8, border: '1.5px solid var(--border)', background: 'var(--bg-secondary)', cursor: 'pointer', fontSize: '1.3333rem', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         +
       </button>
     </div>
@@ -85,7 +85,7 @@ function SensitiveInput({ value, onChange, placeholder, maxLength }) {
         onBlur={e => e.target.style.borderColor = 'var(--border)'}
       />
       <button type="button" onClick={() => setShow(s => !s)}
-        style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12, fontWeight: 600 }}>
+        style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.8rem', fontWeight: 600 }}>
         {show ? 'Hide' : 'Show'}
       </button>
     </div>
@@ -267,8 +267,8 @@ export default function EmployeeOnboarding() {
 
       {/* Nav */}
       <div style={{ height: 'var(--nav-h)', background: 'var(--accent)', display: 'flex', alignItems: 'center', padding: '0 28px', boxShadow: '0 2px 8px rgba(0,0,0,0.18)', flexShrink: 0 }}>
-        <div style={{ fontSize: 17, fontWeight: 800, color: '#fff', letterSpacing: '-0.4px' }}>
-          Payroll<span style={{ color: '#7ca4e0' }}>Tax</span> Pro
+        <div style={{ fontSize: '1.1333rem', fontWeight: 800, color: '#fff', letterSpacing: '-0.4px' }}>
+          Payroll<span style={{ color: '#a7f3d0' }}>Tax</span> Pro
         </div>
       </div>
 
@@ -286,15 +286,15 @@ export default function EmployeeOnboarding() {
           {/* ── Step 1: Welcome ──────────────────────────────────────────────── */}
           {step === 1 && (
             <div className="card" style={{ textAlign: 'center', padding: '48px 40px' }}>
-              <div style={{ fontSize: 48, marginBottom: 16 }}>👋</div>
-              <h1 style={{ fontSize: 24, fontWeight: 900, color: 'var(--text-primary)', margin: '0 0 10px', letterSpacing: '-0.4px' }}>
+              <div style={{ fontSize: '3.2rem', marginBottom: 16 }}>👋</div>
+              <h1 style={{ fontSize: '1.6rem', fontWeight: 900, color: 'var(--text-primary)', margin: '0 0 10px', letterSpacing: '-0.4px' }}>
                 Welcome aboard!
               </h1>
-              <p style={{ fontSize: 14, color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 28, maxWidth: 380, margin: '0 auto 28px' }}>
+              <p style={{ fontSize: '0.9333rem', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 28, maxWidth: 380, margin: '0 auto 28px' }}>
                 Before you can view your dashboard, we need to collect a few details for payroll — your tax withholding info, direct deposit (optional — paper checks work too), and contact details.
               </p>
-              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 28 }}>This takes about 2 minutes.</p>
-              <button className="btn btn-primary" style={{ width: '100%', padding: '12px', fontSize: 15, fontWeight: 700 }} onClick={next}>
+              <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 28 }}>This takes about 2 minutes.</p>
+              <button className="btn btn-primary" style={{ width: '100%', padding: '12px', fontSize: '1rem', fontWeight: 700 }} onClick={next}>
                 Get Started
               </button>
             </div>
@@ -340,8 +340,8 @@ export default function EmployeeOnboarding() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
                 {FILING_OPTIONS.map(opt => (
                   <RadioCard key={opt.value} selected={data.filingStatus === opt.value} onClick={() => setData(d => ({ ...d, filingStatus: opt.value }))}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{opt.label}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{opt.desc}</div>
+                    <div style={{ fontSize: '0.9333rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{opt.label}</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{opt.desc}</div>
                   </RadioCard>
                 ))}
               </div>
@@ -361,8 +361,8 @@ export default function EmployeeOnboarding() {
                   { val: true,  label: 'Yes', desc: 'I have multiple jobs, or my spouse also works.' },
                 ].map(opt => (
                   <RadioCard key={String(opt.val)} selected={data.step2Checkbox === opt.val} onClick={() => setData(d => ({ ...d, step2Checkbox: opt.val }))}>
-                    <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{opt.label}</div>
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{opt.desc}</div>
+                    <div style={{ fontSize: '0.9333rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 2 }}>{opt.label}</div>
+                    <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{opt.desc}</div>
                   </RadioCard>
                 ))}
               </div>
@@ -379,13 +379,13 @@ export default function EmployeeOnboarding() {
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 20, marginBottom: 24 }}>
                 <div style={{ padding: '18px', borderRadius: 10, border: '1.5px solid var(--border)', background: 'var(--bg)' }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>Children under age 17</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>Worth $2,000 each in tax credit</div>
+                  <div style={{ fontSize: '0.9333rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>Children under age 17</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 14 }}>Worth $2,000 each in tax credit</div>
                   <Counter value={data.step3Children} onChange={v => setData(d => ({ ...d, step3Children: v }))} />
                 </div>
                 <div style={{ padding: '18px', borderRadius: 10, border: '1.5px solid var(--border)', background: 'var(--bg)' }}>
-                  <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>Other dependents</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>Worth $500 each (parents, older children, etc.)</div>
+                  <div style={{ fontSize: '0.9333rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>Other dependents</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 14 }}>Worth $500 each (parents, older children, etc.)</div>
                   <Counter value={data.step3Other} onChange={v => setData(d => ({ ...d, step3Other: v }))} />
                 </div>
               </div>
@@ -397,7 +397,7 @@ export default function EmployeeOnboarding() {
           {step === 6 && (
             <div className="card" style={{ padding: '36px 36px 28px' }}>
               <StepLabel step={5} total={7} label="W-4 — Other Adjustments" />
-              <h2 style={H2}>Any other withholding adjustments? <span style={{ fontWeight: 500, fontSize: 16, color: 'var(--text-muted)' }}>Optional</span></h2>
+              <h2 style={H2}>Any other withholding adjustments? <span style={{ fontWeight: 500, fontSize: '1.0667rem', color: 'var(--text-muted)' }}>Optional</span></h2>
               <p style={SUB}>Most people skip this. Only fill in if you have non-job income, itemized deductions, or want extra withheld.</p>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16, marginBottom: 24 }}>
@@ -409,7 +409,7 @@ export default function EmployeeOnboarding() {
                   <Field key={f.key} label={f.label}>
                     <Hint>{f.desc}</Hint>
                     <div style={{ position: 'relative', maxWidth: 220, marginTop: 6 }}>
-                      <span style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 14 }}>$</span>
+                      <span style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '0.9333rem' }}>$</span>
                       <input type="number" min="0" step="0.01" placeholder="0.00"
                         value={data[f.key]} onChange={set(f.key)}
                         style={{ ...INPUT, paddingLeft: 24, maxWidth: 220 }}
@@ -432,7 +432,7 @@ export default function EmployeeOnboarding() {
               <p style={SUB}>Your account number is stored encrypted. Only the last 4 digits will be visible after saving.</p>
 
               {me?.hasBankInfo && (
-                <p style={{ fontSize: 12, color: 'var(--success)', fontWeight: 600, marginBottom: 16 }}>
+                <p style={{ fontSize: '0.8rem', color: 'var(--success)', fontWeight: 600, marginBottom: 16 }}>
                   A bank account is already on file. Leave these blank to keep it, or enter new details to replace it.
                 </p>
               )}
@@ -477,7 +477,7 @@ export default function EmployeeOnboarding() {
                 type="button"
                 onClick={skipBank}
                 disabled={saving}
-                style={{ width: '100%', marginTop: 14, padding: '9px 0', background: 'none', border: '1.5px dashed var(--border)', borderRadius: 0, color: 'var(--text-muted)', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}
+                style={{ width: '100%', marginTop: 14, padding: '9px 0', background: 'none', border: '1.5px dashed var(--border)', borderRadius: 0, color: 'var(--text-muted)', fontSize: '0.8667rem', fontWeight: 600, cursor: 'pointer' }}
               >
                 I'm paid by paper check / I'll add this later — skip this step
               </button>
@@ -534,7 +534,7 @@ export default function EmployeeOnboarding() {
                   {saving ? <span className="spinner" style={{ width: 16, height: 16 }} /> : 'Save & Finish'}
                 </button>
               </div>
-              {error && <p style={{ color: 'var(--error)', fontSize: 12, marginTop: 10 }}>{error}</p>}
+              {error && <p style={{ color: 'var(--error)', fontSize: '0.8rem', marginTop: 10 }}>{error}</p>}
             </div>
           )}
 
@@ -549,15 +549,15 @@ export default function EmployeeOnboarding() {
                   <path d="M5 14l7 7 11-11" stroke="#fff" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
                 </svg>
               </div>
-              <h1 style={{ fontSize: 24, fontWeight: 900, color: 'var(--text-primary)', margin: '0 0 10px', letterSpacing: '-0.4px' }}>
+              <h1 style={{ fontSize: '1.6rem', fontWeight: 900, color: 'var(--text-primary)', margin: '0 0 10px', letterSpacing: '-0.4px' }}>
                 You're all set!
               </h1>
-              <p style={{ fontSize: 14, color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 32, maxWidth: 380, margin: '0 auto 32px' }}>
+              <p style={{ fontSize: '0.9333rem', color: 'var(--text-muted)', lineHeight: 1.6, marginBottom: 32, maxWidth: 380, margin: '0 auto 32px' }}>
                 Your information has been saved. Your accountant will have everything they need for payroll. You can update any of these details from your profile at any time.
               </p>
               <button
                 className="btn btn-primary"
-                style={{ padding: '12px 32px', fontSize: 15, fontWeight: 700 }}
+                style={{ padding: '12px 32px', fontSize: '1rem', fontWeight: 700 }}
                 onClick={() => navigate('/employee', { replace: true })}
               >
                 Go to My Dashboard
@@ -573,14 +573,14 @@ export default function EmployeeOnboarding() {
 
 // ── Small shared sub-components ───────────────────────────────────────────────
 
-const H2 = { fontSize: 20, fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 6px', letterSpacing: '-0.3px' };
-const SUB = { fontSize: 13, color: 'var(--text-muted)', marginBottom: 24, lineHeight: 1.5 };
+const H2 = { fontSize: '1.3333rem', fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 6px', letterSpacing: '-0.3px' };
+const SUB = { fontSize: '0.8667rem', color: 'var(--text-muted)', marginBottom: 24, lineHeight: 1.5 };
 
 function StepLabel({ step, total, label }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-      <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
-      <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Step {step} of {total}</span>
+      <span style={{ fontSize: '0.7333rem', fontWeight: 700, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
+      <span style={{ fontSize: '0.7333rem', color: 'var(--text-muted)', fontWeight: 600 }}>Step {step} of {total}</span>
     </div>
   );
 }
@@ -588,14 +588,14 @@ function StepLabel({ step, total, label }) {
 function Field({ label, children }) {
   return (
     <div>
-      <label style={{ display: 'block', fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</label>
+      <label style={{ display: 'block', fontSize: '0.7333rem', fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</label>
       {children}
     </div>
   );
 }
 
 function Hint({ children }) {
-  return <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: '4px 0 0' }}>{children}</p>;
+  return <p style={{ fontSize: '0.7333rem', color: 'var(--text-muted)', margin: '4px 0 0' }}>{children}</p>;
 }
 
 function NavRow({ onBack, onNext, error, nextLabel = 'Next', saving }) {
@@ -608,7 +608,7 @@ function NavRow({ onBack, onNext, error, nextLabel = 'Next', saving }) {
           {saving ? <span className="spinner" style={{ width: 16, height: 16 }} /> : nextLabel}
         </button>
       </div>
-      {error && <p style={{ color: 'var(--error)', fontSize: 12, marginTop: 10, margin: '10px 0 0' }}>{error}</p>}
+      {error && <p style={{ color: 'var(--error)', fontSize: '0.8rem', marginTop: 10, margin: '10px 0 0' }}>{error}</p>}
     </div>
   );
 }

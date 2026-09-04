@@ -37,6 +37,12 @@ function calcStartFromEnd(endDate, freq) {
   return '';
 }
 function fmtDate(s) { if (!s) return '—'; const [y, m, d] = s.split('-'); return `${m}/${d}/${y}`; }
+function formatSSN(val) {
+  const digits = val.replace(/\D/g, '').slice(0, 9);
+  if (digits.length > 5) return `${digits.slice(0, 3)}-${digits.slice(3, 5)}-${digits.slice(5)}`;
+  if (digits.length > 3) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return digits;
+}
 
 const EMPTY = {
   firstName: '', middleName: '', lastName: '', ssn: '', ssnOnFile: false,
@@ -62,7 +68,7 @@ export default function EmployeeForm() {
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState('');
 
-  const [showSsn, setShowSsn]           = useState(false);
+  const [showSsn, setShowSsn]           = useState(true);
   const [payGroups, setPayGroups]       = useState([]);
   const [showNewGroup, setShowNewGroup] = useState(false);
   const [newGroup, setNewGroup]         = useState({ name: '', frequency: 'biweekly', firstPayPeriodEnd: '', payDate: '' });
@@ -174,7 +180,8 @@ export default function EmployeeForm() {
         payGroupId: form.payGroupId ? parseInt(form.payGroupId) : null,
       };
       delete payload.ssnOnFile;
-      if (!payload.ssn) delete payload.ssn;
+      if (payload.ssn) payload.ssn = payload.ssn.replace(/\D/g, '');
+      else delete payload.ssn;
       if (isEdit) {
         await api.updateEmployee(empId, payload);
       } else {
@@ -228,7 +235,7 @@ export default function EmployeeForm() {
                 {errors.firstName && <p className="form-error-msg">{errors.firstName}</p>}
               </div>
               <div className="form-group">
-                <label className="form-label">Middle Name / Initial <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: 12 }}>(optional)</span></label>
+                <label className="form-label">Middle Name / Initial <span style={{ fontWeight: 400, color: 'var(--text-muted)', fontSize: '0.8rem' }}>(optional)</span></label>
                 <input className="form-input" value={form.middleName} onChange={set('middleName')} placeholder="D or Danielle" />
               </div>
               <div className="form-group">
@@ -241,13 +248,15 @@ export default function EmployeeForm() {
             <div className="form-group" style={{ maxWidth: 280 }}>
               <label className="form-label">Social Security Number {isEdit && <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>{form.ssnOnFile ? '(on file — type here only to replace it)' : '(none on file yet)'}</span>}</label>
               <div style={{ position: 'relative' }}>
-                <input className="form-input mono" type={showSsn ? 'text' : 'password'} value={form.ssn} onChange={set('ssn')} placeholder="###-##-####" maxLength={11} style={{ paddingRight: 36 }} />
-                <button type="button" onClick={() => setShowSsn(v => !v)} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 15, lineHeight: 1, padding: 0 }} title={showSsn ? 'Hide SSN' : 'Show SSN'}>
-                  {showSsn ? '🙈' : '👁'}
+                <input className="form-input mono" type={showSsn ? 'text' : 'password'} value={form.ssn}
+                  onChange={(e) => { const val = formatSSN(e.target.value); setForm((f) => ({ ...f, ssn: val })); setErrors((err) => ({ ...err, ssn: '' })); }}
+                  placeholder="###-##-####" maxLength={11} style={{ paddingRight: 64 }} />
+                <button type="button" onClick={() => setShowSsn(v => !v)} aria-label={showSsn ? 'Hide SSN' : 'Show SSN'} style={{ position: 'absolute', right: 4, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.8667rem', fontWeight: 600, minHeight: 32, padding: '0 10px' }}>
+                  {showSsn ? 'Hide' : 'Show'}
                 </button>
               </div>
               {errors.ssn && <p className="form-error-msg">{errors.ssn}</p>}
-              <p className="form-hint">Stored encrypted with AES-256.</p>
+              <p className="form-hint">Format: XXX-XX-XXXX (dashes added automatically). Stored encrypted with AES-256.</p>
             </div>
 
             <p className="form-section-title">Address</p>
@@ -289,8 +298,8 @@ export default function EmployeeForm() {
             {isEdit && (
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={form.isActive} onChange={set('isActive')} style={{ accentColor: 'var(--accent)', width: 15, height: 15 }} />
-                  <span style={{ fontSize: 13 }}>Employee is active</span>
+                  <input type="checkbox" checked={form.isActive} onChange={set('isActive')} style={{ accentColor: 'var(--accent)', width: 18, height: 18 }} />
+                  <span style={{ fontSize: '0.8667rem' }}>Employee is active</span>
                 </label>
               </div>
             )}
@@ -317,31 +326,31 @@ export default function EmployeeForm() {
 
             {showNewGroup && (
               <div style={{ background: 'var(--accent-light)', borderRadius: 8, padding: '14px 14px 10px', marginBottom: 14, border: '1px solid var(--accent-mid)' }}>
-                <div style={{ fontWeight: 700, fontSize: 12, color: 'var(--accent)', marginBottom: 10, textTransform: 'uppercase' }}>New Pay Group</div>
+                <div style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--accent)', marginBottom: 10, textTransform: 'uppercase' }}>New Pay Group</div>
                 <div className="form-group" style={{ marginBottom: 10 }}>
-                  <label className="form-label" style={{ fontSize: 11 }}>Group Name</label>
+                  <label className="form-label" style={{ fontSize: '0.7333rem' }}>Group Name</label>
                   <input className="form-input" value={newGroup.name} onChange={setNG('name')} placeholder="e.g. Biweekly 1" />
                 </div>
                 <div className="form-group" style={{ marginBottom: 10 }}>
-                  <label className="form-label" style={{ fontSize: 11 }}>Frequency</label>
+                  <label className="form-label" style={{ fontSize: '0.7333rem' }}>Frequency</label>
                   <select className="form-select" value={newGroup.frequency} onChange={setNG('frequency')}>
                     <option value="weekly">Weekly</option><option value="biweekly">Bi-weekly</option>
                     <option value="semimonthly">Semi-monthly</option><option value="monthly">Monthly</option>
                   </select>
                 </div>
                 <div className="form-group" style={{ marginBottom: 4 }}>
-                  <label className="form-label" style={{ fontSize: 11 }}>First Period End Date</label>
+                  <label className="form-label" style={{ fontSize: '0.7333rem' }}>First Period End Date</label>
                   <input className="form-input" type="date" value={newGroup.firstPayPeriodEnd} onChange={e => setNGEndDate(e.target.value)} />
                 </div>
                 {newGroup.firstPayPeriodEnd && (
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+                  <div style={{ fontSize: '0.7333rem', color: 'var(--text-muted)', marginBottom: 10 }}>
                     Period starts: <strong>{fmtDate(calcStartFromEnd(newGroup.firstPayPeriodEnd, newGroup.frequency))}</strong>
                     &nbsp;·&nbsp;Default pay date: <strong>{fmtDate(calcDefaultPayDate(newGroup.firstPayPeriodEnd))}</strong>
                   </div>
                 )}
                 {newGroup.payDate && !isBizDay(new Date(newGroup.payDate + 'T00:00:00')) && (() => {
                   const suggested = nextBizDay(new Date(newGroup.payDate + 'T00:00:00')).toISOString().slice(0, 10);
-                  return <div style={{ fontSize: 11, color: '#d97706', marginBottom: 8 }}>⚠ Weekend/holiday — suggest: <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontWeight: 700, fontSize: 11, padding: 0 }} onClick={() => setNewGroup(g => ({ ...g, payDate: suggested }))}>{fmtDate(suggested)}</button></div>;
+                  return <div style={{ fontSize: '0.8667rem', color: '#92400e', marginBottom: 8 }}>⚠ Weekend/holiday — suggest: <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontWeight: 700, fontSize: '0.8667rem', padding: 0 }} onClick={() => setNewGroup(g => ({ ...g, payDate: suggested }))}>{fmtDate(suggested)}</button></div>;
                 })()}
                 <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                   <button type="button" className="btn btn-primary btn-sm" onClick={handleCreateGroup} disabled={savingGroup}>{savingGroup ? <span className="spinner" /> : 'Create & Assign'}</button>
@@ -382,7 +391,7 @@ export default function EmployeeForm() {
           {/* W-4 defaults */}
           <div className="card" style={{ marginBottom: 16 }}>
             <p className="form-section-title" style={{ marginTop: 0 }}>W-4 Withholding Defaults</p>
-            <p style={{ fontSize: 12.5, color: 'var(--text-muted)', marginBottom: 16 }}>
+            <p style={{ fontSize: '0.8333rem', color: 'var(--text-muted)', marginBottom: 16 }}>
               These defaults will pre-fill the payroll entry form when this employee is selected.
             </p>
 
@@ -396,8 +405,8 @@ export default function EmployeeForm() {
             </div>
 
             <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginBottom: 16 }}>
-              <input type="checkbox" checked={form.step2Checkbox} onChange={set('step2Checkbox')} style={{ accentColor: 'var(--accent)', width: 15, height: 15 }} />
-              <span style={{ fontSize: 13 }}>Step 2(c): Two jobs total checkbox</span>
+              <input type="checkbox" checked={form.step2Checkbox} onChange={set('step2Checkbox')} style={{ accentColor: 'var(--accent)', width: 18, height: 18 }} />
+              <span style={{ fontSize: '0.8667rem' }}>Step 2(c): Two jobs total checkbox</span>
             </label>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
@@ -431,10 +440,10 @@ export default function EmployeeForm() {
             </div>
 
             <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', marginTop: 14, padding: '9px 10px', border: `1px solid ${form.fitExempt ? 'var(--warning)' : 'var(--border)'}`, background: form.fitExempt ? 'var(--warning-light)' : 'transparent' }}>
-              <input type="checkbox" checked={form.fitExempt} onChange={set('fitExempt')} style={{ accentColor: 'var(--warning)', width: 14, height: 14, marginTop: 2 }} />
-              <span style={{ fontSize: 13 }}>
+              <input type="checkbox" checked={form.fitExempt} onChange={set('fitExempt')} style={{ accentColor: '#d97706', width: 18, height: 18, marginTop: 2 }} />
+              <span style={{ fontSize: '0.8667rem' }}>
                 <strong>Exempt — don&rsquo;t withhold federal income tax</strong>
-                <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                <span style={{ display: 'block', fontSize: '0.7667rem', color: 'var(--text-muted)', marginTop: 2 }}>
                   For employees who claimed Exempt on their W-4. Social Security and Medicare still apply.
                 </span>
               </span>

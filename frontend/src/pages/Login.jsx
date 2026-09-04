@@ -43,11 +43,11 @@ const INPUT_STYLE = {
   width: '100%', boxSizing: 'border-box',
   padding: '11px 14px', borderRadius: 0,
   border: '1.5px solid #e2e8f0',
-  fontSize: 14, color: '#0f172a',
+  fontSize: '0.9333rem', color: '#0f172a',
   background: '#fff', outline: 'none',
 };
 const LABEL_STYLE = {
-  display: 'block', fontSize: 11, fontWeight: 600, color: '#374151',
+  display: 'block', fontSize: '0.7333rem', fontWeight: 600, color: '#374151',
   marginBottom: 5, letterSpacing: '0.04em', textTransform: 'uppercase',
 };
 
@@ -216,10 +216,10 @@ export default function Login() {
         padding: isNarrow ? '40px 24px' : '52px 56px', color: '#fff', overflowY: 'auto', minWidth: 0,
       }}>
         <div style={{ marginBottom: 52 }}>
-          <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px', color: '#fff' }}>
+          <div style={{ fontSize: '1.4667rem', fontWeight: 800, letterSpacing: '-0.5px', color: '#fff' }}>
             Payroll<span style={{ color: '#4ade80' }}>Tax</span> Pro
           </div>
-          <div style={{ fontSize: 12, color: '#94a3b8', marginTop: 3, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+          <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: 3, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
             Federal Payroll Tax Engine
           </div>
         </div>
@@ -227,16 +227,16 @@ export default function Login() {
         <div style={{ marginBottom: 44 }}>
           <div style={{
             display: 'inline-block', background: 'rgba(239,68,68,0.15)', border: '1px solid rgba(239,68,68,0.4)',
-            borderRadius: 20, padding: '4px 14px', fontSize: 11, fontWeight: 700, color: '#fca5a5',
+            borderRadius: 20, padding: '4px 14px', fontSize: '0.7333rem', fontWeight: 700, color: '#fca5a5',
             letterSpacing: '0.08em', textTransform: 'uppercase', marginBottom: 20,
           }}>
             The Problem We're Solving
           </div>
-          <h1 style={{ fontSize: isNarrow ? 28 : 36, fontWeight: 900, lineHeight: 1.15, margin: '0 0 20px', letterSpacing: '-0.5px' }}>
+          <h1 style={{ fontSize: isNarrow ? '1.8667rem' : '2.4rem', fontWeight: 900, lineHeight: 1.15, margin: '0 0 20px', letterSpacing: '-0.5px' }}>
             Per-check fees are{' '}
             <span style={{ color: '#f87171' }}>killing independent accountants.</span>
           </h1>
-          <p style={{ fontSize: 15, color: '#cbd5e1', lineHeight: 1.75, margin: 0, maxWidth: 480 }}>
+          <p style={{ fontSize: '1rem', color: '#cbd5e1', lineHeight: 1.75, margin: 0, maxWidth: 480 }}>
             QuickBooks, ADP, Paychex, and Gusto charge{' '}
             <strong style={{ color: '#fff' }}>$3–12 per check processed</strong>.
             A small accounting firm managing 10 clients with 15 employees each
@@ -245,7 +245,7 @@ export default function Login() {
           </p>
           <div style={{
             marginTop: 24, padding: '16px 20px', background: 'rgba(74,222,128,0.08)',
-            border: '1px solid rgba(74,222,128,0.25)', borderRadius: 12, fontSize: 14, color: '#86efac', lineHeight: 1.6,
+            border: '1px solid rgba(74,222,128,0.25)', borderRadius: 12, fontSize: '0.9333rem', color: '#86efac', lineHeight: 1.6,
           }}>
             <strong style={{ color: '#4ade80' }}>We built PayrollTax Pro</strong> to strip that cost to zero —
             a full federal tax engine with direct EFTPS submission and ACH direct deposit,
@@ -256,8 +256,8 @@ export default function Login() {
         <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? '1fr' : 'repeat(3, 1fr)', gap: 12, marginBottom: 44 }}>
           {STATS.map(s => (
             <div key={s.value} style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, padding: '16px 14px' }}>
-              <div style={{ fontSize: 26, fontWeight: 900, color: '#4ade80', fontFamily: 'JetBrains Mono, monospace', lineHeight: 1 }}>{s.value}</div>
-              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 6, lineHeight: 1.4 }}>{s.label}</div>
+              <div style={{ fontSize: '1.7333rem', fontWeight: 900, color: '#4ade80', fontFamily: 'JetBrains Mono, monospace', lineHeight: 1 }}>{s.value}</div>
+              <div style={{ fontSize: '0.7333rem', color: '#94a3b8', marginTop: 6, lineHeight: 1.4 }}>{s.label}</div>
             </div>
           ))}
         </div>
@@ -265,9 +265,9 @@ export default function Login() {
         <div style={{ display: 'grid', gridTemplateColumns: isNarrow ? '1fr' : '1fr 1fr', gap: 12, marginBottom: 44 }}>
           {FEATURES.map(f => (
             <div key={f.title} style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.09)', borderRadius: 12, padding: '16px' }}>
-              <div style={{ fontSize: 22, marginBottom: 8 }}>{f.icon}</div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#f1f5f9', marginBottom: 5 }}>{f.title}</div>
-              <div style={{ fontSize: 12, color: '#94a3b8', lineHeight: 1.55 }}>{f.desc}</div>
+              <div style={{ fontSize: '1.4667rem', marginBottom: 8 }}>{f.icon}</div>
+              <div style={{ fontSize: '0.8667rem', fontWeight: 700, color: '#f1f5f9', marginBottom: 5 }}>{f.title}</div>
+              <div style={{ fontSize: '0.8rem', color: '#94a3b8', lineHeight: 1.55 }}>{f.desc}</div>
             </div>
           ))}
         </div>
@@ -278,9 +278,9 @@ export default function Login() {
         }}>
           <img src={founderImg} alt="Farouk Ramzan" style={{ width: 80, height: 80, borderRadius: '50%', objectFit: 'cover', objectPosition: 'center top', flexShrink: 0, border: '2px solid rgba(74,222,128,0.4)' }} />
           <div>
-            <div style={{ fontSize: 13, fontWeight: 800, color: '#f1f5f9', marginBottom: 2 }}>Farouk Ramzan</div>
-            <div style={{ fontSize: 11, color: '#4ade80', fontWeight: 600, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Founder</div>
-            <p style={{ fontSize: 12, color: '#cbd5e1', lineHeight: 1.7, margin: 0 }}>
+            <div style={{ fontSize: '0.8667rem', fontWeight: 800, color: '#f1f5f9', marginBottom: 2 }}>Farouk Ramzan</div>
+            <div style={{ fontSize: '0.7333rem', color: '#4ade80', fontWeight: 600, marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Founder</div>
+            <p style={{ fontSize: '0.8rem', color: '#cbd5e1', lineHeight: 1.7, margin: 0 }}>
               Farouk spent months working with independent accountants to design a payroll platform
               that is not only <strong style={{ color: '#fff' }}>cheaper than competitors</strong> —
               so these accountants can keep their small businesses alive — but also
@@ -292,11 +292,11 @@ export default function Login() {
         <div style={{ marginTop: 'auto', paddingTop: 24, borderTop: '1px solid rgba(255,255,255,0.08)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, background: 'rgba(124,58,237,0.2)', border: '1px solid rgba(167,139,250,0.35)', borderRadius: 20, padding: '6px 14px' }}>
-              <span style={{ fontSize: 14 }}>🤖</span>
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#c4b5fd' }}>Built entirely with Claude Code</span>
+              <span style={{ fontSize: '0.9333rem' }}>🤖</span>
+              <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#c4b5fd' }}>Built entirely with Claude Code</span>
             </div>
-            <span style={{ fontSize: 12, color: '#475569' }}>·</span>
-            <span style={{ fontSize: 12, color: '#475569' }}>React + Node.js + SQLite</span>
+            <span style={{ fontSize: '0.8rem', color: '#475569' }}>·</span>
+            <span style={{ fontSize: '0.8rem', color: '#475569' }}>React + Node.js + SQLite</span>
           </div>
         </div>
       </div>
@@ -328,24 +328,24 @@ export default function Login() {
                   background: tab === t.key ? '#fff' : 'transparent',
                   boxShadow: tab === t.key ? '0 1px 3px rgba(0,0,0,0.12)' : 'none',
                   fontWeight: tab === t.key ? 700 : 500,
-                  fontSize: 12, color: tab === t.key ? '#0f172a' : '#64748b',
+                  fontSize: '0.8rem', color: tab === t.key ? '#0f172a' : '#64748b',
                   transition: 'all 0.15s', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
                 }}
               >
-                <span style={{ fontSize: 16 }}>{t.icon}</span>
+                <span style={{ fontSize: '1.0667rem' }}>{t.icon}</span>
                 {t.label}
               </button>
             ))}
           </div>
 
           {sessionExpired && (
-            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#92400e', display: 'flex', gap: 8 }}>
+            <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: '0.8667rem', color: '#92400e', display: 'flex', gap: 8 }}>
               <span>⏱</span> Your session expired — sign in to continue.
             </div>
           )}
 
           {error && (
-            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#b91c1c', display: 'flex', gap: 8 }}>
+            <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: '0.8667rem', color: '#b91c1c', display: 'flex', gap: 8 }}>
               <span>⚠</span> {error}
             </div>
           )}
@@ -353,13 +353,13 @@ export default function Login() {
           {/* ── Accountant tab ─────────────────────────────────────────── */}
           {tab === 'admin' && (
             <>
-              <h2 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', margin: '0 0 4px', letterSpacing: '-0.3px' }}>Sign in</h2>
-              <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 20px' }}>{activeTab.hint}</p>
+              <h2 style={{ fontSize: '1.4667rem', fontWeight: 800, color: '#0f172a', margin: '0 0 4px', letterSpacing: '-0.3px' }}>Sign in</h2>
+              <p style={{ fontSize: '0.8667rem', color: '#64748b', margin: '0 0 20px' }}>{activeTab.hint}</p>
               <AdminLoginForm form={loginForm} setForm={setLoginForm} loading={loading} onSubmit={handleLogin} />
-              <p style={{ marginTop: 14, fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>
+              <p style={{ marginTop: 14, fontSize: '0.8rem', color: '#94a3b8', textAlign: 'center' }}>
                 Forgot your password? Ask another admin on your account to reset it.
               </p>
-              <p style={{ marginTop: 10, fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>
+              <p style={{ marginTop: 10, fontSize: '0.8rem', color: '#94a3b8', textAlign: 'center' }}>
                 Don't have an account?{' '}
                 <Link to="/register" style={{ color: '#16a34a', fontWeight: 600, textDecoration: 'none' }}>Create one free</Link>
               </p>
@@ -369,8 +369,8 @@ export default function Login() {
           {/* ── Company tab ────────────────────────────────────────────── */}
           {tab === 'client' && mode === 'login' && (
             <>
-              <h2 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', margin: '0 0 4px', letterSpacing: '-0.3px' }}>Company Sign In</h2>
-              <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 20px' }}>Sign in to your company portal</p>
+              <h2 style={{ fontSize: '1.4667rem', fontWeight: 800, color: '#0f172a', margin: '0 0 4px', letterSpacing: '-0.3px' }}>Company Sign In</h2>
+              <p style={{ fontSize: '0.8667rem', color: '#64748b', margin: '0 0 20px' }}>Sign in to your company portal</p>
               <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div>
                   <label style={LABEL_STYLE}>Email address</label>
@@ -389,12 +389,12 @@ export default function Login() {
                 </div>
                 <SubmitBtn loading={loading} label="Sign In as Company" />
               </form>
-              <p style={{ marginTop: 14, fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>
+              <p style={{ marginTop: 14, fontSize: '0.8rem', color: '#94a3b8', textAlign: 'center' }}>
                 Forgot your password? Contact your accountant to reset it.
               </p>
-              <p style={{ marginTop: 10, fontSize: 12, color: '#64748b', textAlign: 'center' }}>
+              <p style={{ marginTop: 10, fontSize: '0.8rem', color: '#64748b', textAlign: 'center' }}>
                 New company?{' '}
-                <button onClick={() => switchMode('signup')} style={{ background: 'none', border: 'none', color: '#16a34a', fontWeight: 600, cursor: 'pointer', fontSize: 12 }}>
+                <button onClick={() => switchMode('signup')} style={{ background: 'none', border: 'none', color: '#16a34a', fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem' }}>
                   Create an account
                 </button>
               </p>
@@ -403,8 +403,8 @@ export default function Login() {
 
           {tab === 'client' && mode === 'signup' && (
             <>
-              <h2 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', margin: '0 0 4px', letterSpacing: '-0.3px' }}>Create Company Account</h2>
-              <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 20px' }}>Register your business and get started</p>
+              <h2 style={{ fontSize: '1.4667rem', fontWeight: 800, color: '#0f172a', margin: '0 0 4px', letterSpacing: '-0.3px' }}>Create Company Account</h2>
+              <p style={{ fontSize: '0.8667rem', color: '#64748b', margin: '0 0 20px' }}>Register your business and get started</p>
               <form onSubmit={handleCompanySignup} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <div>
                   <label style={LABEL_STYLE}>Business Name *</label>
@@ -454,11 +454,11 @@ export default function Login() {
                     onChange={e => setCompanyForm(f => ({ ...f, confirmPassword: e.target.value }))}
                   />
                 </div>
-                <SubmitBtn loading={loading} label="Create Company Account" />
+                <SubmitBtn loading={loading} label="Create Company Account" loadingLabel="Creating account…" />
               </form>
-              <p style={{ marginTop: 16, fontSize: 12, color: '#64748b', textAlign: 'center' }}>
+              <p style={{ marginTop: 16, fontSize: '0.8rem', color: '#64748b', textAlign: 'center' }}>
                 Already have an account?{' '}
-                <button onClick={() => switchMode('login')} style={{ background: 'none', border: 'none', color: '#16a34a', fontWeight: 600, cursor: 'pointer', fontSize: 12 }}>
+                <button onClick={() => switchMode('login')} style={{ background: 'none', border: 'none', color: '#16a34a', fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem' }}>
                   Sign in
                 </button>
               </p>
@@ -468,8 +468,8 @@ export default function Login() {
           {/* ── Employee tab ────────────────────────────────────────────── */}
           {tab === 'employee' && mode === 'login' && (
             <>
-              <h2 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', margin: '0 0 4px', letterSpacing: '-0.3px' }}>Employee Sign In</h2>
-              <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 20px' }}>Sign in to view your paystubs</p>
+              <h2 style={{ fontSize: '1.4667rem', fontWeight: 800, color: '#0f172a', margin: '0 0 4px', letterSpacing: '-0.3px' }}>Employee Sign In</h2>
+              <p style={{ fontSize: '0.8667rem', color: '#64748b', margin: '0 0 20px' }}>Sign in to view your paystubs</p>
               <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
                 <div>
                   <label style={LABEL_STYLE}>Email address</label>
@@ -488,12 +488,12 @@ export default function Login() {
                 </div>
                 <SubmitBtn loading={loading} label="Sign In as Employee" />
               </form>
-              <p style={{ marginTop: 14, fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>
+              <p style={{ marginTop: 14, fontSize: '0.8rem', color: '#94a3b8', textAlign: 'center' }}>
                 Forgot your password? Ask your employer to send you a new invite.
               </p>
-              <p style={{ marginTop: 10, fontSize: 12, color: '#64748b', textAlign: 'center' }}>
+              <p style={{ marginTop: 10, fontSize: '0.8rem', color: '#64748b', textAlign: 'center' }}>
                 New employee?{' '}
-                <button onClick={() => switchMode('signup')} style={{ background: 'none', border: 'none', color: '#16a34a', fontWeight: 600, cursor: 'pointer', fontSize: 12 }}>
+                <button onClick={() => switchMode('signup')} style={{ background: 'none', border: 'none', color: '#16a34a', fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem' }}>
                   Create account with join code
                 </button>
               </p>
@@ -574,30 +574,30 @@ function PasswordInput({ value, onChange, placeholder = '•••••••�
           style={{
             position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
             background: 'none', border: 'none', cursor: 'pointer',
-            fontSize: 11, fontWeight: 600, color: '#64748b', padding: '4px 6px',
+            fontSize: '0.7333rem', fontWeight: 600, color: '#64748b', padding: '4px 6px',
           }}
         >
           {show ? 'Hide' : 'Show'}
         </button>
       </div>
       {caps && (
-        <p style={{ fontSize: 11, color: '#b45309', margin: '4px 0 0' }}>Caps Lock is on</p>
+        <p style={{ fontSize: '0.7333rem', color: '#b45309', margin: '4px 0 0' }}>Caps Lock is on</p>
       )}
     </div>
   );
 }
 
-function SubmitBtn({ loading, label }) {
+function SubmitBtn({ loading, label, loadingLabel = 'Signing in…' }) {
   return (
     <button type="submit" disabled={loading} style={{
       marginTop: 4, padding: '12px', borderRadius: 9,
-      background: loading ? '#86efac' : '#16a34a',
-      color: '#fff', fontWeight: 700, fontSize: 15,
+      background: loading ? '#15803d' : '#16a34a',
+      color: '#fff', fontWeight: 700, fontSize: '1rem',
       border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
       display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
       transition: 'background 0.15s',
     }}>
-      {loading ? <span className="spinner" /> : `${label} →`}
+      {loading ? <><span className="spinner" /> {loadingLabel}</> : `${label} →`}
     </button>
   );
 }
@@ -605,8 +605,8 @@ function SubmitBtn({ loading, label }) {
 function EmployeeStep1({ empCode, setEmpCode, loading, onFind, onBack }) {
   return (
     <>
-      <h2 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', margin: '0 0 4px', letterSpacing: '-0.3px' }}>Create Employee Account</h2>
-      <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 20px' }}>Enter the join code your employer shared with you</p>
+      <h2 style={{ fontSize: '1.4667rem', fontWeight: 800, color: '#0f172a', margin: '0 0 4px', letterSpacing: '-0.3px' }}>Create Employee Account</h2>
+      <p style={{ fontSize: '0.8667rem', color: '#64748b', margin: '0 0 20px' }}>Enter the join code your employer shared with you</p>
 
       <form onSubmit={onFind} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         <div>
@@ -617,20 +617,20 @@ function EmployeeStep1({ empCode, setEmpCode, loading, onFind, onBack }) {
             value={empCode}
             onChange={e => setEmpCode(e.target.value.toUpperCase())}
             maxLength={8}
-            style={{ ...INPUT_STYLE, textTransform: 'uppercase', letterSpacing: '0.2em', fontWeight: 700, fontFamily: 'monospace', fontSize: 18, textAlign: 'center' }}
+            style={{ ...INPUT_STYLE, textTransform: 'uppercase', letterSpacing: '0.2em', fontWeight: 700, fontFamily: 'monospace', fontSize: '1.2rem', textAlign: 'center' }}
             onFocus={e => e.target.style.borderColor = '#22c55e'}
             onBlur={e => e.target.style.borderColor = '#e2e8f0'}
           />
-          <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 6 }}>
+          <p style={{ fontSize: '0.8667rem', color: '#475569', marginTop: 6 }}>
             Ask your employer for their 6-character join code to create your account.
           </p>
         </div>
-        <SubmitBtn loading={loading} label="Continue" />
+        <SubmitBtn loading={loading} label="Continue" loadingLabel="Checking code…" />
       </form>
 
-      <p style={{ marginTop: 20, fontSize: 12, color: '#64748b', textAlign: 'center' }}>
+      <p style={{ marginTop: 20, fontSize: '0.8rem', color: '#64748b', textAlign: 'center' }}>
         Already have an account?{' '}
-        <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#16a34a', fontWeight: 600, cursor: 'pointer', fontSize: 12 }}>
+        <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#16a34a', fontWeight: 600, cursor: 'pointer', fontSize: '0.8rem' }}>
           Sign in
         </button>
       </p>
@@ -642,12 +642,12 @@ function EmployeeStep2({ empCompany, empForm, setEmpForm, loading, onSubmit, onB
   return (
     <>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-        <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: 18, padding: 0, lineHeight: 1 }}>←</button>
-        <h2 style={{ fontSize: 20, fontWeight: 800, color: '#0f172a', margin: 0, letterSpacing: '-0.3px' }}>Create Your Account</h2>
+        <button onClick={onBack} style={{ background: 'none', border: 'none', color: '#64748b', cursor: 'pointer', fontSize: '1.2rem', padding: 0, lineHeight: 1 }}>←</button>
+        <h2 style={{ fontSize: '1.3333rem', fontWeight: 800, color: '#0f172a', margin: 0, letterSpacing: '-0.3px' }}>Create Your Account</h2>
       </div>
 
       <div style={{ background: '#f0fdf4', border: '1px solid #d1fae5', borderRadius: 10, padding: '12px 16px', marginBottom: 20 }}>
-        <div style={{ fontSize: 12, color: '#065f46' }}>
+        <div style={{ fontSize: '0.8rem', color: '#065f46' }}>
           Joining <strong>{empCompany?.businessName}</strong>
         </div>
       </div>
@@ -694,7 +694,7 @@ function EmployeeStep2({ empCompany, empForm, setEmpForm, loading, onSubmit, onB
             onChange={e => setEmpForm(f => ({ ...f, confirmPassword: e.target.value }))}
           />
         </div>
-        <SubmitBtn loading={loading} label="Create Employee Account" />
+        <SubmitBtn loading={loading} label="Create Employee Account" loadingLabel="Creating account…" />
       </form>
     </>
   );

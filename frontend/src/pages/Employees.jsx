@@ -82,7 +82,7 @@ export default function Employees() {
 
         {employees.length === 0 ? (
           <div className="card" style={{ textAlign: 'center', padding: '48px 24px' }}>
-            <div style={{ fontSize: 40, marginBottom: 12 }}>👤</div>
+            <div style={{ fontSize: '2.6667rem', marginBottom: 12 }}>👤</div>
             <h3 style={{ marginBottom: 8 }}>No employees yet</h3>
             <p style={{ color: 'var(--text-muted)', marginBottom: 20 }}>
               Add employees to enable per-employee payroll tracking, W-2 generation, and accurate FUTA/SUTA reporting.
@@ -95,7 +95,7 @@ export default function Employees() {
               <thead>
                 <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)' }}>
                   {['Employee', 'Work State', 'Pay Type', 'Rate', 'Frequency', 'Filing Status', 'Hire Date', 'Status', ''].map((h) => (
-                    <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>{h}</th>
+                    <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '0.7333rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -104,22 +104,22 @@ export default function Employees() {
                   <tr key={emp.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
                     <td style={{ padding: '12px 16px' }}>
                       <Link to={`/clients/${id}/employees/${emp.id}`} style={{ textDecoration: 'none' }}>
-                        <div style={{ fontWeight: 600, color: 'var(--accent)', fontSize: 14 }}>{emp.fullName}</div>
+                        <div style={{ fontWeight: 600, color: 'var(--accent)', fontSize: '0.9333rem' }}>{emp.fullName}</div>
                       </Link>
-                      {emp.hasSSN && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>SSN on file</div>}
+                      {emp.hasSSN && <div style={{ fontSize: '0.7333rem', color: 'var(--text-muted)', marginTop: 2 }}>SSN on file</div>}
                     </td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, fontFamily: 'JetBrains Mono, monospace' }}>{emp.workState || '—'}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{emp.payType}</td>
-                    <td style={{ padding: '12px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>
+                    <td style={{ padding: '12px 16px', fontSize: '0.8667rem', fontFamily: 'JetBrains Mono, monospace' }}>{emp.workState || '—'}</td>
+                    <td style={{ padding: '12px 16px', fontSize: '0.8667rem', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{emp.payType}</td>
+                    <td style={{ padding: '12px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem' }}>
                       {emp.payType === 'hourly'
                         ? `$${Number(emp.hourlyRate || 0).toFixed(2)}/hr`
                         : emp.annualSalary > 0 ? `$${Number(emp.annualSalary).toLocaleString()}/yr` : '—'}
                     </td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{emp.payFrequency}</td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-secondary)' }}>
+                    <td style={{ padding: '12px 16px', fontSize: '0.8667rem', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{emp.payFrequency}</td>
+                    <td style={{ padding: '12px 16px', fontSize: '0.8667rem', color: 'var(--text-secondary)' }}>
                       {{ single: 'Single / MFS', married: 'Married / QSS', hoh: 'Head of Household' }[emp.filingStatus] || emp.filingStatus}
                     </td>
-                    <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-muted)' }}>{fmtDate(emp.hireDate)}</td>
+                    <td style={{ padding: '12px 16px', fontSize: '0.8667rem', color: 'var(--text-muted)' }}>{fmtDate(emp.hireDate)}</td>
                     <td style={{ padding: '12px 16px' }}>
                       <span className={`badge badge-${emp.isActive ? 'success' : 'neutral'}`}>
                         {emp.isActive ? 'Active' : 'Inactive'}

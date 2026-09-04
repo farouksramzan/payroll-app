@@ -53,15 +53,15 @@ function Field({ label, hint, required, children }) {
 
 function TaxPreview({ taxes, loading }) {
   if (!taxes && !loading) return (
-    <div style={{ padding: '24px 18px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+    <div style={{ padding: '24px 18px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8667rem' }}>
       Enter pay amounts to preview taxes
     </div>
   );
   return (
     <div>
-      {loading && <div style={{ padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-muted)' }}><div className="spinner spinner-dark" style={{ width: 14, height: 14 }} /> Recalculating…</div>}
+      {loading && <div style={{ padding: '12px 18px', display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8rem', color: 'var(--text-muted)' }}><div className="spinner spinner-dark" style={{ width: 14, height: 14 }} /> Recalculating…</div>}
       {taxes && (
-        <div style={{ fontSize: 13 }}>
+        <div style={{ fontSize: '0.8667rem' }}>
           {[
             { label: 'Gross Wages',         val: taxes.grossWages,       bold: true },
             { label: 'FIT Withholding',      val: taxes.fitWithholding },
@@ -76,7 +76,7 @@ function TaxPreview({ taxes, loading }) {
           ].map(({ label, val, bold, accent, success, muted }) => (
             <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 18px', borderBottom: '1px solid var(--border-light)' }}>
               <span style={{ color: muted ? 'var(--text-muted)' : 'var(--text-secondary)', fontWeight: bold ? 700 : 400 }}>{label}</span>
-              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: bold || accent || success ? 700 : 500, color: accent ? 'var(--accent)' : success ? 'var(--success)' : muted ? 'var(--text-muted)' : 'var(--text-primary)', fontSize: bold ? 15 : 13 }}>
+              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: bold || accent || success ? 700 : 500, color: accent ? 'var(--accent)' : success ? 'var(--success)' : muted ? 'var(--text-muted)' : 'var(--text-primary)', fontSize: bold ? '1rem' : '0.8667rem' }}>
                 {fmtAmt(val)}
               </span>
             </div>
@@ -106,7 +106,7 @@ function SubmissionCard({ form, label, code, detail, amount, isSubmitted, isProc
           <div style={{
             width: 22, height: 22, borderRadius: '50%', flexShrink: 0,
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 12, fontWeight: 800,
+            fontSize: '0.8rem', fontWeight: 800,
             background: isSubmitted ? '#10b981' : 'transparent',
             border: `2px solid ${isSubmitted ? '#10b981' : 'var(--border)'}`,
             color: isSubmitted ? '#fff' : 'var(--text-muted)',
@@ -114,16 +114,16 @@ function SubmissionCard({ form, label, code, detail, amount, isSubmitted, isProc
             {isSubmitted ? '✓' : '·'}
           </div>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
+            <div style={{ fontWeight: 700, fontSize: '0.8667rem', color: 'var(--text-primary)' }}>
               Form {form} — {label}
             </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+            <div style={{ fontSize: '0.7333rem', color: 'var(--text-muted)', marginTop: 1 }}>
               EFTPS code {code} · {detail}
             </div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 15, color: isSubmitted ? '#10b981' : 'var(--accent)' }}>
+          <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: '1rem', color: isSubmitted ? '#10b981' : 'var(--accent)' }}>
             {amount}
           </span>
           <button
@@ -140,14 +140,14 @@ function SubmissionCard({ form, label, code, detail, amount, isSubmitted, isProc
       {/* Confirmation panel — shown when submitted */}
       {isSubmitted && confirmation && (
         <div style={{ padding: '10px 16px', background: 'rgba(16,185,129,0.06)' }}>
-          <div style={{ fontSize: 11, color: '#10b981', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>
+          <div style={{ fontSize: '0.7333rem', color: '#10b981', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.5px', marginBottom: 4 }}>
             EFTPS Confirmation Number
           </div>
-          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 15, fontWeight: 700, color: '#065f46', letterSpacing: '0.5px', wordBreak: 'break-all' }}>
+          <div style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '1rem', fontWeight: 700, color: '#065f46', letterSpacing: '0.5px', wordBreak: 'break-all' }}>
             {confirmation}
           </div>
           {fmtSubmittedAt && (
-            <div style={{ fontSize: 11, color: '#10b981', marginTop: 4 }}>
+            <div style={{ fontSize: '0.7333rem', color: '#10b981', marginTop: 4 }}>
               Deposited {fmtSubmittedAt}
             </div>
           )}
@@ -157,7 +157,7 @@ function SubmissionCard({ form, label, code, detail, amount, isSubmitted, isProc
       {/* Pending prompt */}
       {!isSubmitted && (
         <div style={{ padding: '8px 16px', background: 'var(--bg-primary)' }}>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+          <div style={{ fontSize: '0.7333rem', color: 'var(--text-muted)' }}>
             {isProcessing
               ? 'A submission for this deposit is already in progress — wait for it to finish before submitting again.'
               : `Not yet deposited — click "Submit ${form}" to pay this deposit via EFTPS.`}
@@ -421,7 +421,7 @@ export default function PaystubEdit() {
         <div className="page-header-row">
           <div>
             <h2>Edit Paycheck</h2>
-            <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
+            <p style={{ fontSize: '0.8667rem', color: 'var(--text-muted)', marginTop: 4 }}>
               {[stub?.first_name, stub?.last_name].filter(Boolean).join(' ') || client?.businessName}
               {stub?.pay_period_start && ` — ${stub.pay_period_start} to ${stub.pay_period_end}`}
               {stub?.check_number && <span style={{ marginLeft: 10, fontFamily: 'JetBrains Mono, monospace', color: 'var(--accent)', fontWeight: 600 }}>Check #{stub.check_number}</span>}
@@ -499,15 +499,15 @@ export default function PaystubEdit() {
             {/* Pay Line Items */}
             <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
               <div style={{ padding: '12px 20px', background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontWeight: 700, fontSize: 13 }}>Pay Line Items</span>
+                <span style={{ fontWeight: 700, fontSize: '0.8667rem' }}>Pay Line Items</span>
                 <button type="button" className="btn btn-secondary btn-sm" onClick={() => setLineItems((prev) => [...prev, { payType: 'regular', description: '', hours: '', rate: '', amount: '' }])}>+ Add Line</button>
               </div>
               <div style={{ overflowX: 'auto' }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8667rem' }}>
                   <thead>
                     <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)' }}>
                       {['Pay Type', 'Description', 'Hours', 'Rate', 'Amount', ''].map((h) => (
-                        <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
+                        <th key={h} style={{ padding: '8px 12px', textAlign: 'left', fontSize: '0.7333rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -515,36 +515,36 @@ export default function PaystubEdit() {
                     {lineItems.map((item, idx) => (
                       <tr key={idx} style={{ borderBottom: '1px solid var(--border-light)' }}>
                         <td style={{ padding: '8px 10px' }}>
-                          <select className="form-select" style={{ fontSize: 12, padding: '5px 8px' }} value={item.payType} onChange={(e) => updateItem(idx, 'payType', e.target.value)}>
+                          <select className="form-select" style={{ fontSize: '0.8rem', padding: '5px 8px' }} value={item.payType} onChange={(e) => updateItem(idx, 'payType', e.target.value)}>
                             {PAY_TYPES.map((pt) => <option key={pt.value} value={pt.value}>{pt.label}</option>)}
                           </select>
                         </td>
                         <td style={{ padding: '8px 10px' }}>
-                          <input className="form-input" style={{ fontSize: 12, padding: '5px 8px' }} placeholder="Optional note" value={item.description} onChange={(e) => updateItem(idx, 'description', e.target.value)} />
+                          <input className="form-input" style={{ fontSize: '0.8rem', padding: '5px 8px' }} placeholder="Optional note" value={item.description} onChange={(e) => updateItem(idx, 'description', e.target.value)} />
                         </td>
                         <td style={{ padding: '8px 10px', width: 80 }}>
-                          <input className="form-input mono" style={{ fontSize: 12, padding: '5px 8px' }} type="number" min="0" step="0.25" placeholder="0" value={item.hours} onChange={(e) => updateItem(idx, 'hours', e.target.value)} />
+                          <input className="form-input mono" style={{ fontSize: '0.8rem', padding: '5px 8px' }} type="number" min="0" step="0.25" placeholder="0" value={item.hours} onChange={(e) => updateItem(idx, 'hours', e.target.value)} />
                         </td>
                         <td style={{ padding: '8px 10px', width: 100 }}>
                           <div style={{ position: 'relative' }}>
-                            <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: 12 }}>$</span>
-                            <input className="form-input mono" style={{ fontSize: 12, padding: '5px 8px', paddingLeft: 20 }} type="number" min="0" step="0.01" placeholder="0.00" value={item.rate} onChange={(e) => updateItem(idx, 'rate', e.target.value)} />
+                            <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: '0.8rem' }}>$</span>
+                            <input className="form-input mono" style={{ fontSize: '0.8rem', padding: '5px 8px', paddingLeft: 20 }} type="number" min="0" step="0.01" placeholder="0.00" value={item.rate} onChange={(e) => updateItem(idx, 'rate', e.target.value)} />
                           </div>
                         </td>
                         <td style={{ padding: '8px 10px', width: 120 }}>
                           <div style={{ position: 'relative' }}>
-                            <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: 12 }}>$</span>
-                            <input className="form-input mono" style={{ fontSize: 12, padding: '5px 8px', paddingLeft: 20, fontWeight: 600 }} type="number" min="0" step="0.01" placeholder="0.00" value={item.amount} onChange={(e) => updateItem(idx, 'amount', e.target.value)} />
+                            <span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontFamily: 'monospace', fontSize: '0.8rem' }}>$</span>
+                            <input className="form-input mono" style={{ fontSize: '0.8rem', padding: '5px 8px', paddingLeft: 20, fontWeight: 600 }} type="number" min="0" step="0.01" placeholder="0.00" value={item.amount} onChange={(e) => updateItem(idx, 'amount', e.target.value)} />
                           </div>
                         </td>
                         <td style={{ padding: '8px 10px', textAlign: 'center' }}>
-                          <button type="button" aria-label={`Remove pay line ${idx + 1}`} title="Remove line" onClick={() => setLineItems((prev) => prev.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', color: 'var(--error)', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}>×</button>
+                          <button type="button" aria-label={`Remove pay line ${idx + 1}`} title="Remove line" onClick={() => setLineItems((prev) => prev.filter((_, i) => i !== idx))} style={{ background: 'none', border: 'none', color: 'var(--error)', cursor: 'pointer', fontSize: '1.0667rem', lineHeight: 1 }}>×</button>
                         </td>
                       </tr>
                     ))}
                     <tr style={{ background: 'var(--bg-primary)', borderTop: '2px solid var(--border)' }}>
-                      <td colSpan={4} style={{ padding: '10px 12px', fontWeight: 700, fontSize: 13 }}>Total Gross Wages</td>
-                      <td style={{ padding: '10px 10px', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 14, color: 'var(--accent)' }}>{fmtAmt(grossWages)}</td>
+                      <td colSpan={4} style={{ padding: '10px 12px', fontWeight: 700, fontSize: '0.8667rem' }}>Total Gross Wages</td>
+                      <td style={{ padding: '10px 10px', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: '0.9333rem', color: 'var(--accent)' }}>{fmtAmt(grossWages)}</td>
                       <td />
                     </tr>
                   </tbody>
@@ -564,7 +564,7 @@ export default function PaystubEdit() {
                       { v: 'married', l: 'Married / QSS' },
                       { v: 'hoh',     l: 'Head of Household' },
                     ].map(({ v, l }) => (
-                      <label key={v} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', border: `1px solid ${filingStatus === v ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 'var(--radius)', background: filingStatus === v ? 'var(--accent-light)' : 'var(--bg-primary)', cursor: 'pointer', fontSize: 13 }}>
+                      <label key={v} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 14px', border: `1px solid ${filingStatus === v ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 'var(--radius)', background: filingStatus === v ? 'var(--accent-light)' : 'var(--bg-primary)', cursor: 'pointer', fontSize: '0.8667rem' }}>
                         <input type="radio" name="filingStatus" value={v} checked={filingStatus === v} onChange={() => setFilingStatus(v)} style={{ accentColor: 'var(--accent)' }} />
                         {l}
                       </label>
@@ -574,7 +574,7 @@ export default function PaystubEdit() {
 
                 {/* Step 2 */}
                 <Field label="Step 2 — Multiple Jobs">
-                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', border: `1px solid ${step2Checkbox ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 'var(--radius)', background: step2Checkbox ? 'var(--accent-light)' : 'var(--bg-primary)', cursor: 'pointer', fontSize: 13 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', border: `1px solid ${step2Checkbox ? 'var(--accent)' : 'var(--border)'}`, borderRadius: 'var(--radius)', background: step2Checkbox ? 'var(--accent-light)' : 'var(--bg-primary)', cursor: 'pointer', fontSize: '0.8667rem' }}>
                     <input type="checkbox" checked={step2Checkbox} onChange={(e) => setStep2Checkbox(e.target.checked)} style={{ accentColor: 'var(--accent)' }} />
                     (c) Two jobs total — halves standard deduction and brackets
                   </label>
@@ -662,17 +662,17 @@ export default function PaystubEdit() {
                 {((taxes?.sutaTax || stub?.suta_tax) || 0) > 0 && (
                   <div style={{ padding: '12px 16px', border: '1px solid #fde68a', borderRadius: 'var(--radius)', background: '#fefce8' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                      <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800, color: '#fff', flexShrink: 0 }}>!</div>
-                      <span style={{ fontWeight: 700, fontSize: 13, color: '#92400e' }}>SUI — State Unemployment Insurance</span>
-                      <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 14, color: '#92400e', marginLeft: 'auto' }}>{fmtAmt(taxes?.sutaTax ?? stub?.suta_tax)}</span>
+                      <div style={{ width: 18, height: 18, borderRadius: '50%', background: '#f59e0b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7333rem', fontWeight: 800, color: '#fff', flexShrink: 0 }}>!</div>
+                      <span style={{ fontWeight: 700, fontSize: '0.8667rem', color: '#92400e' }}>SUI — State Unemployment Insurance</span>
+                      <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: '0.9333rem', color: '#92400e', marginLeft: 'auto' }}>{fmtAmt(taxes?.sutaTax ?? stub?.suta_tax)}</span>
                     </div>
-                    <div style={{ fontSize: 12, color: '#78350f', lineHeight: 1.6 }}>
+                    <div style={{ fontSize: '0.8rem', color: '#78350f', lineHeight: 1.6 }}>
                       <strong>Not submitted via EFTPS.</strong> Your {stub?.work_state || workState} SUI is due through your state unemployment agency (TWC in TX, EDD in CA, etc.). File directly through their online portal.
                     </div>
                   </div>
                 )}
 
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.6 }}>
+                <div style={{ fontSize: '0.7333rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
                   EFTPS pays the tax deposits only — it does not file the quarterly Form 941 or annual Form 940 return.{' '}
                   <Link to={`/reports?clientId=${clientId}`} style={{ color: 'var(--accent)', fontWeight: 600 }}>Generate returns on the File Forms page →</Link>
                 </div>
@@ -685,7 +685,7 @@ export default function PaystubEdit() {
           {/* Right: tax preview */}
           <div style={{ position: 'sticky', top: 24 }}>
             <div style={{ border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', overflow: 'hidden', background: 'var(--bg-secondary)' }}>
-              <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: 13 }}>Tax Preview</div>
+              <div style={{ padding: '12px 18px', borderBottom: '1px solid var(--border)', fontWeight: 700, fontSize: '0.8667rem' }}>Tax Preview</div>
               <TaxPreview taxes={taxes} loading={calcLoading} />
             </div>
           </div>

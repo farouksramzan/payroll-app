@@ -44,13 +44,13 @@ export default function Layout() {
           <button
             onClick={() => window.dispatchEvent(new CustomEvent('start-tour'))}
             style={{
-              background: 'rgba(74,222,128,0.12)',
-              border: '1px solid rgba(74,222,128,0.35)',
+              background: '#d1fae5',
+              border: '1px solid #a7f3d0',
               borderRadius: 7,
-              padding: '5px 12px',
-              fontSize: 12,
-              fontWeight: 700,
-              color: '#16a34a',
+              padding: '8px 14px',
+              fontSize: '0.8667rem',
+              fontWeight: 600,
+              color: '#065f46',
               cursor: 'pointer',
               display: 'flex',
               alignItems: 'center',

@@ -193,7 +193,7 @@ export default function PayrollRun() {
           <div className="alert alert-success" style={{ marginBottom: 20 }}>
             <span>✓</span>
             <strong>{runResult.count} paychecks saved successfully.</strong>
-            <span style={{ marginLeft: 8, color: 'var(--text-muted)', fontSize: 12 }}>Run ID: {runResult.runId}</span>
+            <span style={{ marginLeft: 8, color: 'var(--text-muted)', fontSize: '0.8rem' }}>Run ID: {runResult.runId}</span>
           </div>
 
           <div className="card" style={{ padding: 0, overflow: 'hidden', marginBottom: 20 }}>
@@ -201,29 +201,29 @@ export default function PayrollRun() {
               <thead>
                 <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)' }}>
                   {['Employee', 'Check #', 'Gross Pay', 'Net Pay', '941 Deposit', 'FUTA (940)'].map((h) => (
-                    <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
+                    <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontSize: '0.7333rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {runResult.paystubs.map((p, idx) => (
                   <tr key={p.id} style={{ borderBottom: '1px solid var(--border-light)', background: idx % 2 === 1 ? 'var(--bg-primary)' : 'transparent' }}>
-                    <td style={{ padding: '10px 16px', fontWeight: 600, fontSize: 13 }}>{p.employeeName}</td>
-                    <td style={{ padding: '10px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: 'var(--accent)', fontWeight: 700 }}>#{p.checkNumber}</td>
-                    <td style={{ padding: '10px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>{fmtAmt(p.grossWages)}</td>
-                    <td style={{ padding: '10px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: 'var(--success)' }}>{fmtAmt(p.netPay)}</td>
-                    <td style={{ padding: '10px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 700, color: 'var(--accent)' }}>{fmtAmt(p.totalDeposit)}</td>
-                    <td style={{ padding: '10px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: p.futaTax > 0 ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                    <td style={{ padding: '10px 16px', fontWeight: 600, fontSize: '0.8667rem' }}>{p.employeeName}</td>
+                    <td style={{ padding: '10px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem', color: 'var(--accent)', fontWeight: 700 }}>#{p.checkNumber}</td>
+                    <td style={{ padding: '10px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem' }}>{fmtAmt(p.grossWages)}</td>
+                    <td style={{ padding: '10px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem', color: 'var(--success)' }}>{fmtAmt(p.netPay)}</td>
+                    <td style={{ padding: '10px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem', fontWeight: 700, color: 'var(--accent)' }}>{fmtAmt(p.totalDeposit)}</td>
+                    <td style={{ padding: '10px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem', color: p.futaTax > 0 ? 'var(--text-primary)' : 'var(--text-muted)' }}>
                       {p.futaTax > 0 ? fmtAmt(p.futaTax) : '—'}
                     </td>
                   </tr>
                 ))}
                 <tr style={{ background: 'var(--bg-primary)', borderTop: '2px solid var(--border)', fontWeight: 700 }}>
-                  <td colSpan={2} style={{ padding: '10px 16px', fontSize: 13 }}>Totals</td>
-                  <td style={{ padding: '10px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>{fmtAmt(totals.gross)}</td>
-                  <td style={{ padding: '10px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: 'var(--success)' }}>{fmtAmt(totals.net)}</td>
-                  <td style={{ padding: '10px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: 'var(--accent)' }}>{fmtAmt(totals.deposit)}</td>
-                  <td style={{ padding: '10px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>{fmtAmt(totals.futa)}</td>
+                  <td colSpan={2} style={{ padding: '10px 16px', fontSize: '0.8667rem' }}>Totals</td>
+                  <td style={{ padding: '10px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem' }}>{fmtAmt(totals.gross)}</td>
+                  <td style={{ padding: '10px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem', color: 'var(--success)' }}>{fmtAmt(totals.net)}</td>
+                  <td style={{ padding: '10px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem', color: 'var(--accent)' }}>{fmtAmt(totals.deposit)}</td>
+                  <td style={{ padding: '10px 16px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem' }}>{fmtAmt(totals.futa)}</td>
                 </tr>
               </tbody>
             </table>
@@ -295,25 +295,25 @@ export default function PayrollRun() {
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: skipped ? 0 : 16 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                   <div>
-                    <div style={{ fontWeight: 700, fontSize: 14 }}>
+                    <div style={{ fontWeight: 700, fontSize: '0.9333rem' }}>
                       {emp.fullName || `${emp.firstName} ${emp.lastName}`}
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                    <div style={{ fontSize: '0.7333rem', color: 'var(--text-muted)' }}>
                       {isSalary ? 'Salary' : 'Hourly'} · {emp.payFrequency || 'biweekly'} · {emp.workState || emp.state || 'TX'}
                     </div>
                   </div>
                   {!skipped && gross > 0 && (
-                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--accent)', fontSize: 15 }}>
+                    <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--accent)', fontSize: '1rem' }}>
                       {fmtAmt(gross)}
                     </span>
                   )}
                 </div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, color: 'var(--text-muted)' }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: '0.8667rem', color: 'var(--text-muted)' }}>
                   <input
                     type="checkbox"
                     checked={skipped}
                     onChange={() => toggleSkip(emp.id)}
-                    style={{ width: 15, height: 15, accentColor: 'var(--error)' }}
+                    style={{ width: 18, height: 18, accentColor: 'var(--error)' }}
                   />
                   Skip
                 </label>
@@ -321,11 +321,11 @@ export default function PayrollRun() {
 
               {!skipped && (
                 <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8667rem' }}>
                     <thead>
                       <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)' }}>
                         {['Pay Type', 'Hours', 'Rate', 'Amount', ''].map((h) => (
-                          <th key={h} style={{ padding: '7px 10px', textAlign: 'left', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
+                          <th key={h} style={{ padding: '7px 10px', textAlign: 'left', fontSize: '0.7333rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -333,7 +333,7 @@ export default function PayrollRun() {
                       {(data.lineItems || []).map((li, idx) => (
                         <tr key={idx} style={{ borderBottom: '1px solid var(--border-light)' }}>
                           <td style={{ padding: '6px 8px', width: 130 }}>
-                            <select className="form-select" style={{ fontSize: 12, padding: '4px 6px', borderRadius: 0 }} value={li.payType}
+                            <select className="form-select" style={{ fontSize: '0.8rem', padding: '4px 6px', borderRadius: 0 }} value={li.payType}
                               onChange={(e) => updateItem(emp.id, idx, 'payType', e.target.value)}>
                               {PAY_TYPES.map((pt) => <option key={pt.value} value={pt.value}>{pt.label}</option>)}
                             </select>
@@ -341,32 +341,32 @@ export default function PayrollRun() {
                           <td style={{ padding: '6px 8px', width: 90 }}>
                             {!isSalary && (
                               <input className="form-input mono" type="number" min="0" step="0.25" placeholder="0"
-                                value={li.hours} style={{ fontSize: 12, padding: '4px 7px', borderRadius: 0 }}
+                                value={li.hours} style={{ fontSize: '0.8rem', padding: '4px 7px', borderRadius: 0 }}
                                 onChange={(e) => updateItem(emp.id, idx, 'hours', e.target.value)} />
                             )}
                           </td>
                           <td style={{ padding: '6px 8px', width: 110 }}>
                             {!isSalary && (
                               <div style={{ position: 'relative' }}>
-                                <span style={{ position: 'absolute', left: 7, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 12 }}>$</span>
+                                <span style={{ position: 'absolute', left: 7, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '0.8rem' }}>$</span>
                                 <input className="form-input mono" type="number" min="0" step="0.01" placeholder="0.00"
-                                  value={li.rate} style={{ fontSize: 12, padding: '4px 7px 4px 18px', borderRadius: 0 }}
+                                  value={li.rate} style={{ fontSize: '0.8rem', padding: '4px 7px 4px 18px', borderRadius: 0 }}
                                   onChange={(e) => updateItem(emp.id, idx, 'rate', e.target.value)} />
                               </div>
                             )}
                           </td>
                           <td style={{ padding: '6px 8px', width: 130 }}>
                             <div style={{ position: 'relative' }}>
-                              <span style={{ position: 'absolute', left: 7, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 12 }}>$</span>
+                              <span style={{ position: 'absolute', left: 7, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '0.8rem' }}>$</span>
                               <input className="form-input mono" type="number" min="0" step="0.01" placeholder="0.00"
-                                value={li.amount} style={{ fontSize: 12, padding: '4px 7px 4px 18px', fontWeight: 600, borderRadius: 0 }}
+                                value={li.amount} style={{ fontSize: '0.8rem', padding: '4px 7px 4px 18px', fontWeight: 600, borderRadius: 0 }}
                                 onChange={(e) => updateItem(emp.id, idx, 'amount', e.target.value)} />
                             </div>
                           </td>
                           <td style={{ padding: '6px 8px', textAlign: 'center', width: 36 }}>
                             {(data.lineItems || []).length > 1 && (
                               <button type="button" onClick={() => removeLine(emp.id, idx)}
-                                style={{ background: 'none', border: 'none', color: 'var(--error)', cursor: 'pointer', fontSize: 16 }}>×</button>
+                                style={{ background: 'none', border: 'none', color: 'var(--error)', cursor: 'pointer', fontSize: '1.0667rem' }}>×</button>
                             )}
                           </td>
                         </tr>
@@ -389,10 +389,10 @@ export default function PayrollRun() {
             padding: '16px 20px', marginTop: 8,
             background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 'var(--radius)',
           }}>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+            <div style={{ fontSize: '0.8667rem', color: 'var(--text-secondary)' }}>
               <strong style={{ color: 'var(--text-primary)' }}>{activeEmployees.length}</strong> employee{activeEmployees.length !== 1 ? 's' : ''} included
               {totalGross > 0 && (
-                <span style={{ marginLeft: 14, fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 14, color: 'var(--accent)' }}>
+                <span style={{ marginLeft: 14, fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: '0.9333rem', color: 'var(--accent)' }}>
                   Total gross: {fmtAmt(totalGross)}
                 </span>
               )}

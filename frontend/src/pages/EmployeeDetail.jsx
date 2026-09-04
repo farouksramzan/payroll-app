@@ -9,8 +9,8 @@ function fmt(n) {
 function InfoRow({ label, value, mono }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid var(--border-light)' }}>
-      <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{label}</span>
-      <span className={mono ? 'mono' : ''} style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 500 }}>
+      <span style={{ color: 'var(--text-muted)', fontSize: '0.8667rem' }}>{label}</span>
+      <span className={mono ? 'mono' : ''} style={{ color: 'var(--text-primary)', fontSize: '0.8667rem', fontWeight: 500 }}>
         {value || '—'}
       </span>
     </div>
@@ -181,12 +181,12 @@ export default function EmployeeDetail() {
         {inviteUrl && (
           <div className="card" style={{ borderLeft: '4px solid var(--accent)' }}>
             <div className="card-body" style={{ padding: '12px 16px' }}>
-              <div style={{ fontWeight: 600, marginBottom: 4, fontSize: 13 }}>Employee invite link (valid 7 days)</div>
+              <div style={{ fontWeight: 600, marginBottom: 4, fontSize: '0.8667rem' }}>Employee invite link (valid 7 days)</div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <input
                   readOnly
                   value={inviteUrl}
-                  style={{ flex: 1, minWidth: 200, fontSize: 12, padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 0, fontFamily: 'monospace' }}
+                  style={{ flex: 1, minWidth: 200, fontSize: '0.8rem', padding: '4px 8px', border: '1px solid var(--border)', borderRadius: 0, fontFamily: 'monospace' }}
                   onFocus={e => e.target.select()}
                 />
                 <button
@@ -196,7 +196,7 @@ export default function EmployeeDetail() {
                   Copy
                 </button>
               </div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+              <div style={{ fontSize: '0.7333rem', color: 'var(--text-muted)', marginTop: 4 }}>
                 Send this link to the employee. They'll create a password and can then view their paystubs.
               </div>
             </div>
@@ -240,26 +240,26 @@ export default function EmployeeDetail() {
               </>
             )}
             {stubsError ? (
-              <div style={{ paddingTop: 14, fontSize: 12, color: 'var(--text-muted)' }}>
+              <div style={{ paddingTop: 14, fontSize: '0.8rem', color: 'var(--text-muted)' }}>
                 Paycheck counts unavailable — see Paycheck History below.
               </div>
             ) : (
               <div style={{ paddingTop: 14, display: 'flex', gap: 20 }}>
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' }}>{yearStubs.length}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Paychecks in {currentYear}</div>
+                  <div style={{ fontSize: '1.4667rem', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace' }}>{yearStubs.length}</div>
+                  <div style={{ fontSize: '0.7333rem', color: 'var(--text-muted)', marginTop: 2 }}>Paychecks in {currentYear}</div>
                 </div>
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: 'var(--success)' }}>
+                  <div style={{ fontSize: '1.4667rem', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: 'var(--success)' }}>
                     {yearStubs.filter((s) => s.status === 'submitted').length}
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>941 Filed</div>
+                  <div style={{ fontSize: '0.7333rem', color: 'var(--text-muted)', marginTop: 2 }}>941 Filed</div>
                 </div>
                 <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: 22, fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: 'var(--success)' }}>
+                  <div style={{ fontSize: '1.4667rem', fontWeight: 700, fontFamily: 'JetBrains Mono, monospace', color: 'var(--success)' }}>
                     {yearStubs.filter((s) => s.status_940 === 'submitted').length}
                   </div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>940 Filed</div>
+                  <div style={{ fontSize: '0.7333rem', color: 'var(--text-muted)', marginTop: 2 }}>940 Filed</div>
                 </div>
               </div>
             )}
@@ -271,7 +271,7 @@ export default function EmployeeDetail() {
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <div className="card-header" style={{ padding: '14px 20px' }}>
             <span className="card-title">Paycheck History</span>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Click any row to open and edit</span>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Click any row to open and edit</span>
           </div>
 
           {stubsError ? (
@@ -293,7 +293,7 @@ export default function EmployeeDetail() {
               <thead>
                 <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)' }}>
                   {['Check #', 'Pay Period', 'Gross Pay', 'Net Pay', '941 Status', '940 Status'].map((h) => (
-                    <th key={h} style={{ padding: '11px 18px', textAlign: 'left', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
+                    <th key={h} style={{ padding: '11px 18px', textAlign: 'left', fontSize: '0.7333rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
                   ))}
                   <th style={{ padding: '11px 18px' }} />
                 </tr>
@@ -307,21 +307,21 @@ export default function EmployeeDetail() {
                     onMouseEnter={(e) => { e.currentTarget.style.filter = 'brightness(0.96)'; }}
                     onMouseLeave={(e) => { e.currentTarget.style.filter = 'none'; }}
                   >
-                    <td style={{ padding: '14px 18px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12, color: 'var(--accent)', fontWeight: 600 }}>
+                    <td style={{ padding: '14px 18px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8rem', color: 'var(--accent)', fontWeight: 600 }}>
                       {stub.check_number ? `#${stub.check_number}` : '—'}
                     </td>
-                    <td className="mono" style={{ padding: '14px 18px', fontSize: 12 }}>
+                    <td className="mono" style={{ padding: '14px 18px', fontSize: '0.8rem' }}>
                       {stub.pay_period_start} – {stub.pay_period_end}
                     </td>
-                    <td style={{ padding: '14px 18px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 600 }}>
+                    <td style={{ padding: '14px 18px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem', fontWeight: 600 }}>
                       {fmt(stub.gross_wages)}
                     </td>
-                    <td style={{ padding: '14px 18px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>
+                    <td style={{ padding: '14px 18px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem', fontWeight: 600, color: 'var(--accent)' }}>
                       {fmt(stub.net_pay)}
                     </td>
                     <td style={{ padding: '14px 18px' }}><StatusBadge status={stub.status} /></td>
                     <td style={{ padding: '14px 18px' }}><StatusBadge status={stub.status_940} /></td>
-                    <td style={{ padding: '14px 18px', textAlign: 'right', fontSize: 12, color: 'var(--text-muted)' }}>Edit →</td>
+                    <td style={{ padding: '14px 18px', textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-muted)' }}>Edit →</td>
                   </tr>
                 ))}
               </tbody>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams, Link } from 'react-router-dom';
 import api from '../api/client';
+import SearchSelect from '../components/SearchSelect';
 
 const US_STATES = [
   ['AL','Alabama'],['AK','Alaska'],['AZ','Arizona'],['AR','Arkansas'],['CA','California'],
@@ -71,6 +72,9 @@ const TX_COUNTIES = [
   ['Williamson','491'],['Wilson','493'],['Winkler','495'],['Wise','497'],['Wood','499'],
   ['Yoakum','501'],['Young','503'],['Zapata','505'],['Zavala','507'],
 ];
+
+const STATE_OPTIONS  = US_STATES.map(([code, name]) => ({ value: code, label: `${code} — ${name}` }));
+const COUNTY_OPTIONS = TX_COUNTIES.map(([name, code]) => ({ value: code, label: `${name} (${code})` }));
 
 const EMPTY = {
   businessName: '', ein: '', state: 'TX',
@@ -213,21 +217,21 @@ export default function ClientForm() {
             <p className="form-section-title" style={{ marginTop: 0 }}>Business Information</p>
 
             <div className="form-group">
-              <label className="form-label">Business Name <span>*</span></label>
+              <label className="form-label" htmlFor="field-businessName">Business Name <span>*</span></label>
               <input id="field-businessName" className="form-input" value={form.businessName} onChange={set('businessName')} placeholder="Acme Corp" />
               {errors.businessName && <p className="form-error-msg">{errors.businessName}</p>}
             </div>
 
             <div className="form-group" style={{ maxWidth: 320 }}>
-              <label className="form-label">EIN <span>*</span></label>
+              <label className="form-label" htmlFor="field-ein">EIN <span>*</span></label>
               <input id="field-ein" className="form-input mono" value={form.ein} onChange={set('ein')} placeholder="12-3456789" />
               {errors.ein && <p className="form-error-msg">{errors.ein}</p>}
               <p className="form-hint">Format: XX-XXXXXXX</p>
             </div>
 
             <div className="form-group" style={{ maxWidth: 280 }}>
-              <label className="form-label">941 Deposit Schedule</label>
-              <select className="form-select" value={form.depositSchedule} onChange={set('depositSchedule')}>
+              <label className="form-label" htmlFor="field-depositSchedule">941 Deposit Schedule</label>
+              <select id="field-depositSchedule" className="form-select" value={form.depositSchedule} onChange={set('depositSchedule')}>
                 <option value="monthly">Monthly</option>
                 <option value="semiweekly">Semi-weekly</option>
               </select>
@@ -235,28 +239,30 @@ export default function ClientForm() {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Business Address <span>*</span></label>
+              <label className="form-label" htmlFor="field-businessAddress">Business Address <span>*</span></label>
               <input id="field-businessAddress" className="form-input" value={form.businessAddress} onChange={set('businessAddress')} placeholder="123 Main St" />
               {errors.businessAddress && <p className="form-error-msg">{errors.businessAddress}</p>}
             </div>
 
             <div className="form-grid" style={{ gridTemplateColumns: '1fr 180px 100px' }}>
               <div className="form-group">
-                <label className="form-label">City <span>*</span></label>
+                <label className="form-label" htmlFor="field-businessCity">City <span>*</span></label>
                 <input id="field-businessCity" className="form-input" value={form.businessCity} onChange={set('businessCity')} placeholder="San Antonio" />
                 {errors.businessCity && <p className="form-error-msg">{errors.businessCity}</p>}
               </div>
               <div className="form-group">
-                <label className="form-label">State <span>*</span></label>
-                <select className="form-select" value={form.state} onChange={set('state')}>
-                  {US_STATES.map(([code, name]) => (
-                    <option key={code} value={code}>{code} — {name}</option>
-                  ))}
-                </select>
+                <label className="form-label" htmlFor="field-state">State <span>*</span></label>
+                <SearchSelect
+                  inputId="field-state"
+                  options={STATE_OPTIONS}
+                  value={form.state}
+                  onChange={set('state')}
+                  placeholder="Type to search states"
+                />
                 <p className="form-hint">Also used for SUI/state tax calculations.</p>
               </div>
               <div className="form-group">
-                <label className="form-label">ZIP <span>*</span></label>
+                <label className="form-label" htmlFor="field-businessZip">ZIP <span>*</span></label>
                 <input id="field-businessZip" className="form-input mono" value={form.businessZip} onChange={set('businessZip')} placeholder="78201" maxLength={10} />
                 {errors.businessZip && <p className="form-error-msg">{errors.businessZip}</p>}
               </div>
@@ -265,25 +271,24 @@ export default function ClientForm() {
 
             {form.state === 'TX' && (
               <div className="form-group" style={{ maxWidth: 320 }}>
-                <label className="form-label">County</label>
-                <select
-                  className="form-select"
+                <label className="form-label" htmlFor="field-countyCode">County</label>
+                <SearchSelect
+                  inputId="field-countyCode"
+                  options={COUNTY_OPTIONS}
                   value={form.countyCode}
                   onChange={(e) => setForm((f) => ({ ...f, countyCode: e.target.value }))}
-                >
-                  <option value="">— Select county —</option>
-                  {TX_COUNTIES.map(([name, code]) => (
-                    <option key={code} value={code}>{name} ({code})</option>
-                  ))}
-                </select>
+                  placeholder="— Select county —"
+                  allowClear
+                />
                 <p className="form-hint">Required for TWC QuickFile ICESA submission (county code auto-filled).</p>
               </div>
             )}
 
             <div className="form-group">
-              <label className="form-label">SUI (State Unemployment) Rate (%)</label>
+              <label className="form-label" htmlFor="field-sutaRate">SUI (State Unemployment) Rate (%)</label>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <input
+                  id="field-sutaRate"
                   className="form-input mono"
                   type="number"
                   min="0"
@@ -293,7 +298,7 @@ export default function ClientForm() {
                   onChange={set('sutaRate')}
                   style={{ maxWidth: 120 }}
                 />
-                <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>%</span>
+                <span style={{ color: 'var(--text-muted)', fontSize: '0.8667rem' }}>%</span>
               </div>
               <p className="form-hint">New employer default is 2.7% (varies by state). Check your state unemployment notice for your assigned rate.</p>
             </div>
@@ -302,7 +307,7 @@ export default function ClientForm() {
 
             <div className="form-grid">
               <div className="form-group">
-                <label className="form-label">Account Number{!isEdit && <span style={{ color: '#dc2626' }}> *</span>}</label>
+                <label className="form-label" htmlFor="field-bankAccountNumber">Account Number{!isEdit && <span style={{ color: '#dc2626' }}> *</span>}</label>
                 <input
                   id="field-bankAccountNumber"
                   className="form-input mono"
@@ -314,15 +319,15 @@ export default function ClientForm() {
                 {errors.bankAccountNumber && <p className="form-error-msg">{errors.bankAccountNumber}</p>}
               </div>
               <div className="form-group">
-                <label className="form-label">Routing Number{!isEdit && <span style={{ color: '#dc2626' }}> *</span>}</label>
+                <label className="form-label" htmlFor="field-bankRoutingNumber">Routing Number{!isEdit && <span style={{ color: '#dc2626' }}> *</span>}</label>
                 <input id="field-bankRoutingNumber" className="form-input mono" value={form.bankRoutingNumber} onChange={set('bankRoutingNumber')} placeholder="9-digit routing number" maxLength={9} />
                 {errors.bankRoutingNumber && <p className="form-error-msg">{errors.bankRoutingNumber}</p>}
               </div>
             </div>
 
             <div className="form-group">
-              <label className="form-label">Account Type</label>
-              <select className="form-select" value={form.bankAccountType} onChange={set('bankAccountType')} style={{ maxWidth: 200 }}>
+              <label className="form-label" htmlFor="field-bankAccountType">Account Type</label>
+              <select id="field-bankAccountType" className="form-select" value={form.bankAccountType} onChange={set('bankAccountType')} style={{ maxWidth: 200 }}>
                 <option value="checking">Checking</option>
                 <option value="savings">Savings</option>
               </select>
@@ -331,8 +336,8 @@ export default function ClientForm() {
             <p className="form-section-title">Payroll Schedule</p>
             <div className="form-grid">
               <div className="form-group">
-                <label className="form-label">Payroll Frequency</label>
-                <select className="form-select" value={form.payrollFrequency} onChange={set('payrollFrequency')}>
+                <label className="form-label" htmlFor="field-payrollFrequency">Payroll Frequency</label>
+                <select id="field-payrollFrequency" className="form-select" value={form.payrollFrequency} onChange={set('payrollFrequency')}>
                   <option value="weekly">Weekly</option>
                   <option value="biweekly">Bi-weekly</option>
                   <option value="semimonthly">Semi-monthly</option>
@@ -340,8 +345,8 @@ export default function ClientForm() {
                 </select>
               </div>
               <div className="form-group">
-                <label className="form-label">Next Payroll Date</label>
-                <input className="form-input" type="date" value={form.nextPayrollDate} onChange={set('nextPayrollDate')} />
+                <label className="form-label" htmlFor="field-nextPayrollDate">Next Payroll Date</label>
+                <input id="field-nextPayrollDate" className="form-input" type="date" value={form.nextPayrollDate} onChange={set('nextPayrollDate')} />
               </div>
             </div>
 
@@ -349,17 +354,17 @@ export default function ClientForm() {
 
             <div className="form-grid">
               <div className="form-group">
-                <label className="form-label">Contact Name</label>
-                <input className="form-input" value={form.contactName} onChange={set('contactName')} placeholder="Jane Smith" />
+                <label className="form-label" htmlFor="field-contactName">Contact Name</label>
+                <input id="field-contactName" className="form-input" value={form.contactName} onChange={set('contactName')} placeholder="Jane Smith" />
               </div>
               <div className="form-group">
-                <label className="form-label">Phone</label>
-                <input className="form-input" value={form.contactPhone} onChange={set('contactPhone')} placeholder="(555) 000-0000" />
+                <label className="form-label" htmlFor="field-contactPhone">Phone</label>
+                <input id="field-contactPhone" className="form-input" value={form.contactPhone} onChange={set('contactPhone')} placeholder="(555) 000-0000" />
               </div>
             </div>
             <div className="form-group">
-              <label className="form-label">Email</label>
-              <input className="form-input" type="email" value={form.contactEmail} onChange={set('contactEmail')} placeholder="jane@acmecorp.com" />
+              <label className="form-label" htmlFor="field-contactEmail">Email</label>
+              <input id="field-contactEmail" className="form-input" type="email" value={form.contactEmail} onChange={set('contactEmail')} placeholder="jane@acmecorp.com" />
             </div>
           </div>
 

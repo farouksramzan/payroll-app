@@ -217,9 +217,22 @@ app.get('/ws/twc-bridge', (req, res) => {
 // ── Serve React frontend (production) ────────────────────────────────────────
 const PUBLIC_DIR = path.join(__dirname, 'public');
 if (fs.existsSync(PUBLIC_DIR)) {
-  app.use(express.static(PUBLIC_DIR));
+  // Vite fingerprints everything under /assets, so those files can be cached
+  // forever — but index.html must always revalidate, or browsers keep serving
+  // builds from before a deploy (users saw the old blue theme for days).
+  app.use(express.static(PUBLIC_DIR, {
+    index: false,
+    setHeaders(res, filePath) {
+      if (filePath.includes(`${path.sep}assets${path.sep}`)) {
+        res.set('Cache-Control', 'public, max-age=31536000, immutable');
+      } else {
+        res.set('Cache-Control', 'no-cache');
+      }
+    },
+  }));
   // React Router — serve index.html for any non-API route
   app.get('*', (req, res) => {
+    res.set('Cache-Control', 'no-cache');
     res.sendFile(path.join(PUBLIC_DIR, 'index.html'));
   });
 }

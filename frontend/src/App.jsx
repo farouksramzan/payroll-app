@@ -75,11 +75,11 @@ function NotFound() {
       }}
     >
       <div className="card" style={{ maxWidth: 440, width: '100%', textAlign: 'center', padding: '36px 32px' }}>
-        <div style={{ fontSize: 40, marginBottom: 12 }}>🔍</div>
-        <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
+        <div style={{ fontSize: '2.6667rem', marginBottom: 12 }}>🔍</div>
+        <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
           We couldn't find that page
         </h2>
-        <p style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.55, marginBottom: 20 }}>
+        <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.55, marginBottom: 20 }}>
           The link may be old or mistyped. Nothing was deleted — your companies and payroll data are unchanged.
         </p>
         <Link to={homePath} className="btn btn-primary">{homeLabel}</Link>

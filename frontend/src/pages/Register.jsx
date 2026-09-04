@@ -7,11 +7,11 @@ const INPUT_STYLE = {
   width: '100%', boxSizing: 'border-box',
   padding: '11px 14px', borderRadius: 0,
   border: '1.5px solid #e2e8f0',
-  fontSize: 14, color: '#0f172a',
+  fontSize: '0.9333rem', color: '#0f172a',
   background: '#fff', outline: 'none',
 };
 const LABEL_STYLE = {
-  display: 'block', fontSize: 11, fontWeight: 600, color: '#374151',
+  display: 'block', fontSize: '0.7333rem', fontWeight: 600, color: '#374151',
   marginBottom: 5, letterSpacing: '0.04em', textTransform: 'uppercase',
 };
 
@@ -57,23 +57,23 @@ export default function Register() {
       <div style={{ width: '100%', maxWidth: 400 }}>
 
         <div style={{ marginBottom: 28 }}>
-          <div style={{ fontSize: 22, fontWeight: 800, letterSpacing: '-0.5px', color: '#0f172a' }}>
+          <div style={{ fontSize: '1.4667rem', fontWeight: 800, letterSpacing: '-0.5px', color: '#0f172a' }}>
             Payroll<span style={{ color: '#16a34a' }}>Tax</span> Pro
           </div>
-          <div style={{ fontSize: 12, color: '#64748b', marginTop: 3, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+          <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: 3, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
             Federal Payroll Tax Engine
           </div>
         </div>
 
-        <h2 style={{ fontSize: 22, fontWeight: 800, color: '#0f172a', margin: '0 0 4px', letterSpacing: '-0.3px' }}>
+        <h2 style={{ fontSize: '1.4667rem', fontWeight: 800, color: '#0f172a', margin: '0 0 4px', letterSpacing: '-0.3px' }}>
           Create your accountant account
         </h2>
-        <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 20px' }}>
+        <p style={{ fontSize: '0.8667rem', color: '#64748b', margin: '0 0 20px' }}>
           Manage payroll for all your client companies under one login.
         </p>
 
         {error && (
-          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13, color: '#b91c1c', display: 'flex', gap: 8 }}>
+          <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: '0.8667rem', color: '#b91c1c', display: 'flex', gap: 8 }}>
             <span>⚠</span> {error}
           </div>
         )}
@@ -113,22 +113,22 @@ export default function Register() {
           </div>
           <button type="submit" disabled={loading} style={{
             marginTop: 4, padding: '12px', borderRadius: 9,
-            background: loading ? '#86efac' : '#16a34a',
-            color: '#fff', fontWeight: 700, fontSize: 15,
+            background: loading ? '#15803d' : '#16a34a',
+            color: '#fff', fontWeight: 700, fontSize: '1rem',
             border: 'none', cursor: loading ? 'not-allowed' : 'pointer',
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
             transition: 'background 0.15s',
           }}>
-            {loading ? <span className="spinner" /> : 'Create Accountant Account →'}
+            {loading ? <><span className="spinner" /> Creating account…</> : 'Create Accountant Account →'}
           </button>
         </form>
 
-        <p style={{ marginTop: 16, fontSize: 12, color: '#64748b', textAlign: 'center' }}>
+        <p style={{ marginTop: 16, fontSize: '0.8rem', color: '#64748b', textAlign: 'center' }}>
           A company or employee? Sign up from the{' '}
           <Link to="/login" style={{ color: '#16a34a', fontWeight: 600, textDecoration: 'none' }}>sign-in page</Link>
           {' '}using your role tab.
         </p>
-        <p style={{ marginTop: 10, fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>
+        <p style={{ marginTop: 10, fontSize: '0.8333rem', color: '#64748b', textAlign: 'center' }}>
           Already have an account?{' '}
           <Link to="/login" style={{ color: '#16a34a', fontWeight: 600, textDecoration: 'none' }}>Sign in</Link>
         </p>
@@ -163,14 +163,14 @@ function PasswordInput({ value, onChange, placeholder = '•••••••�
           style={{
             position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
             background: 'none', border: 'none', cursor: 'pointer',
-            fontSize: 11, fontWeight: 600, color: '#64748b', padding: '4px 6px',
+            fontSize: '0.7333rem', fontWeight: 600, color: '#64748b', padding: '4px 6px',
           }}
         >
           {show ? 'Hide' : 'Show'}
         </button>
       </div>
       {caps && (
-        <p style={{ fontSize: 11, color: '#b45309', margin: '4px 0 0' }}>Caps Lock is on</p>
+        <p style={{ fontSize: '0.7333rem', color: '#b45309', margin: '4px 0 0' }}>Caps Lock is on</p>
       )}
     </div>
   );

@@ -118,9 +118,9 @@ const STATUS_TONES = {
 };
 function StatusPill({ tone, label, to }) {
   const t = STATUS_TONES[tone];
-  const style = { display: 'inline-flex', alignItems: 'center', gap: 5, background: t.bg, color: t.color, fontSize: 10.5, fontWeight: 700, padding: '3px 9px', borderRadius: 999, whiteSpace: 'nowrap', lineHeight: 1.35 };
+  const style = { display: 'inline-flex', alignItems: 'center', gap: 5, background: t.bg, color: t.color, fontSize: '0.9rem', fontWeight: 700, padding: '3px 9px', borderRadius: 999, whiteSpace: 'nowrap', lineHeight: 1.35 };
   const inner = <>
-    <span style={{ width: 5, height: 5, borderRadius: 999, background: t.dot, flexShrink: 0 }} />
+    <span style={{ width: 9, height: 9, borderRadius: 999, background: t.dot, flexShrink: 0 }} />
     {label}
   </>;
   if (to) return (
@@ -167,34 +167,40 @@ function LiabilityDetailModal({ row, onClose, onAction }) {
   const MONO = { fontFamily: 'JetBrains Mono, monospace' };
   const Row = ({ label, value, bold, accent, indent }) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '4px 0', borderBottom: '1px solid var(--border)', paddingLeft: indent ? 12 : 0 }}>
-      <span style={{ fontSize: 12, color: indent ? 'var(--text-muted)' : 'var(--text)', fontWeight: bold ? 700 : 400 }}>{label}</span>
-      <span style={{ ...MONO, fontSize: 12, fontWeight: bold ? 700 : 500, color: accent || 'inherit' }}>{value}</span>
+      <span style={{ fontSize: '0.9333rem', color: indent ? 'var(--text-muted)' : 'var(--text)', fontWeight: bold ? 700 : 400 }}>{label}</span>
+      <span style={{ ...MONO, fontSize: '1rem', fontWeight: bold ? 700 : 500, color: accent || 'inherit' }}>{value}</span>
     </div>
   );
   const TaxBlock = ({ title, children, amount, dueDate, sendByDate, status, late, dueSoon, taxType }) => {
-    const statusColor = status === 'submitted' ? '#16a34a' : status === 'processing' ? '#1d4ed8' : status === 'failed' ? '#dc2626' : late ? '#dc2626' : dueSoon ? '#d97706' : 'var(--text-muted)';
+    const statusColor = status === 'submitted' ? '#16a34a' : status === 'processing' ? '#1d4ed8' : status === 'failed' ? '#dc2626' : late ? '#dc2626' : dueSoon ? '#92400e' : 'var(--text-muted)';
     const statusLabel = status === 'submitted' ? '✓ Sent' : status === 'processing' ? '⟳ Processing' : status === 'failed' ? '✗ Failed' : late ? 'LATE' : dueSoon ? 'Due Soon' : 'Pending';
     return (
       <div style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8, paddingBottom: 4, borderBottom: '2px solid var(--border)' }}>
-          <span style={{ fontWeight: 700, fontSize: 13 }}>{title}</span>
+          <span style={{ fontWeight: 700, fontSize: '0.8667rem' }}>{title}</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {dueDate && <span style={{ fontSize: 11, color: statusColor, fontWeight: 600 }}>
+            {dueDate && <span style={{ fontSize: '0.8667rem', color: statusColor, fontWeight: 600 }}>
               {status === 'submitted' || status === 'processing' ? '' : `${late ? 'Was due' : 'Due'} ${fmtDate(dueDate)}`}
               {sendByDate && !late && status !== 'submitted' && status !== 'processing' ? ` · send by ${fmtDate(sendByDate)}` : ''}
             </span>}
-            <span style={{ fontSize: 11, fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: status === 'submitted' ? '#dcfce7' : status === 'processing' ? '#dbeafe' : status === 'failed' ? '#fee2e2' : late ? '#fee2e2' : dueSoon ? '#fef3c7' : '#f3f4f6', color: statusColor }}>{statusLabel}</span>
+            <span style={{ fontSize: '0.8333rem', fontWeight: 700, padding: '2px 8px', borderRadius: 99, background: status === 'submitted' ? '#dcfce7' : status === 'processing' ? '#dbeafe' : status === 'failed' ? '#fee2e2' : late ? '#fee2e2' : dueSoon ? '#fef3c7' : '#f3f4f6', color: statusColor }}>{statusLabel}</span>
           </div>
         </div>
         {children}
-        <div style={{ marginTop: 8, display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+        <div style={{ marginTop: 8, display: 'flex', gap: 12, justifyContent: 'flex-end', alignItems: 'flex-start' }}>
           {status === 'submitted'
-            ? <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={() => onAction('reset', taxType)}>↩ Mark as Pending</button>
+            ? <button className="btn btn-ghost" style={{ fontSize: '0.9333rem', padding: '8px 14px' }} onClick={() => onAction('reset', taxType)}>↩ Mark as Pending</button>
             : status === 'processing'
-              ? <span style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>The payment computer is sending this — check back in ~15 min</span>
+              ? <span style={{ fontSize: '0.7333rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>The payment computer is sending this — check back in ~15 min</span>
               : <>
-                  <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={() => onAction('markSent', taxType)}>Mark as Sent</button>
-                  <button className="btn btn-primary" style={{ fontSize: 11 }} onClick={() => onAction('submit', taxType)}>Send via Payment Computer</button>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                    <button className="btn btn-ghost" style={{ fontSize: '0.9333rem', padding: '8px 14px' }} onClick={() => onAction('markSent', taxType)}>Mark as Sent</button>
+                    <span style={{ fontSize: '0.8333rem', color: 'var(--text-muted)' }}>Records it as paid — no money moves.</span>
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                    <button className="btn btn-primary" style={{ fontSize: '0.9333rem', padding: '8px 14px' }} onClick={() => onAction('submit', taxType)}>Send via Payment Computer</button>
+                    <span style={{ fontSize: '0.8333rem', color: 'var(--text-muted)' }}>Transmits the payment through the payment computer.</span>
+                  </div>
                 </>
           }
         </div>
@@ -215,10 +221,10 @@ function LiabilityDetailModal({ row, onClose, onAction }) {
       <div className="card" style={{ width: 520, maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', padding: 24 }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 18 }}>
           <div>
-            <div style={{ fontWeight: 700, fontSize: 15 }}>{row.employee_name || '—'}</div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 3 }}>{row._clientName} · {fmtPeriod(row.pay_period_start, row.pay_period_end)}</div>
+            <div style={{ fontWeight: 700, fontSize: '1rem' }}>{row.employee_name || '—'}</div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 3 }}>{row._clientName} · {fmtPeriod(row.pay_period_start, row.pay_period_end)}</div>
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 22, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '1.4667rem', cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
         </div>
 
         {has941 && (
@@ -268,7 +274,7 @@ const BULK_BAR = {
 };
 const bulkBtn = (extra = {}) => ({
   background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)',
-  borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: 12,
+  borderRadius: 5, color: '#fff', padding: '3px 10px', fontSize: '0.8rem',
   cursor: 'pointer', fontWeight: 600, ...extra,
 });
 
@@ -292,6 +298,19 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
     window.addEventListener('focus', bump);
     return () => { clearInterval(timer); window.removeEventListener('focus', bump); };
   }, []);
+
+  useEffect(() => {
+    if (!popover) return;
+    const onKey = e => { if (e.key === 'Escape') setPopover(null); };
+    // The menu is position:fixed with coordinates captured at open time — any
+    // scroll (or the 60s data refresh below) can move its row out from under
+    // it, so close rather than let it float beside the wrong liability.
+    const onScroll = () => setPopover(null);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('scroll', onScroll, true);
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('scroll', onScroll, true); };
+  }, [popover]);
+  useEffect(() => { setPopover(null); }, [refreshTick]);
 
   function buildLiabRows(results) {
     const today = new Date().toISOString().slice(0, 10);
@@ -477,6 +496,11 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
   }
 
   async function handleSubmitOne(stubId, taxType) {
+    const row = visibleRows.find(x => x.id === stubId);
+    if (row) {
+      const amount = taxType === '941' ? row.total_deposit : taxType === '940' ? row.futa_tax : row.suta_tax;
+      if (!window.confirm(`Send the ${taxType.toUpperCase()} payment of ${fmt(amount)} for ${row._clientName} to EFTPS now?`)) return;
+    }
     const groups = groupByDepositPeriod([stubId], taxType);
     if (!await checkBridgeOrAbort()) return;
     try {
@@ -509,9 +533,9 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
   function toggleLiab(id) { setSelectedLiab(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n; }); }
 
   const DueCell = ({ due, late, dueSoon }) => (
-    <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13,
-      color: late ? '#dc2626' : dueSoon ? '#d97706' : 'var(--text-muted)', fontWeight: (late || dueSoon) ? 700 : 400 }}>
-      {due ? fmtShort(due) : '—'}
+    <td style={{ padding: '7px 8px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem',
+      color: late ? '#dc2626' : dueSoon ? '#92400e' : 'var(--text-muted)', fontWeight: (late || dueSoon) ? 700 : 400 }}>
+      {due ? `${late ? '⚠ ' : ''}${fmtShort(due)}` : '—'}
     </td>
   );
 
@@ -534,35 +558,50 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
   }
 
   const PopBtn = ({ onClick, accent, children }) => (
-    <button onClick={onClick} style={{ display:'block', width:'100%', padding:'7px 14px', background:'none', border:'none', textAlign:'left', fontSize:12, cursor:'pointer', fontWeight: accent ? 700 : 400, color: accent ? 'var(--accent)' : 'var(--text)', borderBottom:'1px solid var(--border)' }}>{children}</button>
+    <button onClick={onClick} style={{ display:'block', width:'100%', padding:'7px 14px', background:'none', border:'none', textAlign:'left', fontSize: '0.8rem', cursor:'pointer', fontWeight: accent ? 700 : 400, color: accent ? 'var(--accent)' : 'var(--text)', borderBottom:'1px solid var(--border)' }}>{children}</button>
   );
   function TaxCell({ r, taxType, amount, pending, processing, failed, submitted, late, dueSoon, sendBy }) {
     const isOpen = popover?.stubId === r.id && popover?.taxType === taxType;
-    const toggle = e => { e.stopPropagation(); setPopover(isOpen ? null : { stubId: r.id, taxType }); };
+    const toggle = e => {
+      e.stopPropagation();
+      if (isOpen) { setPopover(null); return; }
+      const rect = e.currentTarget.getBoundingClientRect();
+      const openUp = rect.bottom + 220 > window.innerHeight;
+      setPopover({ stubId: r.id, taxType, ...(openUp ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 }), right: window.innerWidth - rect.right });
+    };
     let badge = null;
-    const bs = { fontSize:10, fontWeight:700, borderRadius:99, padding:'2px 7px', cursor:'pointer', display:'inline-block' };
-    if (submitted) badge = <span style={{...bs, background:'#dcfce7', color:'#16a34a'}} onClick={toggle}>✓ Sent</span>;
-    else if (processing) badge = <span style={{...bs, background:'#dbeafe', color:'#1d4ed8'}} onClick={toggle}>⟳ Processing</span>;
-    else if (failed) badge = <span style={{...bs, background:'#fee2e2', color:'#dc2626'}} onClick={toggle}>✗ Failed</span>;
-    else if (late) badge = <span style={{...bs, background:'#fee2e2', color:'#dc2626', cursor:'default'}}>LATE</span>;
-    else if (dueSoon && sendBy) badge = <span style={{...bs, background:'#fef3c7', color:'#d97706', cursor:'default'}}>DUE {fmtShort(sendBy)}</span>;
+    const bs = { fontSize:'0.8333rem', fontWeight:700, borderRadius:99, padding:'6px 10px', minHeight:32, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:4, border:'1px solid', lineHeight:1.2 };
+    const mkBadge = (bg, color, borderColor, label) => (
+      <button type="button" onClick={toggle} aria-label={`${label} — ${taxType.toUpperCase()} tax actions`}
+        style={{ ...bs, background:bg, color, borderColor }}>{label} ▾</button>
+    );
+    if (submitted) badge = mkBadge('#dcfce7', '#065f46', 'rgba(6,95,70,0.4)', '✓ Sent');
+    else if (processing) badge = mkBadge('#dbeafe', '#1d4ed8', 'rgba(29,78,216,0.4)', '⟳ Processing');
+    else if (failed) badge = mkBadge('#fee2e2', '#991b1b', 'rgba(153,27,27,0.4)', '✗ Failed');
+    else if (late) badge = mkBadge('#fee2e2', '#991b1b', 'rgba(153,27,27,0.4)', 'LATE');
+    else if (dueSoon && sendBy) badge = mkBadge('#fef3c7', '#92400e', 'rgba(146,64,14,0.4)', `DUE ${fmtShort(sendBy)}`);
     const showAmt = amount && (pending || failed || submitted || processing);
     return (
       <td style={{ padding:'6px 8px', textAlign:'right', position:'relative', verticalAlign:'middle' }} onClick={e => e.stopPropagation()}>
-        {showAmt && <div style={{ fontFamily:'JetBrains Mono, monospace', fontWeight:700, fontSize:12 }}>{fmt(amount)}</div>}
+        {showAmt && <div style={{ fontFamily:'JetBrains Mono, monospace', fontWeight:700, fontSize: '0.8rem' }}>{fmt(amount)}</div>}
         {badge && <div style={{ marginTop: showAmt ? 3 : 0 }}>{badge}</div>}
         {!showAmt && !badge && <span style={{ color:'var(--text-muted)' }}>—</span>}
         {isOpen && <>
           <div style={{ position:'fixed', inset:0, zIndex:999 }} onClick={e => { e.stopPropagation(); setPopover(null); }} />
-          <div style={{ position:'absolute', right:0, top:'100%', zIndex:1000, background:'#fff', border:'1px solid var(--border)', borderRadius:8, boxShadow:'0 4px 16px rgba(0,0,0,0.12)', minWidth:190, overflow:'hidden' }}>
+          <div style={{ position:'fixed', top: popover.top, bottom: popover.bottom, right: popover.right, zIndex:1000, background:'#fff', border:'1px solid var(--border)', borderRadius:8, boxShadow:'0 4px 16px rgba(0,0,0,0.12)', minWidth:190, overflow:'hidden' }}>
             {submitted ? (
               <PopBtn onClick={() => { setPopover(null); handleResetOneTax(r.id, taxType); }}>↩ Mark as Pending</PopBtn>
             ) : processing ? (
-              <div style={{ padding:'10px 14px', fontSize:12, color:'var(--text-muted)', fontStyle:'italic' }}>The payment computer is sending this.<br/>Check back in ~15 min.</div>
-            ) : <>
+              <div style={{ padding:'10px 14px', fontSize: '0.8rem', color:'var(--text-muted)', fontStyle:'italic' }}>The payment computer is sending this.<br/>Check back in ~15 min.</div>
+            ) : (late || dueSoon) ? <>
               <PopBtn accent onClick={() => { setPopover(null); handleSubmitOne(r.id, taxType); }}>Send via Payment Computer</PopBtn>
+              <div style={{ height: 12 }} />
+              <PopBtn onClick={() => { setPopover(null); handleMarkSentOne(r.id, taxType); }}>Mark as Sent (manual)</PopBtn>
+            </> : <>
               <PopBtn onClick={() => { setPopover(null); handleMarkSentOne(r.id, taxType); }}>Mark as Sent (manual)</PopBtn>
               {failed && <PopBtn onClick={() => { setPopover(null); handleResetOneTax(r.id, taxType); }}>Reset to Pending</PopBtn>}
+              <div style={{ height: 12 }} />
+              <PopBtn accent onClick={() => { setPopover(null); handleSubmitOne(r.id, taxType); }}>Send via Payment Computer</PopBtn>
             </>}
           </div>
         </>}
@@ -582,14 +621,14 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
 
         {/* Accordion header */}
         <button style={SECTION_BTN} onClick={onToggle}>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{open ? '▾' : '▸'}</span>
-          <span style={{ fontWeight: 700, fontSize: 13, flex: 1 }}>
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{open ? '▾' : '▸'}</span>
+          <span style={{ fontWeight: 700, fontSize: '0.8667rem', flex: 1 }}>
             Liabilities
-            {lateRows.length > 0 && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#dc2626', background: '#fee2e2', borderRadius: 99, padding: '2px 7px' }}>{lateRows.length} overdue</span>}
-            {dueSoonRows.length > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#d97706', background: '#fef3c7', borderRadius: 99, padding: '2px 7px' }}>{dueSoonRows.length} due soon</span>}
+            {lateRows.length > 0 && <span style={{ marginLeft: 8, fontSize: '0.8667rem', fontWeight: 700, color: '#dc2626', background: '#fee2e2', borderRadius: 99, padding: '2px 7px' }}>{lateRows.length} overdue</span>}
+            {dueSoonRows.length > 0 && <span style={{ marginLeft: 6, fontSize: '0.8667rem', fontWeight: 700, color: '#92400e', background: '#fef3c7', borderRadius: 99, padding: '2px 7px' }}>{dueSoonRows.length} due soon</span>}
           </span>
           {loading && <span className="spinner spinner-dark" style={{ width: 12, height: 12 }} />}
-          {grandTotal > 0 && <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 13, color: 'var(--accent)' }}>{fmt(grandTotal)}</span>}
+          {grandTotal > 0 && <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: '0.8667rem', color: 'var(--accent)' }}>{fmt(grandTotal)}</span>}
         </button>
 
         {open && (<>
@@ -603,7 +642,7 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
               </button>
             )}
             {selSet.size > 0 && <>
-              <span style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-secondary)', marginLeft: lateIds.length ? 8 : 0 }}>{selSet.size} selected</span>
+              <span style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-secondary)', marginLeft: lateIds.length ? 8 : 0 }}>{selSet.size} selected</span>
               {sel941Ids.length > 0 && (
                 <button style={bulkBtn({ background: '#16a34a', border: '1px solid #15803d', color: '#fff' })}
                   disabled={!!submitting} onClick={() => handlePayTaxType('941', sel941Ids)}>
@@ -651,21 +690,25 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
           </div>
 
           {!loading && visibleRows.length === 0 && (
-            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>
+            <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8667rem' }}>
               No overdue or due-soon liabilities for selected {clientIds.length === 1 ? 'company' : 'companies'}.
             </div>
           )}
 
           {visibleRows.length > 0 && (
+            <>
+            <div style={{ padding: '8px 14px', fontSize: '0.8667rem', color: 'var(--text-secondary)', borderBottom: '1px solid var(--border)' }}>
+              LATE = deadline missed — penalties may be accruing. DUE = send by the date shown.
+            </div>
             <div className="table-scroll">
-            <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', fontSize: 13 }}>
+            <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', fontSize: '0.8667rem' }}>
               <thead>
                 <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
                   <th style={{ width: 36, padding: '7px 10px', textAlign: 'center' }}>
                     <input type="checkbox" checked={allVis} onChange={e => setSelectedLiab(e.target.checked ? new Set(visibleRows.map(r => r.id)) : new Set())} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
                   </th>
                   {['Company', 'Employee', 'Period', '941', '941 Send By', '940', '940 Send By', 'SUI', 'SUI Send By'].map(h => (
-                    <th key={h} style={{ padding: '7px 8px', textAlign: h.endsWith('941') || h === '940' || h === 'SUI' ? 'right' : 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
+                    <th key={h} style={{ padding: '7px 8px', textAlign: h.endsWith('941') || h === '940' || h === 'SUI' ? 'right' : 'left', fontWeight: 600, color: 'var(--text-muted)', fontSize: '0.8667rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
@@ -684,7 +727,7 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
                           })}
                           style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
                       </td>
-                      <td colSpan={9} style={{ padding: '7px 8px', fontWeight: 700, fontSize: 13 }}>{group.clientName}</td>
+                      <td colSpan={9} style={{ padding: '7px 8px', fontWeight: 700, fontSize: '0.8667rem' }}>{group.clientName}</td>
                     </tr>
                     {group.rows.map((r, i) => (
                       <tr key={r.id} style={{ background: r._isLate ? '#fff5f5' : '#fffdf0', borderBottom: '1px solid var(--border)', cursor: 'pointer' }}
@@ -692,9 +735,9 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
                         <td style={{ padding: '7px 10px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
                           <input type="checkbox" checked={selSet.has(r.id)} onChange={() => toggleLiab(r.id)} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
                         </td>
-                        <td style={{ padding: '7px 8px', color: 'var(--text-muted)', fontSize: 13 }}></td>
+                        <td style={{ padding: '7px 8px', color: 'var(--text-muted)', fontSize: '0.8667rem' }}></td>
                         <td style={{ padding: '7px 8px', whiteSpace: 'nowrap' }}>{r.employee_name || '—'}</td>
-                        <td style={{ padding: '7px 8px', fontSize: 13, whiteSpace: 'nowrap', color: '#555' }}>{fmtPeriod(r.pay_period_start, r.pay_period_end)}</td>
+                        <td style={{ padding: '7px 8px', fontSize: '0.8667rem', whiteSpace: 'nowrap', color: '#555' }}>{fmtPeriod(r.pay_period_start, r.pay_period_end)}</td>
                         <TaxCell r={r} taxType="941" amount={r.total_deposit}
                           pending={r._pending941} processing={r._processing941} failed={r._failed941} submitted={r._submitted941}
                           late={r._late941} dueSoon={r._dueSoon941} sendBy={r._sendBy941} />
@@ -714,7 +757,7 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
               </tbody>
               <tfoot>
                 <tr style={{ borderTop: '2px solid var(--border)', background: 'var(--bg-secondary)' }}>
-                  <td colSpan={4} style={{ padding: '8px 10px', fontWeight: 700, fontSize: 12 }}>Total</td>
+                  <td colSpan={4} style={{ padding: '8px 10px', fontWeight: 700, fontSize: '0.8rem' }}>Total</td>
                   <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, color: 'var(--accent)' }}>{fmt(total941)}</td>
                   <td />
                   <td style={{ padding: '8px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, color: 'var(--accent)' }}>{fmt(total940)}</td>
@@ -725,6 +768,7 @@ function LiabSection({ clientIds, clients, open, onToggle }) {
               </tfoot>
             </table>
             </div>
+            </>
           )}
         </>)}
       </div>
@@ -869,6 +913,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                 _hourlyRate: emp.hourlyRate || 0,
                 _annualSalary: emp.annualSalary || 0,
                 _payFrequency: emp.payFrequency || freq,
+                _ddEnabled: emp.directDeposit?.status === 'active',
                 _ytdGross: ytdGross,
               });
             });
@@ -941,6 +986,8 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
     const lineItems = [];
     if (regHrs > 0) lineItems.push({ pay_type: 'regular', description: 'Regular', hours: regHrs, rate, amount: regHrs * rate });
     if (otHrs  > 0) lineItems.push({ pay_type: 'overtime', description: 'Overtime', hours: otHrs, rate: rate * 1.5, amount: otHrs * rate * 1.5 });
+    const gross = lineItems.reduce((s, li) => s + li.amount, 0);
+    if (!window.confirm(`Run payroll for ${r.employee_name || 'this employee'} — gross ${fmt(gross)}, paid by ${r._ddEnabled ? 'direct deposit' : 'printed check'}. Continue?`)) return;
     setSavingHours(prev => new Set([...prev, r.id]));
     try {
       await api.runPayroll({
@@ -1021,12 +1068,12 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
       {detailStub && <CheckDetailModal stub={detailStub} clientId={detailStub._clientId} onClose={() => setDetailStub(null)} onSaved={() => { setDetailStub(null); fetchRows(clientKey); }} />}
       <div className="card" style={{ padding: 0, overflow: 'hidden', marginTop: 16 }}>
       <button style={SECTION_BTN} onClick={onToggle}>
-        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{open ? '▾' : '▸'}</span>
-        <span style={{ fontWeight: 700, fontSize: 13, flex: 1 }}>
+        <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{open ? '▾' : '▸'}</span>
+        <span style={{ fontWeight: 700, fontSize: '0.8667rem', flex: 1 }}>
           Paychecks
-          {lateCount > 0 && <span style={{ marginLeft: 8, fontSize: 11, fontWeight: 700, color: '#dc2626', background: '#fee2e2', borderRadius: 99, padding: '2px 7px' }}>{lateCount} late</span>}
-          {dueSoonCount > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: '#d97706', background: '#fef3c7', borderRadius: 99, padding: '2px 7px' }}>{dueSoonCount} due soon</span>}
-          {rows.length - lateCount - dueSoonCount > 0 && <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 600, color: '#6b7280', background: '#f3f4f6', borderRadius: 99, padding: '2px 7px' }}>{rows.length - lateCount - dueSoonCount} upcoming</span>}
+          {lateCount > 0 && <span style={{ marginLeft: 8, fontSize: '0.8667rem', fontWeight: 700, color: '#dc2626', background: '#fee2e2', borderRadius: 99, padding: '2px 7px' }}>{lateCount} late</span>}
+          {dueSoonCount > 0 && <span style={{ marginLeft: 6, fontSize: '0.8667rem', fontWeight: 700, color: '#92400e', background: '#fef3c7', borderRadius: 99, padding: '2px 7px' }}>{dueSoonCount} due soon</span>}
+          {rows.length - lateCount - dueSoonCount > 0 && <span style={{ marginLeft: 6, fontSize: '0.8667rem', fontWeight: 600, color: '#6b7280', background: '#f3f4f6', borderRadius: 99, padding: '2px 7px' }}>{rows.length - lateCount - dueSoonCount} upcoming</span>}
         </span>
         {loading && <span className="spinner spinner-dark" style={{ width: 12, height: 12 }} />}
       </button>
@@ -1041,18 +1088,18 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
               </button>
             )}
             {selCount > 0 && <>
-              <span style={{ fontWeight: 700, fontSize: 12, color: 'var(--text-secondary)', marginLeft: rows.some(r => r._isLate) ? 8 : 0 }}>{selCount} selected</span>
+              <span style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--text-secondary)', marginLeft: rows.some(r => r._isLate) ? 8 : 0 }}>{selCount} selected</span>
               {selStored.length > 0 && <button style={bulkBtn({ background: '#374151', border: '1px solid #1f2937', color: '#fff' })} onClick={handlePrint} disabled={printing}>{printing ? 'Preparing PDFs…' : `Print PDF (${selStored.length})`}</button>}
               {selStored.length > 0 && <button style={bulkBtn({ background: '#2563eb', border: '1px solid #1d4ed8', color: '#fff' })} onClick={handleDD} disabled={submitting}>{submitting ? 'Updating…' : `Mark as Direct Deposited (${selStored.length})`}</button>}
               <button style={{ ...bulkBtn(), marginLeft: 'auto', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-secondary)' }} onClick={() => setSelected(new Set())}>Clear</button>
             </>}
           </div>
           {!loading && rows.length === 0 && (
-            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: 13 }}>No pending paychecks.</div>
+            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8667rem' }}>No pending paychecks.</div>
           )}
           {rows.length > 0 && (
             <div className="table-scroll">
-            <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', fontSize: 13 }}>
+            <table style={{ width: '100%', minWidth: 900, borderCollapse: 'collapse', fontSize: '0.8667rem' }}>
               <thead>
                 <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
                   <th style={{ width: 36, padding: '7px 10px', textAlign: 'center' }}>
@@ -1069,7 +1116,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                     { label: 'Net Pay',      align: 'right' },
                     { label: 'Status',       align: 'left'  },
                   ].map(({ label, align }) => (
-                    <th key={label} style={{ padding: '7px 10px', textAlign: align, fontWeight: 600, color: 'var(--text-muted)', fontSize: 12, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</th>
+                    <th key={label} style={{ padding: '7px 10px', textAlign: align, fontWeight: 600, color: 'var(--text-muted)', fontSize: '0.8667rem', textTransform: 'uppercase', letterSpacing: '0.04em', ...(label === 'Employee' ? { position: 'sticky', left: 0, background: 'var(--bg-secondary)', zIndex: 2 } : {}) }}>{label}</th>
                   ))}
                 </tr>
               </thead>
@@ -1088,7 +1135,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                           })}
                           style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
                       </td>
-                      <td colSpan={9} style={{ padding: '7px 10px', fontWeight: 700, fontSize: 13 }}>{group.clientName}</td>
+                      <td colSpan={9} style={{ padding: '7px 10px', fontWeight: 700, fontSize: '0.8667rem' }}>{group.clientName}</td>
                     </tr>
                     {group.rows.map((r, i) => {
                       const isHourly = r._payType === 'hourly';
@@ -1105,42 +1152,42 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                             <input type="checkbox" checked={selected.has(r.id)} onChange={() => toggleCheck(r.id)} style={{ accentColor: 'var(--accent)', cursor: 'pointer' }} />
                           </td>
                           {/* Employee */}
-                          <td style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
+                          <td style={{ padding: '7px 10px', whiteSpace: 'nowrap', position: 'sticky', left: 0, background: 'inherit', zIndex: 2 }}>
                             <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{r.employee_name || '—'}</span>
-                            {r.check_number && <span style={{ marginLeft: 6, color: 'var(--text-muted)', fontSize: 10, fontFamily: 'JetBrains Mono, monospace' }}>#{r.check_number}</span>}
+                            {r.check_number && <span style={{ marginLeft: 6, color: 'var(--text-muted)', fontSize: '0.6667rem', fontFamily: 'JetBrains Mono, monospace' }}>#{r.check_number}</span>}
                           </td>
                           {/* Period Start */}
-                          <td style={{ padding: '7px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, whiteSpace: 'nowrap', color: '#374151' }}>{fmtDate(r.pay_period_start)}</td>
+                          <td style={{ padding: '7px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem', whiteSpace: 'nowrap', color: '#374151' }}>{fmtDate(r.pay_period_start)}</td>
                           {/* Period End */}
-                          <td style={{ padding: '7px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, whiteSpace: 'nowrap', color: '#374151' }}>{fmtDate(r.pay_period_end)}</td>
+                          <td style={{ padding: '7px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem', whiteSpace: 'nowrap', color: '#374151' }}>{fmtDate(r.pay_period_end)}</td>
                           {/* Pay Date */}
-                          <td style={{ padding: '7px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: r._isLate || r._isDueSoon ? 700 : 400, color: r._isLate ? '#dc2626' : r._isDueSoon ? '#d97706' : '#374151', whiteSpace: 'nowrap' }}>{fmtDate(r._payDate)}</td>
+                          <td style={{ padding: '7px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem', fontWeight: r._isLate || r._isDueSoon ? 700 : 400, color: r._isLate ? '#dc2626' : r._isDueSoon ? '#92400e' : '#374151', whiteSpace: 'nowrap' }}>{r._isLate ? '⚠ ' : ''}{fmtDate(r._payDate)}</td>
                           {/* Reg Hrs */}
                           <td style={{ padding: '4px 8px', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
                             {isHourly
                               ? r._isPending
                                 ? <input type="number" min="0" step="0.5" value={hoursEdits[r.id]?.reg ?? ''} placeholder="0"
-                                    style={{ width: 70, fontSize: 14, padding: '8px 6px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 0 }}
+                                    style={{ width: 70, fontSize: '0.9333rem', padding: '8px 6px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 0 }}
                                     disabled={savingHours.has(r.id)}
                                     onChange={e => setHours(r.id, 'reg', e.target.value)}
                                   />
-                                : <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>{regHrs > 0 ? regHrs : '—'}</span>
-                              : <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>—</span>}
+                                : <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem' }}>{regHrs > 0 ? regHrs : '—'}</span>
+                              : <span style={{ color: 'var(--text-muted)', fontSize: '0.8667rem' }}>—</span>}
                           </td>
                           {/* OT Hrs */}
                           <td style={{ padding: '4px 8px', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
                             {isHourly
                               ? r._isPending
                                 ? <input type="number" min="0" step="0.5" value={hoursEdits[r.id]?.ot ?? ''} placeholder="0"
-                                    style={{ width: 70, fontSize: 14, padding: '8px 6px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 0 }}
+                                    style={{ width: 70, fontSize: '0.9333rem', padding: '8px 6px', textAlign: 'right', border: '1px solid var(--border)', borderRadius: 0 }}
                                     disabled={savingHours.has(r.id)}
                                     onChange={e => setHours(r.id, 'ot', e.target.value)}
                                   />
-                                : <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>{otHrs > 0 ? otHrs : '—'}</span>
-                              : <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>—</span>}
+                                : <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem' }}>{otHrs > 0 ? otHrs : '—'}</span>
+                              : <span style={{ color: 'var(--text-muted)', fontSize: '0.8667rem' }}>—</span>}
                           </td>
                           {/* Rate */}
-                          <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: '#374151' }}>
+                          <td style={{ padding: '7px 8px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem', color: '#374151' }}>
                             {isHourly && rate ? '$' + Number(rate).toFixed(2) : <span style={{ color: 'var(--text-muted)' }}>—</span>}
                           </td>
                           {/* Net Pay */}
@@ -1151,14 +1198,14 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                           <td style={{ padding: '7px 10px' }}>
                             {r._isPending && isHourly && (parseFloat(hoursEdits[r.id]?.reg || 0) + parseFloat(hoursEdits[r.id]?.ot || 0) > 0)
                               ? <button onClick={e => { e.stopPropagation(); handleRunPending(r); }} disabled={savingHours.has(r.id)}
-                                  style={{ fontSize: 13, padding: '3px 10px', background: '#16a34a', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 700 }}>
+                                  style={{ fontSize: '0.8667rem', padding: '7px 12px', minHeight: 32, background: '#16a34a', color: '#fff', border: 'none', borderRadius: 4, cursor: 'pointer', fontWeight: 700 }}>
                                   {savingHours.has(r.id) ? '…' : '▶ Run'}
                                 </button>
                               : r._isLate
-                                ? <span className="badge badge-error" style={{ fontSize: 10 }}>LATE</span>
+                                ? <span className="badge badge-error">LATE</span>
                                 : r._isDueSoon
-                                  ? <span className="badge badge-warning" style={{ fontSize: 10 }}>Due Soon</span>
-                                  : <span className="badge" style={{ fontSize: 10, background: '#f3f4f6', color: '#6b7280' }}>UPCOMING</span>}
+                                  ? <span className="badge badge-warning">Due Soon</span>
+                                  : <span className="badge" style={{ background: '#f3f4f6', color: '#6b7280' }}>UPCOMING</span>}
                           </td>
                         </tr>
                       );
@@ -1172,16 +1219,16 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
           {debugInfo.some(d => d.error) && (
             <div style={{ padding: '10px 14px', borderTop: '1px solid var(--border)' }}>
               {debugInfo.filter(d => d.error).map(d => (
-                <div key={d.name} className="alert alert-error" style={{ fontSize: 12.5, marginBottom: 8 }}>
+                <div key={d.name} className="alert alert-error" style={{ fontSize: '0.8333rem', marginBottom: 8 }}>
                   <span>⚠</span>Couldn't load paychecks for {d.name} — {d.error}. Its checks are missing from the table above.
                 </div>
               ))}
-              <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} onClick={() => fetchRows(clientKey)}>↻ Retry</button>
+              <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.8rem' }} onClick={() => fetchRows(clientKey)}>↻ Retry</button>
             </div>
           )}
           {import.meta.env.DEV && debugInfo.length > 0 && (
-            <div style={{ padding: '10px 14px', fontSize: 11, color: 'var(--text-muted)', borderTop: '1px solid var(--border)', background: '#f8fafc' }}>
-              <div style={{ fontWeight: 700, marginBottom: 6, color: 'var(--text)', fontSize: 12 }}>Debug — raw fetch results ({debugInfo.length} companies):</div>
+            <div style={{ padding: '10px 14px', fontSize: '0.7333rem', color: 'var(--text-muted)', borderTop: '1px solid var(--border)', background: '#f8fafc' }}>
+              <div style={{ fontWeight: 700, marginBottom: 6, color: 'var(--text)', fontSize: '0.8rem' }}>Debug — raw fetch results ({debugInfo.length} companies):</div>
               {debugInfo.map(d => (
                 <div key={d.name} style={{ marginTop: 5, fontFamily: 'JetBrains Mono, monospace' }}>
                   <strong style={{ color: 'var(--text)' }}>{d.name}</strong>:{' '}
@@ -1190,7 +1237,7 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
                     : <span>{d.total} stubs — unique statuses: [{[...new Set(d.statuses)].join(', ') || 'none'}]</span>}
                   {!d.error && d.statuses.length > 0 && (
                     <div style={{ marginLeft: 12, marginTop: 2, lineHeight: '20px' }}>
-                      {d.statuses.map((s, i) => <span key={i} style={{ display: 'inline-block', margin: '1px 3px', padding: '1px 5px', borderRadius: 3, background: s === 'late' ? '#fee2e2' : s === 'draft' ? '#fef3c7' : '#f3f4f6', color: s === 'late' ? '#dc2626' : s === 'draft' ? '#d97706' : '#374151', fontSize: 10, fontWeight: 600 }}>{s}</span>)}
+                      {d.statuses.map((s, i) => <span key={i} style={{ display: 'inline-block', margin: '1px 3px', padding: '1px 5px', borderRadius: 3, background: s === 'late' ? '#fee2e2' : s === 'draft' ? '#fef3c7' : '#f3f4f6', color: s === 'late' ? '#dc2626' : s === 'draft' ? '#d97706' : '#374151', fontSize: '0.6667rem', fontWeight: 600 }}>{s}</span>)}
                     </div>
                   )}
                 </div>
@@ -1458,33 +1505,33 @@ export default function Dashboard() {
           {clients.length > 0 && (
             <>
               <div style={{ position: 'relative', display: 'flex', alignItems: 'center', maxWidth: '100%' }}>
-                <span style={{ position: 'absolute', left: 10, fontSize: 13, color: 'var(--text-muted)', pointerEvents: 'none' }}>🔍</span>
+                <span style={{ position: 'absolute', left: 10, fontSize: '0.8667rem', color: 'var(--text-muted)', pointerEvents: 'none' }}>🔍</span>
                 <input
                   type="text"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder="Search companies…"
                   aria-label="Search companies by name or EIN"
-                  style={{ fontSize: 13, padding: '6px 28px 6px 30px', borderRadius: 0, border: '1px solid var(--border)', background: '#fff', width: 220, maxWidth: '100%', outline: 'none' }} />
+                  style={{ fontSize: '0.8667rem', padding: '6px 28px 6px 30px', borderRadius: 0, border: '1px solid var(--border)', background: '#fff', width: 220, maxWidth: '100%', outline: 'none' }} />
                 {search && (
                   <button onClick={() => setSearch('')} aria-label="Clear search"
-                    style={{ position: 'absolute', right: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14, lineHeight: 1, padding: 4 }}>×</button>
+                    style={{ position: 'absolute', right: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.9333rem', lineHeight: 1, padding: 4 }}>×</button>
                 )}
               </div>
               <button
                 onClick={toggleSelectAllVisible}
                 className="btn btn-ghost"
-                style={{ fontSize: 12, padding: '5px 12px' }}>
+                style={{ fontSize: '0.8rem', padding: '5px 12px' }}>
                 {allSelected ? 'Deselect All' : 'Select All'}
               </button>
               <div style={{ display: 'flex', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: 3, gap: 2 }}>
                 <button onClick={() => switchView('tiles')} title="Tile view"
-                  style={{ padding: '5px 9px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13, lineHeight: 1,
+                  style={{ padding: '8px 12px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: '1.0667rem', lineHeight: 1,
                     background: view === 'tiles' ? '#fff' : 'transparent',
                     color: view === 'tiles' ? 'var(--accent)' : 'var(--text-muted)',
                     boxShadow: view === 'tiles' ? '0 1px 4px rgba(0,0,0,0.1)' : 'none' }}>⊞</button>
                 <button onClick={() => switchView('list')} title="List view"
-                  style={{ padding: '5px 9px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13, lineHeight: 1,
+                  style={{ padding: '8px 12px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: '1.0667rem', lineHeight: 1,
                     background: view === 'list' ? '#fff' : 'transparent',
                     color: view === 'list' ? 'var(--accent)' : 'var(--text-muted)',
                     boxShadow: view === 'list' ? '0 1px 4px rgba(0,0,0,0.1)' : 'none' }}>☰</button>
@@ -1492,11 +1539,11 @@ export default function Dashboard() {
             </>
           )}
           {clients.length > 0 && (
-            <button className="btn btn-ghost" style={{ fontSize: 12, padding: '5px 12px' }} onClick={openShare}>
+            <button className="btn btn-ghost" style={{ fontSize: '0.8rem', padding: '5px 12px' }} onClick={openShare}>
               👥 Share all
             </button>
           )}
-          <button className="btn btn-ghost" style={{ fontSize: 12, padding: '5px 12px' }} onClick={() => { setConnectOpen(true); setConnectErr(''); setConnectMsg(''); setConnectCode(''); }}>
+          <button className="btn btn-ghost" style={{ fontSize: '0.8rem', padding: '5px 12px' }} onClick={() => { setConnectOpen(true); setConnectErr(''); setConnectMsg(''); setConnectCode(''); }}>
             🔗 Connect a company
           </button>
           <Link to="/clients/new" className="btn btn-primary">+ Add Company</Link>
@@ -1504,10 +1551,10 @@ export default function Dashboard() {
       </div>
 
       {pollFailed && (
-        <div className="alert alert-error" style={{ marginBottom: 16, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div className="alert alert-error" style={{ marginBottom: 16, fontSize: '0.8667rem', display: 'flex', alignItems: 'center', gap: 8 }}>
           <span>⚠</span>
           <span style={{ flex: 1 }}>Couldn't refresh your companies — the list below may be out of date. Check your connection, then retry.</span>
-          <button className="btn btn-ghost btn-sm" style={{ fontSize: 12, flexShrink: 0 }} onClick={() => setReloadTick(t => t + 1)}>↻ Retry</button>
+          <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.8rem', flexShrink: 0 }} onClick={() => setReloadTick(t => t + 1)}>↻ Retry</button>
         </div>
       )}
 
@@ -1515,8 +1562,8 @@ export default function Dashboard() {
         <div style={{ position: 'fixed', inset: 0, zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}
           onClick={e => { if (e.target === e.currentTarget) setDeleteTarget(null); }}>
           <div className="card" style={{ width: 440, maxWidth: '92vw', padding: 24 }}>
-            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 6, color: '#b4241f' }}>Delete {deleteTarget.businessName}?</div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.55 }}>
+            <div style={{ fontWeight: 700, fontSize: '1.1333rem', marginBottom: 6, color: '#b4241f' }}>Delete {deleteTarget.businessName}?</div>
+            <div style={{ fontSize: '0.8667rem', color: 'var(--text-secondary)', marginBottom: 14, lineHeight: 1.55 }}>
               This permanently deletes <strong>{deleteTarget.businessName}</strong>
               {deleteInfo && deleteInfo.employees != null && deleteInfo.paystubs != null
                 ? <> — including its <strong>{deleteInfo.employees} employee{deleteInfo.employees === 1 ? '' : 's'}</strong>, <strong>{deleteInfo.paystubs} paycheck{deleteInfo.paystubs === 1 ? '' : 's'}</strong>, and all tax history</>
@@ -1524,22 +1571,28 @@ export default function Dashboard() {
               . This cannot be undone.
             </div>
             {!deleteInfo && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 14 }}>
                 <span className="spinner spinner-dark" style={{ width: 12, height: 12 }} />
                 Checking what this company contains…
               </div>
             )}
             {deleteInfo && deleteNeedsTypedName && (
               <div style={{ marginBottom: 14 }}>
-                <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>
+                <div style={{ fontSize: '0.8333rem', fontWeight: 600, marginBottom: 6 }}>
                   {deleteInfo.paystubs > 0
                     ? 'This company has payroll history. Type the company name to confirm:'
                     : 'We couldn’t check this company’s payroll history. Type the company name to confirm:'}
+                </div>
+                <div style={{ fontSize: '1rem', marginBottom: 6, userSelect: 'text' }}>
+                  Type: <b>{deleteTarget.businessName}</b>
                 </div>
                 <input className="form-input" autoFocus value={deleteNameInput}
                   onChange={e => setDeleteNameInput(e.target.value)}
                   placeholder={deleteTarget.businessName}
                   aria-label={`Type ${deleteTarget.businessName} to confirm deletion`} />
+                {deleteNameMatches && (
+                  <div style={{ fontSize: '0.8667rem', fontWeight: 600, color: '#15803d', marginTop: 5 }}>✓ matches</div>
+                )}
               </div>
             )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
@@ -1560,16 +1613,16 @@ export default function Dashboard() {
         <div style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}
           onClick={e => { if (e.target === e.currentTarget) setConnectOpen(false); }}>
           <form onSubmit={handleConnectCompany} className="card" style={{ width: 420, maxWidth: '92vw', padding: 24 }}>
-            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 6 }}>Connect a company</div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.5 }}>
+            <div style={{ fontWeight: 700, fontSize: '1.1333rem', marginBottom: 6 }}>Connect a company</div>
+            <div style={{ fontSize: '0.8667rem', color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.5 }}>
               Enter the invite code your client gave you. The company will appear in your list and you can manage it from your own login.
             </div>
-            {connectErr && <div className="alert alert-error" style={{ marginBottom: 12, fontSize: 13 }}><span>⚠</span>{connectErr}</div>}
-            {connectMsg && <div className="alert alert-success" style={{ marginBottom: 12, fontSize: 13 }}><span>✓</span>{connectMsg}</div>}
+            {connectErr && <div className="alert alert-error" style={{ marginBottom: 12, fontSize: '0.8667rem' }}><span>⚠</span>{connectErr}</div>}
+            {connectMsg && <div className="alert alert-success" style={{ marginBottom: 12, fontSize: '0.8667rem' }}><span>✓</span>{connectMsg}</div>}
             <input className="form-input mono" autoFocus value={connectCode}
               onChange={e => setConnectCode(e.target.value.toUpperCase())}
               placeholder="Invite code (e.g. 9KN8ZPUC)"
-              style={{ textAlign: 'center', letterSpacing: '0.15em', fontSize: 16, marginBottom: 16 }} />
+              style={{ textAlign: 'center', letterSpacing: '0.15em', fontSize: '1.0667rem', marginBottom: 16 }} />
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button type="button" className="btn btn-ghost" onClick={() => setConnectOpen(false)}>{connectMsg ? 'Close' : 'Cancel'}</button>
               <button type="submit" className="btn btn-primary" disabled={connecting}>{connecting ? 'Connecting…' : 'Connect'}</button>
@@ -1582,8 +1635,8 @@ export default function Dashboard() {
         <div style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}
           onClick={e => { if (e.target === e.currentTarget) setShareOpen(false); }}>
           <div className="card" style={{ width: 480, maxWidth: '92vw', padding: 24 }}>
-            <div style={{ fontWeight: 700, fontSize: 17, marginBottom: 6 }}>Share all my companies</div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.5 }}>
+            <div style={{ fontWeight: 700, fontSize: '1.1333rem', marginBottom: 6 }}>Share all my companies</div>
+            <div style={{ fontSize: '0.8667rem', color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.5 }}>
               Generate one link that gives another accountant access to every company you manage — no need to invite them one at a time. They open the link from their own login and accept.
             </div>
 
@@ -1599,13 +1652,13 @@ export default function Dashboard() {
                       background: shareMode === val ? 'var(--bg-secondary)' : '#fff', cursor: 'pointer' }}>
                       <input type="radio" name="sharemode" checked={shareMode === val} onChange={() => setShareMode(val)} style={{ marginTop: 3 }} />
                       <div>
-                        <div style={{ fontWeight: 600, fontSize: 14 }}>{title}</div>
-                        <div style={{ fontSize: 12.5, color: 'var(--text-muted)', lineHeight: 1.45 }}>{desc}</div>
+                        <div style={{ fontWeight: 600, fontSize: '0.9333rem' }}>{title}</div>
+                        <div style={{ fontSize: '0.8333rem', color: 'var(--text-muted)', lineHeight: 1.45 }}>{desc}</div>
                       </div>
                     </label>
                   ))}
                 </div>
-                {shareErr && <div className="alert alert-error" style={{ marginBottom: 12, fontSize: 13 }}><span>⚠</span>{shareErr}</div>}
+                {shareErr && <div className="alert alert-error" style={{ marginBottom: 12, fontSize: '0.8667rem' }}><span>⚠</span>{shareErr}</div>}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                   <button type="button" className="btn btn-ghost" onClick={() => setShareOpen(false)}>Cancel</button>
                   <button type="button" className="btn btn-primary" disabled={shareBusy} onClick={handleGenerateShare}>{shareBusy ? 'Generating…' : 'Generate link'}</button>
@@ -1613,14 +1666,14 @@ export default function Dashboard() {
               </>
             ) : (
               <>
-                <div className="alert alert-success" style={{ marginBottom: 12, fontSize: 13 }}>
+                <div className="alert alert-success" style={{ marginBottom: 12, fontSize: '0.8667rem' }}>
                   <span>✓</span>Link ready — shares {shareCount} {shareCount === 1 ? 'company' : 'companies'}{shareMode === 'sync' ? ' and keeps sharing new ones' : ''}. Expires in 14 days.
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
-                  <input readOnly className="form-input mono" value={shareLink} onFocus={e => e.target.select()} style={{ fontSize: 12 }} />
+                  <input readOnly className="form-input mono" value={shareLink} onFocus={e => e.target.select()} style={{ fontSize: '0.8rem' }} />
                   <button type="button" className="btn btn-secondary" onClick={copyShareLink}>{shareCopied ? '✓ Copied' : 'Copy'}</button>
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.5 }}>
+                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 16, lineHeight: 1.5 }}>
                   Or have them paste this code under “Connect a company”: <span className="mono" style={{ fontWeight: 700, letterSpacing: '0.08em' }}>{shareCode}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
@@ -1631,9 +1684,9 @@ export default function Dashboard() {
 
             {syncedAccts.length > 0 && (
               <div style={{ marginTop: 18, borderTop: '1px solid var(--border)', paddingTop: 14 }}>
-                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Currently syncing with</div>
+                <div style={{ fontSize: '0.7333rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 8 }}>Currently syncing with</div>
                 {syncedAccts.map(a => (
-                  <div key={a.userId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 0', fontSize: 13 }}>
+                  <div key={a.userId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 0', fontSize: '0.8667rem' }}>
                     <span>{a.username}{a.email ? ` · ${a.email}` : ''}</span>
                     <button type="button" className="btn btn-ghost btn-sm" style={{ color: '#dc2626' }} onClick={() => handleRevokeShare(a.userId)}>Revoke</button>
                   </div>
@@ -1670,33 +1723,37 @@ export default function Dashboard() {
             const isSel = selected.has(client.id);
             return (
               <div key={client.id} className="company-tile"
-                onClick={() => navigate(`/clients/${client.id}`)}
-                role="button" tabIndex={0}
-                style={{ outline: isSel ? '2px solid var(--accent)' : undefined, outlineOffset: 2 }}
-                onKeyDown={e => e.key === 'Enter' && navigate(`/clients/${client.id}`)}>
+                style={{ outline: isSel ? '2px solid var(--accent)' : undefined, outlineOffset: 2, cursor: 'default' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 14 }}>
-                  <input type="checkbox" checked={isSel}
-                    onChange={() => toggleSelect(client.id)}
-                    onClick={e => e.stopPropagation()}
-                    aria-label={`Select ${client.businessName}`}
-                    style={{ accentColor: 'var(--accent)', width: 15, height: 15, cursor: 'pointer', flexShrink: 0, marginTop: 14 }} />
-                  <div style={{ position: 'relative', flexShrink: 0 }}>
-                    <div style={{ width: 44, height: 44, borderRadius: 10, background: 'var(--accent-light)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, fontWeight: 800 }}>
-                      {initials(client.businessName)}
+                  <label onClick={e => e.stopPropagation()}
+                    style={{ width: 40, height: 40, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={isSel}
+                      onChange={() => toggleSelect(client.id)}
+                      aria-label={`Select ${client.businessName}`}
+                      style={{ accentColor: 'var(--accent)', width: 22, height: 22, cursor: 'pointer' }} />
+                  </label>
+                  <Link to={`/clients/${client.id}`}
+                    onMouseEnter={e => { e.currentTarget.style.textDecoration = 'underline'; }}
+                    onMouseLeave={e => { e.currentTarget.style.textDecoration = 'none'; }}
+                    style={{ display: 'flex', alignItems: 'flex-start', gap: 10, flex: 1, minWidth: 0, textDecoration: 'none', color: 'inherit', cursor: 'pointer' }}>
+                    <div style={{ position: 'relative', flexShrink: 0 }}>
+                      <div style={{ width: 44, height: 44, borderRadius: 10, background: 'var(--accent-light)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', fontWeight: 800 }}>
+                        {initials(client.businessName)}
+                      </div>
+                      {isSel && <div style={{ position: 'absolute', top: -4, right: -4, width: 16, height: 16, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ color: '#fff', fontSize: '0.6667rem', lineHeight: 1 }}>✓</span></div>}
                     </div>
-                    {isSel && <div style={{ position: 'absolute', top: -4, right: -4, width: 16, height: 16, borderRadius: '50%', background: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ color: '#fff', fontSize: 10, lineHeight: 1 }}>✓</span></div>}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div className="tile-name">{client.businessName}</div>
-                    <div className="tile-ein">EIN: {client.ein}</div>
-                  </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div className="tile-name">{client.businessName}</div>
+                      <div className="tile-ein">EIN: {client.ein}</div>
+                    </div>
+                  </Link>
                   <button className="btn btn-ghost btn-sm" onClick={e => handleDelete(e, client)} disabled={deleting === client.id}
-                    style={{ flexShrink: 0, opacity: 0.4, fontSize: 12, padding: '4px 7px' }} title={`Delete ${client.businessName}`} aria-label={`Delete ${client.businessName}`}>
+                    style={{ flexShrink: 0, opacity: 0.4, fontSize: '0.8rem', padding: '4px 7px' }} title={`Delete ${client.businessName}`} aria-label={`Delete ${client.businessName}`}>
                     {deleting === client.id ? <span className="spinner spinner-dark" style={{ width: 12, height: 12 }} /> : '🗑'}
                   </button>
                 </div>
                 {client.overdueAmount > 0 && st?.tone === 'tax' && (
-                  <div style={{ fontSize: 11, color: '#dc2626', fontWeight: 600, marginBottom: 6 }}>
+                  <div style={{ fontSize: '0.9333rem', color: '#dc2626', fontWeight: 600, marginBottom: 6 }}>
                     ⚠ Tax deposit overdue — ${Number(client.overdueAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </div>
                 )}
@@ -1730,7 +1787,7 @@ export default function Dashboard() {
                   onChange={toggleSelectAllVisible}
                   onClick={e => e.stopPropagation()}
                   aria-label="Select all visible companies"
-                  style={{ accentColor: 'var(--accent)', width: 14, height: 14, cursor: 'pointer' }} />
+                  style={{ accentColor: 'var(--accent)', width: 18, height: 18, cursor: 'pointer' }} />
               </div>
               {[
                 { label: 'Company', sortKey: 'company' },
@@ -1745,7 +1802,7 @@ export default function Dashboard() {
                   role={h.sortKey ? 'button' : undefined}
                   tabIndex={h.sortKey ? 0 : undefined}
                   onKeyDown={h.sortKey ? e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSort(h.sortKey); } } : undefined}
-                  style={{ fontSize: 11, fontWeight: 700, color: h.sortKey && sort.key === h.sortKey ? 'var(--text)' : 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: h.sortKey ? 'pointer' : h.title ? 'help' : undefined, userSelect: 'none' }}>
+                  style={{ fontSize: '0.7333rem', fontWeight: 700, color: h.sortKey && sort.key === h.sortKey ? 'var(--text)' : 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', cursor: h.sortKey ? 'pointer' : h.title ? 'help' : undefined, userSelect: 'none' }}>
                   {h.label}{h.sortKey && sort.key === h.sortKey ? (sort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
                 </div>
               ))}
@@ -1771,25 +1828,25 @@ export default function Dashboard() {
                       onChange={() => toggleSelect(client.id)}
                       onClick={e => e.stopPropagation()}
                       aria-label={`Select ${client.businessName}`}
-                      style={{ accentColor: 'var(--accent)', width: 14, height: 14, cursor: 'pointer' }} />
+                      style={{ accentColor: 'var(--accent)', width: 18, height: 18, cursor: 'pointer' }} />
                   </div>
 
                   {/* Name + EIN */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0, background: 'var(--accent-light)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 800 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, flexShrink: 0, background: 'var(--accent-light)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8rem', fontWeight: 800 }}>
                       {initials(client.businessName)}
                     </div>
                     <div style={{ minWidth: 0 }}>
-                      <div title={client.businessName} style={{ fontWeight: 700, fontSize: 14, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{client.businessName}</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace' }}>{client.ein}</div>
+                      <div title={client.businessName} style={{ fontWeight: 700, fontSize: '0.9333rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{client.businessName}</div>
+                      <div style={{ fontSize: '0.7333rem', color: 'var(--text-muted)', fontFamily: 'JetBrains Mono, monospace' }}>{client.ein}</div>
                     </div>
                   </div>
 
-                  <div style={{ fontSize: 13, color: ps ? (ps.cls === 'badge-error' ? '#b4241f' : '#d97706') : 'var(--text-secondary)', fontWeight: ps ? 600 : 400 }} title={ps ? (ps.cls === 'badge-error' ? 'Pay date is past — payroll overdue' : 'Pay date is coming up soon') : undefined}>
+                  <div style={{ fontSize: '0.8667rem', color: ps ? (ps.cls === 'badge-error' ? '#b4241f' : '#92400e') : 'var(--text-secondary)', fontWeight: ps ? 600 : 400 }} title={ps ? (ps.cls === 'badge-error' ? 'Pay date is past — payroll overdue' : 'Pay date is coming up soon') : undefined}>
                     {client.nextPayDate ? fmtDate(client.nextPayDate) : '—'}
                   </div>
-                  <div title="IRS federal tax-deposit schedule (company-level)" style={{ fontSize: 13, color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{client.depositSchedule || '—'}</div>
-                  <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{client.state || 'TX'}</div>
+                  <div title="IRS federal tax-deposit schedule (company-level)" style={{ fontSize: '0.8667rem', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{client.depositSchedule || '—'}</div>
+                  <div style={{ fontSize: '0.8667rem', color: 'var(--text-secondary)' }}>{client.state || 'TX'}</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 5, alignItems: 'flex-start' }}>
                     {(() => {
                       // Shared prioritized status — same rule as tile view.
@@ -1797,14 +1854,14 @@ export default function Dashboard() {
                       return st
                         ? <StatusPill tone={st.tone} label={st.label}
                             to={st.tone === 'payroll' ? `/clients/${client.id}?tab=pay` : st.tone === 'tax' ? `/clients/${client.id}?tab=liabilities` : undefined} />
-                        : <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>—</span>;
+                        : <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>—</span>;
                     })()}
                   </div>
 
                   {/* Delete */}
                   <div onClick={e => e.stopPropagation()}>
                     <button className="btn btn-ghost btn-sm" onClick={e => handleDelete(e, client)} disabled={deleting === client.id}
-                      style={{ opacity: 0.35, fontSize: 13, padding: '3px 6px' }} title={`Delete ${client.businessName}`} aria-label={`Delete ${client.businessName}`}>
+                      style={{ opacity: 0.35, fontSize: '0.8667rem', padding: '3px 6px' }} title={`Delete ${client.businessName}`} aria-label={`Delete ${client.businessName}`}>
                       {deleting === client.id ? <span className="spinner spinner-dark" style={{ width: 11, height: 11 }} /> : '🗑'}
                     </button>
                   </div>
@@ -1817,11 +1874,11 @@ export default function Dashboard() {
       {/* Multi-company panel — shown for both tile and list views */}
       {!loading && clients.length > 0 && selected.size > 0 && (
         <div ref={panelRef}>
-          <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ marginTop: 12, fontSize: '0.8rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 600 }}>{selected.size} {selected.size === 1 ? 'company' : 'companies'} selected:</span>
             <span>{selSummary}</span>
             <button onClick={() => setSelected(new Set())}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: 12, padding: 0, fontWeight: 600 }}>
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontSize: '0.8rem', padding: 0, fontWeight: 600 }}>
               Clear
             </button>
           </div>
@@ -1833,10 +1890,10 @@ export default function Dashboard() {
       {!loading && selected.size > 0 && (
         <div style={{ position: 'fixed', left: 0, right: 0, bottom: 0, zIndex: 1000, background: 'var(--accent)', color: '#fff',
           padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', boxShadow: '0 -2px 10px rgba(0,0,0,0.18)' }}>
-          <span style={{ fontWeight: 700, fontSize: 13, flexShrink: 0 }}>{selected.size} {selected.size === 1 ? 'company' : 'companies'} selected</span>
-          <span style={{ fontSize: 12, opacity: 0.9, flex: 1, minWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selSummary}</span>
+          <span style={{ fontWeight: 700, fontSize: '0.8667rem', flexShrink: 0 }}>{selected.size} {selected.size === 1 ? 'company' : 'companies'} selected</span>
+          <span style={{ fontSize: '0.8rem', opacity: 0.9, flex: 1, minWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selSummary}</span>
           {hiddenSelCount > 0 && search.trim() && (
-            <span style={{ fontSize: 11.5, fontWeight: 600, background: 'rgba(255,255,255,0.18)', borderRadius: 99, padding: '2px 9px', flexShrink: 0 }}>
+            <span style={{ fontSize: '0.7667rem', fontWeight: 600, background: 'rgba(255,255,255,0.18)', borderRadius: 99, padding: '2px 9px', flexShrink: 0 }}>
               {hiddenSelCount} hidden by search
             </span>
           )}

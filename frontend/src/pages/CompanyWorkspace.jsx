@@ -1,8 +1,9 @@
 'use strict';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useId } from 'react';
 import { useParams, Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
+import SearchSelect from '../components/SearchSelect';
 import ImportEmployeesModal from '../components/ImportEmployeesModal';
 import ImportPaychecksModal from '../components/ImportPaychecksModal';
 import { deleteCheckConfirm } from '../utils/checkConfirm';
@@ -251,7 +252,7 @@ const STATUS_CFG = {
 };
 function StatusBadge({ status }) {
   const cfg = STATUS_CFG[status] || { label: status, cls: 'badge-neutral' };
-  return <span className={`badge ${cfg.cls}`} style={{ fontWeight: 700, textTransform: 'uppercase', fontSize: 12 }}>{cfg.label}</span>;
+  return <span className={`badge ${cfg.cls}`} style={{ fontWeight: 700, textTransform: 'uppercase', fontSize: '0.8rem' }}>{cfg.label}</span>;
 }
 
 // ── Employee Drawer ───────────────────────────────────────────────────────────
@@ -259,7 +260,8 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
   const [form, setForm]       = useState(null);
   const [saving, setSaving]   = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [showSsn, setShowSsn]   = useState(false);
+  const [showSsn, setShowSsn]   = useState(true);
+  const [showAcct, setShowAcct] = useState(true);
   const [err, setErr]           = useState('');
   const [errField, setErrField] = useState('');
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -313,12 +315,13 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
   }, [empId]);
 
   const dirtyRef = useRef(false); // unsaved edits — guard against silent discard on overlay click
+  const [isDirty, setIsDirty] = useState(false); // mirrors dirtyRef so the footer badge re-renders
   const mainDirtyRef = useRef(false); // main-form edits only — so a DD/CS sub-form save/cancel can't disarm the guard for them
   const drawerRef = useRef(null);
   const confirmDeleteRef = useRef(false);
   confirmDeleteRef.current = confirmDelete;
 
-  function set(field) { return e => { const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value; dirtyRef.current = true; mainDirtyRef.current = true; setForm(f => ({ ...f, [field]: v })); }; }
+  function set(field) { return e => { const v = e.target.type === 'checkbox' ? e.target.checked : e.target.value; dirtyRef.current = true; mainDirtyRef.current = true; setIsDirty(true); setForm(f => ({ ...f, [field]: v })); }; }
   function setNG(field) { return e => setNewGroup(g => ({ ...g, [field]: e.target.value })); }
 
   function requestClose() {
@@ -456,6 +459,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
       if (!payload.ssn) delete payload.ssn;
       await api.updateEmployee(empId, payload);
       dirtyRef.current = false;
+      setIsDirty(false);
       mainDirtyRef.current = false;
       onSaved();
     } catch (e) { setErr(e.message); }
@@ -473,7 +477,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
       setDd(result);
       setDdEdit(false);
       setDdForm({ routingNumber: '', accountNumber: '', confirmAccount: '', bankAccountType: 'checking' });
-      dirtyRef.current = mainDirtyRef.current;
+      dirtyRef.current = mainDirtyRef.current; setIsDirty(mainDirtyRef.current);
     } catch (e) { setDdErr(e.message); }
     finally { setDdSaving(false); }
   }
@@ -498,7 +502,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
       const created = await api.createChildSupportOrder({ employeeId: empId, vendorName: csForm.vendorName, caseNumber: csForm.caseNumber, amount: amt });
       setCsOrders(prev => [...prev, created]);
       setCsForm(null);
-      dirtyRef.current = mainDirtyRef.current;
+      dirtyRef.current = mainDirtyRef.current; setIsDirty(mainDirtyRef.current);
     } catch (e) { setCsErr(e.message); }
     finally { setCsBusy(false); }
   }
@@ -527,6 +531,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
       setConfirmDelete(false);
       setDeleting(false);
       dirtyRef.current = false;
+      setIsDirty(false);
       mainDirtyRef.current = false;
       if (onDeleted) onDeleted(); else onClose();
     } catch (e) { setErr(e.message); setDeleting(false); setConfirmDelete(false); }
@@ -537,6 +542,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
     try {
       await api.updateEmployee(empId, { clientId, isActive: false });
       dirtyRef.current = false;
+      setIsDirty(false);
       setConfirmDelete(false);
       onSaved();
     } catch (e) { setErr(e.message); setConfirmDelete(false); }
@@ -550,7 +556,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
         <div className="drawer-header" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 0, paddingBottom: 0 }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
             {form && (
-              <div aria-hidden="true" style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--accent-light)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: 15, flexShrink: 0 }}>
+              <div aria-hidden="true" style={{ width: 40, height: 40, borderRadius: '50%', background: 'var(--accent-light)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800, fontSize: '1rem', flexShrink: 0 }}>
                 {(form.firstName[0] || '') + (form.lastName[0] || '')}
               </div>
             )}
@@ -559,14 +565,14 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
               {form && (
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                   <button type="button"
-                    onClick={() => { dirtyRef.current = true; mainDirtyRef.current = true; setForm(f => ({ ...f, isActive: !f.isActive })); }}
+                    onClick={() => { dirtyRef.current = true; mainDirtyRef.current = true; setIsDirty(true); setForm(f => ({ ...f, isActive: !f.isActive })); }}
                     title="Click to toggle active status (saved with Save Changes)"
-                    style={{ fontSize: 10.5, fontWeight: 700, padding: '2px 9px', borderRadius: 99, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.04em',
-                      border: `1px solid ${form.isActive ? '#86efac' : '#d1d5db'}`,
-                      background: form.isActive ? '#f0fdf4' : 'var(--bg-secondary)', color: form.isActive ? '#16a34a' : 'var(--text-muted)' }}>
+                    style={{ fontSize: '0.8667rem', fontWeight: 700, padding: '6px 12px', minHeight: 32, display: 'inline-flex', alignItems: 'center', borderRadius: 99, cursor: 'pointer', textTransform: 'uppercase', letterSpacing: '0.04em',
+                      border: `1px solid ${form.isActive ? '#86efac' : '#cbd5e1'}`,
+                      background: form.isActive ? '#d1fae5' : '#e2e8f0', color: form.isActive ? '#065f46' : '#64748b' }}>
                     {form.isActive ? '● Active' : '○ Inactive'}
                   </button>
-                  <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>
+                  <span style={{ fontSize: '0.8667rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
                     {form.payType === 'salary'
                       ? `${form.annualSalary ? fmt(parseFloat(form.annualSalary)) : '—'}/yr`
                       : `${form.hourlyRate ? fmt(parseFloat(form.hourlyRate)) : '—'}/hr`}
@@ -574,9 +580,9 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                   </span>
                   {form.payGroupId && (() => {
                     const g = payGroups.find(x => String(x.id) === String(form.payGroupId));
-                    return g ? <span style={{ fontSize: 11, color: 'var(--text-muted)', background: 'var(--bg-secondary)', border: '1px solid var(--border)', padding: '1px 8px', borderRadius: 99 }}>{g.name}</span> : null;
+                    return g ? <span style={{ fontSize: '0.8667rem', color: 'var(--text-muted)', background: 'var(--bg-secondary)', border: '1px solid var(--border)', padding: '1px 8px', borderRadius: 99 }}>{g.name}</span> : null;
                   })()}
-                  {form.fitExempt && <span style={{ fontSize: 10.5, fontWeight: 700, color: 'var(--warning)', background: 'var(--warning-light)', padding: '2px 8px', borderRadius: 99 }}>EXEMPT</span>}
+                  {form.fitExempt && <span style={{ fontSize: '0.8667rem', fontWeight: 700, color: 'var(--warning)', background: 'var(--warning-light)', padding: '2px 8px', borderRadius: 99 }}>EXEMPT</span>}
                 </div>
               )}
             </div>
@@ -596,15 +602,15 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                 const marker = k === 'dd'
                   ? <span title={ddStatusLabel} aria-label={ddStatusLabel} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, marginLeft: 6 }}>
                       <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: dd?.status === 'active' ? '#16a34a' : dd?.status === 'pending' ? '#d97706' : dd?.status === 'failed' ? '#dc2626' : '#d1d5db' }} />
-                      {dd?.status === 'failed' && <span style={{ fontSize: 11.5, fontWeight: 800, color: '#dc2626' }}>!</span>}
-                      {dd?.status === 'active' && <span style={{ fontSize: 11.5, fontWeight: 800, color: '#16a34a' }}>✓</span>}
+                      {dd?.status === 'failed' && <span style={{ fontSize: '0.7667rem', fontWeight: 800, color: '#dc2626' }}>!</span>}
+                      {dd?.status === 'active' && <span style={{ fontSize: '0.7667rem', fontWeight: 800, color: '#16a34a' }}>✓</span>}
                     </span>
                   : k === 'cs' && csOrders.length > 0
-                    ? <span style={{ marginLeft: 6, fontSize: 11.5, fontWeight: 700, background: active ? 'var(--accent)' : 'var(--bg-tertiary)', color: active ? '#fff' : 'var(--text-muted)', borderRadius: 99, padding: '0 7px' }}>{csOrders.length}</span>
+                    ? <span style={{ marginLeft: 6, fontSize: '0.7667rem', fontWeight: 700, background: active ? 'var(--accent)' : 'var(--bg-tertiary)', color: active ? '#fff' : 'var(--text-muted)', borderRadius: 99, padding: '0 7px' }}>{csOrders.length}</span>
                     : null;
                 return (
                   <button key={k} role="tab" aria-selected={active} onClick={() => setTab(k)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '9px 13px', fontSize: 15, whiteSpace: 'nowrap',
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '9px 13px', fontSize: '1rem', whiteSpace: 'nowrap',
                       fontWeight: active ? 700 : 500, color: active ? 'var(--accent)' : 'var(--text-secondary)',
                       borderBottom: `3px solid ${active ? 'var(--accent)' : 'transparent'}`, marginBottom: -1 }}>
                     {label}{marker}
@@ -626,11 +632,11 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                 <div className="form-group"><label className="form-label">Last Name <span>*</span></label><input className="form-input" value={form.lastName} onChange={set('lastName')} style={errField === 'lastName' ? { borderColor: 'var(--error)' } : undefined} /></div>
               </div>
               <div className="form-group">
-                <label className="form-label">SSN <span style={{ fontWeight: 400, fontSize: 10, color: 'var(--text-muted)', textTransform: 'none' }}>{form.ssnOnFile ? '(on file — type here only to replace it)' : '(none on file yet)'}</span></label>
+                <label className="form-label">SSN <span style={{ fontWeight: 400, fontSize: '0.8667rem', color: 'var(--text-muted)', textTransform: 'none' }}>{form.ssnOnFile ? '(on file — type here only to replace it)' : '(none on file yet)'}</span></label>
                 <div style={{ position: 'relative' }}>
-                  <input className="form-input mono" type={showSsn ? 'text' : 'password'} value={form.ssn} onChange={set('ssn')} placeholder={form.ssnOnFile ? 'leave blank to keep current' : 'XXX-XX-XXXX'} maxLength={11} style={{ paddingRight: 36, ...(errField === 'ssn' ? { borderColor: 'var(--error)' } : {}) }} />
-                  <button type="button" onClick={() => setShowSsn(v => !v)} aria-label={showSsn ? 'Hide SSN' : 'Show SSN'} style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 15, lineHeight: 1, padding: 0 }} title={showSsn ? 'Hide SSN' : 'Show SSN'}>
-                    {showSsn ? '🙈' : '👁'}
+                  <input className="form-input mono" type={showSsn ? 'text' : 'password'} value={form.ssn} onChange={e => { const d = e.target.value.replace(/\D/g, '').slice(0, 9); const v = d.length > 5 ? `${d.slice(0, 3)}-${d.slice(3, 5)}-${d.slice(5)}` : d.length > 3 ? `${d.slice(0, 3)}-${d.slice(3)}` : d; dirtyRef.current = true; mainDirtyRef.current = true; setIsDirty(true); setForm(f => ({ ...f, ssn: v })); }} placeholder={form.ssnOnFile ? 'leave blank to keep current' : 'XXX-XX-XXXX'} maxLength={11} style={{ paddingRight: 70, ...(errField === 'ssn' ? { borderColor: 'var(--error)' } : {}) }} />
+                  <button type="button" onClick={() => setShowSsn(v => !v)} aria-label={showSsn ? 'Hide SSN' : 'Show SSN'} style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.8667rem', fontWeight: 600, minHeight: 32, padding: '0 10px' }}>
+                    {showSsn ? 'Hide' : 'Show'}
                   </button>
                 </div>
                 <p className="form-hint">Stored encrypted with AES-256.</p>
@@ -651,8 +657,8 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
 
               <div className="form-group" style={{ marginTop: 14, maxWidth: 180 }}><label className="form-label">Hire Date</label><input className="form-input" type="date" value={form.hireDate} onChange={set('hireDate')} /></div>
               <div style={{ marginTop: 22, borderTop: '1px solid var(--border)', paddingTop: 12, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>Leaving the company? Use the Active toggle above — deleting erases pay history.</span>
-                <button className="btn btn-danger btn-sm" onClick={handleDelete} disabled={deleting} style={{ fontSize: 12, flexShrink: 0 }}>
+                <span style={{ fontSize: '0.8667rem', color: 'var(--text-secondary)' }}>Leaving the company? Use the Active toggle above — deleting erases pay history.</span>
+                <button className="btn btn-danger btn-sm" onClick={handleDelete} disabled={deleting} style={{ fontSize: '0.8667rem', flexShrink: 0 }}>
                   {deleting ? <span className="spinner" /> : 'Delete Employee'}
                 </button>
               </div>
@@ -670,41 +676,41 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
               </div>
               {showNewGroup && (
                 <div style={{ background: 'var(--accent-light)', borderRadius: 8, padding: '14px 14px 10px', marginBottom: 14, border: '1px solid var(--accent-mid)' }}>
-                  <div style={{ fontWeight: 700, fontSize: 12, color: 'var(--accent)', marginBottom: 10, textTransform: 'uppercase' }}>New Pay Group</div>
+                  <div style={{ fontWeight: 700, fontSize: '0.8rem', color: 'var(--accent)', marginBottom: 10, textTransform: 'uppercase' }}>New Pay Group</div>
                   <div className="form-group" style={{ marginBottom: 10 }}>
-                    <label className="form-label" style={{ fontSize: 11 }}>Group Name</label>
+                    <label className="form-label" style={{ fontSize: '0.8333rem' }}>Group Name</label>
                     <input className="form-input" value={newGroup.name} onChange={setNG('name')} placeholder="e.g. Biweekly 1" />
                   </div>
                   <div className="form-group" style={{ marginBottom: 10 }}>
-                    <label className="form-label" style={{ fontSize: 11 }}>Frequency</label>
+                    <label className="form-label" style={{ fontSize: '0.8333rem' }}>Frequency</label>
                     <select className="form-select" value={newGroup.frequency} onChange={setNG('frequency')}>
                       <option value="weekly">Weekly</option><option value="biweekly">Bi-weekly</option>
                       <option value="semimonthly">Semi-monthly</option><option value="monthly">Monthly</option>
                     </select>
                   </div>
                   <div className="form-group" style={{ marginBottom: 4 }}>
-                    <label className="form-label" style={{ fontSize: 11 }}>First Period End Date</label>
+                    <label className="form-label" style={{ fontSize: '0.8333rem' }}>First Period End Date</label>
                     <input className="form-input" type="date" value={newGroup.firstPayPeriodEnd} onChange={e => setNGEndDate(e.target.value)} />
                   </div>
                   {newGroup.firstPayPeriodEnd && (
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10 }}>
+                    <div style={{ fontSize: '0.7333rem', color: 'var(--text-muted)', marginBottom: 10 }}>
                       Period will start: <strong>{fmtDate(calcStartFromEnd(newGroup.firstPayPeriodEnd, newGroup.frequency))}</strong>
                     </div>
                   )}
                   <div className="form-group" style={{ marginBottom: 4 }}>
-                    <label className="form-label" style={{ fontSize: 11 }}>Pay Date</label>
+                    <label className="form-label" style={{ fontSize: '0.8333rem' }}>Pay Date</label>
                     <input className="form-input" type="date" value={newGroup.payDate} onChange={e => setNewGroup(g => ({ ...g, payDate: e.target.value }))} />
                   </div>
                   {newGroup.firstPayPeriodEnd && (
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>
+                    <div style={{ fontSize: '0.7333rem', color: 'var(--text-muted)', marginBottom: 4 }}>
                       Default (2 biz days after period end): <strong>{fmtDate(calcDefaultPayDate(newGroup.firstPayPeriodEnd))}</strong>
                     </div>
                   )}
                   {newGroup.payDate && !isBizDay(new Date(newGroup.payDate + 'T00:00:00')) && (() => {
                     const suggested = nextBizDay(new Date(newGroup.payDate + 'T00:00:00')).toISOString().slice(0, 10);
                     return (
-                      <div style={{ fontSize: 11, color: '#d97706', marginBottom: 10 }}>
-                        ⚠ Weekend or holiday — suggest: <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontWeight: 700, fontSize: 11, padding: 0 }} onClick={() => setNewGroup(g => ({ ...g, payDate: suggested }))}>{fmtDate(suggested)}</button>
+                      <div style={{ fontSize: '0.8667rem', color: '#92400e', marginBottom: 10 }}>
+                        ⚠ Weekend or holiday — suggest: <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontWeight: 700, fontSize: '0.8667rem', padding: 0 }} onClick={() => setNewGroup(g => ({ ...g, payDate: suggested }))}>{fmtDate(suggested)}</button>
                       </div>
                     );
                   })()}
@@ -736,7 +742,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                 <div className="form-group" style={{ maxWidth: 180 }}>
                   <label className="form-label">Hourly Rate</label>
                   <div style={{ position: 'relative' }}>
-                    <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 13 }}>$</span>
+                    <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '0.8667rem' }}>$</span>
                     <input className="form-input mono" type="number" min="0" step="0.01" value={form.hourlyRate} onChange={set('hourlyRate')} style={{ paddingLeft: 24, ...(errField === 'hourlyRate' ? { borderColor: 'var(--error)' } : {}) }} />
                   </div>
                 </div>
@@ -744,7 +750,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                 <div className="form-group" style={{ maxWidth: 220 }}>
                   <label className="form-label">Annual Salary</label>
                   <div style={{ position: 'relative' }}>
-                    <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 13 }}>$</span>
+                    <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '0.8667rem' }}>$</span>
                     <input className="form-input mono" type="number" min="0" step="1000" value={form.annualSalary} onChange={set('annualSalary')} style={{ paddingLeft: 24, ...(errField === 'annualSalary' ? { borderColor: 'var(--error)' } : {}) }} />
                   </div>
                 </div>
@@ -762,26 +768,26 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                 </select>
               </div>
               <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 14 }}>
-                <input type="checkbox" checked={form.step2Checkbox} onChange={set('step2Checkbox')} style={{ accentColor: 'var(--accent)', width: 14, height: 14 }} />
-                <span style={{ fontSize: 13 }}>Step 2(c): Two jobs checkbox</span>
+                <input type="checkbox" checked={form.step2Checkbox} onChange={set('step2Checkbox')} style={{ accentColor: 'var(--accent)', width: 18, height: 18 }} />
+                <span style={{ fontSize: '0.8667rem' }}>Step 2(c): Two jobs checkbox</span>
               </label>
               <div className="form-grid">
                 <div className="form-group"><label className="form-label">Qualifying children (×$2,200)</label><input className="form-input" type="number" min="0" max="20" value={form.step3Children} onChange={e => setForm(f => ({ ...f, step3Children: parseInt(e.target.value || 0) }))} style={{ maxWidth: 80 }} /></div>
                 <div className="form-group"><label className="form-label">Other dependents (×$500)</label><input className="form-input" type="number" min="0" max="20" value={form.step3Other} onChange={e => setForm(f => ({ ...f, step3Other: parseInt(e.target.value || 0) }))} style={{ maxWidth: 80 }} /></div>
               </div>
               <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', marginBottom: 6, padding: '9px 10px', border: `1px solid ${form.fitExempt ? 'var(--warning)' : 'var(--border)'}`, background: form.fitExempt ? 'var(--warning-light)' : 'transparent' }}>
-                <input type="checkbox" checked={form.fitExempt} onChange={set('fitExempt')} style={{ accentColor: 'var(--warning)', width: 14, height: 14, marginTop: 2 }} />
-                <span style={{ fontSize: 13 }}>
+                <input type="checkbox" checked={form.fitExempt} onChange={set('fitExempt')} style={{ accentColor: '#d97706', width: 18, height: 18, marginTop: 2 }} />
+                <span style={{ fontSize: '0.8667rem' }}>
                   <strong>Exempt — don&rsquo;t withhold federal income tax</strong>
-                  <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                  <span style={{ display: 'block', fontSize: '0.8667rem', color: 'var(--text-muted)', marginTop: 2 }}>
                     For employees who claimed Exempt on their W-4. No federal income tax (including extra withholding) is taken; Social Security and Medicare still apply.
                   </span>
                 </span>
               </label>
               <div className="form-group" style={{ opacity: form.fitExempt ? 0.5 : 1 }}>
-                <label className="form-label">Extra Withholding <span style={{ fontWeight: 400, fontSize: 10, color: 'var(--text-muted)', textTransform: 'none' }}>(W-4 Step 4c — per paycheck)</span></label>
+                <label className="form-label">Extra Withholding <span style={{ fontWeight: 400, fontSize: '0.8667rem', color: 'var(--text-muted)', textTransform: 'none' }}>(W-4 Step 4c — per paycheck)</span></label>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>$</span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.8667rem' }}>$</span>
                   <input className="form-input mono" type="number" min="0" step="0.01" value={form.step4c} onChange={set('step4c')} placeholder="0.00" style={{ maxWidth: 120 }} disabled={form.fitExempt} />
                 </div>
                 <p className="form-hint">{form.fitExempt ? 'Ignored while Exempt is checked.' : 'Withheld as additional federal income tax on every paycheck, on top of the calculated amount.'}</p>
@@ -790,38 +796,38 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
 
               {/* ── Child Support ── */}
               {tab === 'cs' && (<>
-              {csErr && <div className="alert alert-error" role="alert" style={{ marginBottom: 10, fontSize: 12 }}><span>⚠</span>{csErr}</div>}
+              {csErr && <div className="alert alert-error" role="alert" style={{ marginBottom: 10, fontSize: '0.8rem' }}><span>⚠</span>{csErr}</div>}
               {csOrders.length === 0 && !csForm && (
-                <p style={{ fontSize: 12.5, color: 'var(--text-muted)', margin: '0 0 10px' }}>No withholding orders. Add one to withhold child support from every paycheck automatically.</p>
+                <p style={{ fontSize: '0.8333rem', color: 'var(--text-muted)', margin: '0 0 10px' }}>No withholding orders. Add one to withhold child support from every paycheck automatically.</p>
               )}
               {csOrders.map(o => (
                 <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid var(--border)', marginBottom: 6, background: o.active ? '#fff' : 'var(--bg-secondary)', opacity: o.active ? 1 : 0.65 }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 13, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.vendor_name}</div>
-                    <div style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{o.case_number ? `Case ${o.case_number} · ` : ''}{fmt(o.amount)} per paycheck{o.active ? '' : ' · paused'}</div>
+                    <div style={{ fontWeight: 600, fontSize: '0.8667rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{o.vendor_name}</div>
+                    <div style={{ fontSize: '0.7667rem', color: 'var(--text-muted)' }}>{o.case_number ? `Case ${o.case_number} · ` : ''}{fmt(o.amount)} per paycheck{o.active ? '' : ' · paused'}</div>
                   </div>
-                  <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => handleCsToggle(o)}>{o.active ? 'Pause' : 'Resume'}</button>
-                  <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11, color: '#dc2626' }} onClick={() => handleCsDelete(o)}>Remove</button>
+                  <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: '0.7333rem' }} onClick={() => handleCsToggle(o)}>{o.active ? 'Pause' : 'Resume'}</button>
+                  <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: '0.7333rem', color: '#dc2626' }} onClick={() => handleCsDelete(o)}>Remove</button>
                 </div>
               ))}
               {csForm ? (
                 <div style={{ background: 'var(--accent-light)', border: '1px solid var(--accent-mid)', padding: '12px 12px 10px', marginBottom: 14 }}>
                   <div className="form-group" style={{ marginBottom: 8 }}>
-                    <label className="form-label" style={{ fontSize: 11 }}>Vendor (check payable to)</label>
-                    <input className="form-input" value={csForm.vendorName} onChange={e => { dirtyRef.current = true; setCsForm(f => ({ ...f, vendorName: e.target.value })); }} placeholder="e.g. TX Child Support SDU" />
+                    <label className="form-label" style={{ fontSize: '0.8333rem' }}>Vendor (check payable to)</label>
+                    <input className="form-input" value={csForm.vendorName} onChange={e => { dirtyRef.current = true; setIsDirty(true); setCsForm(f => ({ ...f, vendorName: e.target.value })); }} placeholder="e.g. TX Child Support SDU" />
                   </div>
                   <div className="form-grid" style={{ marginBottom: 8 }}>
                     <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label className="form-label" style={{ fontSize: 11 }}>Case / Cause #</label>
-                      <input className="form-input mono" value={csForm.caseNumber} onChange={e => { dirtyRef.current = true; setCsForm(f => ({ ...f, caseNumber: e.target.value })); }} placeholder="optional" />
+                      <label className="form-label" style={{ fontSize: '0.8333rem' }}>Case / Cause #</label>
+                      <input className="form-input mono" value={csForm.caseNumber} onChange={e => { dirtyRef.current = true; setIsDirty(true); setCsForm(f => ({ ...f, caseNumber: e.target.value })); }} placeholder="optional" />
                     </div>
                     <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label className="form-label" style={{ fontSize: 11 }}>Amount per paycheck ($)</label>
-                      <input className="form-input mono" type="number" min="0.01" step="0.01" value={csForm.amount} onChange={e => { dirtyRef.current = true; setCsForm(f => ({ ...f, amount: e.target.value })); }} placeholder="150.00" />
+                      <label className="form-label" style={{ fontSize: '0.8333rem' }}>Amount per paycheck ($)</label>
+                      <input className="form-input mono" type="number" min="0.01" step="0.01" value={csForm.amount} onChange={e => { dirtyRef.current = true; setIsDirty(true); setCsForm(f => ({ ...f, amount: e.target.value })); }} placeholder="150.00" />
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setCsForm(null); setCsErr(''); dirtyRef.current = mainDirtyRef.current; }}>Cancel</button>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setCsForm(null); setCsErr(''); dirtyRef.current = mainDirtyRef.current; setIsDirty(mainDirtyRef.current); }}>Cancel</button>
                     <button type="button" className="btn btn-primary btn-sm" disabled={csBusy} onClick={handleCsAdd}>{csBusy ? 'Adding…' : 'Add Order'}</button>
                   </div>
                 </div>
@@ -835,7 +841,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
 
               {/* ── Direct Deposit ── */}
               {tab === 'dd' && (<>
-              {!dd && <p style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>Loading…</p>}
+              {!dd && <p style={{ fontSize: '0.8333rem', color: 'var(--text-muted)' }}>Loading…</p>}
               {dd && (
                 <div style={{ marginBottom: 16 }}>
                   {/* Status badge + info */}
@@ -843,7 +849,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                     <div style={{ background: '#f0fdf4', border: '1px solid #86efac', borderRadius: 8, padding: '14px 16px' }}>
                       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
                         <div>
-                          <div style={{ fontWeight: 700, fontSize: 14, color: '#16a34a', marginBottom: 8 }}>✓ Direct Deposit Active</div>
+                          <div style={{ fontWeight: 700, fontSize: '0.9333rem', color: '#16a34a', marginBottom: 8 }}>✓ Direct Deposit Active</div>
                           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                             {dd.routingNumber && (
                               <span className="ref-num">
@@ -866,36 +872,36 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                   )}
                   {dd.status === 'pending' && !ddEdit && (
                     <div style={{ background: '#fffbeb', border: '1px solid #fcd34d', borderRadius: 8, padding: '14px 16px' }}>
-                      <div style={{ fontWeight: 700, fontSize: 14, color: '#d97706', marginBottom: 6 }}>⏳ Pending — Awaiting bank verification</div>
+                      <div style={{ fontWeight: 700, fontSize: '0.9333rem', color: '#92400e', marginBottom: 6 }}>⏳ Pending — Awaiting bank verification</div>
                       <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
                         {dd.routingNumber && <span className="ref-num"><span className="ref-num-label">Routing</span>{dd.routingNumber.replace(/(\d{4})(\d{4})(\d{1})/, '$1 $2 $3')}</span>}
                         <span className="ref-num"><span className="ref-num-label">{dd.bankAccountType === 'savings' ? 'Savings' : 'Checking'}</span>···· {dd.last4}</span>
                       </div>
                       <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-                        <button className="btn btn-primary btn-sm" style={{ fontSize: 11 }} onClick={async () => { setDdSaving(true); setDdErr(''); try { const r = await api.activateDirectDeposit(empId); setDd(r); } catch(e) { setDdErr(e.message); } finally { setDdSaving(false); } }} disabled={ddSaving}>{ddSaving ? <span className="spinner" style={{ width: 10, height: 10 }} /> : 'Retry Bank Verification'}</button>
-                        <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => { setDdEdit(true); setDdErr(''); }}>Change Account</button>
-                        <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, color: '#dc2626' }} onClick={handleRemoveDd} disabled={ddSaving}>Remove</button>
+                        <button className="btn btn-primary btn-sm" style={{ fontSize: '0.7333rem' }} onClick={async () => { setDdSaving(true); setDdErr(''); try { const r = await api.activateDirectDeposit(empId); setDd(r); } catch(e) { setDdErr(e.message); } finally { setDdSaving(false); } }} disabled={ddSaving}>{ddSaving ? <span className="spinner" style={{ width: 10, height: 10 }} /> : 'Retry Bank Verification'}</button>
+                        <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.7333rem' }} onClick={() => { setDdEdit(true); setDdErr(''); }}>Change Account</button>
+                        <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.7333rem', color: '#dc2626' }} onClick={handleRemoveDd} disabled={ddSaving}>Remove</button>
                       </div>
                       <p className="form-hint" style={{ marginTop: 8, marginBottom: 0 }}>Verification is handled by our payment partner (Moov).</p>
                     </div>
                   )}
                   {dd.status === 'failed' && !ddEdit && (
                     <div style={{ background: '#fef2f2', border: '1px solid #fca5a5', borderRadius: 8, padding: '14px 16px' }}>
-                      <div style={{ fontWeight: 700, fontSize: 14, color: '#dc2626', marginBottom: 6 }}>✗ Failed — Bank account not accepted</div>
+                      <div style={{ fontWeight: 700, fontSize: '0.9333rem', color: '#dc2626', marginBottom: 6 }}>✗ Failed — Bank account not accepted</div>
                       <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
                         {dd.routingNumber && <span className="ref-num"><span className="ref-num-label">Routing</span>{dd.routingNumber.replace(/(\d{4})(\d{4})(\d{1})/, '$1 $2 $3')}</span>}
                         <span className="ref-num"><span className="ref-num-label">{dd.bankAccountType === 'savings' ? 'Savings' : 'Checking'}</span>···· {dd.last4}</span>
                       </div>
                       <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
-                        <button className="btn btn-primary btn-sm" style={{ fontSize: 11 }} onClick={() => { setDdEdit(true); setDdErr(''); }}>Enter New Account</button>
-                        <button className="btn btn-ghost btn-sm" style={{ fontSize: 11, color: '#dc2626' }} onClick={handleRemoveDd} disabled={ddSaving}>Remove</button>
+                        <button className="btn btn-primary btn-sm" style={{ fontSize: '0.7333rem' }} onClick={() => { setDdEdit(true); setDdErr(''); }}>Enter New Account</button>
+                        <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.7333rem', color: '#dc2626' }} onClick={handleRemoveDd} disabled={ddSaving}>Remove</button>
                       </div>
                     </div>
                   )}
                   {dd.status === 'none' && !ddEdit && (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Not set up</div>
-                      <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} onClick={() => { setDdEdit(true); setDdErr(''); }}>+ Set Up Direct Deposit</button>
+                      <div style={{ fontSize: '0.8667rem', color: 'var(--text-muted)' }}>Not set up</div>
+                      <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.8rem' }} onClick={() => { setDdEdit(true); setDdErr(''); }}>+ Set Up Direct Deposit</button>
                     </div>
                   )}
 
@@ -907,7 +913,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                         <div className="form-group" style={{ marginBottom: 0 }}>
                           <label className="form-label">Routing Number</label>
                           <input className="form-input mono" type="text" inputMode="numeric" maxLength={9} value={ddForm.routingNumber}
-                            onChange={e => { dirtyRef.current = true; setDdForm(f => ({ ...f, routingNumber: e.target.value.replace(/\D/g, '') })); }}
+                            onChange={e => { dirtyRef.current = true; setIsDirty(true); setDdForm(f => ({ ...f, routingNumber: e.target.value.replace(/\D/g, '') })); }}
                             placeholder="9 digits" />
                           <div className="form-hint" style={{ display: 'flex', justifyContent: 'space-between' }}>
                             <span>{ddForm.routingNumber ? ddForm.routingNumber.replace(/(\d{4})(\d{4})(\d{1})/, '$1 $2 $3') : 'e.g. 0210 0002 8'}</span>
@@ -916,7 +922,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                         </div>
                         <div className="form-group" style={{ marginBottom: 0 }}>
                           <label className="form-label">Account Type</label>
-                          <select className="form-select" value={ddForm.bankAccountType} onChange={e => { dirtyRef.current = true; setDdForm(f => ({ ...f, bankAccountType: e.target.value })); }}>
+                          <select className="form-select" value={ddForm.bankAccountType} onChange={e => { dirtyRef.current = true; setIsDirty(true); setDdForm(f => ({ ...f, bankAccountType: e.target.value })); }}>
                             <option value="checking">Checking</option>
                             <option value="savings">Savings</option>
                           </select>
@@ -924,28 +930,33 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                       </div>
                       <div className="form-group" style={{ marginBottom: 12 }}>
                         <label className="form-label">Account Number</label>
-                        <input className="form-input mono" type="password" value={ddForm.accountNumber}
-                          onChange={e => { dirtyRef.current = true; setDdForm(f => ({ ...f, accountNumber: e.target.value.replace(/\D/g, '') })); }}
-                          placeholder="Account number" />
+                        <div style={{ position: 'relative' }}>
+                          <input className="form-input mono" type={showAcct ? 'text' : 'password'} value={ddForm.accountNumber}
+                            onChange={e => { dirtyRef.current = true; setIsDirty(true); setDdForm(f => ({ ...f, accountNumber: e.target.value.replace(/\D/g, '') })); }}
+                            placeholder="Account number" style={{ paddingRight: 70 }} />
+                          <button type="button" onClick={() => setShowAcct(v => !v)} aria-label={showAcct ? 'Hide account number' : 'Show account number'} style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.8667rem', fontWeight: 600, minHeight: 32, padding: '0 10px' }}>
+                            {showAcct ? 'Hide' : 'Show'}
+                          </button>
+                        </div>
                       </div>
                       <div className="form-group" style={{ marginBottom: 14 }}>
                         <label className="form-label">
                           Confirm Account Number
                           {ddForm.confirmAccount && ddForm.accountNumber && (
-                            <span style={{ marginLeft: 8, fontWeight: 700, fontSize: 11, textTransform: 'none', color: ddForm.confirmAccount === ddForm.accountNumber ? 'var(--success)' : '#dc2626' }}>
+                            <span style={{ marginLeft: 8, fontWeight: 700, fontSize: '0.7333rem', textTransform: 'none', color: ddForm.confirmAccount === ddForm.accountNumber ? 'var(--success)' : '#dc2626' }}>
                               {ddForm.confirmAccount === ddForm.accountNumber ? '✓ Match' : '✗ Mismatch'}
                             </span>
                           )}
                         </label>
                         <input className="form-input mono" type="text" value={ddForm.confirmAccount}
-                          onChange={e => { dirtyRef.current = true; setDdForm(f => ({ ...f, confirmAccount: e.target.value.replace(/\D/g, '') })); }}
+                          onChange={e => { dirtyRef.current = true; setIsDirty(true); setDdForm(f => ({ ...f, confirmAccount: e.target.value.replace(/\D/g, '') })); }}
                           placeholder="Re-enter account number" />
                       </div>
                       <div style={{ display: 'flex', gap: 8 }}>
                         <button className="btn btn-primary btn-sm" onClick={handleSaveDd} disabled={ddSaving}>
                           {ddSaving ? <span className="spinner" style={{ width: 12, height: 12 }} /> : 'Save & Connect'}
                         </button>
-                        <button className="btn btn-ghost btn-sm" onClick={() => { setDdEdit(false); setDdErr(''); setDdForm({ routingNumber: '', accountNumber: '', confirmAccount: '', bankAccountType: 'checking' }); dirtyRef.current = mainDirtyRef.current; }}>Cancel</button>
+                        <button className="btn btn-ghost btn-sm" onClick={() => { setDdEdit(false); setDdErr(''); setDdForm({ routingNumber: '', accountNumber: '', confirmAccount: '', bankAccountType: 'checking' }); dirtyRef.current = mainDirtyRef.current; setIsDirty(mainDirtyRef.current); }}>Cancel</button>
                       </div>
                       <p className="form-hint" style={{ marginTop: 10 }}>Account info is encrypted with AES-256.</p>
                     </div>
@@ -957,8 +968,9 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
           )}
         </div>
         {form && (
-          <div className="drawer-footer">
+          <div className="drawer-footer" style={{ alignItems: 'center' }}>
             <button className="btn btn-secondary" onClick={requestClose}>Cancel</button>
+            {isDirty && <span style={{ fontSize: '0.8333rem', fontWeight: 700, color: '#92400e', background: '#fef3c7', padding: '4px 10px', borderRadius: 99, whiteSpace: 'nowrap' }}>Unsaved changes</span>}
             <button className="btn btn-primary" onClick={handleSave} disabled={saving}>{saving ? <span className="spinner" /> : 'Save Changes'}</button>
           </div>
         )}
@@ -966,12 +978,12 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
       {confirmDelete && (
         <ModalOverlay onClose={() => setConfirmDelete(false)}>
           <div className="card" style={{ width: 440, maxWidth: '92vw', padding: 24 }}>
-            <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>Delete {form?.firstName} {form?.lastName} permanently?</div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 14 }}>
+            <div style={{ fontWeight: 700, fontSize: '1.0667rem', marginBottom: 8 }}>Delete {form?.firstName} {form?.lastName} permanently?</div>
+            <div style={{ fontSize: '0.8667rem', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 14 }}>
               All of their paychecks and wage history will be deleted from every report. If they simply stopped working here, mark them Inactive instead so their history is kept.
             </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 16, fontSize: 12.5 }}>
-              <input type="checkbox" checked={delAck} onChange={e => setDelAck(e.target.checked)} style={{ accentColor: '#dc2626', width: 14, height: 14 }} />
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', marginBottom: 16, fontSize: '0.8333rem' }}>
+              <input type="checkbox" checked={delAck} onChange={e => setDelAck(e.target.checked)} style={{ accentColor: '#dc2626', width: 18, height: 18 }} />
               I understand this cannot be undone
             </label>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -1013,7 +1025,7 @@ function CheckHistory({ clientId, employeeId, employeeName, selectedChecks, onTo
   }, [clientId, employeeId]);
 
   async function handleVoid(stub) {
-    const reason = window.prompt(`Void check #${stub.check_number || stub.id} for ${employeeName}?\n\nReason (optional):`);
+    const reason = window.prompt(`Void check #${stub.check_number || stub.id} for ${employeeName}?\n\nVoid reverses this check but keeps its record.\n\nReason (optional):`);
     if (reason === null) return;
     setActioning(stub.id);
     try {
@@ -1027,7 +1039,7 @@ function CheckHistory({ clientId, employeeId, employeeName, selectedChecks, onTo
   }
 
   async function handleDelete(stub) {
-    if (!window.confirm(`Are you sure you want to delete this check?\n\nThis will reverse all associated tax liabilities.\n\nCheck #${stub.check_number || stub.id} · ${employeeName} · ${fmt(stub.net_pay)}`)) return;
+    if (!window.confirm(`Are you sure you want to delete this check?\n\nDelete permanently removes the check and reverses its tax liabilities.\n\nCheck #${stub.check_number || stub.id} · ${employeeName} · ${fmt(stub.net_pay)}`)) return;
     setActioning(stub.id);
     try {
       await api.deletePaystub(stub.id);
@@ -1040,28 +1052,28 @@ function CheckHistory({ clientId, employeeId, employeeName, selectedChecks, onTo
   }
 
   if (checks === null) return <div style={{ padding: '12px 0', textAlign: 'center' }}><div className="spinner spinner-dark" style={{ width: 18, height: 18, display: 'inline-block' }} /></div>;
-  if (err) return <div style={{ color: '#dc2626', fontSize: 12, padding: '8px 0' }}>{err}</div>;
-  if (checks.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: 12, padding: '8px 0', fontStyle: 'italic' }}>No checks issued yet.</div>;
+  if (err) return <div style={{ color: '#dc2626', fontSize: '0.8rem', padding: '8px 0' }}>{err}</div>;
+  if (checks.length === 0) return <div style={{ color: 'var(--text-muted)', fontSize: '0.8rem', padding: '8px 0', fontStyle: 'italic' }}>No checks issued yet.</div>;
 
   const allSelectableIds = checks.filter(c => c.check_status !== 'voided' && c.check_status !== 'direct_deposit_cleared').map(c => c.id);
   const allSelected = allSelectableIds.length > 0 && allSelectableIds.every(id => selectedChecks?.has(id));
 
   return (
     <div style={{ marginTop: 8 }}>
-      <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6, letterSpacing: '0.05em' }}>Check History</div>
+      <div style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 6, letterSpacing: '0.05em' }}>Check History</div>
       <div style={{ borderRadius: 8, border: '1px solid var(--border)', overflow: 'hidden' }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8667rem' }}>
           <thead>
             <tr style={{ background: 'var(--bg-secondary)' }}>
-              <th style={{ padding: '7px 10px', width: 34 }}>
-                <input type="checkbox" checked={allSelected} onChange={e => allSelectableIds.forEach(id => { if (e.target.checked !== (selectedChecks?.has(id) ?? false)) onToggleCheck?.(id); })} style={{ accentColor: 'var(--accent)', width: 14, height: 14 }} />
+              <th style={{ padding: '7px 10px', width: 40 }} onClick={e => e.stopPropagation()}>
+                <input type="checkbox" checked={allSelected} onChange={e => allSelectableIds.forEach(id => { if (e.target.checked !== (selectedChecks?.has(id) ?? false)) onToggleCheck?.(id); })} style={{ accentColor: 'var(--accent)', width: 20, height: 20 }} />
               </th>
-              <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, letterSpacing: '0.05em' }}>CHECK #</th>
-              <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, letterSpacing: '0.05em' }}>PERIOD</th>
-              <th style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, letterSpacing: '0.05em' }}>GROSS</th>
-              <th style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, letterSpacing: '0.05em' }}>NET PAY</th>
-              <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, letterSpacing: '0.05em' }}>STATUS</th>
-              <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: 11, letterSpacing: '0.05em' }}>EFTPS DUE</th>
+              <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: '0.8rem', letterSpacing: '0.05em' }}>CHECK #</th>
+              <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: '0.8rem', letterSpacing: '0.05em' }}>PERIOD</th>
+              <th style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: 'var(--text-muted)', fontSize: '0.8rem', letterSpacing: '0.05em' }}>GROSS</th>
+              <th style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 700, color: 'var(--text-muted)', fontSize: '0.8rem', letterSpacing: '0.05em' }}>NET PAY</th>
+              <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: '0.8rem', letterSpacing: '0.05em' }}>STATUS</th>
+              <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: 700, color: 'var(--text-muted)', fontSize: '0.8rem', letterSpacing: '0.05em' }}>EFTPS DUE</th>
               <th style={{ padding: '7px 10px', width: 120 }}></th>
             </tr>
           </thead>
@@ -1075,23 +1087,23 @@ function CheckHistory({ clientId, employeeId, employeeName, selectedChecks, onTo
               const busy     = actioning === c.id;
               return (
                 <tr key={c.id} style={{ background: checkRowBg(c.check_status, isSel), borderTop: '1px solid var(--border)' }}>
-                  <td style={{ padding: '10px 10px' }}>
-                    {canSel && <input type="checkbox" checked={isSel} onChange={() => onToggleCheck?.(c.id)} style={{ accentColor: 'var(--accent)', width: 14, height: 14 }} />}
+                  <td style={{ padding: '10px 10px' }} onClick={e => e.stopPropagation()}>
+                    {canSel && <input type="checkbox" checked={isSel} onChange={() => onToggleCheck?.(c.id)} style={{ accentColor: 'var(--accent)', width: 20, height: 20 }} />}
                   </td>
-                  <td style={{ padding: '10px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 800, color: voided ? '#dc2626' : 'var(--accent)', textDecoration: voided ? 'line-through' : 'none' }}>
-                    {c.check_number ? `#${c.check_number}` : isDraft ? <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: 12 }}>Draft</span> : '—'}
+                  <td style={{ padding: '10px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.9333rem', fontWeight: 800, color: voided ? '#dc2626' : 'var(--accent)', textDecoration: voided ? 'line-through' : 'none' }}>
+                    {c.check_number ? `#${c.check_number}` : isDraft ? <span style={{ color: 'var(--text-muted)', fontWeight: 400, fontSize: '0.8rem' }}>Draft</span> : '—'}
                   </td>
                   <td style={{ padding: '10px 10px', color: 'var(--text-secondary)', textDecoration: voided ? 'line-through' : 'none', fontVariantNumeric: 'tabular-nums' }}>
                     {c.pay_period_start} – {c.pay_period_end}
                   </td>
                   <td style={{ padding: '10px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', textDecoration: voided ? 'line-through' : 'none', fontVariantNumeric: 'tabular-nums' }}>{fmt(c.gross_wages)}</td>
-                  <td style={{ padding: '10px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, color: voided ? '#dc2626' : 'var(--success)', fontWeight: 700, textDecoration: voided ? 'line-through' : 'none', fontVariantNumeric: 'tabular-nums' }}>
+                  <td style={{ padding: '10px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.9333rem', color: voided ? '#dc2626' : '#047857', fontWeight: 700, textDecoration: voided ? 'line-through' : 'none', fontVariantNumeric: 'tabular-nums' }}>
                     {(() => { const np = Math.round(((c.gross_wages||0)-(c.fit_withholding||0)-(c.employee_ss||0)-(c.employee_medicare||0)-(c.additional_medicare||0)-(c.state_income_tax||0)-(c.deduction||0)-(c.garnishment||0)+(c.reimbursement||0))*100)/100; return voided ? `(${fmt(np)})` : fmt(np); })()}
                   </td>
                   <td style={{ padding: '10px 10px' }}><StatusBadge status={c.check_status || 'draft'} /></td>
-                  <td style={{ padding: '10px 10px', fontSize: 12, color: isOverdue(c.settlement_due_date) ? '#dc2626' : dueDays !== null && dueDays <= 5 ? '#d97706' : 'var(--text-muted)', fontWeight: isOverdue(c.settlement_due_date) ? 700 : 400 }}>
+                  <td style={{ padding: '10px 10px', fontSize: '0.8667rem', color: isOverdue(c.settlement_due_date) ? '#dc2626' : dueDays !== null && dueDays <= 5 ? '#92400e' : 'var(--text-muted)', fontWeight: isOverdue(c.settlement_due_date) ? 700 : 400 }}>
                     {c.settlement_due_date ? (
-                      <>{fmtDate(c.settlement_due_date)}{isOverdue(c.settlement_due_date) && <span style={{ marginLeft: 4 }}>({Math.abs(dueDays)}d overdue)</span>}</>
+                      <>{fmtDate(c.settlement_due_date)}{isOverdue(c.settlement_due_date) && <span style={{ marginLeft: 4, fontWeight: 700 }}>({Math.abs(dueDays)}d overdue)</span>}</>
                     ) : '—'}
                   </td>
                   <td style={{ padding: '10px 10px' }}>
@@ -1100,13 +1112,13 @@ function CheckHistory({ clientId, employeeId, employeeName, selectedChecks, onTo
                         <Link to={`/clients/${clientId}/paystubs/${c.id}/edit`} className="btn btn-ghost btn-sm">Edit</Link>
                       )}
                       {!voided && (
-                        <button className="btn btn-ghost btn-sm" style={{ color: '#dc2626', opacity: busy ? 0.5 : 1 }} onClick={() => handleVoid(c)} disabled={busy}>
+                        <button className="btn btn-ghost btn-sm" style={{ color: '#dc2626', opacity: busy ? 0.5 : 1, marginLeft: 8 }} onClick={() => handleVoid(c)} disabled={busy}>
                           {busy ? '…' : 'Void'}
                         </button>
                       )}
                       {!voided && (
-                        <button className="btn btn-ghost btn-sm" style={{ color: '#6b7280', opacity: busy ? 0.5 : 1 }} onClick={() => handleDelete(c)} disabled={busy} title="Delete check and reverse tax liabilities">
-                          {busy ? '…' : 'Del'}
+                        <button className="btn btn-ghost btn-sm" style={{ color: '#6b7280', opacity: busy ? 0.5 : 1 }} onClick={() => handleDelete(c)} disabled={busy}>
+                          {busy ? '…' : 'Delete'}
                         </button>
                       )}
                     </div>
@@ -1164,7 +1176,7 @@ function PayGroupEditorModal({ group, clientId, allGroups, hasIssuedChecks, onSa
     const targetGroup = newGroupId ? allGroups.find(g => String(g.id) === String(newGroupId)) : null;
     if (targetGroup && targetGroup.firstPayPeriodEnd && group.firstPayPeriodEnd &&
         targetGroup.firstPayPeriodEnd !== group.firstPayPeriodEnd) {
-      alert(`Cannot move ${emp.firstName} ${emp.lastName} to "${targetGroup.name}". The group's first period end date (${fmtDate(targetGroup.firstPayPeriodEnd)}) does not match this group's (${fmtDate(group.firstPayPeriodEnd)}). All employees in a pay group must share the same pay period schedule.`);
+      alert(`Cannot move ${emp.firstName} ${emp.lastName} to "${targetGroup.name}" — everyone in a pay group must share the same pay period schedule.\n\nTo move ${emp.firstName}, choose a group whose pay periods end on the same dates, or create a new group with that schedule (Employees tab → Edit Group → + New Group).`);
       return;
     }
     try {
@@ -1193,7 +1205,7 @@ function PayGroupEditorModal({ group, clientId, allGroups, hasIssuedChecks, onSa
   return (
     <>
       <div className="drawer-overlay" onClick={onClose} />
-      <div className="drawer" style={{ width: 520 }}>
+      <div className="drawer" style={{ width: 'min(520px, 94vw)' }}>
         <div className="drawer-header">
           <div className="drawer-title">Edit Pay Group</div>
           <button className="drawer-close" onClick={onClose}>×</button>
@@ -1215,7 +1227,7 @@ function PayGroupEditorModal({ group, clientId, allGroups, hasIssuedChecks, onSa
             <input className="form-input" type="date" value={form.firstPayPeriodEnd} onChange={e => handleEndChange(e.target.value)} />
           </div>
           {computedStart && (
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 14 }}>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 14 }}>
               Period will start: <strong>{fmtDate(computedStart)}</strong>
             </div>
           )}
@@ -1224,14 +1236,14 @@ function PayGroupEditorModal({ group, clientId, allGroups, hasIssuedChecks, onSa
             <input className="form-input" type="date" value={form.payDate} onChange={set('payDate')} />
           </div>
           {autoPayDate && (
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 4 }}>
               Default (2 business days after period end): <strong>{fmtDate(autoPayDate)}</strong>
             </div>
           )}
           {payDateInvalid && (
-            <div style={{ fontSize: 12, color: '#d97706', marginBottom: 14 }}>
+            <div style={{ fontSize: '0.8rem', color: '#92400e', marginBottom: 14 }}>
               ⚠ Falls on a weekend or holiday — suggest:{' '}
-              <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontWeight: 700, fontSize: 12, padding: 0 }} onClick={() => setForm(f => ({ ...f, payDate: payDateSuggested }))}>
+              <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontWeight: 700, fontSize: '0.8rem', padding: 0 }} onClick={() => setForm(f => ({ ...f, payDate: payDateSuggested }))}>
                 {fmtDate(payDateSuggested)}
               </button>
             </div>
@@ -1239,16 +1251,16 @@ function PayGroupEditorModal({ group, clientId, allGroups, hasIssuedChecks, onSa
 
           {upcomingPeriods.length > 0 && (
             <div style={{ marginBottom: 14 }}>
-              <button className="btn btn-ghost btn-sm" style={{ fontSize: 12, color: 'var(--accent)', padding: '4px 0' }} onClick={() => setShowPeriods(p => !p)}>
+              <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.8rem', color: 'var(--accent)', padding: '4px 0' }} onClick={() => setShowPeriods(p => !p)}>
                 {showPeriods ? '▲ Hide' : '▼ Show'} upcoming periods
               </button>
               {showPeriods && (
                 <div style={{ maxHeight: 200, overflowY: 'auto', borderRadius: 8, border: '1px solid var(--border)', marginTop: 6 }}>
                   {upcomingPeriods.map((p, i) => (
                     <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 12px', borderBottom: '1px solid var(--border)', background: p.overdue ? '#fef2f2' : i % 2 === 0 ? '#fff' : 'var(--bg-secondary)' }}>
-                      <span style={{ fontSize: 12, fontFamily: 'JetBrains Mono, monospace', color: p.overdue ? '#dc2626' : 'var(--text-primary)' }}>{fmtDate(p.start)} – {fmtDate(p.end)}</span>
-                      {p.overdue && <span className="badge badge-error" style={{ fontSize: 10 }}>Overdue</span>}
-                      {!p.overdue && i === 0 && <span className="badge badge-warning" style={{ fontSize: 10 }}>Current</span>}
+                      <span style={{ fontSize: '0.8rem', fontFamily: 'JetBrains Mono, monospace', color: p.overdue ? '#dc2626' : 'var(--text-primary)' }}>{fmtDate(p.start)} – {fmtDate(p.end)}</span>
+                      {p.overdue && <span className="badge badge-error">Overdue</span>}
+                      {!p.overdue && i === 0 && <span className="badge badge-warning">Current</span>}
                     </div>
                   ))}
                 </div>
@@ -1260,16 +1272,16 @@ function PayGroupEditorModal({ group, clientId, allGroups, hasIssuedChecks, onSa
           {employees === null ? (
             <div style={{ textAlign: 'center', padding: 20 }}><div className="spinner spinner-dark" style={{ width: 20, height: 20, display: 'inline-block' }} /></div>
           ) : employees.length === 0 ? (
-            <div style={{ color: 'var(--text-muted)', fontSize: 13, fontStyle: 'italic' }}>No employees assigned to this group.</div>
+            <div style={{ color: 'var(--text-muted)', fontSize: '0.8667rem', fontStyle: 'italic' }}>No employees assigned to this group.</div>
           ) : (
             <div style={{ borderRadius: 8, border: '1px solid var(--border)', overflow: 'hidden' }}>
               {employees.map((emp, i) => (
                 <div key={emp.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderTop: i > 0 ? '1px solid var(--border)' : 'none', background: i % 2 === 0 ? '#fff' : 'var(--bg-secondary)' }}>
-                  <div className="emp-avatar" style={{ width: 28, height: 28, fontSize: 10, flexShrink: 0 }}>{initials(`${emp.firstName} ${emp.lastName}`)}</div>
-                  <div style={{ flex: 1, fontSize: 13, fontWeight: 600 }}>{emp.firstName} {emp.lastName}</div>
+                  <div className="emp-avatar" style={{ width: 28, height: 28, fontSize: '0.6667rem', flexShrink: 0 }}>{initials(`${emp.firstName} ${emp.lastName}`)}</div>
+                  <div style={{ flex: 1, fontSize: '0.8667rem', fontWeight: 600 }}>{emp.firstName} {emp.lastName}</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Move to:</span>
-                    <select style={{ fontSize: 12, padding: '3px 6px', borderRadius: 0, border: '1px solid var(--border)', background: '#fff' }}
+                    <span style={{ fontSize: '0.7333rem', color: 'var(--text-muted)' }}>Move to:</span>
+                    <select style={{ fontSize: '0.8rem', padding: '3px 6px', borderRadius: 0, border: '1px solid var(--border)', background: '#fff' }}
                       defaultValue=""
                       onChange={e => { if (e.target.value) handleMoveEmployee(emp, e.target.value === '__none__' ? null : e.target.value); }}>
                       <option value="">— select —</option>
@@ -1335,23 +1347,23 @@ function EmployeesTab({ clientId, employees, onRefresh, clientMode = false }) {
       {(employees.length > 10 || empSearch || empFilter !== 'all') && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center', maxWidth: '100%' }}>
-            <span style={{ position: 'absolute', left: 10, fontSize: 13, color: 'var(--text-muted)', pointerEvents: 'none' }}>🔍</span>
+            <span style={{ position: 'absolute', left: 10, fontSize: '0.8667rem', color: 'var(--text-muted)', pointerEvents: 'none' }}>🔍</span>
             <input
               type="text"
               value={empSearch}
               onChange={e => setEmpSearch(e.target.value)}
               placeholder="Search employees…"
               aria-label="Search employees by name or pay group"
-              style={{ fontSize: 13, padding: '6px 28px 6px 30px', borderRadius: 0, border: '1px solid var(--border)', background: '#fff', width: 220, maxWidth: '100%', outline: 'none' }} />
+              style={{ fontSize: '0.8667rem', padding: '6px 28px 6px 30px', borderRadius: 0, border: '1px solid var(--border)', background: '#fff', width: 220, maxWidth: '100%', outline: 'none' }} />
             {empSearch && (
               <button onClick={() => setEmpSearch('')} aria-label="Clear search"
-                style={{ position: 'absolute', right: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14, lineHeight: 1, padding: 4 }}>×</button>
+                style={{ position: 'absolute', right: 6, background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '0.9333rem', lineHeight: 1, padding: 4 }}>×</button>
             )}
           </div>
           <div style={{ display: 'flex', background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 8, padding: 3, gap: 2 }}>
             {[['all', 'All'], ['active', 'Active'], ['inactive', 'Inactive']].map(([k, label]) => (
               <button key={k} onClick={() => setEmpFilter(k)}
-                style={{ padding: '5px 9px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 12, lineHeight: 1, fontWeight: 600,
+                style={{ padding: '5px 9px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: '0.8rem', lineHeight: 1, fontWeight: 600,
                   background: empFilter === k ? '#fff' : 'transparent',
                   color: empFilter === k ? 'var(--accent)' : 'var(--text-muted)',
                   boxShadow: empFilter === k ? '0 1px 4px rgba(0,0,0,0.1)' : 'none' }}>{label}</button>
@@ -1371,7 +1383,7 @@ function EmployeesTab({ clientId, employees, onRefresh, clientMode = false }) {
       ) : (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           {visibleEmployees.length === 0 && (
-            <div style={{ padding: '20px 16px', fontSize: 13, color: 'var(--text-muted)', textAlign: 'center' }}>No employees match.</div>
+            <div style={{ padding: '20px 16px', fontSize: '0.8667rem', color: 'var(--text-muted)', textAlign: 'center' }}>No employees match.</div>
           )}
           {visibleEmployees.map(emp => {
             const isSalary = emp.payType === 'salary';
@@ -1388,22 +1400,22 @@ function EmployeesTab({ clientId, employees, onRefresh, clientMode = false }) {
                     {emp.payGroupName ? (
                       <button
                         onClick={e => { e.stopPropagation(); const g = groupObj || { id: emp.payGroupId, name: emp.payGroupName, frequency: emp.payGroupFrequency || emp.payFrequency, firstPayPeriodStart: emp.payGroupFirstStart, firstPayPeriodEnd: emp.payGroupFirstEnd }; setEditGroup(g); }}
-                        style={{ background: 'var(--accent-light)', border: 'none', borderRadius: 4, padding: '1px 7px', fontSize: 11, color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}
+                        style={{ background: 'var(--accent-light)', border: 'none', borderRadius: 4, padding: '4px 10px', fontSize: '0.8667rem', color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}
                       >
                         {emp.payGroupName}
                       </button>
                     ) : (
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)', fontStyle: 'italic' }}>No pay group</span>
+                      <span style={{ fontSize: '0.8667rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>No pay group</span>
                     )}
                   </div>
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 13, color: rateUnset ? 'var(--warning)' : 'var(--accent)' }}>{rateUnset ? 'Rate not set' : rate}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{emp.filingStatus === 'married' ? 'Married' : emp.filingStatus === 'hoh' ? 'HoH' : 'Single'}</div>
+                  <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: '0.8667rem', color: rateUnset ? 'var(--warning)' : 'var(--accent)' }}>{rateUnset ? 'Rate not set' : rate}</div>
+                  <div style={{ fontSize: '0.8667rem', color: 'var(--text-muted)', marginTop: 2 }}>{emp.filingStatus === 'married' ? 'Married' : emp.filingStatus === 'hoh' ? 'HoH' : 'Single'}</div>
                 </div>
                 <span className={`badge ${emp.isActive !== false ? 'badge-success' : 'badge-neutral'}`}>{emp.isActive !== false ? 'Active' : 'Inactive'}</span>
-                {emp.directDeposit?.status === 'active' && <span className="badge" style={{ background: '#dbeafe', color: '#1d4ed8', fontSize: 10, fontWeight: 700 }}>DD</span>}
-                <span style={{ color: 'var(--text-muted)', fontSize: 16 }}>›</span>
+                {emp.directDeposit?.status === 'active' && <span className="badge" style={{ background: '#dbeafe', color: '#1d4ed8' }}>DD</span>}
+                <span style={{ color: 'var(--text-muted)', fontSize: '1.0667rem' }}>›</span>
               </div>
             );
           })}
@@ -1420,18 +1432,36 @@ function EmployeesTab({ clientId, employees, onRefresh, clientMode = false }) {
 }
 
 // Defined outside CompanyTab so it's a stable reference and never causes remounts
-function FormField({ label, hint, children }) {
+function FormField({ label, hint, inputId, children }) {
+  const autoId = useId();
+  let wiredId = inputId || null;
+  const kids = React.Children.map(children, child => {
+    if (!inputId && !wiredId && React.isValidElement(child)
+        && (child.type === 'input' || child.type === 'select' || child.type === SearchSelect)
+        && child.props.id == null && child.props.inputId == null) {
+      wiredId = autoId;
+      return React.cloneElement(child, child.type === SearchSelect ? { inputId: autoId } : { id: autoId });
+    }
+    return child;
+  });
   return (
     <div className="form-group">
-      <label className="form-label">{label}</label>
-      {children}
+      <label className="form-label" htmlFor={wiredId || undefined}>{label}</label>
+      {kids}
       {hint && <p className="form-hint">{hint}</p>}
     </div>
   );
 }
 
 // ── Company Tab ───────────────────────────────────────────────────────────────
-function CompanyTab({ client, onSaved }) {
+const COMPANY_FIELD_LABELS = {
+  businessName: 'Business Name',
+  ein: 'EIN',
+  bankRoutingNumber: 'Routing Number',
+  businessZip: 'ZIP',
+};
+
+function CompanyTab({ client, onSaved, guardRef }) {
   const [form, setForm]           = useState(null);
   const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
   const [err, setErr]             = useState('');
@@ -1443,10 +1473,14 @@ function CompanyTab({ client, onSaved }) {
   const [pinDraft, setPinDraft]   = useState('');
   const [pinSaving, setPinSaving] = useState(false);
   const [pinMsg, setPinMsg]       = useState('');
-  const [invalidField, setInvalidField] = useState(null);
+  const [invalid, setInvalid]     = useState(null); // { field, msg } — persists until that field's value changes
+  const [leaveDialog, setLeaveDialog] = useState(null); // { proceed, saveErr, busy } — unsaved-info guard dialog
+  const leaveDialogRef = useRef(null);
+  leaveDialogRef.current = leaveDialog;
   const [notifConfig, setNotifConfig]   = useState(null);
   const saveTimerRef = useRef(null);
   const flushDraftsRef = useRef(null);
+  const leaveResolvedRef = useRef(false); // guard dialog already saved/discarded drafts — skip unmount flush
   const loadedClientIdRef = useRef(null); // re-init the form only when SWITCHING companies
   const saveChainRef = useRef(Promise.resolve()); // serializes autosaves so a slow old save can't overwrite a newer one
 
@@ -1465,6 +1499,8 @@ function CompanyTab({ client, onSaved }) {
     setAccountErr('');
     setShowAccountNum(true);
     setPinDraft(''); setPinMsg(''); setPinSaving(false);
+    setInvalid(null); setLeaveDialog(null);
+    leaveResolvedRef.current = false;
     setForm({
       businessName:     client.businessName    || '',
       ein:              client.ein             || '',
@@ -1508,9 +1544,9 @@ function CompanyTab({ client, onSaved }) {
   }
 
   function doSave(currentForm) {
-    const invalid = validateForSave(currentForm);
-    if (invalid) { setErr(invalid.msg); setInvalidField(invalid.field); setSaveStatus('error'); return; }
-    setSaveStatus('saving'); setErr(''); setInvalidField(null);
+    const bad = validateForSave(currentForm);
+    if (bad) { setErr(bad.msg); setInvalid(bad); setSaveStatus('error'); return Promise.resolve(false); }
+    setSaveStatus('saving'); setErr(''); setInvalid(null);
     // Chain saves: overlapping requests could land out of order server-side and
     // let a stale payload overwrite a newer one.
     saveChainRef.current = saveChainRef.current.then(async () => {
@@ -1533,7 +1569,8 @@ function CompanyTab({ client, onSaved }) {
         if (!touchedRef.current.has('depositSchedule')) delete payload.depositSchedule;
         await api.updateClient(client.id, payload);
         setSaveStatus('saved'); onSaved();
-      } catch (e) { setErr(e.message); setSaveStatus('error'); }
+        return true;
+      } catch (e) { setErr(e.message); setSaveStatus('error'); return e.message || false; }
     });
     return saveChainRef.current;
   }
@@ -1571,31 +1608,110 @@ function CompanyTab({ client, onSaved }) {
   const pendingFormRef = useRef(null); // last form still inside the debounce window
   const touchedRef = useRef(new Set()); // fields the user actually edited in THIS tab
 
+  // Fallback for full unmounts (switching companies / leaving the workspace) —
+  // the component is gone, so an in-app dialog is impossible. Never silently
+  // discard: invalid drafts get an explicit "NOT saved" alert.
   flushDraftsRef.current = (forClientId) => {
+    if (leaveResolvedRef.current) return;
+    const badEdit = invalid || (pendingFormRef.current ? validateForSave(pendingFormRef.current) : null);
+    if (badEdit) window.alert(`The ${COMPANY_FIELD_LABELS[badEdit.field] || badEdit.field} you typed isn’t valid, so it was NOT saved.`);
     if (!accountDraft.trim() && !pinDraft) return;
     const cleanAcct = accountDraft.replace(/[\s-]/g, '');
     const cleanPin  = String(pinDraft).replace(/\D/g, '');
     const acctOk = accountDraft.trim() !== '' && /^\d{4,17}$/.test(cleanAcct);
     const pinOk  = pinDraft !== '' && /^\d{4}$/.test(cleanPin);
     if ((accountDraft.trim() && !acctOk) || (pinDraft && !pinOk)) {
-      window.alert('The bank account number / EFTPS PIN you typed isn’t valid, so it wasn’t saved. Re-enter it on the Company tab when you’re ready.');
+      window.alert('The bank account number / EFTPS PIN you typed isn’t valid, so it was NOT saved. Re-enter it on the Company tab when you’re ready.');
     }
     if (!acctOk && !pinOk) return;
-    if (!window.confirm('You typed a bank account number / EFTPS PIN but didn’t save it. Save it now? (Cancel discards it.)')) return;
+    if (!window.confirm('Save the bank account number / EFTPS PIN you typed on the Company tab? Press OK to save it, or Cancel to discard it.')) return;
     const jobs = [];
     if (acctOk) jobs.push(api.updateClient(forClientId, { bankAccountNumber: cleanAcct }));
     if (pinOk)  jobs.push(api.updateClientPin(forClientId, cleanPin));
     Promise.all(jobs).then(() => onSaved?.()).catch(e => window.alert(`Couldn’t save: ${e.message || 'try again on the Company tab.'}`));
   };
 
+  function getPendingLeaveItems() {
+    const items = [];
+    if (changingAccount && accountDraft.trim()) items.push('An unsaved bank account number');
+    if (pinDraft) items.push('An unsaved EFTPS Batch Provider PIN');
+    const bad = invalid || (pendingFormRef.current ? validateForSave(pendingFormRef.current) : null);
+    if (bad) items.push(`An edit that failed validation: ${COMPANY_FIELD_LABELS[bad.field] || bad.field}`);
+    return items;
+  }
+
+  // Tab-switch guard: the workspace calls this before leaving the Company tab.
+  // Returns true to allow the switch; otherwise opens the unsaved-info dialog
+  // and calls `proceed` later if the user chooses to continue.
+  if (guardRef) guardRef.current = (proceed) => {
+    if (getPendingLeaveItems().length === 0) return true;
+    setLeaveDialog({ proceed, saveErr: '', busy: false });
+    return false;
+  };
+
+  function handleLeaveDiscard() {
+    clearTimeout(saveTimerRef.current);
+    pendingFormRef.current = null;
+    setChangingAccount(false); setAccountDraft(''); setAccountErr('');
+    setPinDraft(''); setPinMsg('');
+    leaveResolvedRef.current = true;
+    const proceed = leaveDialog.proceed;
+    setLeaveDialog(null);
+    proceed();
+  }
+
+  async function handleLeaveSave() {
+    const pendingForm = pendingFormRef.current;
+    const bad = (pendingForm || invalid) ? validateForSave(pendingForm || form) : null;
+    if (bad) { setInvalid(bad); setLeaveDialog(d => ({ ...d, saveErr: bad.msg })); return; }
+    const cleanAcct = accountDraft.replace(/[\s-]/g, '');
+    const cleanPin  = String(pinDraft).replace(/\D/g, '');
+    if (changingAccount && accountDraft.trim() && !/^\d{4,17}$/.test(cleanAcct)) {
+      setLeaveDialog(d => ({ ...d, saveErr: 'Bank account numbers are 4–17 digits — fix it or discard it.' })); return;
+    }
+    if (pinDraft && !/^\d{4}$/.test(cleanPin)) {
+      setLeaveDialog(d => ({ ...d, saveErr: 'The EFTPS PIN must be exactly 4 digits — fix it or discard it.' })); return;
+    }
+    setLeaveDialog(d => ({ ...d, busy: true, saveErr: '' }));
+    try {
+      if (pendingForm) {
+        clearTimeout(saveTimerRef.current);
+        pendingFormRef.current = null;
+        const res = await doSave(pendingForm);
+        if (res !== true) {
+          pendingFormRef.current = pendingForm;
+          setLeaveDialog(d => ({ ...d, busy: false, saveErr: typeof res === 'string' ? res : 'Couldn’t save — check your connection and try again.' }));
+          return;
+        }
+      }
+      if (changingAccount && accountDraft.trim()) await api.updateClient(client.id, { bankAccountNumber: cleanAcct });
+      if (pinDraft) await api.updateClientPin(client.id, cleanPin);
+      setChangingAccount(false); setAccountDraft(''); setAccountErr('');
+      setPinDraft(''); setPinMsg('');
+      onSaved();
+      // The user may have dismissed the dialog while the save was in flight —
+      // saving is still right, but navigating away out from under them is not.
+      if (!leaveDialogRef.current) return;
+      leaveResolvedRef.current = true;
+      const proceed = leaveDialog.proceed;
+      setLeaveDialog(null);
+      proceed();
+    } catch (e) {
+      setLeaveDialog(d => ({ ...d, busy: false, saveErr: e.message || 'Couldn’t save — check your connection and try again.' }));
+    }
+  }
+
   function set(field) {
     return e => {
       const val = e.target.value;
       touchedRef.current.add(field);
+      // The inline "failed validation" message persists until the failing
+      // field's own value changes — edits elsewhere don't clear it.
+      if (invalid && invalid.field === field) setInvalid(null);
       setForm(f => {
         const newForm = { ...f, [field]: val };
         pendingFormRef.current = newForm;
-        setSaveStatus('idle'); setErr(''); setInvalidField(null);
+        setSaveStatus('idle'); setErr('');
         clearTimeout(saveTimerRef.current);
         saveTimerRef.current = setTimeout(() => { pendingFormRef.current = null; doSave(newForm); }, 1400);
         return newForm;
@@ -1609,6 +1725,7 @@ function CompanyTab({ client, onSaved }) {
     clearTimeout(saveTimerRef.current);
     if (pendingFormRef.current) doSave(pendingFormRef.current);
     if (loadedClientIdRef.current != null && flushDraftsRef.current) flushDraftsRef.current(loadedClientIdRef.current);
+    if (guardRef) guardRef.current = null;
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -1616,33 +1733,52 @@ function CompanyTab({ client, onSaved }) {
 
   const F = FormField;
   const saveIndicator = saveStatus === 'saving' ? (
-    <span style={{ fontSize: 12, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
-      <span className="spinner spinner-dark" style={{ width: 12, height: 12 }} /> Saving…
+    <span style={{ fontSize: '0.9333rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
+      <span className="spinner spinner-dark" style={{ width: 14, height: 14 }} /> Saving…
     </span>
   ) : saveStatus === 'saved' ? (
-    <span style={{ fontSize: 12, color: 'var(--success)', fontWeight: 600 }}>✓ Saved</span>
+    <span style={{ fontSize: '0.9333rem', color: 'var(--success)', fontWeight: 600 }}>✓ Saved</span>
   ) : saveStatus === 'error' ? (
-    <span style={{ fontSize: 12, color: '#dc2626', fontWeight: 600 }}>⚠ {err || 'Save failed'}</span>
+    <span style={{ fontSize: '0.9333rem', color: '#dc2626', fontWeight: 600 }}>⚠ {err || 'Save failed'}</span>
   ) : null;
 
   return (
     <div style={{ maxWidth: 760 }}>
-      {/* Auto-save indicator — floats top right */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', minHeight: 22, marginBottom: 8 }}>
+      {leaveDialog && (
+        <ModalOverlay onClose={() => { if (!leaveDialogRef.current?.busy) setLeaveDialog(null); }}>
+          <div className="card" style={{ width: 460, maxWidth: '92vw', padding: 24 }}>
+            <div style={{ fontWeight: 800, fontSize: '1.0667rem', marginBottom: 10 }}>You have unsaved information</div>
+            <ul style={{ margin: '0 0 14px', paddingLeft: 22, fontSize: '0.9333rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+              {getPendingLeaveItems().map((item, i) => <li key={i}>{item}</li>)}
+            </ul>
+            {leaveDialog.saveErr && (
+              <p style={{ margin: '0 0 14px', fontSize: '0.9333rem', color: '#dc2626', fontWeight: 600 }}>⚠ {leaveDialog.saveErr}</p>
+            )}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary" onClick={() => setLeaveDialog(null)} disabled={leaveDialog.busy}>Go back and finish</button>
+              <button className="btn btn-ghost" style={{ color: '#dc2626' }} onClick={handleLeaveDiscard} disabled={leaveDialog.busy}>Discard and continue</button>
+              <button className="btn btn-primary" onClick={handleLeaveSave} disabled={leaveDialog.busy}>{leaveDialog.busy ? 'Saving…' : 'Save and continue'}</button>
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
+      {/* Auto-save indicator — sticks to the top while scrolling */}
+      <div style={{ position: 'sticky', top: 0, zIndex: 20, background: 'var(--bg-secondary)', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', minHeight: 26, padding: '2px 0', marginBottom: 4 }}>
         {saveIndicator}
       </div>
+      <p style={{ fontSize: '0.8667rem', color: 'var(--text-muted)', margin: '0 0 12px' }}>Changes on this page save automatically.</p>
 
       <div className="card" style={{ marginBottom: 16 }}>
         <p className="form-section-title" style={{ marginTop: 0 }}>Business Information</p>
         <div className="form-grid">
-          <F label="Business Name"><input className="form-input" style={invalidField === 'businessName' ? { borderColor: '#dc2626' } : undefined} value={form.businessName} onChange={set('businessName')} />{invalidField === 'businessName' && <p className="form-hint" style={{ color: '#dc2626' }}>{err}</p>}</F>
-          <F label="EIN"><input className="form-input mono" style={invalidField === 'ein' ? { borderColor: '#dc2626' } : undefined} value={form.ein} onChange={set('ein')} placeholder="12-3456789" />{invalidField === 'ein' && <p className="form-hint" style={{ color: '#dc2626' }}>{err}</p>}</F>
+          <F label="Business Name"><input className="form-input" style={invalid?.field === 'businessName' ? { borderColor: '#dc2626' } : undefined} value={form.businessName} onChange={set('businessName')} />{invalid?.field === 'businessName' && <p className="form-hint" style={{ color: '#dc2626' }}>{invalid.msg}</p>}</F>
+          <F label="EIN"><input className="form-input mono" style={invalid?.field === 'ein' ? { borderColor: '#dc2626' } : undefined} value={form.ein} onChange={set('ein')} placeholder="12-3456789" />{invalid?.field === 'ein' && <p className="form-hint" style={{ color: '#dc2626' }}>{invalid.msg}</p>}</F>
         </div>
         <F label="Street Address"><input className="form-input" value={form.businessAddress} onChange={set('businessAddress')} /></F>
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr', gap: 12 }}>
-          <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">City</label><input className="form-input" value={form.businessCity} onChange={set('businessCity')} /></div>
-          <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">State</label><select className="form-select" value={form.state} onChange={set('state')}>{US_STATES.map(([c, n]) => <option key={c} value={c}>{c} — {n}</option>)}</select></div>
-          <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label">ZIP</label><input className="form-input mono" style={invalidField === 'businessZip' ? { borderColor: '#dc2626' } : undefined} value={form.businessZip} onChange={set('businessZip')} maxLength={10} />{invalidField === 'businessZip' && <p className="form-hint" style={{ color: '#dc2626' }}>{err}</p>}</div>
+          <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" htmlFor="company-city">City</label><input id="company-city" className="form-input" value={form.businessCity} onChange={set('businessCity')} /></div>
+          <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" htmlFor="company-state">State</label><SearchSelect inputId="company-state" options={US_STATES.map(([c, n]) => ({ value: c, label: `${c} — ${n}` }))} value={form.state} onChange={set('state')} placeholder="Type to search states…" /></div>
+          <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" htmlFor="company-zip">ZIP</label><input id="company-zip" className="form-input mono" style={invalid?.field === 'businessZip' ? { borderColor: '#dc2626' } : undefined} value={form.businessZip} onChange={set('businessZip')} maxLength={10} />{invalid?.field === 'businessZip' && <p className="form-hint" style={{ color: '#dc2626' }}>{invalid.msg}</p>}</div>
         </div>
         <div style={{ marginTop: 14 }}>
           <F label="IRS 941 Deposit Schedule" hint="Monthly: taxes due by the 15th of the following month. Semi-weekly: taxes due Wed or Fri after each payroll.">
@@ -1657,21 +1793,23 @@ function CompanyTab({ client, onSaved }) {
       <div className="card" style={{ marginBottom: 16 }}>
         <p className="form-section-title" style={{ marginTop: 0 }}>EFTPS — Federal Tax Deposits</p>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-          <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Enrollment status:</span>
+          <span style={{ fontSize: '0.8667rem', color: 'var(--text-muted)' }}>Enrollment status:</span>
           {client.eftpsEnrolled ? (
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--success)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ fontSize: '0.8667rem', fontWeight: 700, color: 'var(--success)', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
               ✓ Enrolled{client.hasBatchProviderPin ? ' · PIN on file' : ''}
             </span>
           ) : (
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--warning)' }}>Not enrolled</span>
+            <span style={{ fontSize: '0.8667rem', fontWeight: 700, color: 'var(--warning)' }}>Not enrolled</span>
           )}
         </div>
         <F
           label={client.hasBatchProviderPin ? 'Update Batch Provider PIN' : 'Batch Provider PIN'}
           hint="Already enrolled this company in EFTPS Batch Provider yourself? Enter its 4-digit PIN here. This marks the company enrolled so tax deposits use this PIN — the bridge won't try to auto-enroll it."
+          inputId="company-eftps-pin"
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <input
+              id="company-eftps-pin"
               className="form-input mono"
               value={pinDraft}
               onChange={e => { setPinDraft(e.target.value.replace(/\D/g, '').slice(0, 4)); setPinMsg(''); }}
@@ -1685,9 +1823,9 @@ function CompanyTab({ client, onSaved }) {
               {pinSaving ? 'Saving…' : (client.eftpsEnrolled ? 'Update PIN' : 'Save PIN & mark enrolled')}
             </button>
             {pinMsg === 'saved'
-              ? <span style={{ fontSize: 12, color: 'var(--success)', fontWeight: 600 }}>✓ Saved</span>
+              ? <span style={{ fontSize: '0.8rem', color: 'var(--success)', fontWeight: 600 }}>✓ Saved</span>
               : pinMsg
-                ? <span style={{ fontSize: 12, color: '#dc2626', fontWeight: 600 }}>⚠ {pinMsg}</span>
+                ? <span style={{ fontSize: '0.8rem', color: '#dc2626', fontWeight: 600 }}>⚠ {pinMsg}</span>
                 : null}
           </div>
         </F>
@@ -1704,21 +1842,25 @@ function CompanyTab({ client, onSaved }) {
                 <input className="form-input mono" value={form.suiAccountNumber} onChange={set('suiAccountNumber')} placeholder="e.g. 10-818766-2" style={{ maxWidth: 280 }} />
               </F>
               {form.state === 'TX' && (
-                <F label="County" hint="Required for TWC QuickFile ICESA submission.">
-                  <select className="form-select" value={form.countyCode} onChange={set('countyCode')} style={{ maxWidth: 320 }}>
-                    <option value="">— Select county —</option>
-                    {TX_COUNTIES.map(([name, code]) => (
-                      <option key={code} value={code}>{name} ({code})</option>
-                    ))}
-                  </select>
+                <F label="County" hint="Required for TWC QuickFile ICESA submission." inputId="company-county">
+                  <div style={{ maxWidth: 320 }}>
+                    <SearchSelect
+                      inputId="company-county"
+                      options={TX_COUNTIES.map(([name, code]) => ({ value: code, label: `${name} (${code})` }))}
+                      value={form.countyCode}
+                      onChange={set('countyCode')}
+                      placeholder="— Select county —"
+                      allowClear
+                    />
+                  </div>
                 </F>
               )}
               <div className="form-grid" style={{ marginTop: 4 }}>
                 {[['Q1','suiRateQ1'],['Q2','suiRateQ2'],['Q3','suiRateQ3'],['Q4','suiRateQ4']].map(([q, key]) => (
-                  <F key={q} label={`SUI Rate ${q} (%)`}>
+                  <F key={q} label={`SUI Rate ${q} (%)`} inputId={`company-${key}`}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <input className="form-input mono" type="number" min="0" max="20" step="0.001" value={form[key]} onChange={set(key)} style={{ maxWidth: 110 }} placeholder="e.g. 0.32" />
-                      <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>%</span>
+                      <input id={`company-${key}`} className="form-input mono" type="number" min="0" max="20" step="0.001" value={form[key]} onChange={set(key)} style={{ maxWidth: 110 }} placeholder="e.g. 0.32" />
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.8667rem' }}>%</span>
                     </div>
                   </F>
                 ))}
@@ -1735,11 +1877,12 @@ function CompanyTab({ client, onSaved }) {
         </F>
         <div className="form-grid">
           <div>
-            <label className="form-label">Account Number</label>
+            <label className="form-label" htmlFor="company-account-number">Account Number</label>
             {changingAccount ? (
               <>
                 <div style={{ position: 'relative' }}>
                   <input
+                    id="company-account-number"
                     className="form-input mono"
                     type={showAccountNum ? 'text' : 'password'}
                     value={accountDraft}
@@ -1752,7 +1895,7 @@ function CompanyTab({ client, onSaved }) {
                   <button
                     type="button"
                     onClick={() => setShowAccountNum(v => !v)}
-                    style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 15, padding: 0, lineHeight: 1 }}
+                    style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: '1rem', padding: 0, lineHeight: 1 }}
                     title={showAccountNum ? 'Hide' : 'Show'}
                   >{showAccountNum ? '🙈' : '👁'}</button>
                 </div>
@@ -1779,8 +1922,8 @@ function CompanyTab({ client, onSaved }) {
                 <button type="button" onClick={() => { setChangingAccount(true); setAccountDraft(''); setAccountErr(''); setShowAccountNum(true); }}
                   className={form.bankAccountLast4 ? undefined : 'btn btn-primary btn-sm'}
                   style={form.bankAccountLast4
-                    ? { marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--accent)', fontWeight: 600, padding: 0 }
-                    : { marginLeft: 'auto', fontSize: 12 }}>
+                    ? { marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.8rem', color: 'var(--accent)', fontWeight: 600, padding: 0 }
+                    : { marginLeft: 'auto', fontSize: '0.8rem' }}>
                   {form.bankAccountLast4 ? 'Change' : 'Add Account Number'}
                 </button>
               </div>
@@ -1790,9 +1933,9 @@ function CompanyTab({ client, onSaved }) {
             )}
           </div>
           <div>
-            <label className="form-label">Routing Number</label>
-            <input className="form-input mono" style={invalidField === 'bankRoutingNumber' ? { borderColor: '#dc2626' } : undefined} value={form.bankRoutingNumber} onChange={set('bankRoutingNumber')} maxLength={9} />
-            {invalidField === 'bankRoutingNumber' && <p className="form-hint" style={{ color: '#dc2626' }}>{err}</p>}
+            <label className="form-label" htmlFor="company-routing-number">Routing Number</label>
+            <input id="company-routing-number" className="form-input mono" style={invalid?.field === 'bankRoutingNumber' ? { borderColor: '#dc2626' } : undefined} value={form.bankRoutingNumber} onChange={set('bankRoutingNumber')} maxLength={9} />
+            {invalid?.field === 'bankRoutingNumber' && <p className="form-hint" style={{ color: '#dc2626' }}>{invalid.msg}</p>}
             {form.bankRoutingNumber && (
               <div className="form-hint" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span style={{ fontFamily: 'JetBrains Mono, monospace', letterSpacing: '0.08em' }}>
@@ -1828,7 +1971,7 @@ function CompanyTab({ client, onSaved }) {
 
       <div className="card" style={{ marginBottom: 20 }}>
         <p className="form-section-title" style={{ marginTop: 0 }}>Tax Deposit Notifications</p>
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 14 }}>
+        <p style={{ fontSize: '0.8667rem', color: 'var(--text-secondary)', marginBottom: 14 }}>
           Email and SMS reminders 5 days and 2 days before each 941 deposit due date, and immediately when overdue.
         </p>
         <div className="form-grid">
@@ -1855,23 +1998,23 @@ function ModalTR({ label, amount, ytdAmount, color, bold, borderTop, negative, e
   const display = negative ? (amount > 0 ? -amount : amount) : amount;
   return (
     <tr style={{ borderTop: borderTop ? '2px solid var(--border)' : undefined }}>
-      <td style={{ padding: '5px 0', fontSize: 13, color: bold ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: bold ? 700 : 400, whiteSpace: 'nowrap' }}>{label}</td>
-      <td style={{ padding: '3px 0 3px 12px', textAlign: 'right', ...MODAL_MONO, fontSize: 13, fontWeight: bold ? 700 : 500, color: color || (negative && amount > 0 ? '#dc2626' : 'inherit') }}>
+      <td style={{ padding: '5px 0', fontSize: '0.9333rem', color: bold ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: bold ? 700 : 400 }}>{label}</td>
+      <td style={{ padding: '3px 0 3px 12px', textAlign: 'right', ...MODAL_MONO, fontSize: '0.9333rem', fontWeight: bold ? 700 : 500, color: color || (negative && amount > 0 ? '#dc2626' : 'inherit') }}>
         {onEditChange
           ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end' }}>
-              {!noDollarSign && <span style={{ ...MODAL_MONO, fontSize: 13, color: 'var(--text-muted)', marginRight: 1 }}>$</span>}
+              {!noDollarSign && <span style={{ ...MODAL_MONO, fontSize: '0.9333rem', color: 'var(--text-muted)', marginRight: 1 }}>$</span>}
               <input type="text" inputMode="decimal"
                 value={editValue}
                 onChange={e => onEditChange(e.target.value)}
                 placeholder="0.00"
-                style={{ ...MODAL_MONO, background: '#fff', border: '1px solid var(--border)', borderRadius: 0, outline: 'none', width: 80, textAlign: 'right', fontSize: 13, fontWeight: bold ? 700 : 500, color: 'var(--text-primary)', padding: '1px 5px', cursor: 'text', boxSizing: 'border-box' }} />
-              {editSuffix && <span style={{ ...MODAL_MONO, fontSize: 12, color: 'var(--text-muted)', marginLeft: 4 }}>{editSuffix}</span>}
+                style={{ ...MODAL_MONO, background: '#fff', border: '1px solid var(--border)', borderRadius: 0, outline: 'none', width: 110, textAlign: 'right', fontSize: '1.0667rem', fontWeight: bold ? 700 : 500, color: 'var(--text-primary)', padding: '8px 10px', cursor: 'text', boxSizing: 'border-box' }} />
+              {editSuffix && <span style={{ ...MODAL_MONO, fontSize: '0.8667rem', color: 'var(--text-muted)', marginLeft: 4 }}>{editSuffix}</span>}
             </span>
           : typeof display === 'number' ? fmt(display) : display
         }
       </td>
       {ytdAmount !== undefined && (
-        <td style={{ padding: '5px 0 5px 12px', textAlign: 'right', ...MODAL_MONO, fontSize: 12, color: 'var(--text-muted)', fontWeight: 400 }}>{ytdAmount != null ? fmt(ytdAmount) : '—'}</td>
+        <td style={{ padding: '5px 0 5px 12px', textAlign: 'right', ...MODAL_MONO, fontSize: '0.8667rem', color: 'var(--text-secondary)', fontWeight: 400 }}>{ytdAmount != null ? fmt(ytdAmount) : '—'}</td>
       )}
     </tr>
   );
@@ -1881,13 +2024,18 @@ function ModalColHeader({ hasYTD }) {
   return (
     <thead>
       <tr>
-        <th style={{ padding: '0 0 6px 0', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Item Name</th>
-        <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Amount</th>
-        {hasYTD && <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>YTD</th>}
+        <th style={{ padding: '0 0 6px 0', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Item Name</th>
+        <th style={{ padding: '0 0 6px 12px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Amount</th>
+        {hasYTD && <th style={{ padding: '0 0 6px 12px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>YTD</th>}
       </tr>
     </thead>
   );
 }
+
+// Overlays can nest (a confirm dialog on top of the check modal). Escape must
+// close only the TOPMOST one — each keydown listener firing would save-and-close
+// the underlying modal too. A module-level stack tracks mount order.
+const modalOverlayStack = [];
 
 function ModalOverlay({ children, onClose }) {
   const ref = useRef(null);
@@ -1898,14 +2046,24 @@ function ModalOverlay({ children, onClose }) {
   // Escape closes; focus moves into the dialog on open so keyboard/screen-reader
   // users aren't left interacting with the page behind the overlay.
   useEffect(() => {
-    const onKey = e => { if (e.key === 'Escape') onCloseRef.current(); };
+    const token = {};
+    modalOverlayStack.push(token);
+    const onKey = e => {
+      if (e.key !== 'Escape') return;
+      if (modalOverlayStack[modalOverlayStack.length - 1] !== token) return;
+      onCloseRef.current();
+    };
     document.addEventListener('keydown', onKey);
     const el = ref.current;
     if (el && !el.contains(document.activeElement)) {
       el.setAttribute('tabindex', '-1');
       el.focus({ preventScroll: true });
     }
-    return () => document.removeEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      const i = modalOverlayStack.indexOf(token);
+      if (i !== -1) modalOverlayStack.splice(i, 1);
+    };
   }, []);
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.45)' }}
@@ -2146,17 +2304,17 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
 
       return (
         <ModalOverlay onClose={closeWithFlush}>
-          <div className="card" style={{ width: 740, maxWidth: '96vw', maxHeight: '92vh', overflowY: 'auto', padding: 0, borderRadius: 12 }}>
+          <div className="card" style={{ width: 820, maxWidth: '96vw', maxHeight: '92vh', overflowY: 'auto', padding: 0, borderRadius: 12 }}>
             {/* Header */}
             <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)' }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
                 <div>
-                  <div style={{ fontWeight: 800, fontSize: 20 }}>{emp.firstName} {emp.lastName}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                  <div style={{ fontWeight: 800, fontSize: '1.3333rem' }}>{emp.firstName} {emp.lastName}</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 4 }}>
                     {isSalary ? 'Salary' : 'Hourly'} · {period.isLate ? <span style={{ color: '#dc2626', fontWeight: 700 }}>LATE</span> : 'Pending'}
                   </div>
                 </div>
-                <button onClick={closeWithFlush} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+                <button onClick={closeWithFlush} style={{ background: 'none', border: 'none', fontSize: '1.6rem', cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
               </div>
               {/* Pay period strip — editable */}
               <div style={{ display: 'flex', marginTop: 14, borderRadius: 8, overflow: 'hidden', border: `1px solid ${pendingDirty ? 'var(--accent)' : 'var(--border)'}`, background: 'var(--bg-secondary)', transition: 'border-color 0.15s' }}>
@@ -2164,33 +2322,40 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
                   { label: 'Period Start', key: 'start' },
                   { label: 'Period End',   key: 'end'   },
                   { label: 'Pay Date',     key: 'payDate' },
-                ].map(({ label, key }, i, arr) => (
-                  <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
-                    <input type="date" value={dateForm[key]} onChange={e => setDateForm(f => ({ ...f, [key]: e.target.value }))}
-                      style={{ ...MODAL_MONO, fontSize: 13, fontWeight: 600, background: 'transparent', border: 'none', outline: 'none', width: '100%', color: dateForm[key] !== (key === 'start' ? period.start : key === 'end' ? period.end : period.payDate) ? 'var(--accent)' : period.isLate && key === 'payDate' ? '#dc2626' : 'var(--text-primary)', cursor: 'pointer' }} />
-                  </div>
-                ))}
+                ].map(({ label, key }, i, arr) => {
+                  const loaded = key === 'start' ? period.start : key === 'end' ? period.end : period.payDate;
+                  const edited = dateForm[key] !== loaded;
+                  return (
+                    <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                        <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
+                        {edited && <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#92400e', background: '#fef3c7', borderRadius: 999, padding: '1px 8px' }}>edited</span>}
+                      </div>
+                      <input type="date" value={dateForm[key]} onChange={e => setDateForm(f => ({ ...f, [key]: e.target.value }))}
+                        style={{ ...MODAL_MONO, fontSize: '1rem', fontWeight: 600, background: '#fff', border: '1px solid var(--border)', borderRadius: 6, outline: 'none', width: '100%', height: 40, padding: '0 10px', boxSizing: 'border-box', color: edited ? 'var(--accent)' : period.isLate && key === 'payDate' ? '#dc2626' : 'var(--text-primary)', cursor: 'pointer' }} />
+                    </div>
+                  );
+                })}
               </div>
               {periodDateWarning(dateForm.start, dateForm.end, dateForm.payDate) && (
-                <div style={{ color: 'var(--error)', fontSize: 11, fontWeight: 600, marginTop: 6 }}>
+                <div style={{ color: 'var(--error)', fontSize: '0.7333rem', fontWeight: 600, marginTop: 6 }}>
                   {periodDateWarning(dateForm.start, dateForm.end, dateForm.payDate)}
                 </div>
               )}
             </div>
 
             {/* Body: Employee Summary | Company Summary side-by-side (matches the printed-check "Ali Faisal" format) */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
 
               {/* Left — Employee Summary */}
               <div style={{ padding: '18px 20px 0 24px', borderRight: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Employee Summary</div>
+              <div style={{ fontSize: '0.7333rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Employee Summary</div>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
-                    <th style={{ padding: '0 0 6px 0', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Item Name</th>
-                    <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Amount</th>
-                    <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>YTD</th>
+                    <th style={{ padding: '0 0 6px 0', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Item Name</th>
+                    <th style={{ padding: '0 0 6px 12px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Amount</th>
+                    <th style={{ padding: '0 0 6px 12px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>YTD</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2236,7 +2401,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
                   <TR label="Federal Income Tax"     amount={dispFIT      ?? 'calculating…'} ytdAmount={ytdWithCurrent.fit}      negative={dispFIT != null}      color={dispFIT != null && dispFIT > 0 ? '#dc2626' : 'var(--text-muted)'}
                     editValue={row.fitOverride !== undefined ? row.fitOverride : (estFITCalc != null ? String(estFITCalc) : '')} onEditChange={v => setField('fitOverride', v)} />
                   {(emp.step4c || 0) > 0 && (
-                    <tr><td colSpan={3} style={{ padding: '0 0 4px', fontSize: 10, color: 'var(--text-muted)' }}>includes {fmt(emp.step4c)} extra withholding (W-4)</td></tr>
+                    <tr><td colSpan={3} style={{ padding: '0 0 4px', fontSize: '0.8333rem', color: 'var(--text-muted)' }}>includes {fmt(emp.step4c)} extra withholding (W-4)</td></tr>
                   )}
                   <TR label="State Income Tax"       amount={dispStateTax ?? '—'}            ytdAmount={ytdWithCurrent.stateTax} negative={dispStateTax != null} color={dispStateTax != null && dispStateTax > 0 ? '#dc2626' : 'var(--text-muted)'}
                     editValue={row.stateOverride !== undefined ? row.stateOverride : (estStateTaxCalc != null ? String(estStateTaxCalc) : '')} onEditChange={v => setField('stateOverride', v)} />
@@ -2246,13 +2411,13 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
 
               {/* Right — Company Summary */}
               <div style={{ padding: '18px 24px 0 20px' }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Company Summary</div>
+              <div style={{ fontSize: '0.7333rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Company Summary</div>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr>
-                    <th style={{ padding: '0 0 6px 0', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Item Name</th>
-                    <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Amount</th>
-                    <th style={{ padding: '0 0 6px 12px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>YTD</th>
+                    <th style={{ padding: '0 0 6px 0', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'left' }}>Item Name</th>
+                    <th style={{ padding: '0 0 6px 12px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>Amount</th>
+                    <th style={{ padding: '0 0 6px 12px', fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: 'right' }}>YTD</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -2275,14 +2440,14 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
             {/* Check Amount (est.) — full-width banner, matches the printed-check modal */}
             <div style={{ margin: '16px 24px 0', borderTop: '2px solid var(--border)' }} />
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px 8px' }}>
-              <div style={{ fontSize: 15, fontWeight: 700 }}>Check Amount (est.)</div>
-              <div style={{ ...MODAL_MONO, fontSize: 22, fontWeight: 800, color: r2(estNetFull) === 0 ? 'var(--warning)' : '#16a34a' }}>{r2(estNetFull) === 0 ? '⚠ ' : ''}{fmt(estNetFull)}</div>
+              <div style={{ fontSize: '1rem', fontWeight: 700 }}>Check Amount (est.)</div>
+              <div style={{ ...MODAL_MONO, fontSize: '1.4667rem', fontWeight: 800, color: r2(estNetFull) === 0 ? 'var(--warning)' : '#16a34a' }}>{r2(estNetFull) === 0 ? '⚠ ' : ''}{fmt(estNetFull)}</div>
             </div>
             {/* Other Payroll Items */}
             {hiddenPendingItems.length > 0 && (
               <div style={{ margin: '0 24px', borderTop: '1px solid var(--border)', paddingTop: 10, paddingBottom: 6 }}>
                 <button type="button" onClick={() => setPendingOtherOpen(o => !o)}
-                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                  style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
                   {pendingOtherOpen ? '▴' : '▾'} Other Payroll Items
                 </button>
                 {pendingOtherOpen && (
@@ -2290,7 +2455,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
                     {hiddenPendingItems.map(item => (
                       <button key={item.field} type="button"
                         onClick={() => { setAddedPendingItems(prev => new Set([...prev, item.field])); setPendingOtherOpen(false); }}
-                        style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-secondary)', cursor: 'pointer', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                        style={{ fontSize: '0.8rem', padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-secondary)', cursor: 'pointer', color: 'var(--text-secondary)', fontWeight: 500 }}>
                         + {item.label}
                       </button>
                     ))}
@@ -2307,22 +2472,22 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
                   skipPending(period.end, emp.id);
                   onClose();
                 }}
-                style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 16px', fontSize: 13, fontWeight: 700, cursor: 'pointer', marginRight: 'auto' }}>
+                style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 16px', fontSize: '0.8667rem', fontWeight: 700, cursor: 'pointer', marginRight: 'auto' }}>
                 🗑 Remove
               </button>
-              <button className="btn btn-ghost" onClick={closeWithFlush} style={{ fontSize: 13 }}>Close</button>
+              <button className="btn btn-ghost" onClick={closeWithFlush} style={{ fontSize: '0.8667rem' }}>Close</button>
               {/* Autosave status — pending edits save automatically */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 110, justifyContent: 'flex-end' }}>
                 {pendSaveStatus === 'saving' && (
-                  <span style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <span style={{ fontSize: '0.8667rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 5 }}>
                     <span className="spinner" style={{ width: 13, height: 13 }} /> Saving…
                   </span>
                 )}
                 {pendSaveStatus === 'saved' && (
-                  <span style={{ fontSize: 13, color: '#16a34a', fontWeight: 600 }}>✓ Saved</span>
+                  <span style={{ fontSize: '0.8667rem', color: '#16a34a', fontWeight: 600 }}>✓ Saved</span>
                 )}
                 {pendSaveStatus === 'idle' && pendingDirty && (
-                  <span style={{ fontSize: 12, color: '#f59e0b', fontWeight: 500 }}>Unsaved…</span>
+                  <span style={{ fontSize: '0.8rem', color: '#f59e0b', fontWeight: 500 }}>Unsaved…</span>
                 )}
               </div>
             </div>
@@ -2391,6 +2556,8 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
       return s;
     });
     const [otherOpen, setOtherOpen] = useState(false);
+    const [forceDeleteMsg, setForceDeleteMsg] = useState(null);
+    const [forceDeleteAck, setForceDeleteAck] = useState(false);
     // Track whether user has manually overridden each tax field so auto-estimates
     // don't overwrite explicit user input (and so we know when to pin to the DB).
     const [fitManual,  setFitManual]  = useState(false);
@@ -2418,6 +2585,10 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
       tips: String(displayedTips || ''), bonus: String(stub.bonus || ''), commission: String(stub.commission || ''),
       reimbursement: String(stub.reimbursement || ''), deduction: String(stub.deduction || ''), garnishment: String(stub.garnishment || ''),
     });
+    // Snapshot of the values as loaded when the modal opened — never updated, so
+    // "Undo all changes" can restore them even after autosaves advance `committed`.
+    const originalRef = useRef(committed);
+    const original = originalRef.current;
 
     const isDirty = !isVoided && (
       parseFloat(grossOverride || 0) !== parseFloat(committed.gross || 0) ||
@@ -2439,17 +2610,42 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
       parseFloat(itemForm.garnishment   || 0) !== parseFloat(committed.garnishment  || 0)
     );
 
+    const differsFromOriginal = !isVoided && (
+      parseFloat(grossOverride || 0) !== parseFloat(original.gross || 0) ||
+      parseFloat(fitOverride   || 0) !== parseFloat(original.fit   || 0) ||
+      parseFloat(ssOverride    || 0) !== parseFloat(original.ss    || 0) ||
+      parseFloat(medOverride   || 0) !== parseFloat(original.med   || 0) ||
+      parseFloat(erSsOverride  || 0) !== parseFloat(original.erSs  || 0) ||
+      parseFloat(erMedOverride || 0) !== parseFloat(original.erMed || 0) ||
+      parseFloat(futaOverride  || 0) !== parseFloat(original.futa  || 0) ||
+      parseFloat(sutaOverride  || 0) !== parseFloat(original.suta  || 0) ||
+      dateForm.start   !== original.dateStart ||
+      dateForm.end     !== original.dateEnd   ||
+      dateForm.payDate !== original.datePayDate ||
+      parseFloat(itemForm.reportedTips  || 0) !== parseFloat(original.tips         || 0) ||
+      parseFloat(itemForm.bonus         || 0) !== parseFloat(original.bonus        || 0) ||
+      parseFloat(itemForm.commission    || 0) !== parseFloat(original.commission   || 0) ||
+      parseFloat(itemForm.reimbursement || 0) !== parseFloat(original.reimbursement|| 0) ||
+      parseFloat(itemForm.deduction     || 0) !== parseFloat(original.deduction    || 0) ||
+      parseFloat(itemForm.garnishment   || 0) !== parseFloat(original.garnishment  || 0)
+    );
+
     const [saveStatus, setSaveStatus] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
     const autoSaveTimerRef = useRef(null);
     const savedStatusTimerRef = useRef(null);
     const isSavingRef = useRef(false);
     const needsResaveRef = useRef(false); // edits arrived while a save was in flight
+    const cancelledRef = useRef(false);   // "Close without saving" — no save may start after it
+    const undoGenRef = useRef(0);         // bumped by "Undo all changes" so in-flight saves can't clobber the restore
+    const undoRestoreRef = useRef(false); // the next successful save is the undo restore — clear the tax pins after it
 
     async function saveEdits() {
+      if (cancelledRef.current) return;
       // If a save is already running, remember that more edits came in and
       // re-save once it finishes — otherwise the concurrent edit is lost.
       if (isSavingRef.current) { needsResaveRef.current = true; return; }
       isSavingRef.current = true;
+      const gen = undoGenRef.current;
       setSaveStatus('saving');
       try {
         // The taxable base (what FIT/SS/Medicare are computed on) changes only when
@@ -2506,6 +2702,15 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
         const saved = resp && resp.paystub ? resp.paystub : null;
         savedSinceOpenRef.current = true;
 
+        if (gen !== undoGenRef.current) {
+          // "Undo all changes" ran while this save was in flight — this response
+          // reflects the pre-undo edits. Don't apply it over the restored values;
+          // queue a re-save so the restored state is what actually persists.
+          needsResaveRef.current = true;
+          setSaveStatus('idle');
+          return;
+        }
+
         if (saved) {
           // Update this modal's LOCAL stub (no parent re-render → no remount → the
           // input keeps focus). The inline table row is refreshed on close.
@@ -2538,6 +2743,14 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
         setSaveStatus('saved');
         if (savedStatusTimerRef.current) clearTimeout(savedStatusTimerRef.current);
         savedStatusTimerRef.current = setTimeout(() => setSaveStatus('idle'), 2000);
+        // The undo restore has now been persisted verbatim — unpin the tax
+        // fields so a LATER gross edit re-derives taxes instead of freezing them
+        // at the restored amounts.
+        if (undoRestoreRef.current) {
+          undoRestoreRef.current = false;
+          setFitManual(false); setSsManual(false); setMedManual(false);
+          setErSsManual(false); setErMedManual(false); setFutaManual(false); setSutaManual(false);
+        }
       } catch (e) {
         setSaveStatus('error');
         setTimeout(() => setSaveStatus('idle'), 3000);
@@ -2545,8 +2758,9 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
       } finally {
         isSavingRef.current = false;
         // A save was requested while this one was running — run it now so the
-        // later edits (e.g. a field changed mid-save) aren't dropped.
-        if (needsResaveRef.current) {
+        // later edits (e.g. a field changed mid-save) aren't dropped. Never
+        // after "Close without saving": the user opted out of persisting them.
+        if (needsResaveRef.current && !cancelledRef.current) {
           needsResaveRef.current = false;
           if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
           autoSaveTimerRef.current = setTimeout(() => saveEdits(), 150);
@@ -2717,20 +2931,21 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
     };
 
     return (
+      <>
       <ModalOverlay onClose={closeWithSave}>
-        <div className="card" style={{ width: 740, maxWidth: '96vw', maxHeight: '92vh', overflowY: 'auto', padding: 0, borderRadius: 12 }}>
+        <div className="card" style={{ width: 820, maxWidth: '96vw', maxHeight: '92vh', overflowY: 'auto', padding: 0, borderRadius: 12 }}>
 
           {/* Header */}
           <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)' }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
               <div>
-                <div style={{ fontWeight: 800, fontSize: 20, textDecoration: isVoided ? 'line-through' : 'none' }}>{stub.employee_name}</div>
+                <div style={{ fontWeight: 800, fontSize: '1.3333rem', textDecoration: isVoided ? 'line-through' : 'none' }}>{stub.employee_name}</div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
                   <StatusBadge status={stub.check_status || 'draft'} />
-                  {stub.check_number && <span style={{ ...MODAL_MONO, fontSize: 13, color: 'var(--accent)', fontWeight: 700 }}>Check #{stub.check_number}</span>}
+                  {stub.check_number && <span style={{ ...MODAL_MONO, fontSize: '0.8667rem', color: 'var(--accent)', fontWeight: 700 }}>Check #{stub.check_number}</span>}
                 </div>
               </div>
-              <button onClick={closeWithSave} aria-label="Save and close" style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+              <button onClick={closeWithSave} aria-label="Save and close" style={{ background: 'none', border: 'none', fontSize: '1.6rem', cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
             </div>
             {/* Pay period strip — editable for non-voided checks */}
             <div style={{ display: 'flex', marginTop: 14, borderRadius: 8, overflow: 'hidden', border: `1px solid ${isDirty ? 'var(--accent)' : 'var(--border)'}`, background: 'var(--bg-secondary)', transition: 'border-color 0.15s' }}>
@@ -2738,31 +2953,38 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
                 { label: 'Period Start', key: 'start',   raw: stub.pay_period_start },
                 { label: 'Period End',   key: 'end',     raw: stub.pay_period_end   },
                 { label: 'Pay Date',     key: 'payDate', raw: stub.settlement_date  },
-              ].map(({ label, key, raw }, i, arr) => (
-                <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
-                  {isVoided
-                    ? <div style={{ ...MODAL_MONO, fontSize: 13, fontWeight: 600 }}>{fmtDate(raw)}</div>
-                    : <input type="date" value={dateForm[key]}
-                        onChange={e => setDateForm(f => ({ ...f, [key]: e.target.value }))}
-                        style={{ ...MODAL_MONO, fontSize: 13, fontWeight: 600, background: 'transparent', border: 'none', outline: 'none', width: '100%', color: dateForm[key] !== (raw || '') ? 'var(--accent)' : 'var(--text-primary)', cursor: 'pointer' }} />
-                  }
-                </div>
-              ))}
+              ].map(({ label, key, raw }, i, arr) => {
+                const loaded = key === 'start' ? original.dateStart : key === 'end' ? original.dateEnd : original.datePayDate;
+                const edited = !isVoided && dateForm[key] !== (loaded || '');
+                return (
+                  <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
+                      {edited && <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#92400e', background: '#fef3c7', borderRadius: 999, padding: '1px 8px' }}>edited</span>}
+                    </div>
+                    {isVoided
+                      ? <div style={{ ...MODAL_MONO, fontSize: '1rem', fontWeight: 600 }}>{fmtDate(raw)}</div>
+                      : <input type="date" value={dateForm[key]}
+                          onChange={e => setDateForm(f => ({ ...f, [key]: e.target.value }))}
+                          style={{ ...MODAL_MONO, fontSize: '1rem', fontWeight: 600, background: '#fff', border: '1px solid var(--border)', borderRadius: 6, outline: 'none', width: '100%', height: 40, padding: '0 10px', boxSizing: 'border-box', color: edited ? 'var(--accent)' : 'var(--text-primary)', cursor: 'pointer' }} />
+                    }
+                  </div>
+                );
+              })}
             </div>
             {!isVoided && periodDateWarning(dateForm.start, dateForm.end, dateForm.payDate) && (
-              <div style={{ color: 'var(--error)', fontSize: 11, fontWeight: 600, marginTop: 6 }}>
+              <div style={{ color: 'var(--error)', fontSize: '0.7333rem', fontWeight: 600, marginTop: 6 }}>
                 {periodDateWarning(dateForm.start, dateForm.end, dateForm.payDate)}
               </div>
             )}
           </div>
 
           {/* Two-column body */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
 
             {/* Left — Employee Summary */}
             <div style={{ padding: '18px 20px 0 24px', borderRight: '1px solid var(--border)' }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Employee Summary</div>
+              <div style={{ fontSize: '0.7333rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Employee Summary</div>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <ColHeader hasYTD={true} />
                 <tbody>
@@ -2782,7 +3004,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
 
             {/* Right — Company Summary */}
             <div style={{ padding: '18px 24px 0 20px' }}>
-              <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Company Summary</div>
+              <div style={{ fontSize: '0.7333rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Company Summary</div>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <ColHeader hasYTD={true} />
                 <tbody>
@@ -2796,8 +3018,8 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
           {/* Check Amount + tax bar */}
           <div style={{ margin: '16px 24px 0', borderTop: '2px solid var(--border)' }} />
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px 4px' }}>
-            <div style={{ fontSize: 15, fontWeight: 700 }}>Check Amount</div>
-            <div style={{ ...MODAL_MONO, fontSize: 22, fontWeight: 800, color: '#16a34a' }}>{fmt(liveNetPay)}</div>
+            <div style={{ fontSize: '1rem', fontWeight: 700 }}>Check Amount</div>
+            <div style={{ ...MODAL_MONO, fontSize: '1.4667rem', fontWeight: 800, color: '#16a34a' }}>{fmt(liveNetPay)}</div>
           </div>
           <div style={{ display: 'flex', gap: 0, margin: '12px 24px 0', borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
             {(() => {
@@ -2818,8 +3040,8 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
               ];
             })().map(({ label, value, accent }, i, arr) => (
               <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none', background: accent ? 'var(--accent-light)' : undefined }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
-                <div style={{ ...MODAL_MONO, fontSize: 14, fontWeight: 800, color: accent ? 'var(--accent)' : 'var(--text-primary)' }}>{value}</div>
+                <div style={{ fontSize: '0.8667rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
+                <div style={{ ...MODAL_MONO, fontSize: '0.9333rem', fontWeight: 800, color: accent ? 'var(--accent)' : 'var(--text-primary)' }}>{value}</div>
               </div>
             ))}
           </div>
@@ -2828,7 +3050,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
           {canEdit && hiddenItems.length > 0 && (
             <div style={{ margin: '0 24px', borderTop: '1px solid var(--border)', paddingTop: 10, paddingBottom: 6 }}>
               <button type="button" onClick={() => setOtherOpen(o => !o)}
-                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
                 {otherOpen ? '▴' : '▾'} Other Payroll Items
               </button>
               {otherOpen && (
@@ -2836,7 +3058,7 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
                   {hiddenItems.map(item => (
                     <button key={item.key} type="button"
                       onClick={() => { setAddedItems(prev => new Set([...prev, item.key])); setOtherOpen(false); }}
-                      style={{ fontSize: 12, padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-secondary)', cursor: 'pointer', color: 'var(--text-secondary)', fontWeight: 500 }}>
+                      style={{ fontSize: '0.8rem', padding: '4px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-secondary)', cursor: 'pointer', color: 'var(--text-secondary)', fontWeight: 500 }}>
                       + {item.label}
                     </button>
                   ))}
@@ -2856,27 +3078,27 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
                   // The backend blocks deleting checks whose 941/940 deposit was
                   // already submitted (409). Offer the explicit override.
                   if (/already submitted/i.test(e.message || '')) {
-                    if (window.confirm(`${e.message}\n\nDelete anyway?`)) {
-                      try { await api.deletePaystub(stub.id, { force: true }); onClose(); reloadStubs(); }
-                      catch (e2) { alert(e2.message); }
-                    }
+                    setForceDeleteAck(false);
+                    setForceDeleteMsg(e.message);
                   } else alert(e.message);
                 }
-              }} style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 18px', fontSize: 14, fontWeight: 700, cursor: 'pointer' }}>
+              }} style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 7, padding: '8px 18px', fontSize: '0.9333rem', fontWeight: 700, cursor: 'pointer' }}>
                 🗑 Delete
               </button>
             )}
             <div style={{ flex: 1 }} />
-            <button className="btn btn-ghost" onClick={async () => {
-              if (autoSaveTimerRef.current) {
-                clearTimeout(autoSaveTimerRef.current);
-                autoSaveTimerRef.current = null;
-                if (isDirty) await saveEdits();
-              }
+            <button className="btn btn-ghost" onClick={() => {
+              // Discard edits still waiting on the autosave debounce and close.
+              // Edits that already autosaved remain — "Undo all changes" reverses those.
+              // cancelledRef also blocks any in-flight save's queued re-save from
+              // firing after unmount and persisting the discarded values.
+              cancelledRef.current = true;
+              needsResaveRef.current = false;
+              if (autoSaveTimerRef.current) { clearTimeout(autoSaveTimerRef.current); autoSaveTimerRef.current = null; }
               onClose();
-            }} style={{ fontSize: 13 }}>Close</button>
+            }} style={{ fontSize: '0.8667rem' }}>Close without saving</button>
             <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
-              <button className="btn btn-ghost" style={{ fontSize: 13, borderRadius: '6px 0 0 6px', borderRight: 'none' }}
+              <button className="btn btn-ghost" style={{ fontSize: '0.8667rem', borderRadius: '6px 0 0 6px', borderRight: 'none' }}
                 onClick={async () => {
                   try { await api.printSelectedChecks(clientId, [stub.id], checkDesign); } catch (e) { alert(e.message); }
                 }}>
@@ -2885,59 +3107,97 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
               <select
                 value={checkDesign}
                 onChange={e => { setCheckDesign(e.target.value); localStorage.setItem('checkDesign', e.target.value); }}
-                style={{ fontSize: 12, border: '1px solid var(--border)', borderRadius: 0, padding: '6px 4px', background: 'var(--bg-primary)', cursor: 'pointer', color: 'var(--text-secondary)' }}
+                style={{ fontSize: '0.8rem', border: '1px solid var(--border)', borderRadius: 0, padding: '6px 4px', background: 'var(--bg-primary)', cursor: 'pointer', color: 'var(--text-secondary)' }}
               >
                 <option value="classic">Classic</option>
                 <option value="micr">MICR (Check Printer)</option>
                 <option value="top">Top Check</option>
               </select>
             </div>
-            <button className="btn btn-ghost" style={{ fontSize: 13 }} onClick={async () => {
+            <button className="btn btn-ghost" style={{ fontSize: '0.8667rem' }} onClick={async () => {
               try { await api.printSelectedPaystubs(clientId, [stub.id]); } catch (e) { alert(e.message); }
             }}>↓ Paystub</button>
-            {isDirty && (
+            {differsFromOriginal && (
               <button onClick={() => {
                 if (autoSaveTimerRef.current) { clearTimeout(autoSaveTimerRef.current); autoSaveTimerRef.current = null; }
-                setGrossOverride(committed.gross);
-                setFitOverride(committed.fit);
-                setSsOverride(committed.ss);
-                setMedOverride(committed.med);
-                setItemForm({ reportedTips: committed.tips, bonus: committed.bonus, commission: committed.commission, reimbursement: committed.reimbursement, deduction: committed.deduction, garnishment: committed.garnishment });
-                setDateForm({ start: committed.dateStart, end: committed.dateEnd, payDate: committed.datePayDate });
+                // Invalidate any in-flight save (its response reflects pre-undo
+                // edits) and mark the next successful save as the restore, after
+                // which the tax pins below are cleared again.
+                undoGenRef.current++;
+                undoRestoreRef.current = true;
+                setGrossOverride(original.gross);
+                setFitOverride(original.fit);
+                setSsOverride(original.ss);
+                setMedOverride(original.med);
+                setErSsOverride(original.erSs);
+                setErMedOverride(original.erMed);
+                setFutaOverride(original.futa);
+                setSutaOverride(original.suta);
+                setItemForm({ reportedTips: original.tips, bonus: original.bonus, commission: original.commission, reimbursement: original.reimbursement, deduction: original.deduction, garnishment: original.garnishment });
+                setDateForm({ start: original.dateStart, end: original.dateEnd, payDate: original.datePayDate });
                 const s = new Set();
-                if (parseFloat(committed.tips)         > 0) s.add('reportedTips');
-                if (parseFloat(committed.bonus)        > 0) s.add('bonus');
-                if (parseFloat(committed.commission)   > 0) s.add('commission');
-                if (parseFloat(committed.reimbursement)> 0) s.add('reimbursement');
-                if (parseFloat(committed.deduction)    > 0) s.add('deduction');
-                if (parseFloat(committed.garnishment)  > 0) s.add('garnishment');
+                if (parseFloat(original.tips)         > 0) s.add('reportedTips');
+                if (parseFloat(original.bonus)        > 0) s.add('bonus');
+                if (parseFloat(original.commission)   > 0) s.add('commission');
+                if (parseFloat(original.reimbursement)> 0) s.add('reimbursement');
+                if (parseFloat(original.deduction)    > 0) s.add('deduction');
+                if (parseFloat(original.garnishment)  > 0) s.add('garnishment');
                 setAddedItems(s);
                 setOtherOpen(false);
-                // Clear manual-tax flags so reverted tax fields re-derive on the
-                // next gross change instead of staying stuck "manual".
-                setFitManual(false); setSsManual(false); setMedManual(false);
+                // Pin every tax field so the restored original values save back
+                // verbatim instead of being re-derived from the restored gross.
+                setFitManual(true); setSsManual(true); setMedManual(true);
+                setErSsManual(true); setErMedManual(true); setFutaManual(true); setSutaManual(true);
                 setSaveStatus('idle');
-              }} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer', color: 'var(--text-secondary)' }}>Revert</button>
+              }} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 7, padding: '8px 16px', fontSize: '0.8667rem', fontWeight: 600, cursor: 'pointer', color: 'var(--text-secondary)' }}>Undo all changes</button>
             )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 110, justifyContent: 'flex-end' }}>
               {saveStatus === 'saving' && (
-                <span style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <span style={{ fontSize: '0.8667rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 5 }}>
                   <span className="spinner" style={{ width: 13, height: 13 }} /> Saving…
                 </span>
               )}
               {saveStatus === 'saved' && (
-                <span style={{ fontSize: 13, color: '#16a34a', fontWeight: 600 }}>✓ Saved</span>
+                <span style={{ fontSize: '0.8667rem', color: '#16a34a', fontWeight: 600 }}>✓ Saved</span>
               )}
               {saveStatus === 'error' && (
-                <span style={{ fontSize: 13, color: '#dc2626', fontWeight: 600 }}>✗ Error</span>
+                <span style={{ fontSize: '0.8667rem', color: '#dc2626', fontWeight: 600 }}>✗ Error</span>
               )}
               {saveStatus === 'idle' && isDirty && (
-                <span style={{ fontSize: 12, color: '#f59e0b', fontWeight: 500 }}>Unsaved…</span>
+                <span style={{ fontSize: '0.8rem', color: '#f59e0b', fontWeight: 500 }}>Unsaved…</span>
               )}
             </div>
+            <button className="btn btn-primary" onClick={closeWithSave} style={{ fontSize: '0.9333rem', fontWeight: 700, padding: '10px 18px' }}>Save & Close</button>
           </div>
         </div>
       </ModalOverlay>
+      {forceDeleteMsg && (
+        <ModalOverlay onClose={() => setForceDeleteMsg(null)}>
+          <div className="card" style={{ width: 480, maxWidth: '92vw', padding: 24, borderRadius: 12 }}>
+            <div style={{ fontWeight: 800, fontSize: '1.2rem', marginBottom: 10 }}>This check is part of a filed tax deposit</div>
+            <div style={{ fontSize: '1rem', color: 'var(--text-primary)', lineHeight: 1.5, marginBottom: 8 }}>
+              Its 941/940 deposit was already submitted to the IRS. Deleting it will make your records disagree with what was filed.
+            </div>
+            <div style={{ fontSize: '0.8667rem', color: 'var(--text-secondary)', lineHeight: 1.5, marginBottom: 16 }}>{forceDeleteMsg}</div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: '0.9333rem', fontWeight: 600, cursor: 'pointer', marginBottom: 18 }}>
+              <input type="checkbox" checked={forceDeleteAck} onChange={e => setForceDeleteAck(e.target.checked)} style={{ width: 18, height: 18, cursor: 'pointer' }} />
+              I understand this cannot be undone
+            </label>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button disabled={!forceDeleteAck} onClick={async () => {
+                try { await api.deletePaystub(stub.id, { force: true }); setForceDeleteMsg(null); onClose(); reloadStubs(); }
+                catch (e2) { alert(e2.message); }
+              }} style={{ background: forceDeleteAck ? '#dc2626' : 'var(--bg-secondary)', color: forceDeleteAck ? '#fff' : 'var(--text-muted)', border: 'none', borderRadius: 7, padding: '10px 18px', fontSize: '0.9333rem', fontWeight: 700, cursor: forceDeleteAck ? 'pointer' : 'not-allowed' }}>
+                Delete it permanently
+              </button>
+              <button autoFocus className="btn btn-primary" onClick={() => setForceDeleteMsg(null)} style={{ fontSize: '0.9333rem', fontWeight: 700, padding: '10px 18px' }}>
+                Keep the check
+              </button>
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
+      </>
     );
   }
 
@@ -3029,6 +3289,29 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
   const [ugErr, setUgErr]                         = useState('');
   // Real FIT/state tax estimates per pending row, keyed by `${empId}_${periodEnd}_${grossCents}`
   const [calcCache, setCalcCache]                 = useState({});
+  const empStatusTriggerRef                       = useRef(null); // the badge button the open status menu belongs to
+  const [focusedRowInfo, setFocusedRowInfo]       = useState(null); // { key, name, top, left } — row identity while typing hours/rate
+  // Keep the chip glued to its input while the page or table scrolls — a fixed
+  // chip at stale coordinates would hover beside the WRONG row, misleading the
+  // very users it exists to orient.
+  useEffect(() => {
+    if (!focusedRowInfo) return;
+    let raf = null;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = null;
+        const el = document.activeElement;
+        if (!el || el.tagName !== 'INPUT' || !el.isConnected) { setFocusedRowInfo(null); return; }
+        const r = el.getBoundingClientRect();
+        if (r.bottom < 0 || r.top > window.innerHeight) { setFocusedRowInfo(null); return; }
+        setFocusedRowInfo(info => info ? { ...info, top: r.top, left: r.left } : info);
+      });
+    };
+    window.addEventListener('scroll', onScroll, true);
+    return () => { window.removeEventListener('scroll', onScroll, true); if (raf) cancelAnimationFrame(raf); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!focusedRowInfo]);
 
   useEffect(() => {
     api.getPayGroups(clientId)
@@ -3420,9 +3703,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
     const lateCount = selectedLateStubs.size + selectedHistoryLateIds.length;
     if (reviewRows.length + lateCount > 0) {
       const totalGross = reviewRows.reduce((s, r) => s + r.gross, 0);
-      const methodLabel = forceMethod === 'dd' ? 'paid by direct deposit (real ACH transfers)'
-                        : forceMethod === 'paystub' ? 'processed as paper checks (print pay stubs)'
-                        : 'processed as paper checks (print paychecks)';
+      const methodLabel = forceMethod === 'dd' ? 'paid by direct deposit (real ACH transfers — moves money)'
+                        : forceMethod === 'paystub' ? 'processed as paper checks (no money moves — prints pay stubs)'
+                        : 'processed as paper checks (no money moves — prints a check)';
       const lines = [
         `Run payroll for ${reviewRows.length + lateCount} check${reviewRows.length + lateCount === 1 ? '' : 's'}${reviewRows.length ? ` — total gross ${fmt(totalGross)}` : ''}?`,
         '',
@@ -3555,15 +3838,37 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
     if (!empStatusDrop) return;
     const close = () => setEmpStatusDrop(null);
     const onKey = e => { if (e.key === 'Escape') close(); };
+    // Follow the trigger on scroll instead of closing — only close once the
+    // trigger has scrolled fully out of view.
+    let raf = 0;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        const el = empStatusTriggerRef.current;
+        if (!el || !el.isConnected) { close(); return; }
+        const r = el.getBoundingClientRect();
+        if (r.bottom < 0 || r.top > window.innerHeight) { close(); return; }
+        const openUp = r.bottom + 200 > window.innerHeight;
+        setEmpStatusDrop(prev => prev ? {
+          ...prev,
+          top:    openUp ? undefined : r.bottom + 4,
+          bottom: openUp ? window.innerHeight - r.top + 4 : undefined,
+          right:  window.innerWidth - r.right,
+        } : prev);
+      });
+    };
     document.addEventListener('click', close);
     document.addEventListener('keydown', onKey);
-    document.addEventListener('scroll', close, true);
+    document.addEventListener('scroll', onScroll, { capture: true, passive: true });
     return () => {
+      if (raf) cancelAnimationFrame(raf);
       document.removeEventListener('click', close);
       document.removeEventListener('keydown', onKey);
-      document.removeEventListener('scroll', close, true);
+      document.removeEventListener('scroll', onScroll, true);
     };
-  }, [empStatusDrop]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [!!empStatusDrop]);
 
   async function handleEmpStatusChange(drop, newStatus) {
     if (empStatusBusy) return; // a run is already in flight — a second click would duplicate the paycheck
@@ -3571,7 +3876,15 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
     // Setting a status on a PENDING row actually runs payroll — make that explicit.
     if (!drop.stub && newStatus !== 'draft') {
       const emp = drop.emp;
-      const ok = window.confirm(`This runs payroll for ${emp.firstName} ${emp.lastName} (creates the check and its tax liabilities), then marks it ${newStatus === 'printed' ? 'Printed' : 'Deposited'}. Continue?`);
+      // 'printed' is sent as paymentMethod 'print' (never fires ACH); anything else
+      // goes as 'auto', which DOES fire a real ACH transfer when the employee has
+      // active direct deposit — say which one truthfully.
+      const statusPhrase = newStatus === 'printed'
+        ? 'Printed — no money moves; prints a check'
+        : emp.directDeposit?.status === 'active'
+          ? 'Deposited — sends a real ACH transfer (moves money)'
+          : 'Deposited — records it as paid; no money moves (no active direct deposit on file)';
+      const ok = window.confirm(`This runs payroll for ${emp.firstName} ${emp.lastName} (creates the check and its tax liabilities), then marks it ${statusPhrase}. Continue?`);
       if (!ok) return;
     }
     setEmpStatusBusy(drop);
@@ -3881,14 +4194,14 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
       totals.reg += regH; totals.ot += otH; totals.net += net;
       if (sel) { selTotals.reg += regH; selTotals.ot += otH; selTotals.net += net; selTotals.count++; }
     });
-    const footCell = { padding: '10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, fontSize: 13 };
+    const footCell = { padding: '10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, fontSize: '0.8667rem' };
 
     return (
       /* min-width stops the fixed columns collapsing into each other on phones —
          the grid scrolls sideways inside .table-scroll instead of overlapping text */
       <div className="table-scroll">
       {/* fixed cols total 730px — keep ≥160px for the employee-name column */}
-      <table style={{ width: '100%', minWidth: 960, borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: 15 }}>
+      <table style={{ width: '100%', minWidth: 960, borderCollapse: 'collapse', tableLayout: 'fixed', fontSize: '1rem' }}>
         <colgroup>
           <col style={{ width: 40 }} />
           <col />
@@ -3904,23 +4217,23 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
         </colgroup>
         <thead>
           <tr style={{ borderBottom: '2px solid #d0d7de', background: '#f6f8fa' }}>
-            <th style={{ padding: '11px 0 11px 14px' }}>
+            <th style={{ padding: '11px 0 11px 14px', position: 'sticky', left: 0, zIndex: 4, background: '#f6f8fa' }}>
               {totalSelectable > 0 && (
                 <input type="checkbox" checked={allSel} ref={el => { if (el) el.indeterminate = someSel && !allSel; }}
                   onChange={toggleAll}
-                  style={{ accentColor: 'var(--accent)', width: 16, height: 16, cursor: 'pointer' }} />
+                  style={{ accentColor: 'var(--accent)', width: 20, height: 20, cursor: 'pointer' }} />
               )}
             </th>
-            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Employee</th>
-            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Check #</th>
-            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Period Start</th>
-            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Period End</th>
-            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Pay Date</th>
-            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Reg Hrs</th>
-            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.04em' }}>OT Hrs</th>
-            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Rate</th>
-            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Net Pay</th>
-            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: 12, color: '#5a6a7e', textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Status</th>
+            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: '0.8rem', color: '#5a6a7e', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.04em', position: 'sticky', left: 40, zIndex: 4, background: '#f6f8fa' }}>Employee</th>
+            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: '0.8rem', color: '#5a6a7e', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Check #</th>
+            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: '0.8rem', color: '#5a6a7e', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Period Start</th>
+            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: '0.8rem', color: '#5a6a7e', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Period End</th>
+            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: '0.8rem', color: '#5a6a7e', textAlign: 'left', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Pay Date</th>
+            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: '0.8rem', color: '#5a6a7e', textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Reg Hrs</th>
+            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: '0.8rem', color: '#5a6a7e', textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.04em' }}>OT Hrs</th>
+            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: '0.8rem', color: '#5a6a7e', textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Rate</th>
+            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: '0.8rem', color: '#5a6a7e', textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Net Pay</th>
+            <th style={{ padding: '11px 10px', fontWeight: 700, fontSize: '0.8rem', color: '#5a6a7e', textAlign: 'right', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Status</th>
           </tr>
         </thead>
         <tbody>
@@ -3945,49 +4258,53 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
               return (
                 <React.Fragment key={rowData.key}>
                 <tr
-                  style={{ background: rowBg, borderBottom: '1px solid #e1e7ed', cursor: 'pointer' }}
+                  style={{ background: rowBg, borderBottom: '1px solid #e1e7ed', cursor: 'pointer', ...(focusedRowInfo?.key === rowData.key ? { outline: '2px solid var(--accent)', outlineOffset: -2 } : {}) }}
                   onClick={e => { if (e.target.type !== 'checkbox' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') setDetailModal(rowData); }}
                 >
-                  <td style={{ padding: '0 0 0 14px' }}>
+                  <td style={{ padding: '0 0 0 14px', cursor: 'pointer', position: 'sticky', left: 0, zIndex: 2, background: 'inherit' }}
+                    onClick={e => { e.stopPropagation(); if (e.target.type !== 'checkbox') setRow(rawPeriod.end, emp.id, 'selected', !row.selected); }}>
                     <input type="checkbox" checked={row.selected}
-                      style={{ accentColor: 'var(--accent)', width: 16, height: 16, cursor: 'pointer' }}
+                      style={{ accentColor: 'var(--accent)', width: 20, height: 20, cursor: 'pointer' }}
                       onChange={ev => setRow(rawPeriod.end, emp.id, 'selected', ev.target.checked)} />
                   </td>
-                  <td style={{ padding: '7px 8px', fontWeight: 600 }}>
+                  <td style={{ padding: '7px 8px', fontWeight: 600, position: 'sticky', left: 40, zIndex: 2, background: 'inherit' }}>
                     <button onClick={e => { e.stopPropagation(); setDrawerEmpId(emp.id); }}
-                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 700, fontSize: 15, color: 'var(--accent)', textDecoration: 'underline' }}>
+                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 700, fontSize: '1rem', color: 'var(--accent)', textDecoration: 'underline' }}>
                       {emp.firstName} {emp.lastName}
                     </button>
                   </td>
-                  <td style={{ padding: '12px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, color: 'var(--text-muted)' }}>—</td>
-                  <td style={{ padding: '12px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600, color: ov.start ? 'var(--accent)' : '#222' }}>{fmtDate(period.start)}</td>
-                  <td style={{ padding: '12px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600, color: ov.end ? 'var(--accent)' : '#222' }}>{fmtDate(period.end)}</td>
-                  <td style={{ padding: '12px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600, color: isLate ? '#dc2626' : ov.payDate ? 'var(--accent)' : '#222' }}>{fmtDate(period.payDate)}</td>
+                  <td style={{ padding: '12px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem', color: 'var(--text-muted)' }}>—</td>
+                  <td style={{ padding: '12px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.9333rem', fontWeight: 600, color: ov.start ? 'var(--accent)' : '#222' }}>{fmtDate(period.start)}</td>
+                  <td style={{ padding: '12px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.9333rem', fontWeight: 600, color: ov.end ? 'var(--accent)' : '#222' }}>{fmtDate(period.end)}</td>
+                  <td style={{ padding: '12px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.9333rem', fontWeight: 600, color: isLate ? '#dc2626' : ov.payDate ? 'var(--accent)' : '#222' }}>{fmtDate(period.payDate)}</td>
                   {isSalary ? (
                     <>
-                      <td colSpan={3} style={{ padding: '7px 8px', textAlign: 'right', color: 'var(--text-secondary)', fontSize: 11 }}>salary</td>
+                      <td colSpan={3} style={{ padding: '7px 8px', textAlign: 'right', color: 'var(--text-secondary)', fontSize: '0.7333rem' }}>salary</td>
                     </>
                   ) : (
                     <>
-                      <td style={{ padding: '4px 6px' }}>
+                      <td style={{ padding: '4px 6px' }} onClick={e => { e.stopPropagation(); const inp = e.currentTarget.querySelector('input'); if (inp && e.target !== inp) inp.focus(); }}>
                         <input className="form-input mono" type="text" inputMode="decimal" value={row.regHours} placeholder="0"
                           onChange={ev => setRow(rawPeriod.end, emp.id, 'regHours', cleanDecimal(ev.target.value))}
-                          onFocus={ev => ev.target.select()}
-                          style={{ width: '100%', height: 46, fontSize: 16, textAlign: 'right', padding: '0 8px', borderRadius: 0, border: `2px solid ${row.regHours && isNaN(parseFloat(row.regHours)) ? 'var(--error)' : '#b0bec5'}`, fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
+                          onFocus={ev => { ev.target.select(); const r = ev.target.getBoundingClientRect(); setFocusedRowInfo({ key: rowData.key, name: `${emp.firstName} ${emp.lastName}`, top: r.top, left: r.left }); }}
+                          onBlur={() => setFocusedRowInfo(f => (f && f.key === rowData.key ? null : f))}
+                          style={{ width: '100%', height: 46, fontSize: '1.0667rem', textAlign: 'right', padding: '0 8px', borderRadius: 0, border: `2px solid ${row.regHours && isNaN(parseFloat(row.regHours)) ? 'var(--error)' : '#b0bec5'}`, fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
                       </td>
-                      <td style={{ padding: '4px 6px' }}>
+                      <td style={{ padding: '4px 6px' }} onClick={e => { e.stopPropagation(); const inp = e.currentTarget.querySelector('input'); if (inp && e.target !== inp) inp.focus(); }}>
                         <input className="form-input mono" type="text" inputMode="decimal" value={row.otHours} placeholder="0"
                           onChange={ev => setRow(rawPeriod.end, emp.id, 'otHours', cleanDecimal(ev.target.value))}
-                          onFocus={ev => ev.target.select()}
-                          style={{ width: '100%', height: 46, fontSize: 16, textAlign: 'right', padding: '0 8px', borderRadius: 0, border: `2px solid ${row.otHours && isNaN(parseFloat(row.otHours)) ? 'var(--error)' : '#b0bec5'}`, fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
+                          onFocus={ev => { ev.target.select(); const r = ev.target.getBoundingClientRect(); setFocusedRowInfo({ key: rowData.key, name: `${emp.firstName} ${emp.lastName}`, top: r.top, left: r.left }); }}
+                          onBlur={() => setFocusedRowInfo(f => (f && f.key === rowData.key ? null : f))}
+                          style={{ width: '100%', height: 46, fontSize: '1.0667rem', textAlign: 'right', padding: '0 8px', borderRadius: 0, border: `2px solid ${row.otHours && isNaN(parseFloat(row.otHours)) ? 'var(--error)' : '#b0bec5'}`, fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
                       </td>
-                      <td style={{ padding: '4px 6px' }}>
+                      <td style={{ padding: '4px 6px' }} onClick={e => { e.stopPropagation(); const inp = e.currentTarget.querySelector('input'); if (inp && e.target !== inp) inp.focus(); }}>
                         <input className="form-input mono" type="text" inputMode="decimal"
                           value={row.rate !== undefined ? row.rate : String(emp.hourlyRate || '')}
                           placeholder={String(emp.hourlyRate || '')}
                           onChange={ev => setRow(rawPeriod.end, emp.id, 'rate', cleanDecimal(ev.target.value))}
-                          onFocus={ev => ev.target.select()}
+                          onFocus={ev => { ev.target.select(); const r = ev.target.getBoundingClientRect(); setFocusedRowInfo({ key: rowData.key, name: `${emp.firstName} ${emp.lastName}`, top: r.top, left: r.left }); }}
                           onBlur={ev => {
+                            setFocusedRowInfo(f => (f && f.key === rowData.key ? null : f));
                             const entered = parseFloat(ev.target.value);
                             if (!isNaN(entered) && entered !== emp.hourlyRate) {
                               const next = ev.relatedTarget;
@@ -3997,27 +4314,27 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                               }
                             }
                           }}
-                          style={{ width: '100%', height: 46, fontSize: 16, textAlign: 'right', padding: '0 8px', borderRadius: 0, border: `2px solid ${row.rate !== undefined && String(row.rate).trim() !== '' && isNaN(parseFloat(row.rate)) ? 'var(--error)' : '#b0bec5'}`, fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
+                          style={{ width: '100%', height: 46, fontSize: '1.0667rem', textAlign: 'right', padding: '0 8px', borderRadius: 0, border: `2px solid ${row.rate !== undefined && String(row.rate).trim() !== '' && isNaN(parseFloat(row.rate)) ? 'var(--error)' : '#b0bec5'}`, fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
                       </td>
                     </>
                   )}
                   <td title="Estimated — final net pay is computed when payroll runs"
-                    style={{ padding: '12px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: grossPreview > 0 ? 'var(--success, #16a34a)' : '#aaa', fontSize: 15 }}>
-                    {grossPreview > 0 ? <>{fmt(estNetPay)}<span style={{ fontSize: 10, fontWeight: 500, color: '#9ca3af', marginLeft: 3 }}>est.</span></> : '—'}
+                    style={{ padding: '12px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: grossPreview > 0 ? '#047857' : 'var(--text-muted)', fontSize: '1rem' }}>
+                    {grossPreview > 0 ? <>{fmt(estNetPay)}<span style={{ fontSize: '0.8rem', fontWeight: 500, color: '#475569', marginLeft: 3 }}>est.</span></> : '—'}
                   </td>
                   <td style={{ padding: '8px 10px', textAlign: 'right' }}>
                     {empStatusBusy && !empStatusBusy.stub && empStatusBusy.period?.end === period.end && empStatusBusy.emp?.id === emp.id ? (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-secondary)' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                         <span className="spinner spinner-dark" style={{ width: 12, height: 12 }} /> Creating check…
                       </span>
                     ) : (
                     <button type="button" title="Click to change status"
                       aria-label={`Change status for ${emp.firstName} ${emp.lastName}`}
                       aria-expanded={!!(empStatusDrop?.period?.end === period.end && empStatusDrop?.emp?.id === emp.id)}
-                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}
-                      onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); const openUp = r.bottom + 200 > window.innerHeight; setEmpStatusDrop(empStatusDrop?.period?.end === period.end && empStatusDrop?.emp?.id === emp.id ? null : { period, emp, ...(openUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }), right: window.innerWidth - r.right }); }}>
+                      style={{ background: 'none', border: 'none', padding: '6px 4px', minHeight: 32, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}
+                      onClick={e => { e.stopPropagation(); empStatusTriggerRef.current = e.currentTarget; const r = e.currentTarget.getBoundingClientRect(); const openUp = r.bottom + 200 > window.innerHeight; setEmpStatusDrop(empStatusDrop?.period?.end === period.end && empStatusDrop?.emp?.id === emp.id ? null : { period, emp, ...(openUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }), right: window.innerWidth - r.right }); }}>
                       <StatusBadge status={status} />
-                      <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>▾</span>
+                      <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>▾</span>
                     </button>
                     )}
                   </td>
@@ -4043,25 +4360,26 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                 style={{ background: rowBg, opacity: isVoided ? 0.5 : 1, borderBottom: '1px solid #e1e7ed', cursor: 'pointer' }}
                 onClick={e => { if (e.target.type !== 'checkbox' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'BUTTON') setDetailModal(rowData); }}
               >
-                <td style={{ padding: '0 0 0 14px' }}>
+                <td style={{ padding: '0 0 0 14px', cursor: isVoided ? 'default' : 'pointer', position: 'sticky', left: 0, zIndex: 2, background: 'inherit' }}
+                  onClick={e => { e.stopPropagation(); if (!isVoided && e.target.type !== 'checkbox') setSelectedHistoryStubs(prev => { const next = new Set(prev); next.has(stub.id) ? next.delete(stub.id) : next.add(stub.id); return next; }); }}>
                   {!isVoided && (
                     <input type="checkbox"
                       checked={selectedHistoryStubs.has(stub.id)}
                       onChange={e => { e.stopPropagation(); setSelectedHistoryStubs(prev => { const next = new Set(prev); next.has(stub.id) ? next.delete(stub.id) : next.add(stub.id); return next; }); }}
-                      style={{ accentColor: 'var(--accent)', width: 16, height: 16, cursor: 'pointer' }} />
+                      style={{ accentColor: 'var(--accent)', width: 20, height: 20, cursor: 'pointer' }} />
                   )}
                 </td>
-                <td style={{ padding: '7px 8px' }}>
+                <td style={{ padding: '7px 8px', position: 'sticky', left: 40, zIndex: 2, background: 'inherit' }}>
                   {stub.employee_id ? (
                     <button onClick={e => { e.stopPropagation(); setDrawerEmpId(stub.employee_id); }}
-                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 700, fontSize: 15, color: 'var(--accent)', textDecoration: 'underline', textDecorationStyle: isVoided ? 'line-through' : 'underline' }}>
+                      style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontWeight: 700, fontSize: '1rem', color: 'var(--accent)', textDecoration: 'underline', textDecorationStyle: isVoided ? 'line-through' : 'underline' }}>
                       {stub.employee_name}
                     </button>
                   ) : (
-                    <span style={{ fontWeight: 700, fontSize: 13, color: '#111', textDecoration: isVoided ? 'line-through' : 'none' }}>{stub.employee_name}</span>
+                    <span style={{ fontWeight: 700, fontSize: '0.8667rem', color: '#111', textDecoration: isVoided ? 'line-through' : 'none' }}>{stub.employee_name}</span>
                   )}
                 </td>
-                <td style={{ padding: '14px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 700, color: stub.check_number ? 'var(--accent)' : 'var(--text-muted)' }}>
+                <td style={{ padding: '14px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem', fontWeight: 700, color: stub.check_number ? 'var(--accent)' : 'var(--text-muted)' }}>
                   {stub.check_number ? `#${stub.check_number}` : '—'}
                 </td>
                 {isEditingPeriod ? (
@@ -4069,24 +4387,25 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                     <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
                       <input type="date" value={periodEdit.start}
                         onChange={e => setPeriodEdit(p => ({ ...p, start: e.target.value }))}
-                        style={{ height: 36, fontSize: 13, border: '1px solid var(--border)', borderRadius: 0, padding: '0 4px' }} />
-                      <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>–</span>
+                        style={{ height: 40, fontSize: '0.9333rem', border: '1px solid var(--border)', borderRadius: 0, padding: '0 4px' }} />
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.8333rem' }}>–</span>
                       <input type="date" value={periodEdit.end}
                         onChange={e => { const end = e.target.value; setPeriodEdit(p => ({ ...p, end, payDate: end ? calcDefaultPayDate(end) : p.payDate })); }}
-                        style={{ height: 36, fontSize: 13, border: '1px solid var(--border)', borderRadius: 0, padding: '0 4px' }} />
-                      <span style={{ color: 'var(--text-muted)', fontSize: 10 }}>Pay:</span>
+                        style={{ height: 40, fontSize: '0.9333rem', border: '1px solid var(--border)', borderRadius: 0, padding: '0 4px' }} />
+                      <span style={{ color: 'var(--text-muted)', fontSize: '0.8333rem' }}>Pay:</span>
                       <input type="date" value={periodEdit.payDate}
                         onChange={e => setPeriodEdit(p => ({ ...p, payDate: e.target.value }))}
-                        style={{ height: 36, fontSize: 13, border: '1px solid var(--border)', borderRadius: 0, padding: '0 4px' }} />
-                      <button className="btn btn-primary btn-sm" style={{ fontSize: 10, padding: '0 8px', height: 26 }}
+                        style={{ height: 40, fontSize: '0.9333rem', border: '1px solid var(--border)', borderRadius: 0, padding: '0 4px' }} />
+                      <button className="btn btn-primary btn-sm" style={{ fontSize: '0.8667rem', padding: '0 14px', height: 36 }}
                         onClick={() => handleSavePeriod(stub.id)}
                         disabled={savingPeriod || !!(periodEdit.start && periodEdit.end && periodEdit.end < periodEdit.start)}>
                         {savingPeriod ? <span className="spinner" style={{ width: 10, height: 10 }} /> : 'Save'}
                       </button>
-                      <button className="btn btn-ghost btn-sm" style={{ fontSize: 10, padding: '0 6px', height: 26 }}
+                      <button className="btn btn-ghost btn-sm" aria-label="Discard date changes" title="Discard date changes"
+                        style={{ fontSize: '1.0667rem', width: 32, height: 32, padding: 0, marginLeft: 8, border: '1px solid var(--border)', borderRadius: 8 }}
                         onClick={() => setPeriodEdit(null)}>×</button>
                       {periodDateWarning(periodEdit.start, periodEdit.end, periodEdit.payDate) && (
-                        <span style={{ color: 'var(--error)', fontSize: 11, fontWeight: 600, width: '100%' }}>
+                        <span style={{ color: 'var(--error)', fontSize: '0.7333rem', fontWeight: 600, width: '100%' }}>
                           {periodDateWarning(periodEdit.start, periodEdit.end, periodEdit.payDate)}
                         </span>
                       )}
@@ -4094,29 +4413,29 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                   </td>
                 ) : (
                   <>
-                    <td style={{ padding: '14px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600, color: '#222' }}>
+                    <td style={{ padding: '14px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.9333rem', fontWeight: 600, color: '#222' }}>
                       {fmtDate(stub.pay_period_start)}
                     </td>
-                    <td style={{ padding: '14px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600, color: '#222' }}>{fmtDate(stub.pay_period_end)}</td>
-                    <td style={{ padding: '14px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600, color: displayStatus === 'late' ? '#dc2626' : '#222' }}>
+                    <td style={{ padding: '14px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.9333rem', fontWeight: 600, color: '#222' }}>{fmtDate(stub.pay_period_end)}</td>
+                    <td style={{ padding: '14px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.9333rem', fontWeight: 600, color: displayStatus === 'late' ? '#dc2626' : '#222' }}>
                       {fmtDate(stub.settlement_date)}
                       {canEditPeriod && (
                         <button type="button" aria-label="Edit pay period" title="Edit pay period"
                           onClick={e => { e.stopPropagation(); setPeriodEdit({ id: stub.id, start: stub.pay_period_start || '', end: stub.pay_period_end || '', payDate: stub.settlement_date || '' }); }}
-                          style={{ background: 'none', border: 'none', padding: '4px 8px', cursor: 'pointer', fontSize: 12, color: 'var(--text-secondary)', marginLeft: 2 }}>✎</button>
+                          style={{ background: 'none', border: 'none', padding: '8px 10px', cursor: 'pointer', fontSize: '1rem', color: 'var(--text-secondary)', marginLeft: 2 }}>✎</button>
                       )}
                     </td>
                   </>
                 )}
-                <td style={{ padding: '14px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: 14 }}>{stub.regular_hours != null ? stub.regular_hours : '—'}</td>
-                <td style={{ padding: '14px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: 14 }}>{stub.overtime_hours > 0 ? stub.overtime_hours : '—'}</td>
-                <td style={{ padding: '14px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: 14 }}>{
+                <td style={{ padding: '14px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: '0.9333rem' }}>{stub.regular_hours != null ? stub.regular_hours : '—'}</td>
+                <td style={{ padding: '14px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: '0.9333rem' }}>{stub.overtime_hours > 0 ? stub.overtime_hours : '—'}</td>
+                <td style={{ padding: '14px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#111', fontSize: '0.9333rem' }}>{
                   (() => {
                     const regItem = (stub.lineItems || []).find(li => li.pay_type === 'regular');
                     return regItem?.rate != null ? `$${Number(regItem.rate).toFixed(2)}` : '—';
                   })()
                 }</td>
-                <td style={{ padding: '14px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, color: '#16a34a', fontSize: 16 }}>
+                <td style={{ padding: '14px 10px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, color: '#047857', fontSize: '1.0667rem' }}>
                   {/* Authoritative net pay computed and stored by the backend — the
                       same value the detail modal shows after save, so the two agree. */}
                   {stub.net_pay != null ? fmt(r2(stub.net_pay))
@@ -4133,19 +4452,19 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                       )) : '—')}
                 </td>
                 <td style={{ padding: '8px 10px', textAlign: 'right' }}>
-                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 12 }}>
                     {empStatusBusy?.stub?.id === stub.id ? (
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-secondary)' }}>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                         <span className="spinner spinner-dark" style={{ width: 12, height: 12 }} /> Updating…
                       </span>
                     ) : !isVoided ? (
                       <button type="button" title="Click to change status"
                         aria-label={`Change status for ${stub.employee_name}`}
                         aria-expanded={!!(empStatusDrop?.stub?.id === stub.id)}
-                        style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}
-                        onClick={e => { e.stopPropagation(); const r = e.currentTarget.getBoundingClientRect(); const openUp = r.bottom + 200 > window.innerHeight; setEmpStatusDrop(empStatusDrop?.stub?.id === stub.id ? null : { stub, ...(openUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }), right: window.innerWidth - r.right }); }}>
+                        style={{ background: 'var(--bg-primary, #fff)', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', minHeight: 32, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}
+                        onClick={e => { e.stopPropagation(); empStatusTriggerRef.current = e.currentTarget; const r = e.currentTarget.getBoundingClientRect(); const openUp = r.bottom + 200 > window.innerHeight; setEmpStatusDrop(empStatusDrop?.stub?.id === stub.id ? null : { stub, ...(openUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }), right: window.innerWidth - r.right }); }}>
                         <StatusBadge status={displayStatus} />
-                        <span style={{ fontSize: 9, color: 'var(--text-muted)' }}>▾</span>
+                        <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>▾</span>
                       </button>
                     ) : (
                       <StatusBadge status={displayStatus} />
@@ -4153,7 +4472,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                     {!isVoided && (
                       <button
                         className="btn btn-ghost btn-sm"
-                        style={{ fontSize: 12, color: 'var(--text-secondary)', padding: '5px 10px', height: 'auto', lineHeight: 1.4 }}
+                        style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', padding: '5px 10px', height: 'auto', lineHeight: 1.4 }}
                         onMouseEnter={e => { e.currentTarget.style.color = 'var(--error)'; }}
                         onMouseLeave={e => { e.currentTarget.style.color = 'var(--text-secondary)'; }}
                         aria-label={`Delete check #${stub.check_number || stub.id} for ${stub.employee_name}`}
@@ -4169,7 +4488,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
         </tbody>
         <tfoot>
           <tr style={{ borderTop: '2px solid var(--border)' }}>
-            <td colSpan={6} style={{ ...footCell, fontFamily: 'inherit', fontSize: 12, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total</td>
+            <td colSpan={6} style={{ ...footCell, fontFamily: 'inherit', fontSize: '0.8rem', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Total</td>
             <td style={footCell}>{r2(totals.reg)}</td>
             <td style={footCell}>{r2(totals.ot)}</td>
             <td />
@@ -4178,7 +4497,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
           </tr>
           {selTotals.count > 0 && (
             <tr>
-              <td colSpan={6} style={{ ...footCell, paddingTop: 0, fontFamily: 'inherit', fontSize: 12, color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Selected ({selTotals.count})</td>
+              <td colSpan={6} style={{ ...footCell, paddingTop: 0, fontFamily: 'inherit', fontSize: '0.8rem', color: 'var(--accent)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Selected ({selTotals.count})</td>
               <td style={{ ...footCell, paddingTop: 0, color: 'var(--accent)' }}>{r2(selTotals.reg)}</td>
               <td style={{ ...footCell, paddingTop: 0, color: 'var(--accent)' }}>{r2(selTotals.ot)}</td>
               <td />
@@ -4196,13 +4515,17 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
     <div>
       {/* Tab strip */}
       {(tabs.length > 0 || archivedGroups.length > 0) && (
-        <div className="pay-subtabs" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+        <div className="pay-subtabs" style={{ marginBottom: 12, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', background: 'transparent', padding: 0 }}>
+          <span style={{ fontSize: '0.8667rem', fontWeight: 600, color: 'var(--text-muted)', marginRight: 2 }}>Pay group:</span>
           {tabs.map(g => (
             <button key={g.id} className={`pay-subtab${currentGroupId === g.id ? ' active' : ''}`}
+              style={currentGroupId === g.id
+                ? { fontSize: '0.9rem', background: 'var(--accent-light)', border: '1.5px solid var(--accent)', color: 'var(--accent)', boxShadow: 'none' }
+                : { fontSize: '0.9rem', background: 'transparent', border: '1.5px solid var(--border)' }}
               onClick={() => { setCurrentGroupId(g.id); setRunErr(''); setRunSuccess(''); setSelectedLateStubs(new Set()); setSelectedHistoryStubs(new Set()); }}>
               {g.name}
               {g.id !== UNASSIGNED_ID && (
-                <span style={{ opacity: 0.6, fontSize: 11, marginLeft: 4 }}>
+                <span style={{ opacity: 0.6, fontSize: '0.7333rem', marginLeft: 4 }}>
                   ({activeEmps.filter(e => e.payGroupId === g.id).length})
                 </span>
               )}
@@ -4220,22 +4543,22 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                   background: isGroupDeleted ? 'var(--accent-light)' : 'transparent',
                   border: `1px solid ${isGroupDeleted ? 'var(--accent)' : 'var(--border)'}`,
                   borderRadius: 7, padding: '5px 10px', cursor: 'pointer',
-                  fontSize: 12, fontWeight: 600, color: isGroupDeleted ? 'var(--accent)' : 'var(--text-muted)',
+                  fontSize: '0.8rem', fontWeight: 600, color: isGroupDeleted ? 'var(--accent)' : 'var(--text-muted)',
                 }}>
                 🗄 Archived <span style={{ opacity: 0.7 }}>({archivedGroups.length})</span>
-                <span style={{ fontSize: 9, opacity: 0.7 }}>▾</span>
+                <span style={{ fontSize: '0.6rem', opacity: 0.7 }}>▾</span>
               </button>
               {archiveMenuOpen && (
                 <>
                   <div style={{ position: 'fixed', inset: 0, zIndex: 40 }} onClick={() => setArchiveMenuOpen(false)} />
                   <div style={{ position: 'absolute', top: '100%', right: 0, marginTop: 5, background: 'var(--bg-primary, #fff)', border: '1px solid var(--border)', borderRadius: 9, boxShadow: '0 8px 24px rgba(0,0,0,0.14)', zIndex: 50, minWidth: 220, padding: 5 }}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '4px 10px 6px' }}>Archived Groups</div>
+                    <div style={{ fontSize: '0.6667rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', padding: '4px 10px 6px' }}>Archived Groups</div>
                     {archivedGroups.map(g => (
                       <button key={g.id}
                         onClick={() => { setCurrentGroupId(g.id); setArchiveMenuOpen(false); setRunErr(''); setRunSuccess(''); setSelectedLateStubs(new Set()); setSelectedHistoryStubs(new Set()); }}
-                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, width: '100%', textAlign: 'left', padding: '8px 10px', background: currentGroupId === g.id ? 'var(--accent-light)' : 'transparent', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, width: '100%', textAlign: 'left', padding: '8px 10px', background: currentGroupId === g.id ? 'var(--accent-light)' : 'transparent', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: '0.8667rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
                         <span>{g.name}</span>
-                        <span style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 500 }}>{FREQ_LABEL[g.frequency] || g.frequency}</span>
+                        <span style={{ fontSize: '0.6667rem', color: 'var(--text-muted)', fontWeight: 500 }}>{FREQ_LABEL[g.frequency] || g.frequency}</span>
                       </button>
                     ))}
                   </div>
@@ -4250,24 +4573,24 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
         {currentGroup && currentGroup.id !== UNASSIGNED_ID && (
           <>
-            <span style={{ fontWeight: 700, fontSize: 14, fontStyle: isGroupDeleted ? 'italic' : 'normal', opacity: isGroupDeleted ? 0.6 : 1 }}>{currentGroup.name}</span>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{FREQ_LABEL[currentGroup.frequency] || currentGroup.frequency}</span>
-            {!isGroupDeleted && <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} onClick={() => setEditGroup(currentGroup)}>Edit Group</button>}
-            {isGroupDeleted && <span className="badge badge-warning" style={{ fontSize: 10 }}>Archived</span>}
+            <span style={{ fontWeight: 700, fontSize: '0.9333rem', fontStyle: isGroupDeleted ? 'italic' : 'normal', opacity: isGroupDeleted ? 0.6 : 1 }}>{currentGroup.name}</span>
+            <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{FREQ_LABEL[currentGroup.frequency] || currentGroup.frequency}</span>
+            {!isGroupDeleted && <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.8rem' }} onClick={() => setEditGroup(currentGroup)}>Edit Group</button>}
+            {isGroupDeleted && <span className="badge badge-warning">Archived</span>}
             <div style={{ width: 1, height: 16, background: 'var(--border)', margin: '0 4px' }} />
           </>
         )}
         {!isGroupDeleted && (hasLateRows || hasDueSoonRows) && (
-          <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={handleSelectAllDue}>Select All Due</button>
+          <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.7333rem' }} onClick={handleSelectAllDue}>Select All Due</button>
         )}
         <div style={{ flex: 1 }} />
         {!isGroupDeleted && (
-          <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} onClick={() => setShowPaycheckImport(true)}>
+          <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.8rem' }} onClick={() => setShowPaycheckImport(true)}>
             ↑ Import from QB
           </button>
         )}
         {!isGroupDeleted && (
-          <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} onClick={() => setUngroupedModal(true)}>
+          <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.8rem' }} onClick={() => setUngroupedModal(true)}>
             + Ungrouped Check
           </button>
         )}
@@ -4303,7 +4626,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
 
       {/* Bulk action bar */}
       {(selectedHistoryStubs.size > 0 || totalActionCount > 0) && (() => {
-        const btn = { background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '4px 12px', fontSize: 12, cursor: 'pointer', fontWeight: 600 };
+        const btn = { background: 'rgba(255,255,255,0.2)', border: '1px solid rgba(255,255,255,0.4)', borderRadius: 5, color: '#fff', padding: '8px 16px', fontSize: '0.8667rem', cursor: 'pointer', fontWeight: 600 };
         const totalSel = selectedHistoryStubs.size + totalActionCount;
 
         // Collect pending rows currently selected
@@ -4371,7 +4694,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
 
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#15803d', color: '#fff', padding: '9px 16px', borderRadius: 10, marginBottom: 12, flexWrap: 'wrap', boxShadow: '0 2px 12px rgba(21,128,61,0.25)' }}>
-            <span style={{ fontWeight: 700, fontSize: 13 }}>✓ {totalSel} check{totalSel !== 1 ? 's' : ''} selected · est. net {fmt(selEstNet)}</span>
+            <span style={{ fontWeight: 700, fontSize: '0.8667rem' }}>✓ {totalSel} check{totalSel !== 1 ? 's' : ''} selected · est. net {fmt(selEstNet)}</span>
             <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
 
             {/* Download PDFs — history checks only */}
@@ -4381,7 +4704,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                 <select
                   defaultValue={localStorage.getItem('checkDesign') || 'classic'}
                   onChange={e => localStorage.setItem('checkDesign', e.target.value)}
-                  style={{ fontSize: 11, border: '1px solid rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.15)', color: '#fff', borderRadius: 0, padding: '4px 6px', cursor: 'pointer', height: 28 }}>
+                  style={{ fontSize: '0.7333rem', border: '1px solid rgba(255,255,255,0.4)', background: 'rgba(255,255,255,0.15)', color: '#fff', borderRadius: 0, padding: '4px 6px', cursor: 'pointer', height: 28 }}>
                   <option value="classic" style={{ color: '#000' }}>Classic</option>
                   <option value="micr" style={{ color: '#000' }}>MICR (Check Printer)</option>
                   <option value="top" style={{ color: '#000' }}>Top Check</option>
@@ -4392,11 +4715,11 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
             </>}
 
             {/* Status change — works for both pending and history */}
-            <span style={{ fontSize: 12, opacity: 0.85 }}>Status:</span>
+            <span style={{ fontSize: '0.8rem', opacity: 0.85 }}>Status:</span>
             {[
               { value: 'printed',                label: 'Printed' },
               { value: 'direct_deposit_cleared', label: 'Deposited' },
-              { value: 'draft',                  label: 'Upcoming' },
+              { value: 'draft',                  label: 'Reset to draft' },
             ].map(({ value, label }) => (
               <button key={value} disabled={bulkBusy} onClick={async () => {
                 setBulkBusy(true);
@@ -4419,9 +4742,11 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                 finally { setBulkBusy(false); }
               }} style={btn}>{label}</button>
             ))}
-            <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
+            <button onClick={clearAll} style={{ background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 5, color: '#fff', padding: '8px 16px', fontSize: '0.8667rem', cursor: 'pointer', fontWeight: 600 }}>✕ Cancel</button>
 
-            {/* Delete */}
+            {/* Delete — isolated at the far end, past a gap + divider */}
+            <div style={{ marginLeft: 'auto', paddingLeft: 24, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 1, height: 20, background: 'rgba(255,255,255,0.3)' }} />
             <button disabled={bulkBusy} onClick={async () => {
               const histIds = [...selectedHistoryStubs];
               const allStubs = history.flatMap(p => p.stubs);
@@ -4446,17 +4771,16 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                 await reloadStubs();
               } catch (e) { alert(e.message); }
               finally { setBulkBusy(false); }
-            }} style={{ background: '#dc2626', border: 'none', borderRadius: 5, color: '#fff', padding: '5px 14px', fontSize: 13, cursor: 'pointer', fontWeight: 700 }}>
+            }} style={{ background: '#dc2626', border: 'none', borderRadius: 5, color: '#fff', padding: '8px 16px', fontSize: '0.8667rem', cursor: 'pointer', fontWeight: 700 }}>
               {bulkBusy ? <span className="spinner" style={{ width: 12, height: 12 }} /> : '🗑 Delete'}
             </button>
-
-            <button onClick={clearAll} style={{ marginLeft: 'auto', background: 'rgba(255,255,255,0.15)', border: 'none', borderRadius: 5, color: '#fff', padding: '3px 8px', fontSize: 12, cursor: 'pointer' }}>✕ Cancel</button>
+            </div>
           </div>
         );
       })()}
 
       {isGroupDeleted && (
-        <div className="alert alert-warning" style={{ marginBottom: 12, fontSize: 12 }}>
+        <div className="alert alert-warning" style={{ marginBottom: 12, fontSize: '0.8rem' }}>
           <span>🗄</span> This pay group is archived — it's non-functional, but its check history is kept below for reference.
         </div>
       )}
@@ -4466,11 +4790,11 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
       {stubsError && (
         <div className="alert alert-error" style={{ marginBottom: 12 }}>
           <span>⚠</span> Couldn&apos;t load paychecks —
-          <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }} onClick={reloadStubs}>Retry</button>
+          <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.8rem' }} onClick={reloadStubs}>Retry</button>
         </div>
       )}
       {!stubsLoaded && !stubsError && (
-        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '18px 20px', marginBottom: 12, fontSize: 13, color: 'var(--text-secondary)' }}>
+        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '18px 20px', marginBottom: 12, fontSize: '0.8667rem', color: 'var(--text-secondary)' }}>
           <span className="spinner spinner-dark" style={{ width: 14, height: 14 }} /> Loading paychecks…
         </div>
       )}
@@ -4486,10 +4810,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
         });
         if (skippedForGroup.length === 0) return null;
         return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 8 }}>
             <span>Removed from this run: {skippedForGroup.length}</span>
             <span>·</span>
-            <button className="btn btn-ghost btn-sm" style={{ fontSize: 12 }}
+            <button className="btn btn-ghost btn-sm" style={{ fontSize: '0.8667rem', padding: '6px 14px', minHeight: 32 }}
               onClick={() => setSkippedPending(prev => { const next = new Set(prev); skippedForGroup.forEach(k => next.delete(k)); return next; })}>
               Restore
             </button>
@@ -4541,9 +4865,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
           <button
             data-tour-id="tour-printed-toggle"
             onClick={() => setShowPrinted(p => !p)}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', padding: '6px 0', fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: 'none', cursor: 'pointer', padding: '6px 0', fontSize: '0.8667rem', color: 'var(--text-secondary)', fontWeight: 600 }}
           >
-            <span style={{ fontSize: 11, transition: 'transform 0.15s', display: 'inline-block', transform: showPrinted ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
+            <span style={{ fontSize: '0.7333rem', transition: 'transform 0.15s', display: 'inline-block', transform: showPrinted ? 'rotate(90deg)' : 'rotate(0deg)' }}>▶</span>
             Printed &amp; Deposited Checks ({printedRows.length})
           </button>
           {showPrinted && (
@@ -4566,8 +4890,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
       {rateUpdatePrompt && (
         <ModalOverlay onClose={() => setRateUpdatePrompt(null)}>
           <div className="card" style={{ width: 380, padding: 28, borderRadius: 12, textAlign: 'center' }}>
-            <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 10 }}>Rate Changed to ${(rateUpdatePrompt.newRate || 0).toFixed(2)}/hr</div>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 24, lineHeight: 1.5 }}>
+            <div style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: 10 }}>Rate Changed to ${(rateUpdatePrompt.newRate || 0).toFixed(2)}/hr</div>
+            <div style={{ fontSize: '0.8667rem', color: 'var(--text-secondary)', marginBottom: 24, lineHeight: 1.5 }}>
               Would you like this rate to be changed for all future checks for this employee?
             </div>
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
@@ -4593,6 +4917,13 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
         </ModalOverlay>
       )}
 
+      {/* Row-identity chip — names whose hours/rate are being typed */}
+      {focusedRowInfo && (
+        <div style={{ position: 'fixed', top: Math.max(4, focusedRowInfo.top - 38), left: focusedRowInfo.left, zIndex: 9998, background: '#1e293b', color: '#fff', fontSize: '0.8667rem', fontWeight: 600, padding: '5px 12px', borderRadius: 6, pointerEvents: 'none', whiteSpace: 'nowrap', boxShadow: '0 2px 10px rgba(0,0,0,0.25)' }}>
+          Typing for: {focusedRowInfo.name}
+        </div>
+      )}
+
       {/* Employee status dropdown — fixed so it's never clipped by overflow:hidden */}
       {empStatusDrop && (
         <div onClick={e => e.stopPropagation()}
@@ -4610,7 +4941,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
               <button key={value} disabled={!!empStatusBusy} onClick={() => handleEmpStatusChange(empStatusDrop, value)}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', padding: '8px 14px', background: isCur ? 'var(--accent-light)' : 'none', border: 'none', cursor: empStatusBusy ? 'wait' : 'pointer', textAlign: 'left', opacity: empStatusBusy ? 0.6 : 1 }}>
                 <StatusBadge status={badge} />
-                <span style={{ fontSize: 12, fontWeight: isCur ? 700 : 400 }}>{isPendingRun ? `Run payroll & mark ${label}` : label}</span>
+                <span style={{ fontSize: '0.8rem', fontWeight: isCur ? 700 : 400 }}>{isPendingRun ? `Run payroll & mark ${label}` : label}</span>
               </button>
             );
           })}
@@ -4664,13 +4995,13 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
       {printModal && (
         <ModalOverlay onClose={() => { if (printModalBusy) return; setPrintModal(null); setPrintModalErr(''); }}>
           <div className="card" style={{ width: 420, maxWidth: '92vw', padding: 28, textAlign: 'center' }}>
-            <div style={{ fontSize: 36, marginBottom: 10 }}>✅</div>
-            <div style={{ fontWeight: 700, fontSize: 18, marginBottom: 6 }}>Payroll Complete!</div>
-            <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 22 }}>
+            <div style={{ fontSize: '2.4rem', marginBottom: 10 }}>✅</div>
+            <div style={{ fontWeight: 700, fontSize: '1.2rem', marginBottom: 6 }}>Payroll Complete!</div>
+            <div style={{ fontSize: '0.8667rem', color: 'var(--text-muted)', marginBottom: 22 }}>
               {printModal.ids.length} check{printModal.ids.length !== 1 ? 's' : ''} processed and marked as printed.
             </div>
             {printModalErr && (
-              <div style={{ fontSize: 12, color: '#dc2626', fontWeight: 600, marginBottom: 12 }}>⚠ {printModalErr}</div>
+              <div style={{ fontSize: '0.8rem', color: '#dc2626', fontWeight: 600, marginBottom: 12 }}>⚠ {printModalErr}</div>
             )}
             <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
@@ -4687,7 +5018,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                 <select
                   defaultValue={localStorage.getItem('checkDesign') || 'classic'}
                   onChange={e => localStorage.setItem('checkDesign', e.target.value)}
-                  style={{ fontSize: 11, border: '1px solid var(--border)', borderRadius: 0, padding: '4px 6px', cursor: 'pointer', height: 32 }}>
+                  style={{ fontSize: '0.7333rem', border: '1px solid var(--border)', borderRadius: 0, padding: '4px 6px', cursor: 'pointer', height: 32 }}>
                   <option value="classic">Classic</option>
                   <option value="micr">MICR (Check Printer)</option>
                   <option value="top">Top Check</option>
@@ -4721,12 +5052,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
           {!ugPreview && (
             <div className="card" style={{ width: 480, maxWidth: '95vw', padding: 24 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                <div style={{ fontWeight: 700, fontSize: 15 }}>Ungrouped Check</div>
+                <div style={{ fontWeight: 700, fontSize: '1rem' }}>Ungrouped Check</div>
                 <button className="drawer-close" aria-label="Close" onClick={() => { setUngroupedModal(false); setUgOtherOpen(false); }}>×</button>
               </div>
-              {ugErr && <div className="alert alert-error" style={{ marginBottom: 10, fontSize: 12 }}>{ugErr}</div>}
+              {ugErr && <div className="alert alert-error" style={{ marginBottom: 10, fontSize: '0.8rem' }}>{ugErr}</div>}
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Employee
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Employee
                   <select className="form-input" value={ugForm.employeeId}
                     onChange={e => setUgForm(f => ({ ...f, employeeId: e.target.value, rate: '' }))}
                     style={{ marginTop: 4, width: '100%' }}>
@@ -4735,23 +5066,23 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                   </select>
                 </label>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Period Start
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Period Start
                     <input className="form-input" type="date" value={ugForm.start}
                       onChange={e => setUgForm(f => ({ ...f, start: e.target.value }))}
                       style={{ marginTop: 4, width: '100%' }} />
                   </label>
-                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Period End
+                  <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Period End
                     <input className="form-input" type="date" value={ugForm.end}
                       onChange={e => { const end = e.target.value; setUgForm(f => ({ ...f, end, payDate: end ? calcDefaultPayDate(end) : f.payDate })); }}
                       style={{ marginTop: 4, width: '100%' }} />
                   </label>
                 </div>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Pay Date
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Pay Date
                   <input className="form-input" type="date" value={ugForm.payDate}
                     onChange={e => setUgForm(f => ({ ...f, payDate: e.target.value }))}
                     style={{ marginTop: 4, width: '100%' }} />
                 </label>
-                <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Pay Type
+                <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Pay Type
                   <select className="form-input" value={ugForm.payType}
                     onChange={e => setUgForm(f => ({ ...f, payType: e.target.value }))}
                     style={{ marginTop: 4, width: '100%' }}>
@@ -4764,17 +5095,17 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                   const empRate = ugEmp?.hourlyRate || '';
                   return (
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Reg Hours
+                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Reg Hours
                         <input className="form-input mono" type="number" min="0" step="0.5" value={ugForm.regHours} placeholder="0"
                           onChange={e => setUgForm(f => ({ ...f, regHours: e.target.value }))}
                           style={{ marginTop: 4, width: '100%' }} />
                       </label>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>OT Hours
+                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>OT Hours
                         <input className="form-input mono" type="number" min="0" step="0.5" value={ugForm.otHours} placeholder="0"
                           onChange={e => setUgForm(f => ({ ...f, otHours: e.target.value }))}
                           style={{ marginTop: 4, width: '100%' }} />
                       </label>
-                      <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Hourly Rate
+                      <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>Hourly Rate
                         <input className="form-input mono" type="number" min="0" step="0.01"
                           value={ugForm.rate !== '' ? ugForm.rate : empRate}
                           placeholder={String(empRate || '0.00')}
@@ -4786,7 +5117,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                 })()}
                 <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
                   <button type="button" onClick={() => setUgOtherOpen(o => !o)}
-                    style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                    style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600, color: 'var(--accent)', display: 'flex', alignItems: 'center', gap: 4 }}>
                     {ugOtherOpen ? '▴' : '▾'} Other Payroll Items (tips, bonus, etc.)
                   </button>
                   {ugOtherOpen && (
@@ -4798,8 +5129,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                         { label: 'Mileage Reimbursement', field: 'mileage', hint: 'non-taxable' },
                         { label: 'Cash Advance', field: 'cashAdvance', hint: 'deduction' },
                       ].map(({ label, field, hint }) => (
-                        <label key={field} style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>
-                          {label} <span style={{ fontWeight: 400, fontSize: 10, color: 'var(--text-muted)' }}>({hint})</span>
+                        <label key={field} style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)' }}>
+                          {label} <span style={{ fontWeight: 400, fontSize: '0.6667rem', color: 'var(--text-muted)' }}>({hint})</span>
                           <input className="form-input mono" type="number" min="0" step="0.01" value={ugForm[field] || ''} placeholder="0.00"
                             onChange={e => setUgForm(f => ({ ...f, [field]: e.target.value }))}
                             style={{ marginTop: 4, width: '100%' }} />
@@ -4834,12 +5165,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
               const display = negative ? (amount > 0 ? -amount : amount) : amount;
               return (
                 <tr style={{ borderTop: borderTop ? '2px solid var(--border)' : undefined }}>
-                  <td style={{ padding: '5px 0', fontSize: 12, color: bold ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: bold ? 700 : 400 }}>{label}</td>
-                  <td style={{ padding: '5px 0 5px 10px', textAlign: 'right', ...MONO, fontSize: 12, fontWeight: bold ? 700 : 500, color: color || (negative && amount > 0 ? '#dc2626' : 'inherit') }}>
+                  <td style={{ padding: '5px 0', fontSize: '0.8rem', color: bold ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: bold ? 700 : 400 }}>{label}</td>
+                  <td style={{ padding: '5px 0 5px 10px', textAlign: 'right', ...MONO, fontSize: '0.8rem', fontWeight: bold ? 700 : 500, color: color || (negative && amount > 0 ? '#dc2626' : 'inherit') }}>
                     {typeof display === 'number' ? fmt(display) : display}
                   </td>
                   {ytdAmt !== undefined && (
-                    <td style={{ padding: '5px 0 5px 10px', textAlign: 'right', ...MONO, fontSize: 11, color: 'var(--text-muted)' }}>{fmt(ytdAmt)}</td>
+                    <td style={{ padding: '5px 0 5px 10px', textAlign: 'right', ...MONO, fontSize: '0.7333rem', color: 'var(--text-muted)' }}>{fmt(ytdAmt)}</td>
                   )}
                 </tr>
               );
@@ -4850,16 +5181,16 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                 <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)' }}>
                   <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
                     <div>
-                      <div style={{ fontWeight: 800, fontSize: 20 }}>{emp.firstName} {emp.lastName}</div>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>{isSalary ? 'Salary' : 'Hourly'} · Ungrouped Check · Preview</div>
+                      <div style={{ fontWeight: 800, fontSize: '1.3333rem' }}>{emp.firstName} {emp.lastName}</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 4 }}>{isSalary ? 'Salary' : 'Hourly'} · Ungrouped Check · Preview</div>
                     </div>
                     <button className="drawer-close" aria-label="Close" onClick={() => { setUngroupedModal(false); setUgPreview(null); setUgOtherOpen(false); }}>×</button>
                   </div>
                   <div style={{ display: 'flex', marginTop: 14, borderRadius: 8, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-secondary)' }}>
                     {[['Period Start', ugForm.start], ['Period End', ugForm.end], ['Pay Date', ugForm.payDate]].map(([label, val], i, arr) => (
                       <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none' }}>
-                        <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
-                        <div style={{ ...MONO, fontSize: 13, fontWeight: 600 }}>{fmtDate(val)}</div>
+                        <div style={{ fontSize: '0.8667rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
+                        <div style={{ ...MONO, fontSize: '0.8667rem', fontWeight: 600 }}>{fmtDate(val)}</div>
                       </div>
                     ))}
                   </div>
@@ -4869,12 +5200,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', borderBottom: '1px solid var(--border)' }}>
                   {/* Employee Summary */}
                   <div style={{ padding: '18px 20px 18px 24px', borderRight: '1px solid var(--border)' }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Employee Summary</div>
+                    <div style={{ fontSize: '0.7333rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Employee Summary</div>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead><tr>
-                        <th style={{ padding: '0 0 6px 0', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textAlign: 'left' }}>Item Name</th>
-                        <th style={{ padding: '0 0 6px 10px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textAlign: 'right' }}>Amount</th>
-                        <th style={{ padding: '0 0 6px 10px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textAlign: 'right' }}>YTD</th>
+                        <th style={{ padding: '0 0 6px 0', fontSize: '0.6667rem', fontWeight: 700, color: 'var(--text-muted)', textAlign: 'left' }}>Item Name</th>
+                        <th style={{ padding: '0 0 6px 10px', fontSize: '0.6667rem', fontWeight: 700, color: 'var(--text-muted)', textAlign: 'right' }}>Amount</th>
+                        <th style={{ padding: '0 0 6px 10px', fontSize: '0.6667rem', fontWeight: 700, color: 'var(--text-muted)', textAlign: 'right' }}>YTD</th>
                       </tr></thead>
                       <tbody>
                         {!isSalary && regH > 0 && <Row label={`Hourly (${regH} hrs)`} amount={regPay} color="var(--accent)" />}
@@ -4895,12 +5226,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                   </div>
                   {/* Company Summary */}
                   <div style={{ padding: '18px 24px 18px 20px' }}>
-                    <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Company Summary</div>
+                    <div style={{ fontSize: '0.7333rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>Company Summary</div>
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead><tr>
-                        <th style={{ padding: '0 0 6px 0', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textAlign: 'left' }}>Item Name</th>
-                        <th style={{ padding: '0 0 6px 10px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textAlign: 'right' }}>Amount</th>
-                        <th style={{ padding: '0 0 6px 10px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textAlign: 'right' }}>YTD</th>
+                        <th style={{ padding: '0 0 6px 0', fontSize: '0.6667rem', fontWeight: 700, color: 'var(--text-muted)', textAlign: 'left' }}>Item Name</th>
+                        <th style={{ padding: '0 0 6px 10px', fontSize: '0.6667rem', fontWeight: 700, color: 'var(--text-muted)', textAlign: 'right' }}>Amount</th>
+                        <th style={{ padding: '0 0 6px 10px', fontSize: '0.6667rem', fontWeight: 700, color: 'var(--text-muted)', textAlign: 'right' }}>YTD</th>
                       </tr></thead>
                       <tbody>
                         <Row label="SS Match (Company)"       amount={calc.employerSS || 0}       ytdAmt={ytd.erSS ?? 0}  />
@@ -4915,8 +5246,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
 
                 {/* Check Amount */}
                 <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div style={{ fontWeight: 700, fontSize: 15 }}>Check Amount</div>
-                  <div style={{ ...MONO, fontWeight: 800, fontSize: 22, color: '#16a34a' }}>{fmt(netPay)}</div>
+                  <div style={{ fontWeight: 700, fontSize: '1rem' }}>Check Amount</div>
+                  <div style={{ ...MONO, fontWeight: 800, fontSize: '1.4667rem', color: '#16a34a' }}>{fmt(netPay)}</div>
                 </div>
 
                 {/* Tax deposit tiles */}
@@ -4928,15 +5259,15 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                     { label: 'TOTAL TAX COSTS',   value: fmt(r2(dep941 + (calc.futaTax || 0) + (calc.sutaTax || 0))), highlight: true },
                   ].map(({ label, value, highlight }) => (
                     <div key={label} style={{ background: highlight ? 'var(--accent-light, #f0fdf4)' : 'var(--bg-secondary)', borderRadius: 8, padding: '10px 14px' }}>
-                      <div style={{ fontSize: 9, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
-                      <div style={{ ...MONO, fontWeight: 700, fontSize: 14 }}>{value}</div>
+                      <div style={{ fontSize: '0.6rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
+                      <div style={{ ...MONO, fontWeight: 700, fontSize: '0.9333rem' }}>{value}</div>
                     </div>
                   ))}
                 </div>
 
                 {/* Footer buttons */}
                 <div style={{ padding: '12px 24px 20px', borderTop: '1px solid var(--border)', display: 'flex', gap: 10, justifyContent: 'flex-end', alignItems: 'center' }}>
-                  {ugErr && <span style={{ fontSize: 12, color: '#dc2626', flex: 1 }}>{ugErr}</span>}
+                  {ugErr && <span style={{ fontSize: '0.8rem', color: '#dc2626', flex: 1 }}>{ugErr}</span>}
                   <button className="btn btn-ghost" onClick={() => setUgPreview(null)} disabled={ugRunning}>← Back</button>
                   <button className="btn btn-secondary" onClick={() => handleUngroupedRun('print')} disabled={ugRunning}>
                     {ugRunning ? <span className="spinner" /> : '🖨 Print Paycheck'}
@@ -5037,52 +5368,52 @@ function LiabilityCheckEditor({ stub, clientId, client, onUpdated, onClose }) {
     <div style={{ padding: '16px 20px', background: '#f8fafc', borderTop: '1px solid var(--border)' }}>
       {alreadySubmitted && !accepted && (
         <div style={{ background: '#fff3cd', border: '1px solid #f59e0b', borderRadius: 8, padding: '14px 16px', marginBottom: 16 }}>
-          <div style={{ fontWeight: 700, color: '#92400e', marginBottom: 8, fontSize: 14 }}>⚠ This check has already been submitted to EFTPS</div>
-          <div style={{ color: '#78350f', fontSize: 13, marginBottom: 12 }}>Editing may cause discrepancies between your records and what was submitted. Proceed with caution and notify your tax preparer.</div>
-          <button className="btn btn-primary" style={{ background: '#d97706', borderColor: '#d97706' }} onClick={() => setAccepted(true)}>I Understand, Edit Anyway</button>
+          <div style={{ fontWeight: 700, color: '#92400e', marginBottom: 8, fontSize: '0.9333rem' }}>⚠ This check has already been submitted to EFTPS</div>
+          <div style={{ color: '#78350f', fontSize: '0.8667rem', marginBottom: 12 }}>Editing may cause discrepancies between your records and what was submitted. Proceed with caution and notify your tax preparer.</div>
+          <button className="btn btn-primary" style={{ background: '#b45309', borderColor: '#b45309', color: '#fff' }} onClick={() => setAccepted(true)}>I Understand, Edit Anyway</button>
         </div>
       )}
       {(!alreadySubmitted || accepted) && (
         <>
           {err && <div className="alert alert-error" style={{ marginBottom: 12 }}><span>⚠</span>{err}</div>}
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 12 }}>
-            <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: 11 }}>Gross Wages</label><div style={{ position: 'relative' }}><span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 12 }}>$</span><input className="form-input mono" type="number" min="0" step="0.01" value={form.grossWages} onChange={set('grossWages')} style={{ paddingLeft: 20, height: 32, fontSize: 13 }} /></div></div>
-            <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: 11 }}>Filing Status</label><select className="form-select" value={form.filingStatus} onChange={set('filingStatus')} style={{ height: 32, fontSize: 13 }}><option value="single">Single</option><option value="married">Married</option><option value="hoh">HoH</option></select></div>
-            <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: 11 }}>Pay Frequency</label><select className="form-select" value={form.payFrequency} onChange={set('payFrequency')} style={{ height: 32, fontSize: 13 }}><option value="weekly">Weekly</option><option value="biweekly">Bi-weekly</option><option value="semimonthly">Semi-monthly</option><option value="monthly">Monthly</option></select></div>
-            <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: 11 }}>Work State</label><select className="form-select" value={form.workState} onChange={set('workState')} style={{ height: 32, fontSize: 13 }}>{US_STATES.map(([c]) => <option key={c} value={c}>{c}</option>)}</select></div>
+            <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: '0.8333rem' }}>Gross Wages</label><div style={{ position: 'relative' }}><span style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '0.8rem' }}>$</span><input className="form-input mono" type="number" min="0" step="0.01" value={form.grossWages} onChange={set('grossWages')} style={{ paddingLeft: 20, height: 40, fontSize: '0.9333rem' }} /></div></div>
+            <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: '0.8333rem' }}>Filing Status</label><select className="form-select" value={form.filingStatus} onChange={set('filingStatus')} style={{ height: 40, fontSize: '0.9333rem' }}><option value="single">Single</option><option value="married">Married</option><option value="hoh">HoH</option></select></div>
+            <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: '0.8333rem' }}>Pay Frequency</label><select className="form-select" value={form.payFrequency} onChange={set('payFrequency')} style={{ height: 40, fontSize: '0.9333rem' }}><option value="weekly">Weekly</option><option value="biweekly">Bi-weekly</option><option value="semimonthly">Semi-monthly</option><option value="monthly">Monthly</option></select></div>
+            <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: '0.8333rem' }}>Work State</label><select className="form-select" value={form.workState} onChange={set('workState')} style={{ height: 40, fontSize: '0.9333rem' }}>{US_STATES.map(([c]) => <option key={c} value={c}>{c}</option>)}</select></div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 12 }}>
-            <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: 11 }}>Period Start</label><input className="form-input" type="date" value={form.payPeriodStart} onChange={set('payPeriodStart')} style={{ height: 32, fontSize: 13 }} /></div>
-            <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: 11 }}>Period End</label><input className="form-input" type="date" value={form.payPeriodEnd} onChange={set('payPeriodEnd')} style={{ height: 32, fontSize: 13 }} /></div>
+            <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: '0.8333rem' }}>Period Start</label><input className="form-input" type="date" value={form.payPeriodStart} onChange={set('payPeriodStart')} style={{ height: 40, fontSize: '0.9333rem' }} /></div>
+            <div className="form-group" style={{ marginBottom: 0 }}><label className="form-label" style={{ fontSize: '0.8333rem' }}>Period End</label><input className="form-input" type="date" value={form.payPeriodEnd} onChange={set('payPeriodEnd')} style={{ height: 40, fontSize: '0.9333rem' }} /></div>
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label" style={{ fontSize: 11 }}>Pay Date</label>
-              <input className="form-input" type="date" value={form.settlementDate} onChange={e => handlePayDateChange(e.target.value)} style={{ height: 32, fontSize: 13 }} />
+              <label className="form-label" style={{ fontSize: '0.8333rem' }}>Pay Date</label>
+              <input className="form-input" type="date" value={form.settlementDate} onChange={e => handlePayDateChange(e.target.value)} style={{ height: 40, fontSize: '0.9333rem' }} />
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label" style={{ fontSize: 11 }}>Settlement Date <span style={{ fontWeight: 400, textTransform: 'none', color: 'var(--text-muted)', fontSize: 10 }}>(EFTPS)</span></label>
-              <input className="form-input" type="date" value={form.settlementDueDate} onChange={set('settlementDueDate')} style={{ height: 32, fontSize: 13 }} />
+              <label className="form-label" style={{ fontSize: '0.8333rem' }}>Settlement Date <span style={{ fontWeight: 400, textTransform: 'none', color: 'var(--text-muted)', fontSize: '0.6667rem' }}>(EFTPS)</span></label>
+              <input className="form-input" type="date" value={form.settlementDueDate} onChange={set('settlementDueDate')} style={{ height: 40, fontSize: '0.9333rem' }} />
               {form.settlementDueDate && (
-                <div style={{ fontSize: 10, color: isOverdue(form.settlementDueDate) ? '#dc2626' : 'var(--text-muted)', marginTop: 3, fontWeight: isOverdue(form.settlementDueDate) ? 700 : 400 }}>
+                <div style={{ fontSize: '0.6667rem', color: isOverdue(form.settlementDueDate) ? '#dc2626' : 'var(--text-muted)', marginTop: 3, fontWeight: isOverdue(form.settlementDueDate) ? 700 : 400 }}>
                   {isOverdue(form.settlementDueDate) ? '⚠ Overdue' : `Due ${fmtDate(form.settlementDueDate)}`}
                 </div>
               )}
             </div>
           </div>
           {periodDateWarning(form.payPeriodStart, form.payPeriodEnd, form.settlementDate) && (
-            <div style={{ color: 'var(--error)', fontSize: 11, fontWeight: 600, marginTop: -6, marginBottom: 12 }}>
+            <div style={{ color: 'var(--error)', fontSize: '0.7333rem', fontWeight: 600, marginTop: -6, marginBottom: 12 }}>
               {periodDateWarning(form.payPeriodStart, form.payPeriodEnd, form.settlementDate)}
             </div>
           )}
           {taxes && (
-            <div style={{ background: '#fff', borderRadius: 8, padding: '10px 12px', border: '1px solid var(--border)', marginBottom: 12, display: 'flex', gap: 24, flexWrap: 'wrap', fontSize: 12 }}>
+            <div style={{ background: '#fff', borderRadius: 8, padding: '10px 12px', border: '1px solid var(--border)', marginBottom: 12, display: 'flex', gap: 24, flexWrap: 'wrap', fontSize: '0.8rem' }}>
               {[['FIT', taxes.fitWithholding],['SS', taxes.employeeSS],['Medicare', taxes.employeeMedicare],['State Tax', taxes.stateIncomeTax || 0],['FUTA', taxes.futaTax || 0],['SUI', taxes.sutaTax || 0],['941 Total', taxes.totalDeposit],['Net Pay', taxes.netPay]].map(([l, v]) => (
                 <div key={l}><div style={{ color: 'var(--text-muted)', fontWeight: 600 }}>{l}</div><div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--accent)' }}>{fmt(v)}</div></div>
               ))}
             </div>
           )}
           <div style={{ display: 'flex', gap: 10 }}>
-            <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving || !!(form.payPeriodStart && form.payPeriodEnd && form.payPeriodEnd < form.payPeriodStart)}>{saving ? <span className="spinner" /> : 'Save Changes'}</button>
-            <button className="btn btn-ghost btn-sm" onClick={onClose}>Cancel</button>
+            <button className="btn btn-primary btn-sm" style={{ minHeight: 36 }} onClick={handleSave} disabled={saving || !!(form.payPeriodStart && form.payPeriodEnd && form.payPeriodEnd < form.payPeriodStart)}>{saving ? <span className="spinner" /> : 'Save Changes'}</button>
+            <button className="btn btn-ghost btn-sm" style={{ minHeight: 36 }} onClick={onClose}>Cancel</button>
           </div>
         </>
       )}
@@ -5141,7 +5472,7 @@ const LIAB_STATUS_CFG = {
 };
 function LiabStatusBadge({ status }) {
   const cfg = LIAB_STATUS_CFG[status] || LIAB_STATUS_CFG.upcoming;
-  return <span className={`badge ${cfg.cls}`} style={{ fontWeight: 700, fontSize: 10 }}>{cfg.label}</span>;
+  return <span className={`badge ${cfg.cls}`} style={{ fontWeight: 700, fontSize: '0.6667rem' }}>{cfg.label}</span>;
 }
 
 const SUI_AGENCIES = {
@@ -5250,12 +5581,12 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
   // Reusable table row
   const Row = ({ label, amount, color, bold, borderTop, indent }) => (
     <tr style={{ borderTop: borderTop ? '1px solid var(--border)' : undefined }}>
-      <td style={{ padding: '7px 0 7px 8px', paddingLeft: indent ? 20 : 8, fontSize: 13, color: color || 'var(--text-secondary)', fontWeight: bold ? 700 : 400 }}>{label}</td>
-      <td style={{ padding: '7px 8px 7px 0', textAlign: 'right', ...MONO, fontSize: 13, fontWeight: bold ? 700 : 500, color: color || 'inherit' }}>{fmt(amount)}</td>
+      <td style={{ padding: '7px 0 7px 8px', paddingLeft: indent ? 20 : 8, fontSize: '0.8667rem', color: color || 'var(--text-secondary)', fontWeight: bold ? 700 : 400 }}>{label}</td>
+      <td style={{ padding: '7px 8px 7px 0', textAlign: 'right', ...MONO, fontSize: '0.8667rem', fontWeight: bold ? 700 : 500, color: color || 'inherit' }}>{fmt(amount)}</td>
     </tr>
   );
 
-  const dateColor = liabStatus === 'late' ? '#dc2626' : liabStatus === 'due-soon' ? '#d97706' : 'var(--text-secondary)';
+  const dateColor = liabStatus === 'late' ? '#dc2626' : liabStatus === 'due-soon' ? '#92400e' : 'var(--text-secondary)';
 
   return (
     <ModalOverlay onClose={onClose}>
@@ -5265,12 +5596,12 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
         <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
             <div>
-              <div style={{ fontWeight: 800, fontSize: 20, color: 'var(--text-primary)', marginBottom: 2 }}>{vendor}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 6 }}>Re: {stub.employee_name}</div>
+              <div style={{ fontWeight: 800, fontSize: '1.3333rem', color: 'var(--text-primary)', marginBottom: 2 }}>{vendor}</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 6 }}>Re: {stub.employee_name}</div>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                 <StatusBadge status={stub.check_status || 'draft'} />
                 <LiabStatusBadge status={liabStatus} />
-                {stub.check_number && <span style={{ ...MONO, fontSize: 13, color: 'var(--accent)', fontWeight: 700 }}>Check #{stub.check_number}</span>}
+                {stub.check_number && <span style={{ ...MONO, fontSize: '0.8667rem', color: 'var(--accent)', fontWeight: 700 }}>Check #{stub.check_number}</span>}
               </div>
             </div>
             <button className="drawer-close" aria-label="Close" onClick={onClose}>×</button>
@@ -5285,14 +5616,14 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
               sendBy && { label: 'Send By', value: fmtDate(sendBy), color: liabStatus === 'due-soon' || liabStatus === 'late' ? dateColor : null },
             ].filter(Boolean).map(({ label, value, color }, i, arr) => (
               <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: '1px solid var(--border)' }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
-                <div style={{ ...MONO, fontSize: 13, fontWeight: 600, color: color || 'var(--text-primary)' }}>{value}</div>
+                <div style={{ fontSize: '0.8667rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
+                <div style={{ ...MONO, fontSize: '0.8667rem', fontWeight: 600, color: color || 'var(--text-primary)' }}>{value}</div>
               </div>
             ))}
             {due && (
               <div style={{ flex: 1, padding: '10px 14px' }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Settlement Date</div>
-                <div style={{ ...MONO, fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer' }}
+                <div style={{ fontSize: '0.8667rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Settlement Date</div>
+                <div style={{ ...MONO, fontSize: '0.8667rem', fontWeight: 600, color: 'var(--text-primary)', cursor: 'pointer' }}
                   onClick={() => settlementInputRef.current?.showPicker?.()}>
                   {fmtDate(settlementDate || due)}
                 </div>
@@ -5315,8 +5646,8 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
                   style={{ position: 'absolute', opacity: 0, width: 0, height: 0, pointerEvents: 'none' }}
                 />
                 {savingSettlement
-                  ? <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 2 }}>saving…</div>
-                  : (!settlementDate || settlementDate === due) && <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 2 }}>* IRS due date</div>
+                  ? <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: 2 }}>saving…</div>
+                  : (!settlementDate || settlementDate === due) && <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', marginTop: 2 }}>* IRS due date</div>
                 }
               </div>
             )}
@@ -5324,11 +5655,11 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
         </div>
 
         {/* ── Two-column body ── */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 0 }}>
 
           {/* Left — Employee Paycheck */}
           <div style={{ padding: '20px 20px 0 24px', borderRight: '1px solid var(--border)' }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Employee Summary</div>
+            <div style={{ fontSize: '0.7333rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Employee Summary</div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <tbody>
                 {/* Earnings */}
@@ -5347,7 +5678,7 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
 
           {/* Right — Employer Costs */}
           <div style={{ padding: '20px 24px 0 20px' }}>
-            <div style={{ fontSize: 11, fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Company Summary</div>
+            <div style={{ fontSize: '0.7333rem', fontWeight: 800, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 8 }}>Company Summary</div>
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <tbody>
                 {employerRows.map(r => <Row key={r.label} label={r.label} amount={r.amount} />)}
@@ -5363,39 +5694,39 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
         {/* Check Amount — liability amount payable to vendor */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 24px 4px' }}>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-primary)' }}>
+            <div style={{ fontSize: '1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
               {taxType === '941' ? '941 Tax Deposit' : taxType === '940' ? '940 FUTA Payment' : 'SUI Payment'}
             </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Payable to {vendor}</div>
+            <div style={{ fontSize: '0.7333rem', color: 'var(--text-muted)', marginTop: 2 }}>Payable to {vendor}</div>
           </div>
-          <div style={{ ...MONO, fontSize: 22, fontWeight: 800, color: '#16a34a' }}>{fmt(liabilityAmount)}</div>
+          <div style={{ ...MONO, fontSize: '1.4667rem', fontWeight: 800, color: '#16a34a' }}>{fmt(liabilityAmount)}</div>
         </div>
 
         <div style={{ padding: '0 24px 8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <button style={{ background: 'none', border: 'none', fontSize: 12, color: '#dc2626', cursor: 'pointer', fontWeight: 600 }}
+          <button style={{ background: 'none', border: 'none', fontSize: '0.8rem', color: '#dc2626', cursor: 'pointer', fontWeight: 600 }}
             onClick={async () => {
               if (!window.confirm('Delete this check? This cannot be undone.')) return;
               if (onDelete) onDelete();
             }}>Delete</button>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 0 }}>
-              <button className="btn btn-ghost" style={{ fontSize: 12, borderRadius: '6px 0 0 6px', borderRight: 'none' }} onClick={async () => {
+              <button className="btn btn-ghost" style={{ fontSize: '0.8rem', borderRadius: '6px 0 0 6px', borderRight: 'none' }} onClick={async () => {
                 try { await api.printSelectedChecks(clientId, [stub.id], localStorage.getItem('checkDesign') || 'classic'); } catch (e) { alert(e.message); }
               }}>↓ Paycheck</button>
               <select
                 defaultValue={localStorage.getItem('checkDesign') || 'classic'}
                 onChange={e => localStorage.setItem('checkDesign', e.target.value)}
-                style={{ fontSize: 11, border: '1px solid var(--border)', borderRadius: 0, padding: '4px 6px', cursor: 'pointer', height: 28 }}>
+                style={{ fontSize: '0.7333rem', border: '1px solid var(--border)', borderRadius: 0, padding: '4px 6px', cursor: 'pointer', height: 28 }}>
                 <option value="classic">Classic</option>
                 <option value="micr">MICR (Check Printer)</option>
                 <option value="top">Top Check</option>
               </select>
             </div>
-            <button className="btn btn-ghost" style={{ fontSize: 12 }} onClick={async () => {
+            <button className="btn btn-ghost" style={{ fontSize: '0.8rem' }} onClick={async () => {
               try { await api.printSelectedPaystubs(clientId, [stub.id]); } catch (e) { alert(e.message); }
             }}>↓ Paystub</button>
             {taxType === 'sui' && (stub.status_sui || 'pending') !== 'submitted' && onPay && (
-              <button className="btn btn-primary" style={{ fontSize: 12 }}
+              <button className="btn btn-primary" style={{ fontSize: '0.8rem' }}
                 disabled={payingNow}
                 onClick={async () => {
                   setPayingNow(true);
@@ -5405,7 +5736,7 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
               </button>
             )}
             {taxType === 'sui' && (stub.status_sui || 'pending') === 'submitted' && (
-              <span style={{ fontSize: 12, color: '#16a34a', fontWeight: 600 }}>✓ Submitted</span>
+              <span style={{ fontSize: '0.8rem', color: '#16a34a', fontWeight: 600 }}>✓ Submitted</span>
             )}
           </div>
         </div>
@@ -5419,8 +5750,8 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
             { label: 'Total Tax Costs',   value: fmt(r2((stub.total_deposit || 0) + (stub.futa_tax || 0) + (stub.suta_tax || 0))), accent: true },
           ].map(({ label, value, accent }, i, arr) => (
             <div key={label} style={{ flex: 1, padding: '10px 14px', borderRight: i < arr.length - 1 ? '1px solid var(--border)' : 'none', background: accent ? 'var(--accent-light)' : undefined }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
-              <div style={{ ...MONO, fontSize: 14, fontWeight: 800, color: accent ? 'var(--accent)' : 'var(--text-primary)' }}>{value}</div>
+              <div style={{ fontSize: '0.8667rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>{label}</div>
+              <div style={{ ...MONO, fontSize: '0.9333rem', fontWeight: 800, color: accent ? 'var(--accent)' : 'var(--text-primary)' }}>{value}</div>
             </div>
           ))}
         </div>
@@ -5549,8 +5880,8 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
   async function handleCsPay(group, { print }) {
     if (csBusyKey) return;
     const ok = window.confirm(print
-      ? `Print a ${fmt(group.total)} check to ${group.vendor}?\n\nThis uses the company's next check number and marks ${group.rows.length} withholding${group.rows.length === 1 ? '' : 's'} paid.`
-      : `Mark ${fmt(group.total)} to ${group.vendor} as paid outside this app?\n\nUse Undo under Sent child support if this was a mistake.`);
+      ? `Print a ${fmt(group.total)} check to ${group.vendor}?\n\nThis uses the company's next check number and marks ${group.rows.length} withholding${group.rows.length === 1 ? '' : 's'} paid. This records it as sent; no money moves until the printed check is delivered.`
+      : `Mark ${fmt(group.total)} to ${group.vendor} as paid outside this app? This records it as sent; no money moves.\n\nUse Undo under Sent child support if this was a mistake.`);
     if (!ok) return;
     setCsBusyKey(group.key);
     try {
@@ -5693,6 +6024,20 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
   }
 
   const [periodStatusBusy, setPeriodStatusBusy] = useState(null); // period.due|taxType while updating
+  const [cancelPayModal, setCancelPayModal] = useState(false);
+  const [cancelPayNotice, setCancelPayNotice] = useState(false);
+
+  async function handleStopPayment() {
+    setCancelPayModal(false);
+    try {
+      const r = await api.killBridgeJob();
+      setActiveJobId(null); setActiveJobTaxType(null); setActiveJobPeriodDue(null);
+      setJobStatus('cancelled');
+      setJobMessage(r?.cancelled ? `Cancelled ${r.cancelled} job(s)` : 'Cancelled');
+      // No live job was found to kill — it may have already reached EFTPS.
+      if (!r?.cancelled) setCancelPayNotice(true);
+    } catch (e) { alert(e.message); }
+  }
 
   async function togglePeriodStatus(period, taxType, newDbStatus) {
     const busyKey = `${taxType}|${period.due || 'unknown'}`;
@@ -5700,7 +6045,7 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
     if (newDbStatus === 'submitted') {
       const label = taxType === 'sui' ? 'State SUI' : `Federal ${taxType.toUpperCase()}`;
       const ok = window.confirm(
-        `Mark the ${label} period${period.due ? ` due ${fmtDate(period.due)}` : ''} — ${fmt(period.total)} — as paid outside this app?\n\n` +
+        `Mark the ${label} period${period.due ? ` due ${fmtDate(period.due)}` : ''} — ${fmt(period.total)} — as paid outside this app? This records it as sent; no money moves.\n\n` +
         `This moves ${period.stubs.length} check${period.stubs.length === 1 ? '' : 's'} into Sent history. Use Undo there if this was a mistake.`
       );
       if (!ok) return;
@@ -5734,7 +6079,7 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
 
     const TH = {
       padding: '8px 14px',
-      fontSize: 11,
+      fontSize: '0.7333rem',
       fontWeight: 700,
       color: '#6b7280',
       textTransform: 'uppercase',
@@ -5746,7 +6091,7 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
 
     return (
       <div className="table-scroll" style={{ background: '#fff', border: '1.5px solid #9faab6', borderRadius: 4, marginBottom: 16 }}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9333rem' }}>
           <colgroup>
             <col style={{ width: 130 }} />
             <col />
@@ -5776,9 +6121,9 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
                     <tr><td colSpan={6} style={{ height: 0, padding: 0, borderTop: '2px solid #9faab6' }} /></tr>
                   )}
                   <tr style={{ background: '#f8f9fa' }}>
-                    <td colSpan={6} style={{ padding: '9px 16px', borderLeft: '3px solid #6b7280', fontWeight: 700, fontSize: 13, color: '#374151' }}>
+                    <td colSpan={6} style={{ padding: '9px 16px', borderLeft: '3px solid #6b7280', fontWeight: 700, fontSize: '0.8667rem', color: '#374151' }}>
                       {sec.title}
-                      {lateCount > 0 && <span style={{ color: '#dc2626', fontWeight: 600, marginLeft: 12, fontSize: 12 }}>{lateCount} overdue</span>}
+                      {lateCount > 0 && <span style={{ color: '#dc2626', fontWeight: 600, marginLeft: 12, fontSize: '0.8rem' }}>{lateCount} overdue</span>}
                     </td>
                   </tr>
 
@@ -5797,33 +6142,35 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
                         onMouseEnter={e => { e.currentTarget.style.background = '#fafafa'; }}
                         onMouseLeave={e => { e.currentTarget.style.background = '#fff'; }}
                         onClick={() => setPeriodModal({ period, taxType: sec.taxType })}>
-                        <td style={{ padding: '14px 16px', color: '#9ca3af', fontSize: 13 }} />
-                        <td style={{ padding: '14px 14px', color: '#374151', fontSize: 14 }}>{dateLabel}</td>
-                        <td style={{ padding: '14px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, fontWeight: 600,
-                          color: isLate ? '#dc2626' : isDueSoon ? '#d97706' : '#374151' }}
+                        <td style={{ padding: '14px 16px', color: '#9ca3af', fontSize: '0.8667rem' }} />
+                        <td style={{ padding: '14px 14px', color: '#374151', fontSize: '0.9333rem' }}>{dateLabel}</td>
+                        <td style={{ padding: '14px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.9333rem', fontWeight: 600,
+                          color: isLate ? '#dc2626' : isDueSoon ? '#92400e' : '#374151' }}
                           title={period.due ? `IRS due date: ${fmtDate(period.due)}` : undefined}>
                           {fmtDate(period.sendBy || period.due)}
-                          {isLate    && <span style={{ marginLeft: 6, fontFamily: 'inherit', fontWeight: 600, fontSize: 12 }}>(Late)</span>}
-                          {isDueSoon && !isLate && <span style={{ marginLeft: 6, fontFamily: 'inherit', fontWeight: 500, fontSize: 12 }}>(Due Soon)</span>}
+                          {isLate    && <span style={{ marginLeft: 6, fontFamily: 'inherit', fontWeight: 600, fontSize: '0.8rem' }}>(Late)</span>}
+                          {isDueSoon && !isLate && <span style={{ marginLeft: 6, fontFamily: 'inherit', fontWeight: 500, fontSize: '0.8rem' }}>(Due Soon)</span>}
                         </td>
-                        <td style={{ padding: '14px 14px', fontSize: 14, color: '#6b7280' }}>{period.stubs.length}</td>
-                        <td style={{ padding: '14px 14px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 15, color: '#111' }}>
+                        <td style={{ padding: '14px 14px', fontSize: '0.9333rem', color: '#6b7280' }}>{period.stubs.length}</td>
+                        <td style={{ padding: '14px 14px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: '1rem', color: '#111' }}>
                           {fmt(period.total)}
                         </td>
-                        <td style={{ padding: '8px 14px', textAlign: 'right' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end' }}>
+                        <td style={{ padding: '8px 14px', textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 16, justifyContent: 'flex-end' }}>
                             <button
                               onClick={e => { e.stopPropagation(); togglePeriodStatus(period, sec.taxType, 'submitted'); }}
                               disabled={periodStatusBusy !== null || (activeJobId !== null && activeJobTaxType === sec.taxType)}
                               title={activeJobId !== null && activeJobTaxType === sec.taxType ? 'A payment for this tax type is processing — wait for it to finish' : 'Record this period as paid outside the app'}
-                              style={{ background: 'none', border: 'none', color: '#16a34a', fontSize: 13, textDecoration: 'underline', padding: '2px 0', whiteSpace: 'nowrap',
+                              style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 6, color: '#047857', fontSize: '0.8667rem', fontWeight: 600, padding: '8px 14px', minHeight: 36, whiteSpace: 'nowrap',
                                 cursor: periodStatusBusy || (activeJobId && activeJobTaxType === sec.taxType) ? 'not-allowed' : 'pointer',
-                                opacity: periodStatusBusy || (activeJobId && activeJobTaxType === sec.taxType) ? 0.5 : 1 }}>
+                                opacity: periodStatusBusy || (activeJobId && activeJobTaxType === sec.taxType) ? 0.5 : 1 }}
+                              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; }}
+                              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; }}>
                               {periodStatusBusy === `${sec.taxType}|${period.due || 'unknown'}` ? 'Updating…' : 'Mark Sent'}
                             </button>
                             <button
                               className="btn btn-primary btn-sm"
-                              style={{ fontSize: 13, whiteSpace: 'nowrap' }}
+                              style={{ fontSize: '0.8667rem', whiteSpace: 'nowrap' }}
                               disabled={submitting !== null || activeJobId !== null}
                               title={activeJobId !== null ? 'Another payment is processing — one payment at a time' : undefined}
                               onClick={e => { e.stopPropagation(); handleSubmitPeriod(period, sec.taxType); }}>
@@ -5834,7 +6181,7 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
                             {sec.taxType === 'sui' && (client?.state || 'TX') === 'TX' && (
                               <button
                                 className="btn btn-sm"
-                                style={{ fontSize: 13, whiteSpace: 'nowrap', background: '#0369a1', color: '#fff', border: 'none' }}
+                                style={{ fontSize: '0.8667rem', whiteSpace: 'nowrap', background: '#0369a1', color: '#fff', border: 'none' }}
                                 disabled={twcPayJob?.status === 'processing'}
                                 onClick={e => { e.stopPropagation(); setTwcPayModal({ amount: period.total, defaultDate: new Date(Date.now() + 86400000).toISOString().slice(0,10) }); }}>
                                 Pay TWC
@@ -5850,12 +6197,12 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
                   <tr style={{ background: '#f8f9fa', borderTop: '1px solid #e5e7eb' }}>
                     <td colSpan={4} style={{ padding: '10px 14px' }}>
                       {sec.credit < 0 && (
-                        <span style={{ fontSize: 13, color: '#16a34a' }}>
+                        <span style={{ fontSize: '0.8667rem', color: '#16a34a' }}>
                           (Credit: {fmt(sec.credit)} applied)
                         </span>
                       )}
                     </td>
-                    <td style={{ padding: '10px 14px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 15, color: '#111' }}>
+                    <td style={{ padding: '10px 14px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: '1rem', color: '#111' }}>
                       {fmt(sectionTotal)}
                     </td>
                     <td />
@@ -5866,11 +6213,11 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
 
             {/* Total due row */}
             <tr style={{ background: '#fff', borderTop: '2px solid #9faab6' }}>
-              <td colSpan={4} style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 700, fontSize: 13, color: '#374151' }}>Total due</td>
+              <td colSpan={4} style={{ padding: '12px 14px', textAlign: 'right', fontWeight: 700, fontSize: '0.8667rem', color: '#374151' }}>Total due</td>
               <td style={{ padding: '12px 14px', textAlign: 'right' }}>
-                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 15, color: '#111' }}>{fmt(grandTotal)}</div>
+                <div style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: '1rem', color: '#111' }}>{fmt(grandTotal)}</div>
                 {csPendingTotal > 0 && (
-                  <div style={{ fontSize: 11, color: '#9ca3af', marginTop: 2, whiteSpace: 'nowrap' }}>incl. child support: {fmt(csPendingTotal)}</div>
+                  <div style={{ fontSize: '0.8333rem', color: '#475569', marginTop: 2, whiteSpace: 'nowrap' }}>incl. child support: {fmt(csPendingTotal)}</div>
                 )}
               </td>
               <td />
@@ -5888,7 +6235,7 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
     const isDueSoon   = period.status === 'due-soon';
     const isSent      = period.status === 'completed';
     const periodTotal = period.total + credit;
-    const TH = { padding: '8px 14px', fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' };
+    const TH = { padding: '8px 14px', fontSize: '0.6667rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em', textAlign: 'left' };
 
     async function toggleAllStatus(newDbStatus) {
       setStatusBusy(true);
@@ -5909,14 +6256,14 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
           <div style={{ padding: '18px 24px 14px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span style={{ fontWeight: 800, fontSize: 18 }}>{title}</span>
-                <span style={{ color: isLate ? '#dc2626' : isDueSoon ? '#d97706' : isSent ? '#16a34a' : '#666', fontSize: 13, fontWeight: 600 }}>
+                <span style={{ fontWeight: 800, fontSize: '1.2rem' }}>{title}</span>
+                <span style={{ color: isLate ? '#dc2626' : isDueSoon ? '#92400e' : isSent ? '#16a34a' : '#666', fontSize: '0.8667rem', fontWeight: 600 }}>
                   {isLate ? 'Late' : isDueSoon ? 'Due Soon' : isSent ? '✓ Sent' : 'Upcoming'}
                 </span>
               </div>
-              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 6 }}>
+              <div style={{ fontSize: '0.8667rem', color: 'var(--text-muted)', marginTop: 6 }}>
                 IRS Deposit Due:{' '}
-                <strong style={{ color: isLate ? '#dc2626' : isDueSoon ? '#d97706' : 'var(--text-primary)' }}>
+                <strong style={{ color: isLate ? '#dc2626' : isDueSoon ? '#92400e' : 'var(--text-primary)' }}>
                   {fmtDate(period.due)}
                 </strong>
                 {period.sendBy && !isSent && (
@@ -5924,11 +6271,11 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
                 )}
               </div>
             </div>
-            <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: 24, cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
+            <button onClick={onClose} style={{ background: 'none', border: 'none', fontSize: '1.6rem', cursor: 'pointer', color: 'var(--text-muted)', lineHeight: 1 }}>×</button>
           </div>
 
           {/* Check list */}
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8667rem' }}>
             <thead>
               <tr style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)' }}>
                 <th style={TH}>Employee</th>
@@ -5946,10 +6293,10 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
                   <tr key={stub.id} style={{ borderBottom: '1px solid var(--border-light)', background: i % 2 === 0 ? '#fff' : '#f8fafc' }}>
                     <td style={{ padding: '11px 16px', fontWeight: 600 }}>
                       {stub.employee_name || '—'}
-                      {stub.check_number ? <span style={{ marginLeft: 5, fontFamily: 'JetBrains Mono, monospace', fontSize: 10, color: 'var(--accent)' }}>#{stub.check_number}</span> : null}
+                      {stub.check_number ? <span style={{ marginLeft: 5, fontFamily: 'JetBrains Mono, monospace', fontSize: '0.6667rem', color: 'var(--accent)' }}>#{stub.check_number}</span> : null}
                     </td>
-                    <td style={{ padding: '11px 10px', fontSize: 12, color: 'var(--text-muted)' }}>{fmtPeriod(stub.pay_period_start, stub.pay_period_end)}</td>
-                    <td style={{ padding: '11px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: 12 }}>{fmtDate(stub.settlement_date)}</td>
+                    <td style={{ padding: '11px 10px', fontSize: '0.8rem', color: 'var(--text-muted)' }}>{fmtPeriod(stub.pay_period_start, stub.pay_period_end)}</td>
+                    <td style={{ padding: '11px 10px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8rem' }}>{fmtDate(stub.settlement_date)}</td>
                     <td style={{ padding: '11px 16px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700 }}>{fmt(amount)}</td>
                   </tr>
                 );
@@ -5960,7 +6307,7 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
           {/* Credit row */}
           {credit < 0 && (
             <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', background: '#f0fdf4' }}>
-              <span style={{ fontSize: 12, color: 'var(--success)', fontWeight: 600 }}>Credit / Overpayment</span>
+              <span style={{ fontSize: '0.8rem', color: 'var(--success)', fontWeight: 600 }}>Credit / Overpayment</span>
               <span style={{ fontFamily: 'JetBrains Mono, monospace', color: 'var(--success)', fontWeight: 700 }}>{fmt(credit)}</span>
             </div>
           )}
@@ -5968,19 +6315,19 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
           {/* Footer */}
           <div style={{ padding: '14px 24px', borderTop: '2px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ flex: 1 }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)' }}>Total  </span>
-              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 20, color: isSent ? 'var(--success)' : 'var(--accent)' }}>{fmt(periodTotal)}</span>
+              <span style={{ fontSize: '0.8667rem', fontWeight: 600, color: 'var(--text-muted)' }}>Total  </span>
+              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: '1.3333rem', color: isSent ? 'var(--success)' : 'var(--accent)' }}>{fmt(periodTotal)}</span>
             </div>
-            <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: 13 }}>Close</button>
+            <button className="btn btn-ghost" onClick={onClose} style={{ fontSize: '0.8667rem' }}>Close</button>
             {/* Status toggle */}
             {isSent ? (
-              <button className="btn btn-ghost" style={{ fontSize: 13, color: '#d97706', borderColor: '#d97706' }}
+              <button className="btn btn-ghost" style={{ fontSize: '0.8667rem', color: '#92400e', borderColor: '#92400e' }}
                 disabled={statusBusy}
                 onClick={() => toggleAllStatus('pending')}>
                 {statusBusy ? <span className="spinner" style={{ width: 12, height: 12 }} /> : 'Mark as Pending'}
               </button>
             ) : (
-              <button className="btn btn-ghost" style={{ fontSize: 13, color: '#16a34a', borderColor: '#16a34a' }}
+              <button className="btn btn-ghost" style={{ fontSize: '0.8667rem', color: '#047857', borderColor: '#047857' }}
                 disabled={statusBusy}
                 onClick={() => toggleAllStatus('submitted')}>
                 {statusBusy ? <span className="spinner" style={{ width: 12, height: 12 }} /> : '✓ Mark as Sent'}
@@ -5989,7 +6336,7 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
             {!isSent && (
               <button
                 className="btn btn-primary"
-                style={{ fontSize: 13 }}
+                style={{ fontSize: '0.8667rem' }}
                 disabled={submitting !== null || activeJobId !== null}
                 onClick={() => { onClose(); handleSubmitPeriod(period, taxType); }}>
                 {taxType === 'sui' ? '↓ SUI Report' : 'Pay to EFTPS'}
@@ -6007,23 +6354,23 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
       <div className="card" style={{ marginBottom: 16, padding: '12px 20px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
           <div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>941 Deposit Schedule</div>
-            <select className="form-select" value={sched941} onChange={e => setSched941(e.target.value)} style={{ fontSize: 12, height: 30, width: '100%' }}>
+            <div style={{ fontSize: '0.8667rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>941 Deposit Schedule</div>
+            <select className="form-select" value={sched941} onChange={e => setSched941(e.target.value)} style={{ fontSize: '0.8rem', height: 30, width: '100%' }}>
               <option value="monthly">Monthly — 15th of following month</option>
               <option value="semiweekly">Semi-weekly — Wed/Fri after pay date</option>
               <option value="quarterly">Quarterly — when filing Form 941</option>
             </select>
           </div>
           <div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>940 Payment Schedule</div>
-            <select className="form-select" value={sched940} onChange={e => setSched940(e.target.value)} style={{ fontSize: 12, height: 30, width: '100%' }}>
+            <div style={{ fontSize: '0.8667rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>940 Payment Schedule</div>
+            <select className="form-select" value={sched940} onChange={e => setSched940(e.target.value)} style={{ fontSize: '0.8rem', height: 30, width: '100%' }}>
               <option value="quarterly">Quarterly — if liability over $500</option>
               <option value="annually">Annually — Jan 31 (if under $500)</option>
             </select>
           </div>
           <div>
-            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>State SUI Schedule</div>
-            <select className="form-select" value={schedSUI} onChange={e => setSchedSUI(e.target.value)} style={{ fontSize: 12, height: 30, width: '100%' }}>
+            <div style={{ fontSize: '0.8667rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>State SUI Schedule</div>
+            <select className="form-select" value={schedSUI} onChange={e => setSchedSUI(e.target.value)} style={{ fontSize: '0.8rem', height: 30, width: '100%' }}>
               <option value="quarterly">Quarterly</option>
               <option value="monthly">Monthly</option>
               <option value="annually">Annually</option>
@@ -6042,19 +6389,35 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
               : 'Payment sent — please check back in 5–10 minutes to confirm it was processed.'}
           </span>
           <button
-            style={{ marginLeft: 'auto', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
-            onClick={async () => {
-              if (!window.confirm('Cancel the payment that is currently processing?\n\nIf it hasn’t reached EFTPS yet, it will NOT be sent and you can resubmit right away. If it may have already gone through, check the EFTPS website before paying again so you don’t double-pay.')) return;
-              try {
-                const r = await api.killBridgeJob();
-                setActiveJobId(null); setActiveJobTaxType(null); setActiveJobPeriodDue(null);
-                setJobStatus('cancelled');
-                setJobMessage(r?.cancelled ? `Cancelled ${r.cancelled} job(s)` : 'Cancelled');
-              } catch (e) { alert(e.message); }
-            }}>
+            style={{ marginLeft: 'auto', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '4px 10px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+            onClick={() => setCancelPayModal(true)}>
             Cancel Payment
           </button>
         </div>
+      )}
+      {cancelPayModal && (
+        <ModalOverlay onClose={() => setCancelPayModal(false)}>
+          <div className="card" style={{ width: 440, maxWidth: '94vw', padding: 24 }}>
+            <div style={{ fontWeight: 800, fontSize: '1.1333rem', marginBottom: 8 }}>Stop this tax payment?</div>
+            <p style={{ fontSize: '0.9333rem', color: 'var(--text-secondary)', margin: '0 0 10px' }}>Stop the payment before it is sent to EFTPS?</p>
+            <p style={{ fontSize: '0.8667rem', color: '#92400e', margin: '0 0 18px' }}>If it already reached EFTPS it may still go through — check the EFTPS website before paying again so you don&rsquo;t double-pay.</p>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary" onClick={() => setCancelPayModal(false)}>Keep sending</button>
+              <button className="btn btn-danger" onClick={handleStopPayment}>Stop the payment</button>
+            </div>
+          </div>
+        </ModalOverlay>
+      )}
+      {cancelPayNotice && (
+        <ModalOverlay onClose={() => setCancelPayNotice(false)}>
+          <div className="card" style={{ width: 440, maxWidth: '94vw', padding: 24 }}>
+            <div style={{ fontWeight: 800, fontSize: '1.1333rem', marginBottom: 8 }}>No payment was found to stop</div>
+            <p style={{ fontSize: '0.9333rem', color: 'var(--text-secondary)', margin: '0 0 18px' }}>It may have already been sent to EFTPS. Check the EFTPS website before paying again so you don’t double-pay.</p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button className="btn btn-primary" onClick={() => setCancelPayNotice(false)}>OK</button>
+            </div>
+          </div>
+        </ModalOverlay>
       )}
       {!activeJobId && jobStatus === 'completed' && (
         <div className="alert alert-success" role="status" style={{ marginBottom: 16 }}>
@@ -6121,19 +6484,19 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
       {/* Child support — vendor remittance checks, due 7 days after each pay date */}
       {!loadError && csPendingGroups.length > 0 && (
         <div className="table-scroll" style={{ background: '#fff', border: '1.5px solid #9faab6', borderRadius: 4, marginBottom: 16 }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9333rem' }}>
             <thead>
               <tr>
                 {['Vendor', 'Pay Date', 'Due', 'Employees', 'Amount', ''].map((h, i) => (
-                  <th key={h || 'actions'} style={{ padding: '8px 14px', fontSize: 11, fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: i === 4 ? 'right' : 'left', background: '#f8f9fa', borderBottom: '1px solid #d1d5db' }}>{h}</th>
+                  <th key={h || 'actions'} style={{ padding: '8px 14px', fontSize: '0.7333rem', fontWeight: 700, color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.05em', textAlign: i === 4 ? 'right' : 'left', background: '#f8f9fa', borderBottom: '1px solid #d1d5db' }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               <tr style={{ background: '#f8f9fa' }}>
-                <td colSpan={6} style={{ padding: '9px 16px', borderLeft: '3px solid #6b7280', fontWeight: 700, fontSize: 13, color: '#374151' }}>
+                <td colSpan={6} style={{ padding: '9px 16px', borderLeft: '3px solid #6b7280', fontWeight: 700, fontSize: '0.8667rem', color: '#374151' }}>
                   Child Support
-                  {csPendingGroups.some(g => g.due && todayStr > g.due) && <span style={{ color: '#dc2626', fontWeight: 600, marginLeft: 12, fontSize: 12 }}>{csPendingGroups.filter(g => g.due && todayStr > g.due).length} overdue</span>}
+                  {csPendingGroups.some(g => g.due && todayStr > g.due) && <span style={{ color: '#dc2626', fontWeight: 600, marginLeft: 12, fontSize: '0.8rem' }}>{csPendingGroups.filter(g => g.due && todayStr > g.due).length} overdue</span>}
                 </td>
               </tr>
               {csPendingGroups.map(g => {
@@ -6144,27 +6507,29 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
                   <tr key={g.key} style={{ background: '#fff', borderTop: '1px solid #e5e7eb' }}>
                     <td style={{ padding: '14px 14px', fontWeight: 600, color: '#374151' }}>
                       {g.vendor}
-                      <div style={{ fontSize: 11.5, fontWeight: 400, color: '#9ca3af' }}>{[...new Set(g.rows.map(w => w.case_number).filter(Boolean))].map(c => `Case ${c}`).join(' · ')}</div>
+                      <div style={{ fontSize: '0.8333rem', fontWeight: 400, color: '#475569' }}>{[...new Set(g.rows.map(w => w.case_number).filter(Boolean))].map(c => `Case ${c}`).join(' · ')}</div>
                     </td>
                     <td style={{ padding: '14px 14px', color: '#374151' }}>{fmtDate(g.payDate === 'unknown' ? null : g.payDate)}</td>
-                    <td style={{ padding: '14px 14px', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, color: isLate ? '#dc2626' : isDueSoon ? '#d97706' : '#374151' }}
+                    <td style={{ padding: '14px 14px', fontFamily: 'JetBrains Mono, monospace', fontWeight: 600, color: isLate ? '#dc2626' : isDueSoon ? '#92400e' : '#374151' }}
                       title="Child support must be remitted within 7 days of the pay date">
                       {fmtDate(g.due)}
-                      {isLate && <span style={{ marginLeft: 6, fontSize: 12 }}>(Late)</span>}
-                      {isDueSoon && <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 500 }}>(Due Soon)</span>}
+                      {isLate && <span style={{ marginLeft: 6, fontSize: '0.8rem' }}>(Late)</span>}
+                      {isDueSoon && <span style={{ marginLeft: 6, fontSize: '0.8rem', fontWeight: 500 }}>(Due Soon)</span>}
                     </td>
-                    <td style={{ padding: '14px 14px', fontSize: 13, color: '#6b7280' }}>{[...new Set(g.rows.map(w => w.employee_name).filter(Boolean))].join(', ') || g.rows.length}</td>
-                    <td style={{ padding: '14px 14px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 15, color: '#111' }}>{fmt(g.total)}</td>
+                    <td style={{ padding: '14px 14px', fontSize: '0.8667rem', color: '#6b7280' }}>{[...new Set(g.rows.map(w => w.employee_name).filter(Boolean))].join(', ') || g.rows.length}</td>
+                    <td style={{ padding: '14px 14px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: '1rem', color: '#111' }}>{fmt(g.total)}</td>
                     <td style={{ padding: '8px 14px', textAlign: 'right' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'flex-end' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 16, justifyContent: 'flex-end' }}>
                         <button
                           onClick={() => handleCsPay(g, { print: false })}
                           disabled={csBusyKey !== null}
                           title="Record this remittance as paid outside the app"
-                          style={{ background: 'none', border: 'none', color: '#16a34a', fontSize: 13, textDecoration: 'underline', padding: '2px 0', whiteSpace: 'nowrap', cursor: csBusyKey ? 'not-allowed' : 'pointer', opacity: csBusyKey ? 0.5 : 1 }}>
+                          style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 6, color: '#047857', fontSize: '0.8667rem', fontWeight: 600, padding: '8px 14px', minHeight: 36, whiteSpace: 'nowrap', cursor: csBusyKey ? 'not-allowed' : 'pointer', opacity: csBusyKey ? 0.5 : 1 }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; }}>
                           Mark Sent
                         </button>
-                        <button className="btn btn-primary btn-sm" style={{ fontSize: 13, whiteSpace: 'nowrap' }}
+                        <button className="btn btn-primary btn-sm" style={{ fontSize: '0.8667rem', whiteSpace: 'nowrap' }}
                           disabled={csBusyKey !== null}
                           onClick={() => handleCsPay(g, { print: true })}>
                           {busy ? 'Printing…' : '🖨 Print Check'}
@@ -6176,7 +6541,7 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
               })}
               <tr style={{ background: '#f8f9fa', borderTop: '1px solid #e5e7eb' }}>
                 <td colSpan={4} style={{ padding: '10px 14px' }} />
-                <td style={{ padding: '10px 14px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: 15 }}>{fmt(r2(csPendingGroups.reduce((s, g) => s + g.total, 0)))}</td>
+                <td style={{ padding: '10px 14px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 800, fontSize: '1rem' }}>{fmt(r2(csPendingGroups.reduce((s, g) => s + g.total, 0)))}</td>
                 <td />
               </tr>
             </tbody>
@@ -6197,24 +6562,28 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
       {/* Sent child support — collapsible, with Undo and reprint */}
       {csSentGroups.length > 0 && (
         <details style={{ marginBottom: 16 }}>
-          <summary style={{ cursor: 'pointer', padding: '10px 14px', background: '#fff', border: '1px solid var(--border)', fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>
+          <summary style={{ cursor: 'pointer', padding: '10px 14px', background: '#fff', border: '1px solid var(--border)', fontSize: '0.8667rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
             Sent child support ({csSentGroups.length}) <span style={{ float: 'right', fontFamily: 'JetBrains Mono, monospace', color: '#16a34a', fontWeight: 700 }}>{fmt(r2(csSentGroups.reduce((s, g) => s + g.total, 0)))}</span>
           </summary>
           <div className="table-scroll" style={{ background: '#fff', border: '1px solid var(--border)', borderTop: 'none' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.8667rem' }}>
               <tbody>
                 {csSentGroups.map(g => (
                   <tr key={g.key} style={{ borderTop: '1px solid #e5e7eb' }}>
                     <td style={{ padding: '11px 14px', fontWeight: 600, color: '#6b7280' }}>{g.vendor}</td>
-                    <td style={{ padding: '11px 14px', color: '#6b7280', fontSize: 12.5 }}>{g.checkNumber ? `Check #${g.checkNumber}` : 'Paid outside app'}{g.paidAt ? ` · ${fmtDate(g.paidAt.slice(0, 10))}` : ''}</td>
+                    <td style={{ padding: '11px 14px', color: '#6b7280', fontSize: '0.8333rem' }}>{g.checkNumber ? `Check #${g.checkNumber}` : 'Paid outside app'}{g.paidAt ? ` · ${fmtDate(g.paidAt.slice(0, 10))}` : ''}</td>
                     <td style={{ padding: '11px 14px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: '#16a34a' }}>{fmt(g.total)}</td>
                     <td style={{ padding: '8px 14px', textAlign: 'right', whiteSpace: 'nowrap' }}>
                       <button onClick={async () => { try { await api.printChildSupportCheck(clientId, g.rows.map(w => w.id), g.checkNumber); } catch (e) { alert(e.message); } }}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 12.5, textDecoration: 'underline', marginRight: 10 }}>
+                        style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.8667rem', fontWeight: 600, padding: '7px 12px', minHeight: 32, marginRight: 10 }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent)'; }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; }}>
                         Reprint
                       </button>
                       <button onClick={() => handleCsUndo(g)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 12.5, textDecoration: 'underline' }}>
+                        style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.8667rem', fontWeight: 600, padding: '7px 12px', minHeight: 32 }}
+                        onMouseEnter={e => { e.currentTarget.style.borderColor = '#991b1b'; e.currentTarget.style.color = '#991b1b'; }}
+                        onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}>
                         Undo
                       </button>
                     </td>
@@ -6266,7 +6635,7 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
           const [open, setOpen] = useState(false);
           const TH = {
             padding: '8px 14px',
-            fontSize: 11,
+            fontSize: '0.7333rem',
             fontWeight: 700,
             color: '#6b7280',
             textTransform: 'uppercase',
@@ -6281,17 +6650,17 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
               <button
                 onClick={() => setOpen(o => !o)}
                 style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '13px 18px', width: '100%', background: 'none', border: 'none', cursor: 'pointer', textAlign: 'left', borderBottom: open ? '1px solid #d1d5db' : 'none' }}>
-                <span style={{ fontSize: 11, color: '#9ca3af', transform: open ? 'rotate(90deg)' : 'rotate(0)', display: 'inline-block', transition: 'transform 0.15s' }}>▶</span>
-                <span style={{ fontWeight: 700, fontSize: 14, color: '#374151', flex: 1 }}>
+                <span style={{ fontSize: '0.7333rem', color: '#9ca3af', transform: open ? 'rotate(90deg)' : 'rotate(0)', display: 'inline-block', transition: 'transform 0.15s' }}>▶</span>
+                <span style={{ fontWeight: 700, fontSize: '0.9333rem', color: '#374151', flex: 1 }}>
                   Sent / Submitted ({allSent.length})
                 </span>
-                <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 15, color: '#16a34a' }}>
+                <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: '1rem', color: '#16a34a' }}>
                   {fmt(totalSent)}
                 </span>
               </button>
 
               {open && (
-                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 14 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.9333rem' }}>
                   <colgroup>
                     <col style={{ width: 130 }} />
                     <col />
@@ -6324,18 +6693,20 @@ function PayLiabilitiesTab({ clientId, client, refreshTick = 0 }) {
                           onMouseEnter={e => { e.currentTarget.style.background = '#fafafa'; }}
                           onMouseLeave={e => { e.currentTarget.style.background = '#fff'; }}
                           onClick={() => setPeriodModal({ period, taxType: period.taxType })}>
-                          <td style={{ padding: '14px 14px', fontSize: 13, color: '#6b7280', fontWeight: 500 }}>{period.taxLabel}</td>
+                          <td style={{ padding: '14px 14px', fontSize: '0.8667rem', color: '#6b7280', fontWeight: 500 }}>{period.taxLabel}</td>
                           <td style={{ padding: '14px 14px', color: '#374151' }}>{dateLabel}</td>
-                          <td style={{ padding: '14px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: 14, color: '#6b7280' }}
+                          <td style={{ padding: '14px 14px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.9333rem', color: '#6b7280' }}
                             title={period.due ? `IRS due date: ${fmtDate(period.due)}` : undefined}>{fmtDate(period.sendBy || period.due)}</td>
-                          <td style={{ padding: '14px 14px', fontSize: 14, color: '#6b7280' }}>{period.stubs.length}</td>
-                          <td style={{ padding: '14px 14px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: 15, color: '#16a34a' }}>
+                          <td style={{ padding: '14px 14px', fontSize: '0.9333rem', color: '#6b7280' }}>{period.stubs.length}</td>
+                          <td style={{ padding: '14px 14px', textAlign: 'right', fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, fontSize: '1rem', color: '#16a34a' }}>
                             {fmt(period.total)}
                           </td>
                           <td style={{ padding: '10px 14px', textAlign: 'right' }}>
                             <button
                               onClick={e => { e.stopPropagation(); togglePeriodStatus(period, period.taxType, 'pending'); }}
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#9ca3af', fontSize: 13, textDecoration: 'underline', padding: '2px 0' }}>
+                              style={{ background: '#fff', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', color: 'var(--text-secondary)', fontSize: '0.8667rem', fontWeight: 600, padding: '7px 12px', minHeight: 32 }}
+                              onMouseEnter={e => { e.currentTarget.style.borderColor = '#991b1b'; e.currentTarget.style.color = '#991b1b'; }}
+                              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text-secondary)'; }}>
                               Undo
                             </button>
                           </td>
@@ -6437,8 +6808,8 @@ function TwcPaymentModal({ client, defaultAmount, defaultDate, twcPayJob, onSubm
       <div style={{ background: 'var(--bg-card)', borderRadius: 12, padding: 28, width: 480, maxWidth: '94vw', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 20 }}>
           <div>
-            <h3 style={{ margin: 0, fontSize: 18 }}>Pay TWC SUI Online</h3>
-            <p style={{ margin: '4px 0 0', fontSize: 13, color: 'var(--text-muted)' }}>
+            <h3 style={{ margin: 0, fontSize: '1.2rem' }}>Pay TWC SUI Online</h3>
+            <p style={{ margin: '4px 0 0', fontSize: '0.8667rem', color: 'var(--text-muted)' }}>
               ACH debit via TWC Unemployment Tax Services
             </p>
           </div>
@@ -6446,8 +6817,8 @@ function TwcPaymentModal({ client, defaultAmount, defaultDate, twcPayJob, onSubm
         </div>
 
         {/* Account info */}
-        <div style={{ background: 'var(--bg-secondary)', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: 13 }}>
-          <div style={{ color: 'var(--text-muted)', fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>TWC Account</div>
+        <div style={{ background: 'var(--bg-secondary)', borderRadius: 8, padding: '10px 14px', marginBottom: 16, fontSize: '0.8667rem' }}>
+          <div style={{ color: 'var(--text-muted)', fontSize: '0.7333rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>TWC Account</div>
           {acctNum
             ? <span style={{ fontFamily: 'monospace', fontWeight: 600 }}>{acctNum}</span>
             : <span style={{ color: '#dc2626' }}>Not set — add it in Company tab → State Unemployment</span>
@@ -6460,7 +6831,7 @@ function TwcPaymentModal({ client, defaultAmount, defaultDate, twcPayJob, onSubm
             {twcPayJob.status === 'completed' && (
               <>
                 <div style={{ fontWeight: 700, color: '#16a34a', marginBottom: 4 }}>Payment scheduled</div>
-                {twcPayJob.confirmationNumber && <div style={{ fontSize: 13 }}>Confirmation #<strong style={{ fontFamily: 'monospace' }}>{twcPayJob.confirmationNumber}</strong></div>}
+                {twcPayJob.confirmationNumber && <div style={{ fontSize: '0.8667rem' }}>Confirmation #<strong style={{ fontFamily: 'monospace' }}>{twcPayJob.confirmationNumber}</strong></div>}
               </>
             )}
             {twcPayJob.status === 'failed' && (
@@ -6480,7 +6851,7 @@ function TwcPaymentModal({ client, defaultAmount, defaultDate, twcPayJob, onSubm
                 <span className="spinner spinner-dark" style={{ width: 14, height: 14, flexShrink: 0 }} />
                 <span style={{ flex: 1 }}>Browser automation in progress on the payment computer…</span>
                 <button
-                  style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '3px 9px', fontSize: 12, cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
+                  style={{ background: '#dc2626', color: '#fff', border: 'none', borderRadius: 6, padding: '3px 9px', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 600, whiteSpace: 'nowrap' }}
                   onClick={async () => {
                     if (!window.confirm('Cancel this TWC payment? If it already reached the state site it may still go through — check TWC before retrying.')) return;
                     try { await api.killTwcBridgeJob(); } catch (_) {}
@@ -6510,7 +6881,7 @@ function TwcPaymentModal({ client, defaultAmount, defaultDate, twcPayJob, onSubm
                 <input className="form-input" type="date" value={paymentDate} onChange={e => setPaymentDate(e.target.value)} />
               </div>
             </div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 16 }}>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: 16 }}>
               The bank on file in TWC will be used. The payment computer must be online for the payment to run.
             </div>
           </>
@@ -6553,20 +6924,20 @@ function EftpsPayModal({ period, taxType, credit, submitting, onSubmit, onClose 
   return (
     <ModalOverlay onClose={onClose}>
       <div className="card" style={{ width: 460, maxWidth: '94vw', padding: 24 }}>
-        <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 4 }}>Pay {label} to EFTPS</div>
-        <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 14 }}>
+        <div style={{ fontWeight: 800, fontSize: '1.1333rem', marginBottom: 4 }}>Pay {label} to EFTPS</div>
+        <div style={{ fontSize: '0.8667rem', color: 'var(--text-muted)', marginBottom: 14 }}>
           {period.stubs.length} check{period.stubs.length === 1 ? '' : 's'}
           {period.due ? <> · originally due <strong style={{ color: isLate ? '#dc2626' : 'inherit' }}>{fmtDate(period.due)}</strong></> : null}
         </div>
 
         {isLate && (
-          <div className="alert alert-warning" style={{ marginBottom: 14, fontSize: 12.5 }}>
+          <div className="alert alert-warning" style={{ marginBottom: 14, fontSize: '0.8333rem' }}>
             <span>⚠</span>
             <span>This deposit&rsquo;s due date has passed — EFTPS won&rsquo;t accept a past date. It will settle on the day you pick below (earliest: {fmtDate(minBiz)}). Late-deposit penalties/interest, if any, are assessed by the IRS separately.</span>
           </div>
         )}
 
-        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', padding: '10px 14px', marginBottom: 14, fontSize: 13 }}>
+        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)', padding: '10px 14px', marginBottom: 14, fontSize: '0.8667rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Period total</span><span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 600 }}>{fmt(period.total)}</span></div>
           {credit ? (
             <>
@@ -6577,14 +6948,14 @@ function EftpsPayModal({ period, taxType, credit, submitting, onSubmit, onClose 
         </div>
 
         <div className="form-group" style={{ marginBottom: 6 }}>
-          <label className="form-label">Settlement date <span style={{ fontWeight: 400, fontSize: 10, textTransform: 'none', color: 'var(--text-muted)' }}>(when the IRS pulls the money)</span></label>
+          <label className="form-label">Settlement date <span style={{ fontWeight: 400, fontSize: '0.6667rem', textTransform: 'none', color: 'var(--text-muted)' }}>(when the IRS pulls the money)</span></label>
           <input className="form-input" type="date" value={date} min={minBiz} onChange={e => setDate(e.target.value)} style={{ maxWidth: 200 }} />
         </div>
-        {tooEarly && <p style={{ fontSize: 12, color: '#dc2626', margin: '0 0 8px' }}>Earliest possible settlement is {fmtDate(minBiz)} — EFTPS needs at least one business day.</p>}
+        {tooEarly && <p style={{ fontSize: '0.8rem', color: '#dc2626', margin: '0 0 8px' }}>Earliest possible settlement is {fmtDate(minBiz)} — EFTPS needs at least one business day.</p>}
         {!tooEarly && nonBiz && suggested && (
-          <p style={{ fontSize: 12, color: '#d97706', margin: '0 0 8px' }}>
+          <p style={{ fontSize: '0.8rem', color: '#92400e', margin: '0 0 8px' }}>
             That&rsquo;s a weekend or federal holiday — use{' '}
-            <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontWeight: 700, fontSize: 12, padding: 0 }} onClick={() => setDate(suggested)}>{fmtDate(suggested)}</button>
+            <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--accent)', fontWeight: 700, fontSize: '0.8rem', padding: 0 }} onClick={() => setDate(suggested)}>{fmtDate(suggested)}</button>
           </p>
         )}
 
@@ -6644,7 +7015,7 @@ function FileFormsTab({ clientId }) {
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20 }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Tax Year</span>
+        <span style={{ fontSize: '0.8667rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Tax Year</span>
         <select className="form-select" value={year} onChange={e => setYear(parseInt(e.target.value))} style={{ width: 120 }}>{[currentYear - 1, currentYear, currentYear + 1].map(y => <option key={y} value={y}>{y}</option>)}</select>
         <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/reports?clientId=${clientId}&tab=preparer`)}>Preparer Info</button>
       </div>
@@ -6653,7 +7024,7 @@ function FileFormsTab({ clientId }) {
           const filing = filings[f.id];
           return (
             <div key={f.id} className="form-file-row">
-              <div style={{ flex: 1 }}><div style={{ fontWeight: 600, fontSize: 13 }}>{f.name}</div><div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{f.desc}</div></div>
+              <div style={{ flex: 1 }}><div style={{ fontWeight: 600, fontSize: '0.8667rem' }}>{f.name}</div><div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 2 }}>{f.desc}</div></div>
               {filing === 'filed'
                 ? <span className="badge badge-success">Filed ✓</span>
                 : f.status === 'Past'
@@ -6661,8 +7032,11 @@ function FileFormsTab({ clientId }) {
                   : filing === 'generated'
                     ? <span className="badge badge-neutral">Generated</span>
                     : <span className={`badge ${statusCls[f.status]}`}>{f.status}</span>}
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', flexShrink: 0 }}>Due {f.due}</div>
-              <button type="button" onClick={() => setFiling(f.id, filing === 'filed' ? null : 'filed')} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 12, color: 'var(--accent)', fontWeight: 600, padding: 0, flexShrink: 0 }}>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', flexShrink: 0 }}>Due {f.due}</div>
+              <button type="button" onClick={() => {
+                if (filing !== 'filed' && !window.confirm(`Mark ${f.name} as filed with the IRS? You can undo this with "Mark not filed".`)) return;
+                setFiling(f.id, filing === 'filed' ? null : 'filed');
+              }} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--accent)', fontWeight: 600, padding: '8px 10px', flexShrink: 0 }}>
                 {filing === 'filed' ? 'Mark not filed' : 'Mark filed'}
               </button>
               <button className="btn btn-secondary btn-sm" onClick={() => { if (!filing) setFiling(f.id, 'generated', true); f.action(); }}>Generate / View</button>
@@ -6687,6 +7061,11 @@ function PayrollTab({ clientId, client, employees, onRefresh, refreshEmployees, 
     return sessionStorage.getItem(`paySub_${clientId}`) || 'pay';
   });
   useEffect(() => { sessionStorage.setItem(`paySub_${clientId}`, sub); }, [sub, clientId]);
+  const subWrapRef = useRef(null);
+  useEffect(() => {
+    const body = subWrapRef.current?.closest('.workspace-body') || document.querySelector('.workspace-body');
+    body?.scrollTo(0, 0);
+  }, [sub]);
   // While Payroll is active this component owns ?tab= so sub-tabs deep-link.
   useEffect(() => {
     setSearchParams(prev => { prev.set('tab', sub); return prev; }, { replace: true });
@@ -6697,7 +7076,7 @@ function PayrollTab({ clientId, client, employees, onRefresh, refreshEmployees, 
   // route: accountants can open /company/:id too and must keep File Forms.
   const subTabs = [['pay','Pay Employees'],['liabilities','Pay Liabilities'],...(user?.role !== 'client' ? [['forms','File Forms']] : [])];
   return (
-    <div>
+    <div ref={subWrapRef}>
       <div className="pay-subtabs" role="tablist" aria-label="Payroll sections">
         {subTabs.map(([k, label]) => <button key={k} role="tab" aria-selected={sub === k} data-tour-id={k === 'liabilities' ? 'tour-liabilities-tab' : undefined} className={`pay-subtab${sub === k ? ' active' : ''}`} onClick={() => setSub(k)}>{label}</button>)}
       </div>
@@ -6751,10 +7130,10 @@ function AccountantsPanel({ clientId }) {
 
   const Row = ({ name, email, primary, onRemove }) => (
     <div style={{ display: 'flex', alignItems: 'center', padding: '14px 20px', borderBottom: '1px solid var(--border)', gap: 14 }}>
-      <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--accent-light)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>{(name?.[0] || '?').toUpperCase()}</div>
+      <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'var(--accent-light)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.8667rem', fontWeight: 700, flexShrink: 0 }}>{(name?.[0] || '?').toUpperCase()}</div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 600 }}>{name}</div>
-        {email && <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{email}</div>}
+        <div style={{ fontSize: '0.9333rem', fontWeight: 600 }}>{name}</div>
+        {email && <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: 2 }}>{email}</div>}
       </div>
       {primary ? <span className="badge badge-neutral">Primary</span>
                : <button className="btn btn-ghost btn-sm" style={{ color: '#dc2626' }} onClick={onRemove}>Remove</button>}
@@ -6763,15 +7142,15 @@ function AccountantsPanel({ clientId }) {
 
   return (
     <div style={{ padding: 24, maxWidth: 680 }}>
-      <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 6 }}>Accountants</h2>
-      <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 20px', lineHeight: 1.5 }}>
+      <h2 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: 6 }}>Accountants</h2>
+      <p style={{ fontSize: '0.8667rem', color: 'var(--text-secondary)', margin: '0 0 20px', lineHeight: 1.5 }}>
         Invite one or more accountants to manage this company from their own logins.
       </p>
-      {err && <div className="alert alert-error" style={{ marginBottom: 16, fontSize: 13 }}><span>⚠</span>{err}</div>}
+      {err && <div className="alert alert-error" style={{ marginBottom: 16, fontSize: '0.8667rem' }}><span>⚠</span>{err}</div>}
 
       <div className="card" style={{ borderLeft: '4px solid var(--accent)', padding: '16px 20px', marginBottom: 16 }}>
-        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 4 }}>Invite an accountant</div>
-        <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 12px', maxWidth: 560 }}>
+        <div style={{ fontSize: '0.9333rem', fontWeight: 700, marginBottom: 4 }}>Invite an accountant</div>
+        <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: '0 0 12px', maxWidth: 560 }}>
           Generate a one-time code and send it to your accountant. They enter it under “🔗 Connect a company” on their own dashboard. Codes expire in 14 days.
         </p>
         <button className="btn btn-primary btn-sm" onClick={generate} disabled={busy}>{busy ? 'Generating…' : '+ Generate invite code'}</button>
@@ -6779,10 +7158,10 @@ function AccountantsPanel({ clientId }) {
           <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
             {pending.map(p => (
               <div key={p.code} style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: 18, fontWeight: 800, letterSpacing: '0.2em', color: 'var(--accent)', background: 'var(--accent-light)', padding: '6px 14px' }}>{p.code}</span>
+                <span style={{ fontFamily: 'JetBrains Mono, monospace', fontSize: '1.2rem', fontWeight: 800, letterSpacing: '0.2em', color: 'var(--accent)', background: 'var(--accent-light)', padding: '6px 14px' }}>{p.code}</span>
                 <button className="btn btn-secondary btn-sm" onClick={() => copy(p.code)}>{copied === p.code ? 'Copied!' : 'Copy'}</button>
                 <button className="btn btn-ghost btn-sm" onClick={() => cancelInvite(p.code)} style={{ color: '#dc2626' }}>Cancel</button>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>expires {p.expiresAt ? new Date(p.expiresAt).toLocaleDateString() : '—'}</span>
+                <span style={{ fontSize: '0.7333rem', color: 'var(--text-muted)' }}>expires {p.expiresAt ? new Date(p.expiresAt).toLocaleDateString() : '—'}</span>
               </div>
             ))}
           </div>
@@ -6790,10 +7169,10 @@ function AccountantsPanel({ clientId }) {
       </div>
 
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', fontWeight: 600, fontSize: 14 }}>Accountants with access</div>
+        <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border)', fontWeight: 600, fontSize: '0.9333rem' }}>Accountants with access</div>
         {owner && <Row name={owner.username} email={owner.email} primary />}
         {linked.map(a => <Row key={a.userId} name={a.username} email={a.email} onRemove={() => revoke(a.userId, a.username)} />)}
-        {linked.length === 0 && <div style={{ padding: '16px 20px', fontSize: 13, color: 'var(--text-muted)' }}>No additional accountants yet.</div>}
+        {linked.length === 0 && <div style={{ padding: '16px 20px', fontSize: '0.8667rem', color: 'var(--text-muted)' }}>No additional accountants yet.</div>}
       </div>
     </div>
   );
@@ -6852,10 +7231,10 @@ function UsersPanel() {
 
   return (
     <div style={{ padding: 24, maxWidth: 640 }}>
-      <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 20 }}>User Management</h2>
+      <h2 style={{ fontSize: '1.2rem', fontWeight: 700, marginBottom: 20 }}>User Management</h2>
 
       <div className="card" style={{ marginBottom: 24 }}>
-        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', fontWeight: 600, fontSize: 14 }}>Users</div>
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', fontWeight: 600, fontSize: '0.9333rem' }}>Users</div>
         <table className="table" style={{ margin: 0 }}>
           <thead>
             <tr>
@@ -6867,8 +7246,8 @@ function UsersPanel() {
           <tbody>
             {users.map(u => (
               <tr key={u.id}>
-                <td>{u.username}{u.id === 1 && <span style={{ marginLeft: 6, fontSize: 11, background: 'var(--accent-light)', color: 'var(--accent)', borderRadius: 4, padding: '1px 5px', fontWeight: 600 }}>admin</span>}</td>
-                <td style={{ color: 'var(--text-muted)', fontSize: 13 }}>{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
+                <td>{u.username}{u.id === 1 && <span style={{ marginLeft: 6, fontSize: '0.7333rem', background: 'var(--accent-light)', color: 'var(--accent)', borderRadius: 4, padding: '1px 5px', fontWeight: 600 }}>admin</span>}</td>
+                <td style={{ color: 'var(--text-muted)', fontSize: '0.8667rem' }}>{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
                 <td>
                   <button
                     className="btn btn-danger btn-sm"
@@ -6889,12 +7268,12 @@ function UsersPanel() {
       </div>
 
       <div className="card">
-        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', fontWeight: 600, fontSize: 14 }}>Create User</div>
+        <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--border)', fontWeight: 600, fontSize: '0.9333rem' }}>Create User</div>
         <form onSubmit={handleCreate} style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {createError && <div style={{ color: 'var(--danger)', fontSize: 13 }}>{createError}</div>}
+          {createError && <div style={{ color: 'var(--danger)', fontSize: '0.8667rem' }}>{createError}</div>}
           <div style={{ display: 'flex', gap: 12 }}>
             <div style={{ flex: 1 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Username</label>
+              <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Username</label>
               <input
                 className="form-control"
                 value={newUsername}
@@ -6904,7 +7283,7 @@ function UsersPanel() {
               />
             </div>
             <div style={{ flex: 1 }}>
-              <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Password</label>
+              <label style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-muted)', display: 'block', marginBottom: 4 }}>Password</label>
               <input
                 className="form-control"
                 type="password"
@@ -6940,6 +7319,9 @@ export default function CompanyWorkspace({ clientMode = false }) {
   const [refreshTick, setRefreshTick] = useState(0);
   const [inviteUrl, setInviteUrl]   = useState('');
   const [inviting, setInviting]     = useState(false);
+  const [wsCopied, setWsCopied]     = useState(''); // 'code' | 'invite'
+  const companyGuardRef = useRef(null); // CompanyTab's unsaved-info guard — consulted before switching away
+  const bodyRef = useRef(null);
   const [activeTab, setActiveTab] = useState(() => {
     // ?tab= in the URL wins so tabs are bookmarkable/shareable — but only known
     // values (an unknown value would render a blank workspace body).
@@ -6960,6 +7342,7 @@ export default function CompanyWorkspace({ clientMode = false }) {
     setSearchParams(prev => { prev.set('tab', activeTab); return prev; }, { replace: true });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab]);
+  useEffect(() => { bodyRef.current?.scrollTo(0, 0); }, [activeTab]);
   useEffect(() => { if (id) loadAll(); }, [id]);
 
   // Browser-tab title: with several companies open, every tab said just "PayrollTax Pro"
@@ -6982,6 +7365,15 @@ export default function CompanyWorkspace({ clientMode = false }) {
     } finally {
       setRefreshing(false);
     }
+  }
+
+  function wsCopy(kind, text) { navigator.clipboard.writeText(text); setWsCopied(kind); setTimeout(() => setWsCopied(''), 1500); }
+
+  function handleTabClick(k) {
+    if (k === activeTab) return;
+    const go = () => setActiveTab(k);
+    if (activeTab === 'company' && companyGuardRef.current && !companyGuardRef.current(go)) return;
+    go();
   }
 
   async function handleInviteClient() {
@@ -7014,18 +7406,18 @@ export default function CompanyWorkspace({ clientMode = false }) {
           display: 'flex', alignItems: 'center', padding: '0 24px',
           gap: 14, flexShrink: 0, boxShadow: '0 2px 8px rgba(0,0,0,0.18)',
         }}>
-          <div style={{ fontSize: 17, fontWeight: 800, color: '#fff', letterSpacing: '-0.4px' }}>
-            Payroll<span style={{ color: '#7ca4e0' }}>Tax</span> Pro
+          <div style={{ fontSize: '1.1333rem', fontWeight: 800, color: '#fff', letterSpacing: '-0.4px' }}>
+            Payroll<span style={{ color: '#a7f3d0' }}>Tax</span> Pro
           </div>
           {client?.businessName && (
             <>
-              <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: 18 }}>|</div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>{client.businessName}</div>
+              <div style={{ color: 'rgba(255,255,255,0.3)', fontSize: '1.2rem' }}>|</div>
+              <div style={{ fontSize: '0.8667rem', fontWeight: 600, color: 'rgba(255,255,255,0.85)' }}>{client.businessName}</div>
             </>
           )}
           <div style={{ flex: 1 }} />
-          <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.65)' }}>{user?.email || user?.username}</span>
-          <button onClick={logout} style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, padding: '5px 14px', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+          <span style={{ fontSize: '0.8rem', color: 'rgba(255,255,255,0.65)' }}>{user?.email || user?.username}</span>
+          <button onClick={logout} style={{ background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)', borderRadius: 6, padding: '5px 14px', color: '#fff', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}>
             Sign out
           </button>
         </div>
@@ -7038,18 +7430,17 @@ export default function CompanyWorkspace({ clientMode = false }) {
           <span className="workspace-ein">EIN {client?.ein}</span>
           <div style={{ flex: 1 }} />
           {client?.joinCode && (
-            <div
-              title="Share this join code with employees so they can self-register"
-              style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 10px', fontSize: 12 }}
-            >
-              <span style={{ color: 'var(--text-muted)' }}>Employee code:</span>
-              <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--accent)', letterSpacing: '0.1em' }}>{client.joinCode}</span>
-              <button
-                type="button"
-                onClick={() => navigator.clipboard.writeText(client.joinCode)}
-                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 11, padding: '0 2px' }}
-                title="Copy code"
-              >⧉</button>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'var(--bg-secondary)', border: '1px solid var(--border)', borderRadius: 6, padding: '3px 6px 3px 10px', fontSize: '0.8rem' }}>
+                <span style={{ color: 'var(--text-muted)' }}>Employee code:</span>
+                <span style={{ fontFamily: 'JetBrains Mono, monospace', fontWeight: 700, color: 'var(--accent)', letterSpacing: '0.1em' }}>{client.joinCode}</span>
+                <button
+                  type="button"
+                  onClick={() => wsCopy('code', client.joinCode)}
+                  style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer', color: wsCopied === 'code' ? 'var(--success)' : 'var(--text-secondary)', fontSize: '0.8333rem', fontWeight: 600, minHeight: 32, padding: '0 10px' }}
+                >{wsCopied === 'code' ? 'Copied ✓' : 'Copy'}</button>
+              </div>
+              <span style={{ fontSize: '0.8333rem', color: 'var(--text-muted)' }}>Employees use this code to create their own login.</span>
             </div>
           )}
           {!clientMode && (
@@ -7057,7 +7448,7 @@ export default function CompanyWorkspace({ clientMode = false }) {
               onClick={handleInviteClient}
               disabled={inviting}
               title="Generate invite link for client portal"
-              style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, cursor: inviting ? 'default' : 'pointer', padding: '3px 10px', color: 'var(--text-secondary)', fontSize: 12, display: 'flex', alignItems: 'center', gap: 4 }}
+              style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, cursor: inviting ? 'default' : 'pointer', padding: '3px 10px', color: 'var(--text-secondary)', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 4 }}
             >
               ✉ {inviting ? '…' : 'Invite Client'}
             </button>
@@ -7065,37 +7456,37 @@ export default function CompanyWorkspace({ clientMode = false }) {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            title="Refresh data"
-            style={{ background: 'none', border: 'none', cursor: refreshing ? 'default' : 'pointer', padding: '4px 6px', borderRadius: 6, color: 'var(--text-muted)', fontSize: 16, lineHeight: 1, display: 'flex', alignItems: 'center', opacity: refreshing ? 0.5 : 1 }}
+            aria-label="Refresh data"
+            style={{ background: 'none', border: '1px solid var(--border)', cursor: refreshing ? 'default' : 'pointer', padding: '0 12px', minHeight: 36, borderRadius: 6, color: 'var(--text-secondary)', fontSize: '0.8667rem', fontWeight: 600, lineHeight: 1, display: 'flex', alignItems: 'center', gap: 6, opacity: refreshing ? 0.5 : 1 }}
           >
-            <span style={{ display: 'inline-block', animation: refreshing ? 'spin 0.7s linear infinite' : 'none' }}>↻</span>
+            <span style={{ display: 'inline-block', animation: refreshing ? 'spin 0.7s linear infinite' : 'none' }}>↻</span> Refresh
           </button>
         </div>
         {!clientMode && inviteUrl && (
           <div style={{ padding: '8px 16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>Client invite link:</span>
+            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-secondary)' }}>Client invite link:</span>
             <input
               readOnly
               value={inviteUrl}
               onFocus={e => e.target.select()}
-              style={{ flex: 1, minWidth: 200, fontSize: 11, padding: '3px 8px', border: '1px solid var(--border)', borderRadius: 4, fontFamily: 'monospace', background: 'var(--bg-primary)' }}
+              style={{ flex: 1, minWidth: 200, fontSize: '0.7333rem', padding: '3px 8px', border: '1px solid var(--border)', borderRadius: 4, fontFamily: 'monospace', background: 'var(--bg-primary)' }}
             />
-            <button className="btn btn-secondary btn-sm" onClick={() => navigator.clipboard.writeText(inviteUrl)} style={{ fontSize: 11 }}>Copy</button>
-            <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', fontSize: 14 }} onClick={() => setInviteUrl('')}>×</button>
+            <button className="btn btn-secondary btn-sm" onClick={() => wsCopy('invite', inviteUrl)} style={{ fontSize: '0.8333rem', color: wsCopied === 'invite' ? 'var(--success)' : undefined }}>{wsCopied === 'invite' ? 'Copied ✓' : 'Copy'}</button>
+            <button className="drawer-close" aria-label="Dismiss invite link" style={{ width: 36, height: 36, fontSize: '1.0667rem' }} onClick={() => setInviteUrl('')}>×</button>
           </div>
         )}
         <div className="ws-tabs" role="tablist" aria-label="Company sections">
           {[['employees','Employees'],['company','Company'],['payroll','Payroll'],['accountants','Accountants'],...(!clientMode && user?.username === 'admin' ? [['users','Users']] : [])].map(([k, label]) => (
-            <button key={k} role="tab" aria-selected={activeTab === k} className={`ws-tab${activeTab === k ? ' active' : ''}`} onClick={() => setActiveTab(k)} data-tour-id={k === 'payroll' ? 'tour-payroll-tab-btn' : k === 'employees' ? 'tour-employees-tab-btn' : undefined}>
+            <button key={k} role="tab" aria-selected={activeTab === k} className={`ws-tab${activeTab === k ? ' active' : ''}`} onClick={() => handleTabClick(k)} data-tour-id={k === 'payroll' ? 'tour-payroll-tab-btn' : k === 'employees' ? 'tour-employees-tab-btn' : undefined}>
               {label}
-              {k === 'employees' && employees.length > 0 && <span style={{ marginLeft: 6, background: activeTab === k ? 'var(--accent)' : 'var(--bg-tertiary)', color: activeTab === k ? '#fff' : 'var(--text-muted)', borderRadius: 20, fontSize: 10, fontWeight: 700, padding: '1px 6px' }}>{employees.length}</span>}
+              {k === 'employees' && employees.length > 0 && <span style={{ marginLeft: 6, background: activeTab === k ? 'var(--accent)' : 'var(--bg-tertiary)', color: activeTab === k ? '#fff' : 'var(--text-muted)', borderRadius: 20, fontSize: '0.6667rem', fontWeight: 700, padding: '1px 6px' }}>{employees.length}</span>}
             </button>
           ))}
         </div>
       </div>
-      <div className="workspace-body">
+      <div className="workspace-body" ref={bodyRef}>
         {activeTab === 'employees' && <EmployeesTab clientId={id} employees={employees} onRefresh={handleRefresh} clientMode={clientMode} />}
-        {activeTab === 'company'   && <CompanyTab client={client} onSaved={loadAll} />}
+        {activeTab === 'company'   && <CompanyTab client={client} onSaved={loadAll} guardRef={companyGuardRef} />}
         {activeTab === 'payroll'   && <PayrollTab clientId={id} client={client} employees={employees} onRefresh={handleRefresh} refreshEmployees={loadAll} refreshTick={refreshTick} onGoToEmployees={() => setActiveTab('employees')} />}
         {activeTab === 'accountants' && <AccountantsPanel clientId={id} />}
         {activeTab === 'users'     && user?.username === 'admin' && <UsersPanel />}

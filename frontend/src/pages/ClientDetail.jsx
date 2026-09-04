@@ -6,8 +6,8 @@ import { useAuth } from '../contexts/AuthContext';
 function InfoRow({ label, value, mono }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid var(--border-light)' }}>
-      <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>{label}</span>
-      <span className={mono ? 'mono' : ''} style={{ color: 'var(--text-primary)', fontSize: 13, fontWeight: 500 }}>
+      <span style={{ color: 'var(--text-muted)', fontSize: '0.8667rem' }}>{label}</span>
+      <span className={mono ? 'mono' : ''} style={{ color: 'var(--text-primary)', fontSize: '0.8667rem', fontWeight: 500 }}>
         {value || '—'}
       </span>
     </div>
@@ -34,7 +34,7 @@ const TAB_STYLE = (active) => ({
   color: active ? 'var(--accent)' : 'var(--text-muted)',
   fontWeight: active ? 700 : 400,
   cursor: 'pointer',
-  fontSize: 14,
+  fontSize: '0.9333rem',
   transition: 'color 0.15s',
 });
 
@@ -105,7 +105,7 @@ export default function ClientDetail() {
         <div className="page-header-row">
           <div>
             <h2>{client.businessName}</h2>
-            <p className="mono" style={{ fontSize: 13, marginTop: 4 }}>EIN: {client.ein}</p>
+            <p className="mono" style={{ fontSize: '0.8667rem', marginTop: 4 }}>EIN: {client.ein}</p>
           </div>
           <div style={{ display: 'flex', gap: 10 }}>
             {isAdmin ? (
@@ -167,16 +167,16 @@ export default function ClientDetail() {
               </div>
               {pendingStubs.length === 0 ? (
                 <div style={{ padding: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>No pending paystubs.</span>
+                  <span style={{ fontSize: '0.8667rem', color: 'var(--text-muted)' }}>No pending paystubs.</span>
                   {isAdmin && <Link to={`/clients/${id}/payroll/new`} className="btn btn-secondary btn-sm">New Payroll Entry</Link>}
                 </div>
               ) : (
                 <div style={{ padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div>
-                    <span style={{ fontSize: 22, fontWeight: 700, color: 'var(--warning)', fontFamily: 'JetBrains Mono, monospace', marginRight: 8 }}>
+                    <span style={{ fontSize: '1.4667rem', fontWeight: 700, color: 'var(--warning)', fontFamily: 'JetBrains Mono, monospace', marginRight: 8 }}>
                       {pendingStubs.length}
                     </span>
-                    <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
+                    <span style={{ fontSize: '0.8667rem', color: 'var(--text-secondary)' }}>
                       pending paystub{pendingStubs.length !== 1 ? 's' : ''} · total deposit{' '}
                       <strong style={{ color: 'var(--accent)' }}>
                         {fmt(pendingStubs.reduce((s, p) => s + (p.total_deposit || 0), 0))}
@@ -200,7 +200,7 @@ export default function ClientDetail() {
 
             {employees.length === 0 ? (
               <div className="card" style={{ textAlign: 'center', padding: '48px 24px' }}>
-                <div style={{ fontSize: 40, marginBottom: 12 }}>👤</div>
+                <div style={{ fontSize: '2.6667rem', marginBottom: 12 }}>👤</div>
                 <h3 style={{ marginBottom: 8 }}>No employees yet</h3>
                 <p style={{ color: 'var(--text-muted)', marginBottom: 20 }}>Add employees to track payroll per person.</p>
                 <Link to={isAdmin ? `/clients/${id}/employees/new` : `/company/${id}/employees/new`} className="btn btn-primary">Add First Employee</Link>
@@ -211,7 +211,7 @@ export default function ClientDetail() {
                   <thead>
                     <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)' }}>
                       {['Name', 'Pay Type', 'Pay Rate', 'Work State', `${currentYear} YTD Gross`, ''].map((h) => (
-                        <th key={h} style={{ padding: '11px 18px', textAlign: 'left', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
+                        <th key={h} style={{ padding: '11px 18px', textAlign: 'left', fontSize: '0.7333rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -225,17 +225,17 @@ export default function ClientDetail() {
                         onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
                       >
                         <td style={{ padding: '14px 18px' }}>
-                          <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--accent)' }}>{emp.fullName}</div>
-                          {!emp.isActive && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Inactive</div>}
+                          <div style={{ fontWeight: 600, fontSize: '0.9333rem', color: 'var(--accent)' }}>{emp.fullName}</div>
+                          {!emp.isActive && <div style={{ fontSize: '0.7333rem', color: 'var(--text-muted)', marginTop: 2 }}>Inactive</div>}
                         </td>
-                        <td style={{ padding: '14px 18px', fontSize: 13, color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{emp.payType}</td>
-                        <td style={{ padding: '14px 18px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>{payRate(emp)}</td>
-                        <td style={{ padding: '14px 18px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13 }}>{emp.workState || emp.state || 'TX'}</td>
-                        <td style={{ padding: '14px 18px', fontFamily: 'JetBrains Mono, monospace', fontSize: 13, fontWeight: 600, color: 'var(--accent)' }}>
+                        <td style={{ padding: '14px 18px', fontSize: '0.8667rem', color: 'var(--text-secondary)', textTransform: 'capitalize' }}>{emp.payType}</td>
+                        <td style={{ padding: '14px 18px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem' }}>{payRate(emp)}</td>
+                        <td style={{ padding: '14px 18px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem' }}>{emp.workState || emp.state || 'TX'}</td>
+                        <td style={{ padding: '14px 18px', fontFamily: 'JetBrains Mono, monospace', fontSize: '0.8667rem', fontWeight: 600, color: 'var(--accent)' }}>
                           {fmt(ytdMap[emp.id]?.ytd_gross || 0)}
                         </td>
                         <td style={{ padding: '14px 18px', textAlign: 'right' }}>
-                          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>View →</span>
+                          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>View →</span>
                         </td>
                       </tr>
                     ))}
@@ -257,7 +257,7 @@ export default function ClientDetail() {
 
             {recentSubs.length === 0 ? (
               <div className="card" style={{ textAlign: 'center', padding: '48px 24px' }}>
-                <div style={{ fontSize: 40, marginBottom: 12 }}>📄</div>
+                <div style={{ fontSize: '2.6667rem', marginBottom: 12 }}>📄</div>
                 <h3 style={{ marginBottom: 8 }}>No submissions yet</h3>
                 <p style={{ color: 'var(--text-muted)', marginBottom: 20 }}>Create a payroll entry to start submitting deposits.</p>
                 <Link to={`/clients/${id}/payroll/new`} className="btn btn-primary">New Payroll Entry</Link>
@@ -268,20 +268,20 @@ export default function ClientDetail() {
                   <thead>
                     <tr style={{ background: 'var(--bg-primary)', borderBottom: '1px solid var(--border)' }}>
                       {['Pay Period', 'Gross Wages', 'FIT Withholding', 'SS + Medicare', 'Total Deposit', 'Status', 'Date'].map((h) => (
-                        <th key={h} style={{ padding: '11px 18px', textAlign: 'left', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
+                        <th key={h} style={{ padding: '11px 18px', textAlign: 'left', fontSize: '0.7333rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
                     {recentSubs.map((s) => (
                       <tr key={s.id} style={{ borderBottom: '1px solid var(--border-light)' }}>
-                        <td className="mono" style={{ padding: '12px 18px', fontSize: 12 }}>{s.pay_period_start} – {s.pay_period_end}</td>
+                        <td className="mono" style={{ padding: '12px 18px', fontSize: '0.8rem' }}>{s.pay_period_start} – {s.pay_period_end}</td>
                         <td className="amount" style={{ padding: '12px 18px' }}>{fmt(s.gross_wages)}</td>
                         <td className="amount" style={{ padding: '12px 18px' }}>{fmt(s.fit_withholding)}</td>
                         <td className="amount" style={{ padding: '12px 18px' }}>{fmt(s.employee_ss + s.employee_medicare + s.employer_ss + s.employer_medicare)}</td>
                         <td className="amount" style={{ padding: '12px 18px', color: 'var(--accent)', fontWeight: 600 }}>{fmt(s.total_deposit)}</td>
                         <td style={{ padding: '12px 18px' }}>{statusBadge(s.eftps_status)}</td>
-                        <td style={{ padding: '12px 18px', color: 'var(--text-muted)', fontSize: 12 }}>{new Date(s.created_at).toLocaleDateString()}</td>
+                        <td style={{ padding: '12px 18px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>{new Date(s.created_at).toLocaleDateString()}</td>
                       </tr>
                     ))}
                   </tbody>

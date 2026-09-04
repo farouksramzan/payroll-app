@@ -29,11 +29,11 @@ export default class ErrorBoundary extends React.Component {
         }}
       >
         <div className="card" style={{ maxWidth: 440, width: '100%', textAlign: 'center', padding: '36px 32px' }}>
-          <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
-          <h2 style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
+          <div style={{ fontSize: '2.6667rem', marginBottom: 12 }}>⚠️</div>
+          <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 8 }}>
             Something went wrong
           </h2>
-          <p style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.55, marginBottom: 20 }}>
+          <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', lineHeight: 1.55, marginBottom: 20 }}>
             The page hit an unexpected error while displaying. Your payroll data is safe — nothing was
             changed or lost. Reload the page to keep working.
           </p>
