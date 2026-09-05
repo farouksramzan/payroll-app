@@ -4,6 +4,7 @@ import { useParams, Link, useNavigate, useLocation, useSearchParams } from 'reac
 import api from '../api/client';
 import { useAuth } from '../contexts/AuthContext';
 import SearchSelect from '../components/SearchSelect';
+import { TTOC_OPTIONS } from '../constants/ttocCodes';
 import ImportEmployeesModal from '../components/ImportEmployeesModal';
 import ImportPaychecksModal from '../components/ImportPaychecksModal';
 import { deleteCheckConfirm } from '../utils/checkConfirm';
@@ -1014,21 +1015,19 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
               <p className="form-section-title">Tipped Occupation Codes (TTOC)</p>
               <div className="form-grid">
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">TTOC 1</label>
-                  <input className="form-input mono" list="ttoc-code-options" inputMode="numeric" maxLength={3} value={form.ttoc1}
-                    onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 3); dirtyRef.current = true; mainDirtyRef.current = true; setIsDirty(true); setForm(f => ({ ...f, ttoc1: v })); }} placeholder="e.g. 104" />
+                  <label className="form-label" htmlFor="ttoc1-input">TTOC 1</label>
+                  <SearchSelect inputId="ttoc1-input" options={TTOC_OPTIONS} value={form.ttoc1} allowClear
+                    placeholder="Search by job or code — e.g. bartender or 101"
+                    onChange={e => { dirtyRef.current = true; mainDirtyRef.current = true; setIsDirty(true); setForm(f => ({ ...f, ttoc1: e.target.value })); }} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">TTOC 2</label>
-                  <input className="form-input mono" list="ttoc-code-options" inputMode="numeric" maxLength={3} value={form.ttoc2}
-                    onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 3); dirtyRef.current = true; mainDirtyRef.current = true; setIsDirty(true); setForm(f => ({ ...f, ttoc2: v })); }} placeholder="optional" />
+                  <label className="form-label" htmlFor="ttoc2-input">TTOC 2</label>
+                  <SearchSelect inputId="ttoc2-input" options={TTOC_OPTIONS} value={form.ttoc2} allowClear
+                    placeholder="optional"
+                    onChange={e => { dirtyRef.current = true; mainDirtyRef.current = true; setIsDirty(true); setForm(f => ({ ...f, ttoc2: e.target.value })); }} />
                 </div>
               </div>
-              <datalist id="ttoc-code-options">
-                <option value="000">Non-qualifying occupation</option>
-                <option value="104">Dining room and cafeteria attendants and bartender helpers</option>
-              </datalist>
-              <p className="form-hint" style={{ fontSize: '0.8667rem' }}>Select up to two Treasury Tipped Occupation Codes for tip reporting. For tips from a non-qualifying occupation, use code 000.</p>
+              <p className="form-hint" style={{ fontSize: '0.8667rem' }}>Select up to two Treasury Tipped Occupation Codes for tip reporting — the full list from the IRS &ldquo;No Tax on Tips&rdquo; rules (71 occupations in 8 categories). For tips from a non-qualifying occupation, use code 000.</p>
 
               <p className="form-section-title">Sick &amp; Vacation</p>
               <div className="form-grid">
