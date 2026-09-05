@@ -25,6 +25,7 @@ const directDepositRoutes  = require('./src/routes/directDeposit');
 const twcSubmissionRoutes  = require('./src/routes/twcSubmissions');
 const childSupportRoutes   = require('./src/routes/childSupport');
 const twcPaymentRoutes     = require('./src/routes/twcPayments');
+const employeePayItemRoutes = require('./src/routes/employeePayItems');
 const clientPortalRoutes   = require('./src/routes/clientPortal');
 const employeePortalRoutes = require('./src/routes/employeePortal');
 const systemRoutes         = require('./src/routes/system');
@@ -179,6 +180,9 @@ app.use('/api/twc-payments',     twcPaymentRoutes);
 app.use('/api/client-portal',   clientPortalRoutes);
 app.use('/api/employee-portal', employeePortalRoutes);
 app.use('/api/system',          systemRoutes);
+// employeePayItems carries full /employees/... and /clients/... paths, so it
+// mounts at /api and catches what the routers above don't match.
+app.use('/api',                 employeePayItemRoutes);
 app.get('/api/twc-bridge/status', requireAuth, (req, res) => res.json({ connected: bridgeTwc.isConnected, version: bridgeTwc.bridgeVersion || null }));
 app.post('/api/twc-bridge/kill',  requireAuth, (req, res) => {
   try { res.json({ ok: true, ...bridgeTwc.killJob() }); }

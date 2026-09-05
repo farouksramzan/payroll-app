@@ -1687,9 +1687,60 @@ router.post('/payroll-run', (req, res) => {
         .get(empData.employeeId, clientId);
       if (!emp) continue;
 
-      const lineItems = empData.lineItems || [];
-      const computedGross = lineItems.reduce((s, li) => s + parseFloat(li.amount || 0), 0);
+      const lineItems = [...(empData.lineItems || [])];
+      let computedGross = lineItems.reduce((s, li) => s + parseFloat(li.amount || 0), 0);
       if (computedGross <= 0) continue;
+
+      // Default items: any of the six per-check amounts the caller left
+      // undefined gets the employee's saved default, capped at the remainder of
+      // its annual limit (YTD by the check's settlement-date year, voided checks
+      // excluded). An explicit value from the body — including 0 — wins as-is.
+      const itemYear = String(settlementDate || payPeriodEnd).slice(0, 4);
+      const defaultRows = db.prepare('SELECT * FROM employee_default_items WHERE employee_id = ?').all(emp.id);
+      const ITEM_COLS = { reportedTips: 'reported_tips', bonus: 'bonus', commission: 'commission', reimbursement: 'reimbursement', deduction: 'deduction', garnishment: 'garnishment' };
+      // A caller that provides an earnings LINE ITEM of a type without the matching
+      // field (the legacy PayrollRun page does this) has spoken explicitly — treat
+      // the lines as the value so the default can't double-book on top of them.
+      const ITEM_LINE_TYPES = { reportedTips: 'tips', bonus: 'bonus', commission: 'commission' };
+      const lineAmountFor = (field) => {
+        const lt = ITEM_LINE_TYPES[field];
+        if (!lt) return 0;
+        return r2((empData.lineItems || []).filter(li => li.payType === lt).reduce((sum, li) => sum + parseFloat(li.amount || 0), 0));
+      };
+      const resolveItem = (field) => {
+        if (empData[field] !== undefined) return parseFloat(empData[field] || 0);
+        const fromLines = lineAmountFor(field);
+        if (fromLines > 0) return fromLines;
+        const d = defaultRows.find(row => row.item_type === field);
+        if (!d) return 0;
+        if (d.annual_limit == null) return r2(d.amount);
+        const used = db.prepare(`
+          SELECT COALESCE(SUM(${ITEM_COLS[field]}), 0) AS total FROM paystubs
+          WHERE employee_id = ? AND check_status != 'voided'
+            AND COALESCE(settlement_date, pay_period_end) LIKE ?
+        `).get(emp.id, `${itemYear}-%`).total;
+        return Math.max(0, Math.min(r2(d.amount), r2(d.annual_limit - r2(used))));
+      };
+      const effTips        = resolveItem('reportedTips');
+      const effBonus       = resolveItem('bonus');
+      const effCommission  = resolveItem('commission');
+      const effReimb       = resolveItem('reimbursement');
+      const effDeduction   = resolveItem('deduction');
+      const effGarnishment = resolveItem('garnishment');
+      // Defaulted taxable items join gross as line items so taxes are computed
+      // exactly as if the user had typed them (tips/bonus/commission are taxable).
+      if (empData.reportedTips === undefined && lineAmountFor('reportedTips') === 0 && effTips > 0) {
+        lineItems.push({ payType: 'tips', description: 'Reported Tips', amount: effTips });
+        computedGross = r2(computedGross + effTips);
+      }
+      if (empData.bonus === undefined && lineAmountFor('bonus') === 0 && effBonus > 0) {
+        lineItems.push({ payType: 'bonus', description: 'Bonus', amount: effBonus });
+        computedGross = r2(computedGross + effBonus);
+      }
+      if (empData.commission === undefined && lineAmountFor('commission') === 0 && effCommission > 0) {
+        lineItems.push({ payType: 'commission', description: 'Commission', amount: effCommission });
+        computedGross = r2(computedGross + effCommission);
+      }
 
       const effectiveWorkState = (emp.work_state || emp.state || client.state || 'TX').toUpperCase();
       const ytdBefore = parseFloat(empData.ytdGross || 0);
@@ -1743,9 +1794,9 @@ router.post('/payroll-run', (req, res) => {
       // light pay period must not drive net pay negative (a negative ACH amount) or
       // book a liability for money that was never withheld.
       const netBeforeCS = Math.round((taxes.netPay
-        - parseFloat(empData.deduction    || 0)
-        - parseFloat(empData.garnishment  || 0)
-        + parseFloat(empData.reimbursement || 0)
+        - effDeduction
+        - effGarnishment
+        + effReimb
       ) * 100) / 100;
       csAlloc = capAlloc(csAlloc, Math.max(0, netBeforeCS));
       const csTotal = r2(csAlloc.reduce((s, a) => s + a.amount, 0));
@@ -1772,13 +1823,13 @@ router.post('/payroll-run', (req, res) => {
         empData.overtimeHours != null ? parseFloat(empData.overtimeHours) : null,
         empData.regularPay    != null ? parseFloat(empData.regularPay)    : null,
         empData.overtimePay   != null ? parseFloat(empData.overtimePay)   : null,
-        parseFloat(empData.bonus         || 0),
-        parseFloat(empData.commission    || 0),
-        parseFloat(empData.reimbursement || 0),
-        parseFloat(empData.deduction     || 0),
-        parseFloat(empData.garnishment   || 0),
+        effBonus,
+        effCommission,
+        effReimb,
+        effDeduction,
+        effGarnishment,
         csTotal,
-        parseFloat(empData.reportedTips  || 0),
+        effTips,
         'draft',
         calcSettlementDueDate(settlementDate || payPeriodEnd, client.deposit_schedule || 'monthly'),
         payGroupId || null,

@@ -712,6 +712,42 @@ function migrate() {
     )
   `);
 
+  // ── employee_earning_rates — named extra hourly rates per employee ───────────
+  // Quick-pick rates (e.g. "Kitchen" $20.00) selectable when entering hours on a
+  // check. One rate per check — these supplement the employee's base pay setup.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS employee_earning_rates (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER NOT NULL,
+      name        TEXT NOT NULL,
+      hourly_rate REAL NOT NULL,
+      created_at  TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+    )
+  `);
+
+  // ── employee_default_items — per-employee default per-check item amounts ─────
+  // One row per (employee, item type) — reportedTips/bonus/commission/
+  // reimbursement/deduction/garnishment. Pre-fills every new check (an explicit
+  // per-check value always wins). annual_limit, when set, caps the default at
+  // the remainder of the employee's calendar-year YTD for that item.
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS employee_default_items (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id  INTEGER NOT NULL,
+      item_type    TEXT NOT NULL,
+      amount       REAL NOT NULL,
+      annual_limit REAL,
+      created_at   TEXT DEFAULT (datetime('now')),
+      UNIQUE(employee_id, item_type),
+      FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE
+    )
+  `);
+
+  // YTD sums for default-item annual limits scan paystubs by employee on every
+  // pay-items fetch and payroll run — keep that lookup off a full table scan.
+  db.exec('CREATE INDEX IF NOT EXISTS idx_paystubs_employee ON paystubs(employee_id)');
+
   // Normalize legacy 'head' filing status to 'hoh' — idempotent
   db.exec("UPDATE employees SET filing_status='hoh' WHERE filing_status='head'");
 

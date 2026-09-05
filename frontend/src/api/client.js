@@ -86,6 +86,14 @@ const api = {
   updateEmployee: (id, data) => request(`/employees/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteEmployee: (id) => request(`/employees/${id}`, { method: 'DELETE' }),
 
+  // Employee pay items — named earning rates + recurring per-check defaults
+  getEmployeePayItems: (empId) => request(`/employees/${empId}/pay-items`),
+  addEarningRate: (empId, data) => request(`/employees/${empId}/earning-rates`, { method: 'POST', body: JSON.stringify(data) }),
+  deleteEarningRate: (empId, rateId) => request(`/employees/${empId}/earning-rates/${rateId}`, { method: 'DELETE' }),
+  setDefaultItem: (empId, data) => request(`/employees/${empId}/default-items`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteDefaultItem: (empId, itemType) => request(`/employees/${empId}/default-items/${itemType}`, { method: 'DELETE' }),
+  getClientEmployeePayItems: (clientId) => request(`/clients/${clientId}/employee-pay-items`),
+
   // Child support — orders per employee, withholdings per paycheck, vendor checks
   getChildSupportOrders:    (clientId) => request(`/child-support/orders?clientId=${clientId}`),
   getEmployeeChildSupport:  (employeeId) => request(`/child-support/orders/employee/${employeeId}`),

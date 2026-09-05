@@ -58,6 +58,7 @@ function effPeriodSalary(row, emp, ppy) {
 function initials(name) { return name ? name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : '?'; }
 const PERIODS_PER_YEAR = { weekly: 52, biweekly: 26, semimonthly: 24, monthly: 12 };
 const FREQ_LABEL = { weekly: 'Weekly', biweekly: 'Bi-weekly', semimonthly: 'Semi-monthly', monthly: 'Monthly' };
+const PAY_ITEM_LABELS = { reportedTips: 'Reported Tips', bonus: 'Bonus', commission: 'Commission', reimbursement: 'Reimbursement', deduction: 'Deduction', garnishment: 'Garnishment' };
 
 function daysUntil(dateStr) {
   if (!dateStr) return null;
@@ -157,6 +158,32 @@ function csOverrideForPayload(row) {
   const v = row?.childSupport;
   if (v === undefined || String(v).trim() === '') return undefined;
   return parseFloat(v) || 0;
+}
+// Employee default payroll items: a value typed on the check (non-empty) always
+// wins; an untouched or cleared field falls back to the employee's saved default,
+// already capped by its annual limit (effectiveNext from the API).
+const ITEM_TYPE_BY_FIELD = { tips: 'reportedTips', bonus: 'bonus', commission: 'commission', mileage: 'reimbursement', cashAdvance: 'deduction', garnishment: 'garnishment' };
+function itemEffectiveAmount(row, field, defaultItems) {
+  const v = row?.[field];
+  if (v !== undefined && String(v).trim() !== '') return parseFloat(v) || 0;
+  const d = (defaultItems || []).find(x => x.itemType === ITEM_TYPE_BY_FIELD[field]);
+  return d ? (d.effectiveNext || 0) : 0;
+}
+// The payload variant sends ONLY values typed on this check. An untouched or
+// cleared field is omitted so the BACKEND resolves the employee default at run
+// time — that keeps annual-limit capping authoritative (settlement-date year,
+// aware of checks created earlier in the same run) instead of trusting a
+// possibly-stale effectiveNext snapshot from the browser.
+function itemOverrideForPayload(row, field) {
+  const v = row?.[field];
+  if (v !== undefined && String(v).trim() !== '') return parseFloat(v) || 0;
+  return undefined;
+}
+// Typed-only amount for building lineItems — default-driven earnings lines are
+// added by the backend when it resolves the defaults, never by the client.
+function itemTypedAmount(row, field) {
+  const v = row?.[field];
+  return (v !== undefined && String(v).trim() !== '') ? (parseFloat(v) || 0) : 0;
 }
 
 function calcIRSDepositDue(payDate, depositSchedule) {
@@ -290,6 +317,14 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
   const [csForm, setCsForm]     = useState(null); // { vendorName, caseNumber, amount } | null (add form open)
   const [csBusy, setCsBusy]     = useState(false);
   const [csErr, setCsErr]       = useState('');
+  const [earnRates, setEarnRates] = useState([]);  // named extra hourly rates for this employee
+  const [erForm, setErForm]       = useState(null); // { name, hourlyRate } | null (add form open)
+  const [erBusy, setErBusy]       = useState(false);
+  const [erErr, setErErr]         = useState('');
+  const [defItems, setDefItems]   = useState([]);  // recurring default payroll items
+  const [diForm, setDiForm]       = useState(null); // { itemType, amount, annualLimit } | null (add form open)
+  const [diBusy, setDiBusy]       = useState(false);
+  const [diErr, setDiErr]         = useState('');
   // Sectioned drawer: one short tab per topic instead of a single long scroll
   const [tab, setTab] = useState('personal');
   const [ddForm, setDdForm]     = useState({ routingNumber: '', accountNumber: '', confirmAccount: '', bankAccountType: 'checking' });
@@ -306,6 +341,7 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
     setTab('personal');
     api.getEmployeeChildSupport(empId).then(setCsOrders).catch(() => {});
     api.getDirectDeposit(empId).then(setDd).catch(() => {});
+    api.getEmployeePayItems(empId).then(d => { setEarnRates(d?.earningRates || []); setDefItems(d?.defaultItems || []); }).catch(() => {});
     api.getEmployee(empId, true).then(emp => setForm({
       // ssn intentionally starts blank: the label promises "leave blank to keep
       // current", so prefilling the decrypted SSN made every unrelated save re-send
@@ -535,6 +571,52 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
       await api.deleteChildSupportOrder(order.id);
       setCsOrders(prev => prev.filter(o => o.id !== order.id));
     } catch (e) { setCsErr(e.message); }
+  }
+
+  async function handleErAdd() {
+    const rate = parseFloat(erForm.hourlyRate);
+    if (!erForm.name.trim()) { setErErr('Rate name is required — it’s what you’ll pick when entering hours.'); return; }
+    if (!(rate > 0)) { setErErr('Hourly rate must be greater than $0.'); return; }
+    setErBusy(true); setErErr('');
+    try {
+      const created = await api.addEarningRate(empId, { name: erForm.name.trim(), hourlyRate: rate });
+      setEarnRates(prev => [...prev, created]);
+      setErForm(null);
+      dirtyRef.current = mainDirtyRef.current; setIsDirty(mainDirtyRef.current);
+    } catch (e) { setErErr(e.message); }
+    finally { setErBusy(false); }
+  }
+
+  async function handleErDelete(rate) {
+    if (!window.confirm(`Remove the "${rate.name}" rate (${fmt(rate.hourlyRate)}/hr)?\n\nIt will no longer appear as a quick pick when entering hours. Past checks keep the rate they were paid at.`)) return;
+    try {
+      await api.deleteEarningRate(empId, rate.id);
+      setEarnRates(prev => prev.filter(r => r.id !== rate.id));
+    } catch (e) { setErErr(e.message); }
+  }
+
+  async function handleDiAdd() {
+    const amt = parseFloat(diForm.amount);
+    const lim = diForm.annualLimit === '' ? null : parseFloat(diForm.annualLimit);
+    if (!diForm.itemType) { setDiErr('Pick which payroll item to pre-fill.'); return; }
+    if (!(amt > 0)) { setDiErr('Amount per check must be greater than $0.'); return; }
+    if (lim !== null && !(lim > 0)) { setDiErr('Annual limit must be greater than $0 — or leave it blank for no limit.'); return; }
+    setDiBusy(true); setDiErr('');
+    try {
+      const saved = await api.setDefaultItem(empId, { itemType: diForm.itemType, amount: amt, annualLimit: lim });
+      setDefItems(prev => [...prev.filter(d => d.itemType !== saved.itemType), saved]);
+      setDiForm(null);
+      dirtyRef.current = mainDirtyRef.current; setIsDirty(mainDirtyRef.current);
+    } catch (e) { setDiErr(e.message); }
+    finally { setDiBusy(false); }
+  }
+
+  async function handleDiDelete(item) {
+    if (!window.confirm(`Remove the ${fmt(item.amount)}/check default ${PAY_ITEM_LABELS[item.itemType] || item.itemType}?\n\nExisting checks keep their amounts — only future checks stop pre-filling.`)) return;
+    try {
+      await api.deleteDefaultItem(empId, item.itemType);
+      setDefItems(prev => prev.filter(d => d.itemType !== item.itemType));
+    } catch (e) { setDiErr(e.message); }
   }
 
   function handleDelete() { setDelAck(false); setConfirmDelete(true); }
@@ -770,6 +852,96 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                   </div>
                 </div>
               )}
+
+              <p className="form-section-title">Earning Rates</p>
+              {erErr && <div className="alert alert-error" role="alert" style={{ marginBottom: 10, fontSize: '0.8rem' }}><span>⚠</span>{erErr}</div>}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid var(--border)', marginBottom: 6, background: 'var(--bg-secondary)' }}>
+                <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: '0.8667rem' }}>Base</div>
+                <span className="mono" style={{ fontSize: '0.8667rem' }}>
+                  {form.payType === 'salary'
+                    ? `${form.annualSalary ? fmt(parseFloat(form.annualSalary)) : '—'}/yr salary`
+                    : `${form.hourlyRate ? fmt(parseFloat(form.hourlyRate)) : '—'}/hr`}
+                </span>
+              </div>
+              {earnRates.map(r => (
+                <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid var(--border)', marginBottom: 6, background: '#fff' }}>
+                  <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: '0.8667rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name}</div>
+                  <span className="mono" style={{ fontSize: '0.8667rem' }}>{fmt(r.hourlyRate)}/hr</span>
+                  <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: '0.7333rem', color: '#dc2626', minHeight: 32 }} onClick={() => handleErDelete(r)}>Remove</button>
+                </div>
+              ))}
+              {erForm ? (
+                <div style={{ background: 'var(--accent-light)', border: '1px solid var(--accent-mid)', padding: '12px 12px 10px', marginBottom: 6 }}>
+                  <div className="form-grid" style={{ marginBottom: 8 }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.8333rem' }}>Rate Name</label>
+                      <input className="form-input" value={erForm.name} onChange={e => { dirtyRef.current = true; setIsDirty(true); setErForm(f => ({ ...f, name: e.target.value })); }} placeholder="e.g. Kitchen" />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.8333rem' }}>Rate per hour ($)</label>
+                      <input className="form-input mono" type="number" min="0.01" step="0.01" value={erForm.hourlyRate} onChange={e => { dirtyRef.current = true; setIsDirty(true); setErForm(f => ({ ...f, hourlyRate: e.target.value })); }} placeholder="20.00" />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setErForm(null); setErErr(''); dirtyRef.current = mainDirtyRef.current; setIsDirty(mainDirtyRef.current); }}>Cancel</button>
+                    <button type="button" className="btn btn-primary btn-sm" disabled={erBusy} onClick={handleErAdd}>{erBusy ? 'Adding…' : 'Add Rate'}</button>
+                  </div>
+                </div>
+              ) : (
+                <button type="button" className="btn btn-secondary btn-sm" style={{ marginBottom: 6 }} onClick={() => { setErForm({ name: '', hourlyRate: '' }); setErErr(''); }}>
+                  + Add Earning Rate
+                </button>
+              )}
+              <p className="form-hint" style={{ fontSize: '0.8667rem', marginBottom: 16 }}>Named rates appear as quick picks in the Rate box when entering hours.</p>
+
+              <p className="form-section-title">Recurring Payroll Items</p>
+              {diErr && <div className="alert alert-error" role="alert" style={{ marginBottom: 10, fontSize: '0.8rem' }}><span>⚠</span>{diErr}</div>}
+              {defItems.length === 0 && !diForm && (
+                <p style={{ fontSize: '0.8333rem', color: 'var(--text-muted)', margin: '0 0 10px' }}>No recurring items. Add one to pre-fill an amount on every new check for this employee.</p>
+              )}
+              {defItems.map(d => (
+                <div key={d.itemType} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid var(--border)', marginBottom: 6, background: '#fff' }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: '0.8667rem' }}>{PAY_ITEM_LABELS[d.itemType] || d.itemType}</div>
+                    {d.annualLimit != null && (
+                      <div style={{ fontSize: '0.8333rem', color: 'var(--text-muted)' }}>used {fmt(d.ytdUsed || 0)} of {fmt(d.annualLimit)} this year</div>
+                    )}
+                  </div>
+                  <span className="mono" style={{ fontSize: '0.8667rem' }}>{fmt(d.amount)}/check</span>
+                  <span className="mono" style={{ fontSize: '0.8667rem', color: 'var(--text-muted)', minWidth: 90, textAlign: 'right' }}>{d.annualLimit != null ? `${fmt(d.annualLimit)} limit` : '—'}</span>
+                  <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: '0.7333rem', color: '#dc2626', minHeight: 32 }} onClick={() => handleDiDelete(d)}>Remove</button>
+                </div>
+              ))}
+              {diForm ? (
+                <div style={{ background: 'var(--accent-light)', border: '1px solid var(--accent-mid)', padding: '12px 12px 10px', marginBottom: 6 }}>
+                  <div className="form-group" style={{ marginBottom: 8 }}>
+                    <label className="form-label" style={{ fontSize: '0.8333rem' }}>Payroll Item</label>
+                    <select className="form-select" value={diForm.itemType} onChange={e => { dirtyRef.current = true; setIsDirty(true); setDiForm(f => ({ ...f, itemType: e.target.value })); }}>
+                      <option value="">— Pick an item —</option>
+                      {Object.entries(PAY_ITEM_LABELS).filter(([k]) => !defItems.some(d => d.itemType === k)).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-grid" style={{ marginBottom: 8 }}>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.8333rem' }}>Amount per check ($)</label>
+                      <input className="form-input mono" type="number" min="0.01" step="0.01" value={diForm.amount} onChange={e => { dirtyRef.current = true; setIsDirty(true); setDiForm(f => ({ ...f, amount: e.target.value })); }} placeholder="100.00" />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label" style={{ fontSize: '0.8333rem' }}>Annual Limit ($ — optional)</label>
+                      <input className="form-input mono" type="number" min="0.01" step="0.01" value={diForm.annualLimit} onChange={e => { dirtyRef.current = true; setIsDirty(true); setDiForm(f => ({ ...f, annualLimit: e.target.value })); }} placeholder="no limit" />
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setDiForm(null); setDiErr(''); dirtyRef.current = mainDirtyRef.current; setIsDirty(mainDirtyRef.current); }}>Cancel</button>
+                    <button type="button" className="btn btn-primary btn-sm" disabled={diBusy} onClick={handleDiAdd}>{diBusy ? 'Adding…' : 'Add Item'}</button>
+                  </div>
+                </div>
+              ) : (
+                <button type="button" className="btn btn-secondary btn-sm" style={{ marginBottom: 6 }} disabled={defItems.length >= 6} onClick={() => { setDiForm({ itemType: '', amount: '', annualLimit: '' }); setDiErr(''); }}>
+                  + Add Recurring Item
+                </button>
+              )}
+              <p className="form-hint" style={{ fontSize: '0.8667rem' }}>These amounts pre-fill every new check for this employee — you can still change them on any single check.</p>
 
               </>)}
 
@@ -2009,7 +2181,7 @@ function CompanyTab({ client, onSaved, guardRef }) {
 const PRINTED_STATUSES = new Set(['printed','deposited','direct_deposit_sent','direct_deposit_cleared','voided']);
 const MODAL_MONO = { fontFamily: 'JetBrains Mono, monospace' };
 
-function ModalTR({ label, amount, ytdAmount, color, bold, borderTop, negative, editValue, onEditChange, editSuffix, noDollarSign }) {
+function ModalTR({ label, amount, ytdAmount, color, bold, borderTop, negative, editValue, onEditChange, editSuffix, noDollarSign, listId }) {
   const display = negative ? (amount > 0 ? -amount : amount) : amount;
   return (
     <tr style={{ borderTop: borderTop ? '2px solid var(--border)' : undefined }}>
@@ -2018,7 +2190,7 @@ function ModalTR({ label, amount, ytdAmount, color, bold, borderTop, negative, e
         {onEditChange
           ? <span style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end' }}>
               {!noDollarSign && <span style={{ ...MODAL_MONO, fontSize: '0.9333rem', color: 'var(--text-muted)', marginRight: 1 }}>$</span>}
-              <input type="text" inputMode="decimal"
+              <input type="text" inputMode="decimal" list={listId}
                 value={editValue}
                 onChange={e => onEditChange(e.target.value)}
                 placeholder="0.00"
@@ -2092,7 +2264,7 @@ function ModalOverlay({ children, onClose }) {
 
 // ── Pay Employees Tab ─────────────────────────────────────────────────────────
 
-function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, employees, calcEmpYTD, ppy, pendingRows, setPendingRows, getRow, skipPending, periodOverrides, setPeriodOverrides, csDefaults }) {
+function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, employees, calcEmpYTD, ppy, pendingRows, setPendingRows, getRow, skipPending, periodOverrides, setPeriodOverrides, csDefaults, payItems }) {
     if (!rowData) return null;
 
     // Use module-scope stable components (ModalTR, ModalColHeader, ModalOverlay)
@@ -2175,7 +2347,21 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
         { field: 'commission',  label: 'Commission',              hint: 'taxable',     isDeduction: false },
         { field: 'mileage',     label: 'Mileage / Reimbursement', hint: 'non-taxable', isDeduction: false },
         { field: 'cashAdvance', label: 'Cash Advance',            hint: 'deduction',   isDeduction: true  },
+        { field: 'garnishment', label: 'Garnishment',             hint: 'deduction',   isDeduction: true  },
       ];
+      // Employee default items: an untouched or cleared field falls back to the
+      // saved default (already limit-capped via effectiveNext); a typed value on
+      // this check always wins.
+      const empPayItems = (payItems || {})[emp.id] || {};
+      const empDefaults = empPayItems.defaultItems;
+      const empRates    = empPayItems.earningRates || [];
+      const itemHasOverride = f => row[f] !== undefined && String(row[f]).trim() !== '';
+      const itemDefaultOn   = f => !itemHasOverride(f) && (empDefaults || []).some(x => x.itemType === ITEM_TYPE_BY_FIELD[f]);
+      // A touched field shows exactly what the user typed — including empty
+      // after clearing (the math and "(default)" note still use the default;
+      // type 0 to force an item to zero on this check).
+      const itemEditValue   = f => row[f] !== undefined ? row[f] : itemDefaultOn(f) ? String(itemEffectiveAmount(row, f, empDefaults)) : '';
+      const defaultNote     = <span style={{ fontSize: '0.8333rem' }}>(default)</span>;
       // Child support: default comes from the employee's active orders; an edited
       // value on this row overrides the total for this check only (clearing the
       // field reverts to the default).
@@ -2183,26 +2369,29 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
       const csEffective = csEffectiveAmount(row, csDefault);
       const [addedPendingItems, setAddedPendingItems] = useState(() => {
         const s = new Set();
-        if (parseFloat(row.tips        || 0) > 0) s.add('tips');
-        if (parseFloat(row.bonus       || 0) > 0) s.add('bonus');
-        if (parseFloat(row.commission  || 0) > 0) s.add('commission');
-        if (parseFloat(row.mileage     || 0) > 0) s.add('mileage');
-        if (parseFloat(row.cashAdvance || 0) > 0) s.add('cashAdvance');
+        for (const x of pendingItemDefs) if (itemEffectiveAmount(row, x.field, empDefaults) > 0) s.add(x.field);
         return s;
       });
       const [pendingOtherOpen, setPendingOtherOpen] = useState(false);
-      const addedPendingEarnings  = pendingItemDefs.filter(x => !x.isDeduction && addedPendingItems.has(x.field));
-      const hiddenPendingItems    = pendingItemDefs.filter(x => !addedPendingItems.has(x.field));
-      const liveGross  = r2(regPay + otPay + addedPendingEarnings.reduce((s, x) => s + parseFloat(row[x.field] || 0), 0));
+      // Visible when manually added OR the employee's default applies (covers
+      // defaults that finish loading after the modal mounted).
+      const pendingItemVisible = f => addedPendingItems.has(f) || itemEffectiveAmount(row, f, empDefaults) > 0;
+      const addedPendingEarnings  = pendingItemDefs.filter(x => !x.isDeduction && pendingItemVisible(x.field));
+      const hiddenPendingItems    = pendingItemDefs.filter(x => !pendingItemVisible(x.field));
+      // Mileage/reimbursement is non-taxable: it never joins gross (which drives
+      // SS/Medicare/FIT) — it's added back after taxes in the net estimates.
+      const liveGross  = r2(regPay + otPay + addedPendingEarnings.reduce((s, x) => x.field === 'mileage' ? s : s + itemEffectiveAmount(row, x.field, empDefaults), 0));
+      const estMileage = pendingItemVisible('mileage') ? itemEffectiveAmount(row, 'mileage', empDefaults) : 0;
       const estSSCalc  = r2(liveGross * EE_SS_RATE);
       const estMedCalc = r2(liveGross * EE_MEDICARE_RATE);
-      const estCashAdv = addedPendingItems.has('cashAdvance') ? parseFloat(row.cashAdvance || 0) : 0;
+      const estCashAdv = pendingItemVisible('cashAdvance') ? itemEffectiveAmount(row, 'cashAdvance', empDefaults) : 0;
+      const estGarnish = pendingItemVisible('garnishment') ? itemEffectiveAmount(row, 'garnishment', empDefaults) : 0;
       // Override values (user-editable) — fall back to calculated estimates
       const dispSS     = row.ssOverride    !== undefined ? parseFloat(row.ssOverride    || 0) : estSSCalc;
       const dispMed    = row.medOverride   !== undefined ? parseFloat(row.medOverride   || 0) : estMedCalc;
       const dispErSS   = row.erSsOverride  !== undefined ? parseFloat(row.erSsOverride  || 0) : r2(liveGross * EE_SS_RATE);
       const dispErMed  = row.erMedOverride !== undefined ? parseFloat(row.erMedOverride || 0) : r2(liveGross * EE_MEDICARE_RATE);
-      const estNet     = r2(liveGross - dispSS - dispMed - estCashAdv - csEffective);
+      const estNet     = r2(liveGross + estMileage - dispSS - dispMed - estCashAdv - estGarnish - csEffective);
       // Employer estimates
       const estFutaTaxable = Math.max(0, Math.min(liveGross, 7000 - ytd.gross));
       const estFutaCalc= r2(estFutaTaxable * 0.006);
@@ -2240,9 +2429,9 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
       const dispFIT      = row.fitOverride   !== undefined ? parseFloat(row.fitOverride   || 0) : estFITCalc;
       const dispStateTax = row.stateOverride !== undefined ? parseFloat(row.stateOverride || 0) : estStateTaxCalc;
       const estNetFull  = (dispFIT != null && dispStateTax != null)
-        ? r2(liveGross - dispFIT - dispSS - dispMed - dispStateTax - estCashAdv - csEffective)
+        ? r2(liveGross + estMileage - dispFIT - dispSS - dispMed - dispStateTax - estCashAdv - estGarnish - csEffective)
         : (liveCalc != null
-          ? r2(liveGross - (liveCalc.fitWithholding || 0) - dispSS - dispMed - (liveCalc.stateIncomeTax || 0) - estCashAdv - csEffective)
+          ? r2(liveGross + estMileage - (liveCalc.fitWithholding || 0) - dispSS - dispMed - (liveCalc.stateIncomeTax || 0) - estCashAdv - estGarnish - csEffective)
           : estNet);
 
       // Sum estimates from ALL OTHER pending periods for this employee
@@ -2294,9 +2483,9 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
       }, { gross: 0, eeSS: 0, eeMed: 0, fit: 0, stateTax: 0, netPay: 0, erSS: 0, erMed: 0, futa: 0, suta: 0, regPay: 0, otPay: 0, tips: 0, bonus: 0, commission: 0 });
 
       // Current-period per-type values
-      const curTips     = parseFloat(row.tips       || 0);
-      const curBonus    = parseFloat(row.bonus      || 0);
-      const curComm     = parseFloat(row.commission || 0);
+      const curTips     = itemEffectiveAmount(row, 'tips', empDefaults);
+      const curBonus    = itemEffectiveAmount(row, 'bonus', empDefaults);
+      const curComm     = itemEffectiveAmount(row, 'commission', empDefaults);
 
       // YTD = printed checks + all other pending periods + this period
       const ytdWithCurrent = {
@@ -2382,7 +2571,8 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
                         <TR label="Hourly Rate" amount={rate} ytdAmount={null} color="var(--accent)"
                           editValue={row.rate !== undefined ? String(row.rate) : String(emp.hourlyRate || '')}
                           onEditChange={v => setField('rate', v)}
-                          editSuffix="/hr" noDollarSign={false} />
+                          editSuffix="/hr" noDollarSign={false}
+                          listId={empRates.length > 0 ? `rates-modal-${emp.id}` : undefined} />
                         <TR label="Regular Hours" amount={regH} ytdAmount={null} color="var(--accent)"
                           editValue={row.regHours !== undefined ? String(row.regHours) : ''}
                           onEditChange={v => setField('regHours', v)}
@@ -2396,14 +2586,21 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
                       </>
                   }
                   {addedPendingEarnings.map(item => (
-                    <TR key={item.field} label={item.label} amount={parseFloat(row[item.field] || 0)}
+                    <TR key={item.field} label={item.label} amount={itemEffectiveAmount(row, item.field, empDefaults)}
                       ytdAmount={ytdWithCurrent[item.field] ?? null} color="var(--accent)"
-                      editValue={row[item.field] || ''} onEditChange={v => setField(item.field, v)} />
+                      editValue={itemEditValue(item.field)} onEditChange={v => setField(item.field, v)}
+                      editSuffix={itemDefaultOn(item.field) ? defaultNote : undefined} />
                   ))}
                   <TR label="Gross Pay"            amount={liveGross}    ytdAmount={ytdWithCurrent.gross}    color="var(--accent)" bold borderTop />
-                  {addedPendingItems.has('cashAdvance') && (
-                    <TR label="Cash Advance"       amount={parseFloat(row.cashAdvance || 0)} ytdAmount={null} negative color="#dc2626"
-                      editValue={row.cashAdvance || ''} onEditChange={v => setField('cashAdvance', v)} />
+                  {pendingItemVisible('cashAdvance') && (
+                    <TR label="Cash Advance"       amount={itemEffectiveAmount(row, 'cashAdvance', empDefaults)} ytdAmount={null} negative color="#dc2626"
+                      editValue={itemEditValue('cashAdvance')} onEditChange={v => setField('cashAdvance', v)}
+                      editSuffix={itemDefaultOn('cashAdvance') ? defaultNote : undefined} />
+                  )}
+                  {pendingItemVisible('garnishment') && (
+                    <TR label="Garnishment"        amount={itemEffectiveAmount(row, 'garnishment', empDefaults)} ytdAmount={null} negative color="#dc2626"
+                      editValue={itemEditValue('garnishment')} onEditChange={v => setField('garnishment', v)}
+                      editSuffix={itemDefaultOn('garnishment') ? defaultNote : undefined} />
                   )}
                   {(csDefault > 0 || row.childSupport !== undefined) && (
                     <TR label="Child Support"      amount={csEffective} ytdAmount={null} negative color="#dc2626"
@@ -2422,6 +2619,12 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
                     editValue={row.stateOverride !== undefined ? row.stateOverride : (estStateTaxCalc != null ? String(estStateTaxCalc) : '')} onEditChange={v => setField('stateOverride', v)} />
                 </tbody>
               </table>
+              {empRates.length > 0 && (
+                <datalist id={`rates-modal-${emp.id}`}>
+                  <option value={String(emp.hourlyRate || '')} label={'Base rate — $' + (emp.hourlyRate || 0) + '/hr'} />
+                  {empRates.map(r => <option key={r.id} value={String(r.hourlyRate)} label={r.name + ' — $' + r.hourlyRate + '/hr'} />)}
+                </datalist>
+              )}
               </div>
 
               {/* Right — Company Summary */}
@@ -3229,6 +3432,14 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
       setCsTotals(m);
     }).catch(() => {});
   }, [clientId, refreshTick, csRefetch]);
+  // Per-employee earning rates + default payroll items — defaults pre-fill new
+  // checks (annual limits already applied via effectiveNext), rates feed the
+  // Rate quick-picks.
+  const [payItems, setPayItems] = useState({});
+  const [payItemsTick, setPayItemsTick] = useState(0);
+  useEffect(() => {
+    api.getClientEmployeePayItems(clientId).then(m => setPayItems(m || {})).catch(() => {});
+  }, [clientId, refreshTick, csRefetch, payItemsTick]);
   const [payGroups, setPayGroups]     = useState([]);
   const [currentGroupId, setCurrentGroupId] = useState(() => {
     // Restore the group the user last had open for this company.
@@ -3363,6 +3574,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
       setPaystubs(stubs);
       setStubsLoaded(true);
       setStubsError(false);
+      // Every run moves item YTDs — refresh defaults so effectiveNext (and the
+      // "used $X of $Y" readouts) can't go stale against annual limits.
+      setPayItemsTick(t => t + 1);
     } catch {
       setStubsError(true);
     }
@@ -3582,9 +3796,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
     const rate     = parseFloat(row.rate) || emp.hourlyRate || 0;
     const regH     = parseFloat(row.regHours || 0);
     const otH      = parseFloat(row.otHours  || 0);
-    const tipsAmt  = parseFloat(row.tips || 0);
-    const bonusAmt = parseFloat(row.bonus || 0);
-    const commAmt  = parseFloat(row.commission || 0);
+    const defs     = (payItems[emp.id] || {}).defaultItems;
+    const tipsAmt  = itemEffectiveAmount(row, 'tips', defs);
+    const bonusAmt = itemEffectiveAmount(row, 'bonus', defs);
+    const commAmt  = itemEffectiveAmount(row, 'commission', defs);
     const basePay  = isSalary ? salAmt : r2(regH * rate + otH * rate * 1.5);
     const grossPreview = r2(basePay + tipsAmt + bonusAmt + commAmt);
     const estEeSS    = r2(grossPreview * EE_SS_RATE);
@@ -3596,9 +3811,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
     const dispEeMed   = row.medOverride   !== undefined ? parseFloat(row.medOverride   || 0) : estEeMed;
     const dispFITest  = row.fitOverride   !== undefined ? parseFloat(row.fitOverride   || 0) : estFIT;
     const dispStateEst= row.stateOverride !== undefined ? parseFloat(row.stateOverride || 0) : estStateTax;
-    const cashAdvEst  = parseFloat(row.cashAdvance || 0);
+    const cashAdvEst  = itemEffectiveAmount(row, 'cashAdvance', defs);
+    const garnishEst  = itemEffectiveAmount(row, 'garnishment', defs);
     const csEst       = csEffectiveAmount(row, csTotals[emp.id]);
-    const estNetPay   = r2(grossPreview - dispEeSS - dispEeMed - dispFITest - dispStateEst - cashAdvEst - csEst);
+    const estNetPay   = r2(grossPreview - dispEeSS - dispEeMed - dispFITest - dispStateEst - cashAdvEst - garnishEst - csEst);
     return { row, regH, otH, grossPreview, estNetPay };
   }
 
@@ -3617,9 +3833,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
           const isSal = emp.payType === 'salary';
           const salAmt = effPeriodSalary(row, emp, ppy);
           const rate  = parseFloat(row.rate) || emp.hourlyRate || 0;
+          const defs  = (payItems[emp.id] || {}).defaultItems;
           const gross = r2(
             (isSal ? salAmt : r2(parseFloat(row.regHours || 0) * rate + parseFloat(row.otHours || 0) * rate * 1.5))
-            + parseFloat(row.tips || 0) + parseFloat(row.bonus || 0) + parseFloat(row.commission || 0)
+            + itemEffectiveAmount(row, 'tips', defs) + itemEffectiveAmount(row, 'bonus', defs) + itemEffectiveAmount(row, 'commission', defs)
           );
           if (gross <= 0) return;
           const key = `${emp.id}_${period.end}_${Math.round(gross * 100)}`;
@@ -3641,7 +3858,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
     }, 300);
     return () => { cancelled = true; clearTimeout(timer); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentGroupId, ppy, pendingPeriods.length, JSON.stringify(pendingRows), empsInGroup.length]);
+  }, [currentGroupId, ppy, pendingPeriods.length, JSON.stringify(pendingRows), empsInGroup.length, payItems]);
 
   const selectedPendingCount = pendingPeriods.reduce((n, period) =>
     n + empsInGroup.filter(emp => getRow(period.end, emp.id).selected).length, 0);
@@ -3678,8 +3895,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
           // Salary is editable now — block a $0 gross so a cleared/zeroed salary
           // (with no other earnings) can't be silently dropped by the backend
           // while the run still reports success.
+          const defs = (payItems[emp.id] || {}).defaultItems;
           const salGross = r2(effPeriodSalary(row, emp, ppy)
-            + parseFloat(row.tips || 0) + parseFloat(row.bonus || 0) + parseFloat(row.commission || 0));
+            + itemEffectiveAmount(row, 'tips', defs) + itemEffectiveAmount(row, 'bonus', defs) + itemEffectiveAmount(row, 'commission', defs));
           if (salGross <= 0) {
             setRunErr(`Please enter a salary amount for ${emp.firstName} ${emp.lastName} before processing payroll.`);
             return;
@@ -3699,10 +3917,11 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
         if (!row.selected) continue;
         const isSalary = emp.payType === 'salary';
         const rate = parseFloat(row.rate) || emp.hourlyRate || 0;
+        const defs = (payItems[emp.id] || {}).defaultItems;
+        const extras = itemEffectiveAmount(row, 'tips', defs) + itemEffectiveAmount(row, 'bonus', defs) + itemEffectiveAmount(row, 'commission', defs);
         const gross = isSalary
-          ? r2(effPeriodSalary(row, emp, ppy) + parseFloat(row.tips || 0) + parseFloat(row.bonus || 0) + parseFloat(row.commission || 0))
-          : r2(parseFloat(row.regHours || 0) * rate + parseFloat(row.otHours || 0) * rate * 1.5
-              + parseFloat(row.tips || 0) + parseFloat(row.bonus || 0) + parseFloat(row.commission || 0));
+          ? r2(effPeriodSalary(row, emp, ppy) + extras)
+          : r2(parseFloat(row.regHours || 0) * rate + parseFloat(row.otHours || 0) * rate * 1.5 + extras);
         const hasDD = emp.directDeposit?.status === 'active';
         reviewRows.push({ emp, gross, hasDD });
       }
@@ -3739,14 +3958,13 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
         if (selectedEmps.length === 0) continue;
         const payrollEmps = selectedEmps.map(emp => {
           const row = getRow(period.end, emp.id);
+          const defs = (payItems[emp.id] || {}).defaultItems;
           const isSalary = emp.payType === 'salary';
           const regH = parseFloat(row.regHours || 0);
           const otH  = parseFloat(row.otHours  || 0);
-          const tips = parseFloat(row.tips || 0);
-          const bonusAmt = parseFloat(row.bonus || 0);
-          const commAmt  = parseFloat(row.commission || 0);
-          const cashAdv  = parseFloat(row.cashAdvance || 0);
-          const mileAmt  = parseFloat(row.mileage || 0);
+          const tips = itemTypedAmount(row, 'tips');
+          const bonusAmt = itemTypedAmount(row, 'bonus');
+          const commAmt  = itemTypedAmount(row, 'commission');
           const rate = parseFloat(row.rate) || emp.hourlyRate || 0;
           const regPay = isSalary ? effPeriodSalary(row, emp, ppy) : r2(regH * rate);
           const otPay  = isSalary ? 0 : r2(otH * rate * 1.5);
@@ -3763,7 +3981,22 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
           ];
           const ytd = calcEmpYTD(emp.id, null);
           const csOv = csOverrideForPayload(row);
-          return { employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay, bonus: bonusAmt, commission: commAmt, reimbursement: mileAmt, deduction: cashAdv, reportedTips: tips,
+          // Send each item only when the row was edited OR a default applies —
+          // the amount then matches the on-screen estimate exactly. Absent means
+          // the backend applies nothing for that item.
+          const tipsOv    = itemOverrideForPayload(row, 'tips');
+          const bonusOv   = itemOverrideForPayload(row, 'bonus');
+          const commOv    = itemOverrideForPayload(row, 'commission');
+          const mileOv    = itemOverrideForPayload(row, 'mileage');
+          const cashOv    = itemOverrideForPayload(row, 'cashAdvance');
+          const garnOv    = itemOverrideForPayload(row, 'garnishment');
+          return { employeeId: emp.id, lineItems, ytdGross: ytd.gross, regularHours: regH || null, overtimeHours: otH || null, regularPay: regPay, overtimePay: otPay,
+            ...(bonusOv !== undefined ? { bonus: bonusOv } : {}),
+            ...(commOv  !== undefined ? { commission: commOv } : {}),
+            ...(mileOv  !== undefined ? { reimbursement: mileOv } : {}),
+            ...(cashOv  !== undefined ? { deduction: cashOv } : {}),
+            ...(tipsOv  !== undefined ? { reportedTips: tipsOv } : {}),
+            ...(garnOv  !== undefined ? { garnishment: garnOv } : {}),
             // Only send when edited on this check — absent (or a cleared field)
             // lets the backend withhold the employee's active order amounts.
             ...(csOv !== undefined ? { childSupport: csOv } : {}) };
@@ -3915,11 +4148,15 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
         const rate     = parseFloat(rowData2.rate) || emp.hourlyRate || 0;
         const regH     = isSalary ? 0 : parseFloat(rowData2.regHours || 0);
         const otH      = isSalary ? 0 : parseFloat(rowData2.otHours  || 0);
-        const tips2    = parseFloat(rowData2.tips || 0);
-        const bonus2   = parseFloat(rowData2.bonus || 0);
-        const comm2    = parseFloat(rowData2.commission || 0);
-        const cashAdv2 = parseFloat(rowData2.cashAdvance || 0);
-        const mile2    = parseFloat(rowData2.mileage || 0);
+        const defs2    = (payItems[emp.id] || {}).defaultItems;
+        // Effective values feed the $0-gross guard (a default-tips-only check is
+        // NOT $0); typed values feed lineItems — the backend adds default lines.
+        const tips2    = itemEffectiveAmount(rowData2, 'tips', defs2);
+        const bonus2   = itemEffectiveAmount(rowData2, 'bonus', defs2);
+        const comm2    = itemEffectiveAmount(rowData2, 'commission', defs2);
+        const tipsT2   = itemTypedAmount(rowData2, 'tips');
+        const bonusT2  = itemTypedAmount(rowData2, 'bonus');
+        const commT2   = itemTypedAmount(rowData2, 'commission');
         const regPay   = isSalary ? effPeriodSalary(rowData2, emp, ppy) : r2(regH * rate);
         const otPay    = isSalary ? 0 : r2(otH * rate * 1.5);
         // Guard a $0 gross (e.g. a cleared/zeroed salary or no hours) — the
@@ -3935,11 +4172,17 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                 ...(regPay > 0 ? [{ payType: 'regular',  description: 'Regular Pay',  hours: regH, rate, amount: regPay }] : []),
                 ...(otPay  > 0 ? [{ payType: 'overtime', description: 'Overtime Pay', hours: otH, rate: rate * 1.5, amount: otPay }] : []),
               ]),
-          ...(tips2  > 0 ? [{ payType: 'tips',       description: 'Reported Tips', amount: tips2  }] : []),
-          ...(bonus2 > 0 ? [{ payType: 'bonus',      description: 'Bonus',         amount: bonus2 }] : []),
-          ...(comm2  > 0 ? [{ payType: 'commission', description: 'Commission',    amount: comm2  }] : []),
+          ...(tipsT2  > 0 ? [{ payType: 'tips',       description: 'Reported Tips', amount: tipsT2  }] : []),
+          ...(bonusT2 > 0 ? [{ payType: 'bonus',      description: 'Bonus',         amount: bonusT2 }] : []),
+          ...(commT2  > 0 ? [{ payType: 'commission', description: 'Commission',    amount: commT2  }] : []),
         ];
         const ytd = calcEmpYTD(emp.id, null);
+        const tipsOv2 = itemOverrideForPayload(rowData2, 'tips');
+        const bonusOv2 = itemOverrideForPayload(rowData2, 'bonus');
+        const commOv2 = itemOverrideForPayload(rowData2, 'commission');
+        const mileOv2 = itemOverrideForPayload(rowData2, 'mileage');
+        const cashOv2 = itemOverrideForPayload(rowData2, 'cashAdvance');
+        const garnOv2 = itemOverrideForPayload(rowData2, 'garnishment');
         const payrollEmp = {
           employeeId: emp.id,
           lineItems,
@@ -3948,7 +4191,12 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
           overtimeHours: isSalary ? null : otH,
           regularPay: regPay,
           overtimePay: otPay,
-          bonus: bonus2, commission: comm2, reimbursement: mile2, deduction: cashAdv2, reportedTips: tips2,
+          ...(bonusOv2 !== undefined ? { bonus: bonusOv2 } : {}),
+          ...(commOv2  !== undefined ? { commission: commOv2 } : {}),
+          ...(mileOv2  !== undefined ? { reimbursement: mileOv2 } : {}),
+          ...(cashOv2  !== undefined ? { deduction: cashOv2 } : {}),
+          ...(tipsOv2  !== undefined ? { reportedTips: tipsOv2 } : {}),
+          ...(garnOv2  !== undefined ? { garnishment: garnOv2 } : {}),
           ...(csOverrideForPayload(rowData2) !== undefined ? { childSupport: csOverrideForPayload(rowData2) } : {}),
         };
         const res = await api.runPayroll({
@@ -4314,6 +4562,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                       </td>
                       <td style={{ padding: '4px 6px' }} onClick={e => { e.stopPropagation(); const inp = e.currentTarget.querySelector('input'); if (inp && e.target !== inp) inp.focus(); }}>
                         <input className="form-input mono" type="text" inputMode="decimal"
+                          list={(payItems[emp.id]?.earningRates || []).length > 0 ? `rates-${emp.id}` : undefined}
                           value={row.rate !== undefined ? row.rate : String(emp.hourlyRate || '')}
                           placeholder={String(emp.hourlyRate || '')}
                           onChange={ev => setRow(rawPeriod.end, emp.id, 'rate', cleanDecimal(ev.target.value))}
@@ -4890,11 +5139,23 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
         </div>
       )}
 
+      {/* Named earning-rate quick-picks for the grid's Rate inputs — one datalist per employee */}
+      {empsInGroup.map(emp => {
+        const rates = (payItems[emp.id] || {}).earningRates || [];
+        if (rates.length === 0) return null;
+        return (
+          <datalist key={emp.id} id={`rates-${emp.id}`}>
+            <option value={String(emp.hourlyRate || '')} label={'Base rate — $' + (emp.hourlyRate || 0) + '/hr'} />
+            {rates.map(r => <option key={r.id} value={String(r.hourlyRate)} label={r.name + ' — $' + r.hourlyRate + '/hr'} />)}
+          </datalist>
+        );
+      })}
+
       {/* Check detail modal */}
       {detailModal && <CheckDetailModal rowData={detailModal} onClose={() => { reloadStubs(); setDetailModal(null); }}
         reloadStubs={reloadStubs} clientId={clientId} client={client} calcEmpYTD={calcEmpYTD} ppy={ppy}
         pendingRows={pendingRows} setPendingRows={setPendingRows} getRow={getRow} skipPending={skipPending}
-        periodOverrides={periodOverrides} setPeriodOverrides={setPeriodOverrides} csDefaults={csTotals} employees={employees} />}
+        periodOverrides={periodOverrides} setPeriodOverrides={setPeriodOverrides} csDefaults={csTotals} payItems={payItems} employees={employees} />}
 
       {/* Rate change confirmation */}
       {rateUpdatePrompt && (

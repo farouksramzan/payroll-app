@@ -987,7 +987,17 @@ function PaycheckSection({ clientIds, clients, open, onToggle }) {
     if (regHrs > 0) lineItems.push({ pay_type: 'regular', description: 'Regular', hours: regHrs, rate, amount: regHrs * rate });
     if (otHrs  > 0) lineItems.push({ pay_type: 'overtime', description: 'Overtime', hours: otHrs, rate: rate * 1.5, amount: otHrs * rate * 1.5 });
     const gross = lineItems.reduce((s, li) => s + li.amount, 0);
-    if (!window.confirm(`Run payroll for ${r.employee_name || 'this employee'} — gross ${fmt(gross)}, paid by ${r._ddEnabled ? 'direct deposit' : 'printed check'}. Continue?`)) return;
+    // The backend applies the employee's recurring default items (tips, bonus,
+    // deductions…) to this run — disclose them so the confirm never books
+    // amounts the accountant didn't see.
+    let recurringNote = '';
+    try {
+      const items = await api.getEmployeePayItems(r._employeeId);
+      const LABELS = { reportedTips: 'Reported Tips', bonus: 'Bonus', commission: 'Commission', reimbursement: 'Reimbursement', deduction: 'Deduction', garnishment: 'Garnishment' };
+      const applied = (items?.defaultItems || []).filter(d => (d.effectiveNext || 0) > 0);
+      if (applied.length) recurringNote = `\n\nAlso includes this employee's recurring items: ${applied.map(d => `${LABELS[d.itemType] || d.itemType} ${fmt(d.effectiveNext)}`).join(', ')}.`;
+    } catch { /* disclosure is best-effort — never block a run on it */ }
+    if (!window.confirm(`Run payroll for ${r.employee_name || 'this employee'} — gross ${fmt(gross)}, paid by ${r._ddEnabled ? 'direct deposit' : 'printed check'}.${recurringNote} Continue?`)) return;
     setSavingHours(prev => new Set([...prev, r.id]));
     try {
       await api.runPayroll({
