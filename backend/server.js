@@ -164,6 +164,11 @@ getDb();
 })();
 
 // ── API routes ────────────────────────────────────────────────────────────────
+// Health check FIRST — Railway probes it unauthenticated; nothing mounted
+// below may shadow it (the /api-mounted pay-items router once 401'd it and
+// blocked deployments from ever becoming healthy).
+app.get('/api/health', (req, res) => res.json({ status: 'ok', env: process.env.NODE_ENV }));
+
 app.use('/api/auth',        authLimiter, authRoutes);
 app.use('/api/clients',     clientRoutes);
 app.use('/api/payroll',     payrollRoutes);
@@ -193,7 +198,6 @@ app.post('/api/bridge/kill',  requireAuth, (req, res) => {
   try { res.json({ ok: true, ...bridgeManager.killJob() }); }
   catch (e) { res.status(400).json({ error: e.message }); }
 });
-app.get('/api/health',      (req, res) => res.json({ status: 'ok', env: process.env.NODE_ENV }));
 
 app.get('/api/bridge/job-status/:jobId', requireAuth, (req, res) => {
   const status = bridgeManager.getJobStatus(req.params.jobId);

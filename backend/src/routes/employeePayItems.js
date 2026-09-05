@@ -11,7 +11,10 @@ const { getDb } = require('../database/db');
 const { requireAuth, canAccessClient } = require('../middleware/auth');
 
 const router = express.Router();
-router.use(requireAuth);
+// Scope auth to this router's own prefixes — it is mounted at bare /api, and a
+// blanket requireAuth here would intercept unrelated /api paths registered
+// after the mount (it broke /api/health and with it Railway deployments).
+router.use(['/employees', '/clients'], requireAuth);
 
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
 
