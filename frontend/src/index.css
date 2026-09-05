@@ -432,7 +432,7 @@ body { font-size: 1rem; }
   position: fixed;
   top: 50%; left: 50%;
   transform: translate(-50%, -50%);
-  width: min(680px, 94vw);
+  width: min(900px, 96vw);
   max-height: 92vh;
   background: var(--bg);
   border-radius: 12px;

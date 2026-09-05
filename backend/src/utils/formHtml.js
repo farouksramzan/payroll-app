@@ -838,7 +838,7 @@ function htmlW2(data, pr) {
         ${w2Box('11','Nonqualified plans','')}
         ${w2Box('12a','See instructions for box 12','')}
         <div style="display:flex;gap:1px;flex-direction:column;background:#ccc;">
-          ${w2Box('13','Statutory employee ☐ Retirement plan ☐ Third-party sick pay ☐','')}
+          ${w2Box('13',`Statutory employee ☐ Retirement plan ${w.box13_retirementPlan ? '☒' : '☐'} Third-party sick pay ☐`,'')}
           ${w2Box('14','Other','')}
         </div>
         ${w2Box('12b','','')}${w2Box('12c','','')}${w2Box('12d','','')}

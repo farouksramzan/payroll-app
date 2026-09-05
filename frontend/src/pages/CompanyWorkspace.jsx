@@ -58,7 +58,8 @@ function effPeriodSalary(row, emp, ppy) {
 function initials(name) { return name ? name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : '?'; }
 const PERIODS_PER_YEAR = { weekly: 52, biweekly: 26, semimonthly: 24, monthly: 12 };
 const FREQ_LABEL = { weekly: 'Weekly', biweekly: 'Bi-weekly', semimonthly: 'Semi-monthly', monthly: 'Monthly' };
-const PAY_ITEM_LABELS = { reportedTips: 'Reported Tips', bonus: 'Bonus', commission: 'Commission', reimbursement: 'Reimbursement', deduction: 'Deduction', garnishment: 'Garnishment' };
+const PAY_ITEM_LABELS = { reportedTips: 'Reported Tips', bonus: 'Bonus', commission: 'Commission', reimbursement: 'Reimbursement', deduction: 'Deduction', garnishment: 'Garnishment', companyContribution: 'Company Contribution', regularHours: 'Regular Hours (default)', overtimeHours: 'Overtime Hours (default)' };
+const HOUR_ITEM_TYPES = ['regularHours', 'overtimeHours'];
 
 function daysUntil(dateStr) {
   if (!dateStr) return null;
@@ -184,6 +185,16 @@ function itemOverrideForPayload(row, field) {
 function itemTypedAmount(row, field) {
   const v = row?.[field];
   return (v !== undefined && String(v).trim() !== '') ? (parseFloat(v) || 0) : 0;
+}
+// Hour defaults follow the same typed-wins rule for the grid's Reg/OT boxes, but
+// are applied CLIENT-SIDE only — effective hours flow into regH/otH, lineItems
+// and the run payload exactly as typed hours do; the backend never resolves them.
+const HOUR_TYPE_BY_FIELD = { regHours: 'regularHours', otHours: 'overtimeHours' };
+function hoursEffective(row, field, defaultItems) {
+  const v = row?.[field];
+  if (v !== undefined && String(v).trim() !== '') return parseFloat(v);
+  const d = (defaultItems || []).find(x => x.itemType === HOUR_TYPE_BY_FIELD[field]);
+  return d ? (d.effectiveNext || 0) : 0;
 }
 
 function calcIRSDepositDue(payDate, depositSchedule) {
@@ -362,6 +373,10 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
       payFrequency: emp.payFrequency || 'biweekly',
       hireDate: emp.hireDate || '', isActive: emp.isActive !== false,
       payGroupId: emp.payGroupId ? String(emp.payGroupId) : '',
+      pensionPlan: !!emp.pensionPlan,
+      ttoc1: emp.ttoc1 || '', ttoc2: emp.ttoc2 || '',
+      sickHours: emp.sickHours != null ? String(emp.sickHours) : '',
+      vacationHours: emp.vacationHours != null ? String(emp.vacationHours) : '',
     })).catch(e => setErr(e.message));
   }, [empId]);
 
@@ -597,13 +612,16 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
 
   async function handleDiAdd() {
     const amt = parseFloat(diForm.amount);
-    const lim = diForm.annualLimit === '' ? null : parseFloat(diForm.annualLimit);
+    const isHours = HOUR_ITEM_TYPES.includes(diForm.itemType);
+    const lim = isHours || diForm.annualLimit === '' ? null : parseFloat(diForm.annualLimit);
     if (!diForm.itemType) { setDiErr('Pick which payroll item to pre-fill.'); return; }
-    if (!(amt > 0)) { setDiErr('Amount per check must be greater than $0.'); return; }
+    if (isHours) {
+      if (!(amt > 0) || amt > 500) { setDiErr('Hours per check must be between 0 and 500.'); return; }
+    } else if (!(amt > 0)) { setDiErr('Amount per check must be greater than $0.'); return; }
     if (lim !== null && !(lim > 0)) { setDiErr('Annual limit must be greater than $0 — or leave it blank for no limit.'); return; }
     setDiBusy(true); setDiErr('');
     try {
-      const saved = await api.setDefaultItem(empId, { itemType: diForm.itemType, amount: amt, annualLimit: lim });
+      const saved = await api.setDefaultItem(empId, { itemType: diForm.itemType, amount: amt, annualLimit: lim, label: diForm.label.trim() || null });
       setDefItems(prev => [...prev.filter(d => d.itemType !== saved.itemType), saved]);
       setDiForm(null);
       dirtyRef.current = mainDirtyRef.current; setIsDirty(mainDirtyRef.current);
@@ -612,7 +630,8 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
   }
 
   async function handleDiDelete(item) {
-    if (!window.confirm(`Remove the ${fmt(item.amount)}/check default ${PAY_ITEM_LABELS[item.itemType] || item.itemType}?\n\nExisting checks keep their amounts — only future checks stop pre-filling.`)) return;
+    const amtLabel = HOUR_ITEM_TYPES.includes(item.itemType) ? `${item.amount} hrs` : fmt(item.amount);
+    if (!window.confirm(`Remove the ${amtLabel}/check default ${item.label || PAY_ITEM_LABELS[item.itemType] || item.itemType}?\n\nExisting checks keep their amounts — only future checks stop pre-filling.`)) return;
     try {
       await api.deleteDefaultItem(empId, item.itemType);
       setDefItems(prev => prev.filter(d => d.itemType !== item.itemType));
@@ -853,7 +872,9 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                 </div>
               )}
 
-              <p className="form-section-title">Earning Rates</p>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(340px, 100%), 1fr))', gap: 20 }}>
+              <div>
+              <p className="form-section-title">Earnings</p>
               {erErr && <div className="alert alert-error" role="alert" style={{ marginBottom: 10, fontSize: '0.8rem' }}><span>⚠</span>{erErr}</div>}
               {/* The Base row edits the SAME field as Pay Settings above — one
                   source of truth, editable in either place. */}
@@ -906,55 +927,121 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
                 </button>
               )}
               <p className="form-hint" style={{ fontSize: '0.8667rem', marginBottom: 16 }}>Named rates appear as quick picks in the Rate box when entering hours.</p>
+              </div>
 
-              <p className="form-section-title">Recurring Payroll Items</p>
+              <div>
+              <p className="form-section-title">Additions, Deductions &amp; Contributions</p>
               {diErr && <div className="alert alert-error" role="alert" style={{ marginBottom: 10, fontSize: '0.8rem' }}><span>⚠</span>{diErr}</div>}
               {defItems.length === 0 && !diForm && (
                 <p style={{ fontSize: '0.8333rem', color: 'var(--text-muted)', margin: '0 0 10px' }}>No recurring items. Add one to pre-fill an amount on every new check for this employee.</p>
               )}
-              {defItems.map(d => (
+              {defItems.length > 0 && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '0 10px 4px' }}>
+                  <div style={{ flex: 1, minWidth: 0, fontSize: '0.8667rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Item</div>
+                  <span style={{ width: 84, textAlign: 'right', fontSize: '0.8667rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Amount</span>
+                  <span style={{ width: 76, textAlign: 'right', fontSize: '0.8667rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.03em' }}>Limit</span>
+                  <span style={{ width: 62 }} aria-hidden="true" />
+                </div>
+              )}
+              {defItems.map(d => { const isHrs = HOUR_ITEM_TYPES.includes(d.itemType); return (
                 <div key={d.itemType} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid var(--border)', marginBottom: 6, background: '#fff' }}>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: '0.8667rem' }}>{PAY_ITEM_LABELS[d.itemType] || d.itemType}</div>
+                    <div style={{ fontWeight: 600, fontSize: '0.8667rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{d.label || PAY_ITEM_LABELS[d.itemType] || d.itemType}</div>
+                    {d.label && (
+                      <div style={{ fontSize: '0.8333rem', color: 'var(--text-muted)' }}>{PAY_ITEM_LABELS[d.itemType] || d.itemType}</div>
+                    )}
                     {d.annualLimit != null && (
                       <div style={{ fontSize: '0.8333rem', color: 'var(--text-muted)' }}>used {fmt(d.ytdUsed || 0)} of {fmt(d.annualLimit)} this year</div>
                     )}
                   </div>
-                  <span className="mono" style={{ fontSize: '0.8667rem' }}>{fmt(d.amount)}/check</span>
-                  <span className="mono" style={{ fontSize: '0.8667rem', color: 'var(--text-muted)', minWidth: 90, textAlign: 'right' }}>{d.annualLimit != null ? `${fmt(d.annualLimit)} limit` : '—'}</span>
+                  <span className="mono" style={{ fontSize: '0.8667rem', width: 84, textAlign: 'right' }}>{isHrs ? `${d.amount} hrs` : fmt(d.amount)}</span>
+                  <span className="mono" style={{ fontSize: '0.8667rem', color: 'var(--text-muted)', width: 76, textAlign: 'right' }}>{isHrs ? 'n/a' : d.annualLimit != null ? fmt(d.annualLimit) : '—'}</span>
                   <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: '0.7333rem', color: '#dc2626', minHeight: 32 }} onClick={() => handleDiDelete(d)}>Remove</button>
                 </div>
-              ))}
-              {diForm ? (
+              ); })}
+              {diForm ? (() => { const diHrs = HOUR_ITEM_TYPES.includes(diForm.itemType); return (
                 <div style={{ background: 'var(--accent-light)', border: '1px solid var(--accent-mid)', padding: '12px 12px 10px', marginBottom: 6 }}>
                   <div className="form-group" style={{ marginBottom: 8 }}>
                     <label className="form-label" style={{ fontSize: '0.8333rem' }}>Payroll Item</label>
                     <select className="form-select" value={diForm.itemType} onChange={e => { dirtyRef.current = true; setIsDirty(true); setDiForm(f => ({ ...f, itemType: e.target.value })); }}>
                       <option value="">— Pick an item —</option>
-                      {Object.entries(PAY_ITEM_LABELS).filter(([k]) => !defItems.some(d => d.itemType === k)).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
+                      {Object.entries(PAY_ITEM_LABELS).filter(([k]) => !defItems.some(d => d.itemType === k) && !(form.payType === 'salary' && HOUR_ITEM_TYPES.includes(k))).map(([k, label]) => <option key={k} value={k}>{label}</option>)}
                     </select>
                   </div>
+                  <div className="form-group" style={{ marginBottom: 8 }}>
+                    <label className="form-label" style={{ fontSize: '0.8333rem' }}>Label (optional)</label>
+                    <input className="form-input" maxLength={40} value={diForm.label} onChange={e => { dirtyRef.current = true; setIsDirty(true); setDiForm(f => ({ ...f, label: e.target.value })); }} placeholder="e.g. Health Insurance" />
+                  </div>
+                  {diForm.itemType === 'companyContribution' && (
+                    <div style={{ fontSize: '0.8667rem', color: 'var(--text-secondary)', margin: '-2px 0 8px' }}>
+                      Paid by the company — doesn&rsquo;t come out of the employee&rsquo;s paycheck. Shows under Company Summary on each check.
+                    </div>
+                  )}
                   <div className="form-grid" style={{ marginBottom: 8 }}>
                     <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label className="form-label" style={{ fontSize: '0.8333rem' }}>Amount per check ($)</label>
-                      <input className="form-input mono" type="number" min="0.01" step="0.01" value={diForm.amount} onChange={e => { dirtyRef.current = true; setIsDirty(true); setDiForm(f => ({ ...f, amount: e.target.value })); }} placeholder="100.00" />
+                      <label className="form-label" style={{ fontSize: '0.8333rem' }}>{diHrs ? 'Hours per check' : 'Amount per check ($)'}</label>
+                      <input className="form-input mono" type="number" min={diHrs ? '0.25' : '0.01'} step={diHrs ? '0.25' : '0.01'} value={diForm.amount} onChange={e => { dirtyRef.current = true; setIsDirty(true); setDiForm(f => ({ ...f, amount: e.target.value })); }} placeholder={diHrs ? '40' : '100.00'} />
                     </div>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label className="form-label" style={{ fontSize: '0.8333rem' }}>Annual Limit ($ — optional)</label>
-                      <input className="form-input mono" type="number" min="0.01" step="0.01" value={diForm.annualLimit} onChange={e => { dirtyRef.current = true; setIsDirty(true); setDiForm(f => ({ ...f, annualLimit: e.target.value })); }} placeholder="no limit" />
-                    </div>
+                    {!diHrs && (
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label" style={{ fontSize: '0.8333rem' }}>Annual Limit ($ — optional)</label>
+                        <input className="form-input mono" type="number" min="0.01" step="0.01" value={diForm.annualLimit} onChange={e => { dirtyRef.current = true; setIsDirty(true); setDiForm(f => ({ ...f, annualLimit: e.target.value })); }} placeholder="no limit" />
+                      </div>
+                    )}
                   </div>
                   <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                     <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setDiForm(null); setDiErr(''); dirtyRef.current = mainDirtyRef.current; setIsDirty(mainDirtyRef.current); }}>Cancel</button>
                     <button type="button" className="btn btn-primary btn-sm" disabled={diBusy} onClick={handleDiAdd}>{diBusy ? 'Adding…' : 'Add Item'}</button>
                   </div>
                 </div>
-              ) : (
-                <button type="button" className="btn btn-secondary btn-sm" style={{ marginBottom: 6 }} disabled={defItems.length >= 6} onClick={() => { setDiForm({ itemType: '', amount: '', annualLimit: '' }); setDiErr(''); }}>
+              ); })() : (
+                <button type="button" className="btn btn-secondary btn-sm" style={{ marginBottom: 6 }} disabled={defItems.length >= Object.keys(PAY_ITEM_LABELS).length} onClick={() => { setDiForm({ itemType: '', amount: '', annualLimit: '', label: '' }); setDiErr(''); }}>
                   + Add Recurring Item
                 </button>
               )}
-              <p className="form-hint" style={{ fontSize: '0.8667rem' }}>These amounts pre-fill every new check for this employee — you can still change them on any single check.</p>
+              <p className="form-hint" style={{ fontSize: '0.8667rem' }}>These amounts pre-fill every new check for this employee — you can still change them on any single check. Hour defaults pre-fill the Reg/OT boxes when entering pay.</p>
+              </div>
+              </div>
+
+              <div style={{ marginTop: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, minHeight: 32 }}>
+                  <input id="emp-pension-plan" type="checkbox" checked={form.pensionPlan} onChange={set('pensionPlan')} style={{ accentColor: 'var(--accent)', width: 18, height: 18 }} />
+                  <label htmlFor="emp-pension-plan" style={{ fontSize: '0.8667rem', fontWeight: 600, cursor: 'pointer' }}>Employee is covered by a qualified pension plan</label>
+                </div>
+                <p className="form-hint" style={{ fontSize: '0.8333rem', marginTop: 2 }}>Marks the Retirement plan box (Box 13) on this employee&rsquo;s W-2.</p>
+              </div>
+
+              <p className="form-section-title">Tipped Occupation Codes (TTOC)</p>
+              <div className="form-grid">
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">TTOC 1</label>
+                  <input className="form-input mono" list="ttoc-code-options" inputMode="numeric" maxLength={3} value={form.ttoc1}
+                    onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 3); dirtyRef.current = true; mainDirtyRef.current = true; setIsDirty(true); setForm(f => ({ ...f, ttoc1: v })); }} placeholder="e.g. 104" />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">TTOC 2</label>
+                  <input className="form-input mono" list="ttoc-code-options" inputMode="numeric" maxLength={3} value={form.ttoc2}
+                    onChange={e => { const v = e.target.value.replace(/\D/g, '').slice(0, 3); dirtyRef.current = true; mainDirtyRef.current = true; setIsDirty(true); setForm(f => ({ ...f, ttoc2: v })); }} placeholder="optional" />
+                </div>
+              </div>
+              <datalist id="ttoc-code-options">
+                <option value="000">Non-qualifying occupation</option>
+                <option value="104">Dining room and cafeteria attendants and bartender helpers</option>
+              </datalist>
+              <p className="form-hint" style={{ fontSize: '0.8667rem' }}>Select up to two Treasury Tipped Occupation Codes for tip reporting. For tips from a non-qualifying occupation, use code 000.</p>
+
+              <p className="form-section-title">Sick &amp; Vacation</p>
+              <div className="form-grid">
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Sick hours available</label>
+                  <input className="form-input mono" type="number" min="0" step="0.5" value={form.sickHours} onChange={set('sickHours')} placeholder="0" />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">Vacation hours available</label>
+                  <input className="form-input mono" type="number" min="0" step="0.5" value={form.vacationHours} onChange={set('vacationHours')} placeholder="0" />
+                </div>
+              </div>
+              <p className="form-hint" style={{ fontSize: '0.8667rem' }}>Balances are informational for now — hours used aren&rsquo;t deducted automatically.</p>
 
               </>)}
 
@@ -2312,9 +2399,12 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
       const isSalary = emp.payType === 'salary';
       // Salary / period is editable (row.salaryOverride); falls back to annual/ppy.
       const salAmt   = effPeriodSalary(row, emp, ppy);
+      const empPayItems = (payItems || {})[emp.id] || {};
+      const empDefaults = empPayItems.defaultItems;
+      const empRates    = empPayItems.earningRates || [];
       const rate     = parseFloat(row.rate) || emp.hourlyRate || 0;
-      const regH     = parseFloat(row.regHours || 0);
-      const otH      = parseFloat(row.otHours  || 0);
+      const regH     = hoursEffective(row, 'regHours', empDefaults);
+      const otH      = hoursEffective(row, 'otHours',  empDefaults);
       const regPay   = isSalary ? salAmt : r2(regH * rate);
       const otPay    = isSalary ? 0 : r2(otH * rate * 1.5);
       const gross    = r2(regPay + otPay);
@@ -2365,9 +2455,6 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
       // Employee default items: an untouched or cleared field falls back to the
       // saved default (already limit-capped via effectiveNext); a typed value on
       // this check always wins.
-      const empPayItems = (payItems || {})[emp.id] || {};
-      const empDefaults = empPayItems.defaultItems;
-      const empRates    = empPayItems.earningRates || [];
       const itemHasOverride = f => row[f] !== undefined && String(row[f]).trim() !== '';
       const itemDefaultOn   = f => !itemHasOverride(f) && (empDefaults || []).some(x => x.itemType === ITEM_TYPE_BY_FIELD[f]);
       // A touched field shows exactly what the user typed — including empty
@@ -2375,6 +2462,15 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
       // type 0 to force an item to zero on this check).
       const itemEditValue   = f => row[f] !== undefined ? row[f] : itemDefaultOn(f) ? String(itemEffectiveAmount(row, f, empDefaults)) : '';
       const defaultNote     = <span style={{ fontSize: '0.8333rem' }}>(default)</span>;
+      // The saved default's optional label (e.g. "Health Insurance") shows
+      // beside the note so the accountant knows which item is pre-filling.
+      const defaultNoteFor  = f => {
+        const lbl = ((empDefaults || []).find(x => x.itemType === (ITEM_TYPE_BY_FIELD[f] || HOUR_TYPE_BY_FIELD[f])) || {}).label;
+        return lbl ? <span style={{ fontSize: '0.8333rem' }}>(default — {lbl})</span> : defaultNote;
+      };
+      // Hour defaults mirror the same pattern for the Reg/OT hour figures.
+      const hourDefaultOn   = f => !itemHasOverride(f) && (empDefaults || []).some(x => x.itemType === HOUR_TYPE_BY_FIELD[f]);
+      const hourEditValue   = f => row[f] !== undefined ? String(row[f]) : hourDefaultOn(f) ? String(hoursEffective(row, f, empDefaults)) : '';
       // Child support: default comes from the employee's active orders; an edited
       // value on this row overrides the total for this check only (clearing the
       // field reverts to the default).
@@ -2455,8 +2551,9 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
         if (!r2emp) return acc;
         const eIsSalary = emp.payType === 'salary';
         const eRate     = parseFloat(r2emp.rate) || emp.hourlyRate || 0;
-        const eRegH     = parseFloat(r2emp.regHours || 0);
-        const eOtH      = parseFloat(r2emp.otHours  || 0);
+        const eDefs     = (payItems[emp.id] || {}).defaultItems;
+        const eRegH     = eIsSalary ? 0 : hoursEffective(r2emp, 'regHours', eDefs);
+        const eOtH      = eIsSalary ? 0 : hoursEffective(r2emp, 'otHours',  eDefs);
         const eReg      = eIsSalary ? effPeriodSalary(r2emp, emp, ppy) : r2(eRegH * eRate);
         const eOt       = eIsSalary ? 0 : r2(eOtH * eRate * 1.5);
         const eTips     = parseFloat(r2emp.tips       || 0);
@@ -2587,13 +2684,13 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
                           editSuffix="/hr" noDollarSign={false}
                           listId={empRates.length > 0 ? `rates-modal-${emp.id}` : undefined} />
                         <TR label="Regular Hours" amount={regH} ytdAmount={null} color="var(--accent)"
-                          editValue={row.regHours !== undefined ? String(row.regHours) : ''}
+                          editValue={hourEditValue('regHours')}
                           onEditChange={v => setField('regHours', v)}
-                          editSuffix="hrs" noDollarSign={true} />
+                          editSuffix={hourDefaultOn('regHours') ? <span>hrs {defaultNoteFor('regHours')}</span> : 'hrs'} noDollarSign={true} />
                         <TR label="Overtime Hours" amount={otH} ytdAmount={null} color="var(--accent)"
-                          editValue={row.otHours !== undefined ? String(row.otHours) : ''}
+                          editValue={hourEditValue('otHours')}
                           onEditChange={v => setField('otHours', v)}
-                          editSuffix="hrs" noDollarSign={true} />
+                          editSuffix={hourDefaultOn('otHours') ? <span>hrs {defaultNoteFor('otHours')}</span> : 'hrs'} noDollarSign={true} />
                         <TR label="Regular Pay" amount={regPay} ytdAmount={ytdWithCurrent.regPay} color="var(--text-secondary)" />
                         {otPay > 0 && <TR label="Overtime Pay" amount={otPay} ytdAmount={ytdWithCurrent.otPay} color="var(--text-secondary)" />}
                       </>
@@ -2602,18 +2699,18 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
                     <TR key={item.field} label={item.label} amount={itemEffectiveAmount(row, item.field, empDefaults)}
                       ytdAmount={ytdWithCurrent[item.field] ?? null} color="var(--accent)"
                       editValue={itemEditValue(item.field)} onEditChange={v => setField(item.field, v)}
-                      editSuffix={itemDefaultOn(item.field) ? defaultNote : undefined} />
+                      editSuffix={itemDefaultOn(item.field) ? defaultNoteFor(item.field) : undefined} />
                   ))}
                   <TR label="Gross Pay"            amount={liveGross}    ytdAmount={ytdWithCurrent.gross}    color="var(--accent)" bold borderTop />
                   {pendingItemVisible('cashAdvance') && (
                     <TR label="Cash Advance"       amount={itemEffectiveAmount(row, 'cashAdvance', empDefaults)} ytdAmount={null} negative color="#dc2626"
                       editValue={itemEditValue('cashAdvance')} onEditChange={v => setField('cashAdvance', v)}
-                      editSuffix={itemDefaultOn('cashAdvance') ? defaultNote : undefined} />
+                      editSuffix={itemDefaultOn('cashAdvance') ? defaultNoteFor('cashAdvance') : undefined} />
                   )}
                   {pendingItemVisible('garnishment') && (
                     <TR label="Garnishment"        amount={itemEffectiveAmount(row, 'garnishment', empDefaults)} ytdAmount={null} negative color="#dc2626"
                       editValue={itemEditValue('garnishment')} onEditChange={v => setField('garnishment', v)}
-                      editSuffix={itemDefaultOn('garnishment') ? defaultNote : undefined} />
+                      editSuffix={itemDefaultOn('garnishment') ? defaultNoteFor('garnishment') : undefined} />
                   )}
                   {(csDefault > 0 || row.childSupport !== undefined) && (
                     <TR label="Child Support"      amount={csEffective} ytdAmount={null} negative color="#dc2626"
@@ -2660,7 +2757,12 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
                     editValue={row.futaOverride !== undefined ? row.futaOverride : String(estFutaCalc)} onEditChange={v => setField('futaOverride', v)} />
                   <TR label="State Unemployment (est.)"    amount={dispSuta}  ytdAmount={ytdWithCurrent.suta}  color="var(--text-secondary)"
                     editValue={row.suiOverride !== undefined ? row.suiOverride : String(estSutaCalc)} onEditChange={v => setField('suiOverride', v)} />
-                  <TR label="Total Company Cost" amount={r2(dispErSS + dispErMed + dispFuta + dispSuta)}
+                  {(() => {
+                    const cc = (empDefaults || []).find(x => x.itemType === 'companyContribution');
+                    const ccAmt = cc ? r2(cc.effectiveNext || 0) : 0;
+                    return ccAmt > 0 ? <TR label={(cc.label || 'Company Contribution') + ' (est.)'} amount={ccAmt} ytdAmount={null} color="var(--text-secondary)" /> : null;
+                  })()}
+                  <TR label="Total Company Cost" amount={r2(dispErSS + dispErMed + dispFuta + dispSuta + (((empDefaults || []).find(x => x.itemType === 'companyContribution') || {}).effectiveNext || 0))}
                     ytdAmount={r2((ytdWithCurrent.erSS||0)+(ytdWithCurrent.erMed||0)+(ytdWithCurrent.futa||0)+(ytdWithCurrent.suta||0))}
                     bold borderTop color="var(--text-primary)" />
                 </tbody>
@@ -3149,6 +3251,9 @@ function CheckDetailModal({ rowData, onClose, reloadStubs, clientId, client, emp
         editValue: canEdit ? sutaOverride : undefined,
         onEditChange: canEdit ? (v => { setSutaManual(v !== ''); setSutaOverride(v); }) : undefined },
     ];
+    if ((stub.company_contribution || 0) > 0) {
+      employerRows.push({ label: 'Company Contribution', amount: r2(stub.company_contribution), ytd: 0 });
+    }
     const employerTotal = r2(employerRows.reduce((s, r) => s + r.amount, 0));
     const employerYTD   = r2(employerRows.reduce((s, r) => s + (r.ytd || 0), 0));
 
@@ -3480,6 +3585,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
           for (const k of Object.keys(row || {})) {
             if (/Override$/.test(k) && row[k] === '') delete row[k];
           }
+          // Empty-string hours saved by older select-all spreads count as
+          // untouched, so hour defaults show through after a reload.
+          if (row && row.regHours === '') delete row.regHours;
+          if (row && row.otHours === '') delete row.otHours;
         }
       }
       return rows;
@@ -3791,13 +3900,18 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
   const [expandedOther, setExpandedOther] = useState(new Set());
 
   function getRow(periodEnd, empId) {
-    return (pendingRows[periodEnd] || {})[empId] || { regHours: '', otHours: '', tips: '', bonus: '', commission: '', cashAdvance: '', mileage: '', selected: false };
+    return (pendingRows[periodEnd] || {})[empId] || { tips: '', bonus: '', commission: '', cashAdvance: '', mileage: '', selected: false };
   }
   function setRow(periodEnd, empId, field, value) {
-    setPendingRows(prev => ({
-      ...prev,
-      [periodEnd]: { ...(prev[periodEnd] || {}), [empId]: { ...((prev[periodEnd] || {})[empId] || {}), [field]: value } },
-    }));
+    setPendingRows(prev => {
+      const empRow = { ...((prev[periodEnd] || {})[empId] || {}) };
+      // Clearing an hour box returns it to the employee's default hours — the
+      // tinted value reappears immediately, so an empty-looking box can never
+      // silently book default hours. (Type 0 to force zero hours.)
+      if (value === '' && (field === 'regHours' || field === 'otHours')) delete empRow[field];
+      else empRow[field] = value;
+      return { ...prev, [periodEnd]: { ...(prev[periodEnd] || {}), [empId]: empRow } };
+    });
   }
 
   // Shared estimate for a pending row — used by the grid cells and the tfoot totals
@@ -3807,9 +3921,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
     const isSalary = emp.payType === 'salary';
     const salAmt   = effPeriodSalary(row, emp, ppy);
     const rate     = parseFloat(row.rate) || emp.hourlyRate || 0;
-    const regH     = parseFloat(row.regHours || 0);
-    const otH      = parseFloat(row.otHours  || 0);
     const defs     = (payItems[emp.id] || {}).defaultItems;
+    const regH     = hoursEffective(row, 'regHours', defs);
+    const otH      = hoursEffective(row, 'otHours',  defs);
     const tipsAmt  = itemEffectiveAmount(row, 'tips', defs);
     const bonusAmt = itemEffectiveAmount(row, 'bonus', defs);
     const commAmt  = itemEffectiveAmount(row, 'commission', defs);
@@ -3848,7 +3962,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
           const rate  = parseFloat(row.rate) || emp.hourlyRate || 0;
           const defs  = (payItems[emp.id] || {}).defaultItems;
           const gross = r2(
-            (isSal ? salAmt : r2(parseFloat(row.regHours || 0) * rate + parseFloat(row.otHours || 0) * rate * 1.5))
+            (isSal ? salAmt : r2(hoursEffective(row, 'regHours', defs) * rate + hoursEffective(row, 'otHours', defs) * rate * 1.5))
             + itemEffectiveAmount(row, 'tips', defs) + itemEffectiveAmount(row, 'bonus', defs) + itemEffectiveAmount(row, 'commission', defs)
           );
           if (gross <= 0) return;
@@ -3889,8 +4003,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
         const row = getRow(period.end, emp.id);
         if (!row.selected) continue;
         if (emp.payType !== 'salary') {
-          const regH = parseFloat(row.regHours || 0);
-          const otH  = parseFloat(row.otHours  || 0);
+          const defs = (payItems[emp.id] || {}).defaultItems;
+          const regH = hoursEffective(row, 'regHours', defs);
+          const otH  = hoursEffective(row, 'otHours',  defs);
           if (isNaN(regH) || isNaN(otH) || (row.rate !== undefined && String(row.rate).trim() !== '' && isNaN(parseFloat(row.rate)))) {
             setRunErr(`The hours or rate for ${emp.firstName} ${emp.lastName} aren't a valid number — fix them before processing payroll.`);
             return;
@@ -3934,7 +4049,7 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
         const extras = itemEffectiveAmount(row, 'tips', defs) + itemEffectiveAmount(row, 'bonus', defs) + itemEffectiveAmount(row, 'commission', defs);
         const gross = isSalary
           ? r2(effPeriodSalary(row, emp, ppy) + extras)
-          : r2(parseFloat(row.regHours || 0) * rate + parseFloat(row.otHours || 0) * rate * 1.5 + extras);
+          : r2(hoursEffective(row, 'regHours', defs) * rate + hoursEffective(row, 'otHours', defs) * rate * 1.5 + extras);
         const hasDD = emp.directDeposit?.status === 'active';
         reviewRows.push({ emp, gross, hasDD });
       }
@@ -3973,8 +4088,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
           const row = getRow(period.end, emp.id);
           const defs = (payItems[emp.id] || {}).defaultItems;
           const isSalary = emp.payType === 'salary';
-          const regH = parseFloat(row.regHours || 0);
-          const otH  = parseFloat(row.otHours  || 0);
+          const regH = isSalary ? 0 : hoursEffective(row, 'regHours', defs);
+          const otH  = isSalary ? 0 : hoursEffective(row, 'otHours',  defs);
           const tips = itemTypedAmount(row, 'tips');
           const bonusAmt = itemTypedAmount(row, 'bonus');
           const commAmt  = itemTypedAmount(row, 'commission');
@@ -4159,9 +4274,9 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
         const isSalary = emp.payType === 'salary';
         const rowData2 = getRow(period.end, emp.id);
         const rate     = parseFloat(rowData2.rate) || emp.hourlyRate || 0;
-        const regH     = isSalary ? 0 : parseFloat(rowData2.regHours || 0);
-        const otH      = isSalary ? 0 : parseFloat(rowData2.otHours  || 0);
         const defs2    = (payItems[emp.id] || {}).defaultItems;
+        const regH     = isSalary ? 0 : hoursEffective(rowData2, 'regHours', defs2);
+        const otH      = isSalary ? 0 : hoursEffective(rowData2, 'otHours',  defs2);
         // Effective values feed the $0-gross guard (a default-tips-only check is
         // NOT $0); typed values feed lineItems — the backend adds default lines.
         const tips2    = itemEffectiveAmount(rowData2, 'tips', defs2);
@@ -4242,7 +4357,8 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
     // fail one-by-one at process time.
     const isSelectable = (period, emp) => {
       const row = getRow(period.end, emp.id);
-      return emp.payType === 'salary' || parseFloat(row.regHours || 0) > 0 || parseFloat(row.otHours || 0) > 0;
+      const defs = (payItems[emp.id] || {}).defaultItems;
+      return emp.payType === 'salary' || hoursEffective(row, 'regHours', defs) > 0 || hoursEffective(row, 'otHours', defs) > 0;
     };
     // "All selected?" must only consider selectable rows — a blank-hours employee can
     // never be selected, so counting them made the toggle stick permanently on.
@@ -4526,6 +4642,11 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
               // this inline net pay equals the modal's "Net Pay (est.)" instead of
               // ignoring an edited FIT/SS/Medicare/state value.
               const { row, grossPreview, estNetPay } = pendingRowEst(rawPeriod.end, emp);
+              // Untouched hour boxes show the employee's default hours with a
+              // light tint; typing anything (including clearing) takes over.
+              const empDefs = (payItems[emp.id] || {}).defaultItems;
+              const regDefaulted = row.regHours === undefined && (empDefs || []).some(x => x.itemType === 'regularHours');
+              const otDefaulted  = row.otHours  === undefined && (empDefs || []).some(x => x.itemType === 'overtimeHours');
               const daysToPayDate = daysUntil(period.payDate);
               const isLate   = period.payDate < new Date().toISOString().slice(0, 10);
               const status   = isLate ? 'late' : (daysToPayDate !== null && daysToPayDate <= 5 ? 'due-soon' : 'upcoming');
@@ -4560,18 +4681,22 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                   ) : (
                     <>
                       <td style={{ padding: '4px 6px' }} onClick={e => { e.stopPropagation(); const inp = e.currentTarget.querySelector('input'); if (inp && e.target !== inp) inp.focus(); }}>
-                        <input className="form-input mono" type="text" inputMode="decimal" value={row.regHours} placeholder="0"
+                        <input className="form-input mono" type="text" inputMode="decimal" placeholder="0"
+                          value={row.regHours !== undefined ? String(row.regHours) : regDefaulted ? String(hoursEffective(row, 'regHours', empDefs)) : ''}
+                          title={regDefaulted ? 'Default hours — type to change for this check' : undefined}
                           onChange={ev => setRow(rawPeriod.end, emp.id, 'regHours', cleanDecimal(ev.target.value))}
                           onFocus={ev => { ev.target.select(); const r = ev.target.getBoundingClientRect(); setFocusedRowInfo({ key: rowData.key, name: `${emp.firstName} ${emp.lastName}`, top: r.top, left: r.left }); }}
                           onBlur={() => setFocusedRowInfo(f => (f && f.key === rowData.key ? null : f))}
-                          style={{ width: '100%', height: 46, fontSize: '1.0667rem', textAlign: 'right', padding: '0 8px', borderRadius: 0, border: `2px solid ${row.regHours && isNaN(parseFloat(row.regHours)) ? 'var(--error)' : '#b0bec5'}`, fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
+                          style={{ width: '100%', height: 46, fontSize: '1.0667rem', textAlign: 'right', padding: '0 8px', borderRadius: 0, border: `2px solid ${row.regHours && isNaN(parseFloat(row.regHours)) ? 'var(--error)' : '#b0bec5'}`, fontWeight: 700, background: regDefaulted ? 'var(--accent-light)' : '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
                       </td>
                       <td style={{ padding: '4px 6px' }} onClick={e => { e.stopPropagation(); const inp = e.currentTarget.querySelector('input'); if (inp && e.target !== inp) inp.focus(); }}>
-                        <input className="form-input mono" type="text" inputMode="decimal" value={row.otHours} placeholder="0"
+                        <input className="form-input mono" type="text" inputMode="decimal" placeholder="0"
+                          value={row.otHours !== undefined ? String(row.otHours) : otDefaulted ? String(hoursEffective(row, 'otHours', empDefs)) : ''}
+                          title={otDefaulted ? 'Default hours — type to change for this check' : undefined}
                           onChange={ev => setRow(rawPeriod.end, emp.id, 'otHours', cleanDecimal(ev.target.value))}
                           onFocus={ev => { ev.target.select(); const r = ev.target.getBoundingClientRect(); setFocusedRowInfo({ key: rowData.key, name: `${emp.firstName} ${emp.lastName}`, top: r.top, left: r.left }); }}
                           onBlur={() => setFocusedRowInfo(f => (f && f.key === rowData.key ? null : f))}
-                          style={{ width: '100%', height: 46, fontSize: '1.0667rem', textAlign: 'right', padding: '0 8px', borderRadius: 0, border: `2px solid ${row.otHours && isNaN(parseFloat(row.otHours)) ? 'var(--error)' : '#b0bec5'}`, fontWeight: 700, background: '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
+                          style={{ width: '100%', height: 46, fontSize: '1.0667rem', textAlign: 'right', padding: '0 8px', borderRadius: 0, border: `2px solid ${row.otHours && isNaN(parseFloat(row.otHours)) ? 'var(--error)' : '#b0bec5'}`, fontWeight: 700, background: otDefaulted ? 'var(--accent-light)' : '#fff', boxShadow: 'inset 0 1px 3px rgba(0,0,0,0.08)' }} />
                       </td>
                       <td style={{ padding: '4px 6px' }} onClick={e => { e.stopPropagation(); const inp = e.currentTarget.querySelector('input'); if (inp && e.target !== inp) inp.focus(); }}>
                         <input className="form-input mono" type="text" inputMode="decimal"
@@ -5856,9 +5981,10 @@ function LiabilityDetailModal({ stub, taxType, due, sendBy, todayStr, onClose, o
     { label: 'Medicare Match (Company)', amount: stub.employer_medicare || 0 },
     { label: 'Federal Unemployment',     amount: stub.futa_tax         || 0 },
     { label: `${stub.work_state || 'State'} Unemployment`, amount: stub.suta_tax || 0 },
+    ...((stub.company_contribution || 0) > 0 ? [{ label: 'Company Contribution', amount: stub.company_contribution }] : []),
   ];
 
-  const employerTotal = r2((stub.employer_ss || 0) + (stub.employer_medicare || 0) + (stub.futa_tax || 0) + (stub.suta_tax || 0));
+  const employerTotal = r2((stub.employer_ss || 0) + (stub.employer_medicare || 0) + (stub.futa_tax || 0) + (stub.suta_tax || 0) + (stub.company_contribution || 0));
 
   const MONO = { fontFamily: 'JetBrains Mono, monospace' };
 

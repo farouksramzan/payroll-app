@@ -744,6 +744,32 @@ function migrate() {
     )
   `);
 
+  // label — optional display-only name for a default item (e.g. "Health Insurance")
+  addCols('employee_default_items', [
+    { name: 'label', def: 'TEXT' },
+  ]);
+
+  // QB Payroll Info parity — pension plan flag (feeds W-2 Box 13 Retirement
+  // plan), Treasury Tipped Occupation Codes, and informational hour balances.
+  addCols('employees', [
+    { name: 'pension_plan',   def: 'INTEGER DEFAULT 0' },
+    { name: 'ttoc1',          def: 'TEXT' },
+    { name: 'ttoc2',          def: 'TEXT' },
+    { name: 'sick_hours',     def: 'REAL' },
+    { name: 'vacation_hours', def: 'REAL' },
+  ]);
+
+  // Company contributions: employer-paid recurring items (e.g. company-paid
+  // health insurance, 401k match) — booked as an employer cost on the check,
+  // never touching the employee's gross, taxes, or net pay.
+  // (An earlier bad addCols call passed a string and silently created a junk
+  // column named "undefined" — drop it wherever it exists.)
+  try {
+    const stubCols = db.prepare('PRAGMA table_info(paystubs)').all().map((c) => c.name);
+    if (stubCols.includes('undefined')) db.exec('ALTER TABLE paystubs DROP COLUMN "undefined"');
+  } catch (e) { console.error('[DB] undefined-column cleanup failed:', e.message); }
+  addCols('paystubs', [{ name: 'company_contribution', def: 'REAL DEFAULT 0' }]);
+
   // YTD sums for default-item annual limits scan paystubs by employee on every
   // pay-items fetch and payroll run — keep that lookup off a full table scan.
   db.exec('CREATE INDEX IF NOT EXISTS idx_paystubs_employee ON paystubs(employee_id)');

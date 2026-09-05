@@ -1109,7 +1109,7 @@ function ReportW2({ data, pr }) {
             <W2Box num="11" label="Nonqualified plans"                value="" />
             <W2Box num="12a" label="See instructions for box 12"      value="" />
             <div style={{ display: 'flex', gap: 1, flexDirection: 'column', background: '#ccc' }}>
-              <W2Box num="13" label="Statutory employee □  Retirement plan □  Third-party sick pay □" value="" />
+              <W2Box num="13" label={`Statutory employee □  Retirement plan ${w.box13_retirementPlan ? '☒' : '□'}  Third-party sick pay □`} value="" />
               <W2Box num="14" label="Other" value="" />
             </div>
             <W2Box num="12b" label="" value="" />

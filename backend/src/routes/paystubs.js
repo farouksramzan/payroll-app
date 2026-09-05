@@ -1658,8 +1658,9 @@ router.post('/payroll-run', (req, res) => {
         tax_year, tax_quarter, check_number, payroll_run_id,
         payment_method, regular_hours, overtime_hours, regular_pay, overtime_pay,
         bonus, commission, reimbursement, deduction, garnishment, child_support, reported_tips,
+        company_contribution,
         check_status, settlement_due_date, pay_group_id
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `);
     const insertItem = db.prepare(`
       INSERT INTO paystub_line_items (paystub_id, pay_type, description, hours, rate, amount)
@@ -1697,7 +1698,7 @@ router.post('/payroll-run', (req, res) => {
       // excluded). An explicit value from the body — including 0 — wins as-is.
       const itemYear = String(settlementDate || payPeriodEnd).slice(0, 4);
       const defaultRows = db.prepare('SELECT * FROM employee_default_items WHERE employee_id = ?').all(emp.id);
-      const ITEM_COLS = { reportedTips: 'reported_tips', bonus: 'bonus', commission: 'commission', reimbursement: 'reimbursement', deduction: 'deduction', garnishment: 'garnishment' };
+      const ITEM_COLS = { reportedTips: 'reported_tips', bonus: 'bonus', commission: 'commission', reimbursement: 'reimbursement', deduction: 'deduction', garnishment: 'garnishment', companyContribution: 'company_contribution' };
       // A caller that provides an earnings LINE ITEM of a type without the matching
       // field (the legacy PayrollRun page does this) has spoken explicitly — treat
       // the lines as the value so the default can't double-book on top of them.
@@ -1727,6 +1728,9 @@ router.post('/payroll-run', (req, res) => {
       const effReimb       = resolveItem('reimbursement');
       const effDeduction   = resolveItem('deduction');
       const effGarnishment = resolveItem('garnishment');
+      // Employer-paid — booked as company cost only; never touches the
+      // employee's gross, taxes, or net pay.
+      const effCompanyContribution = resolveItem('companyContribution');
       // Defaulted taxable items join gross as line items so taxes are computed
       // exactly as if the user had typed them (tips/bonus/commission are taxable).
       if (empData.reportedTips === undefined && lineAmountFor('reportedTips') === 0 && effTips > 0) {
@@ -1830,6 +1834,7 @@ router.post('/payroll-run', (req, res) => {
         effGarnishment,
         csTotal,
         effTips,
+        effCompanyContribution,
         'draft',
         calcSettlementDueDate(settlementDate || payPeriodEnd, client.deposit_schedule || 'monthly'),
         payGroupId || null,

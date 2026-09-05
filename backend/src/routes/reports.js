@@ -613,6 +613,7 @@ router.get('/w2', (req, res) => {
         box1_wages:   box1,  box2_fitWithheld: box2,
         box3_ssWages: box3,  box4_ssTax:       box4,
         box5_medWages: box5, box6_medTax:       box6,
+        box13_retirementPlan: !!emp.pension_plan,
         box15_state:  'TX',  box16_stateWages:  box16, box17_stateTax: box17,
         submissionCount: subs.length,
       };
@@ -837,7 +838,7 @@ router.get('/pdf', async (req, res) => {
       const w2s = employees.map((emp) => {
         const subs = db.prepare(`SELECT * FROM paystubs WHERE client_id = ? AND employee_id = ? AND pay_period_end >= ? AND pay_period_end <= ? AND check_status IN ('printed','deposited','direct_deposit_sent','direct_deposit_cleared')`).all(clientId, emp.id, `${year}-01-01`, `${year}-12-31`);
         const box1 = round2(subs.reduce((s, r) => s + r.gross_wages, 0));
-        return { employeeId: emp.id, firstName: emp.first_name, lastName: emp.last_name, ssn: emp.ssn_encrypted ? maskSSN(decrypt(emp.ssn_encrypted)) : '***-**-****', address: emp.address, city: emp.city, state: emp.state, zip: emp.zip, box1_wages: box1, box2_fitWithheld: round2(subs.reduce((s, r) => s + r.fit_withholding, 0)), box3_ssWages: box1, box4_ssTax: round2(subs.reduce((s, r) => s + r.employee_ss, 0)), box5_medWages: box1, box6_medTax: round2(subs.reduce((s, r) => s + r.employee_medicare, 0)), box15_state: 'TX', box16_stateWages: box1, box17_stateTax: 0 };
+        return { employeeId: emp.id, firstName: emp.first_name, lastName: emp.last_name, ssn: emp.ssn_encrypted ? maskSSN(decrypt(emp.ssn_encrypted)) : '***-**-****', address: emp.address, city: emp.city, state: emp.state, zip: emp.zip, box1_wages: box1, box2_fitWithheld: round2(subs.reduce((s, r) => s + r.fit_withholding, 0)), box3_ssWages: box1, box4_ssTax: round2(subs.reduce((s, r) => s + r.employee_ss, 0)), box5_medWages: box1, box6_medTax: round2(subs.reduce((s, r) => s + r.employee_medicare, 0)), box13_retirementPlan: !!emp.pension_plan, box15_state: 'TX', box16_stateWages: box1, box17_stateTax: 0 };
       });
       data = { reportType: 'W-2', client: { businessName: client.business_name, ein: client.ein, businessAddress: client.business_address, businessCity: client.business_city, businessZip: client.business_zip, state: client.state || 'TX' }, period: { year: parseInt(year) }, w2s };
 

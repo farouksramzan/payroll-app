@@ -5,6 +5,8 @@
 // reimbursement/deduction/garnishment) on every new check — an explicit
 // per-check value always wins. A default's optional annual limit caps what
 // future checks receive at the remainder of the employee's calendar-year YTD.
+// Hour defaults (regularHours/overtimeHours, amount = hours) pre-fill the pay
+// grid's Reg/OT boxes on the frontend only — payroll-run never applies them.
 // Mounted at /api — routes carry full /employees/... and /clients/... paths.
 const express = require('express');
 const { getDb } = require('../database/db');
@@ -18,7 +20,10 @@ router.use(['/employees', '/clients'], requireAuth);
 
 const r2 = (n) => Math.round((n || 0) * 100) / 100;
 
-const ITEM_TYPES = ['reportedTips', 'bonus', 'commission', 'reimbursement', 'deduction', 'garnishment'];
+const ITEM_TYPES = ['reportedTips', 'bonus', 'commission', 'reimbursement', 'deduction', 'garnishment', 'companyContribution', 'regularHours', 'overtimeHours'];
+// Hour types are frontend-only defaults (pre-fill the pay grid's Reg/OT boxes);
+// payroll-run never applies them and no paystubs column backs them.
+const HOUR_TYPES = ['regularHours', 'overtimeHours'];
 const ITEM_COLUMNS = {
   reportedTips:  'reported_tips',
   bonus:         'bonus',
@@ -26,6 +31,7 @@ const ITEM_COLUMNS = {
   reimbursement: 'reimbursement',
   deduction:     'deduction',
   garnishment:   'garnishment',
+  companyContribution: 'company_contribution',
 };
 
 function employeeClient(db, employeeId) {
@@ -35,6 +41,7 @@ function employeeClient(db, employeeId) {
 // This calendar year's total for one item — voided checks excluded, year taken
 // from the stub's settlement date.
 function ytdUsedFor(db, employeeId, itemType, year) {
+  if (!ITEM_COLUMNS[itemType]) return 0;
   const row = db.prepare(`
     SELECT COALESCE(SUM(${ITEM_COLUMNS[itemType]}), 0) AS total FROM paystubs
     WHERE employee_id = ? AND check_status != 'voided'
@@ -55,6 +62,7 @@ function defaultItemJson(db, row, ytdUsedOverride) {
     itemType: row.item_type,
     amount: row.amount,
     annualLimit: row.annual_limit,
+    label: row.label || null,
     ytdUsed,
     effectiveNext: effectiveNext(row.amount, row.annual_limit, ytdUsed),
   };
@@ -110,20 +118,28 @@ router.put('/employees/:empId/default-items', (req, res) => {
   const db = getDb();
   const clientId = employeeClient(db, req.params.empId);
   if (!clientId || !canAccessClient(db, clientId, req.user)) return res.status(404).json({ error: 'Employee not found' });
-  const { itemType, amount, annualLimit } = req.body;
+  const { itemType, amount, annualLimit, label } = req.body;
   if (!ITEM_TYPES.includes(itemType)) return res.status(400).json({ error: 'Unknown item type' });
+  const isHours = HOUR_TYPES.includes(itemType);
   const amt = r2(parseFloat(amount));
-  if (!(amt >= 0) || amt > 1000000) return res.status(400).json({ error: 'Amount must be between $0 and $1,000,000' });
+  if (isHours) {
+    if (!(amt >= 0) || amt > 500) return res.status(400).json({ error: 'Hours must be between 0 and 500' });
+    if (annualLimit != null && annualLimit !== '') return res.status(400).json({ error: 'Hour items don\'t take an annual limit' });
+  } else if (!(amt >= 0) || amt > 1000000) {
+    return res.status(400).json({ error: 'Amount must be between $0 and $1,000,000' });
+  }
   let limit = null;
-  if (annualLimit != null && annualLimit !== '') {
+  if (!isHours && annualLimit != null && annualLimit !== '') {
     limit = r2(parseFloat(annualLimit));
     if (!(limit > 0)) return res.status(400).json({ error: 'Annual limit must be greater than $0 (leave it blank for no limit)' });
   }
+  const trimmedLabel = label != null ? String(label).trim() : '';
+  if (trimmedLabel.length > 40) return res.status(400).json({ error: 'Label must be 40 characters or fewer' });
   db.prepare(`
-    INSERT INTO employee_default_items (employee_id, item_type, amount, annual_limit)
-    VALUES (?,?,?,?)
-    ON CONFLICT(employee_id, item_type) DO UPDATE SET amount = excluded.amount, annual_limit = excluded.annual_limit
-  `).run(req.params.empId, itemType, amt, limit);
+    INSERT INTO employee_default_items (employee_id, item_type, amount, annual_limit, label)
+    VALUES (?,?,?,?,?)
+    ON CONFLICT(employee_id, item_type) DO UPDATE SET amount = excluded.amount, annual_limit = excluded.annual_limit, label = excluded.label
+  `).run(req.params.empId, itemType, amt, limit, trimmedLabel || null);
   const row = db.prepare('SELECT * FROM employee_default_items WHERE employee_id = ? AND item_type = ?')
     .get(req.params.empId, itemType);
   res.json(defaultItemJson(db, row));
@@ -168,7 +184,8 @@ router.get('/clients/:clientId/employee-pay-items', (req, res) => {
       COALESCE(SUM(commission),    0) AS commission,
       COALESCE(SUM(reimbursement), 0) AS reimbursement,
       COALESCE(SUM(deduction),     0) AS deduction,
-      COALESCE(SUM(garnishment),   0) AS garnishment
+      COALESCE(SUM(garnishment),   0) AS garnishment,
+      COALESCE(SUM(company_contribution), 0) AS companyContribution
     FROM paystubs
     WHERE check_status != 'voided'
       AND COALESCE(settlement_date, pay_period_end) LIKE ?

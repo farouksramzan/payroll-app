@@ -19,6 +19,9 @@ function sanitize(e, withSSN = false) {
     fitExempt: !!e.fit_exempt,
     payType: e.pay_type, hourlyRate: e.hourly_rate, annualSalary: e.annual_salary,
     payFrequency: e.pay_frequency, isActive: !!e.is_active,
+    pensionPlan: !!e.pension_plan,
+    ttoc1: e.ttoc1 || null, ttoc2: e.ttoc2 || null,
+    sickHours: e.sick_hours ?? null, vacationHours: e.vacation_hours ?? null,
     hireDate: e.hire_date, createdAt: e.created_at,
     firstPayPeriodStart: e.first_pay_period_start || null,
     firstPayPeriodEnd:   e.first_pay_period_end   || null,
@@ -110,7 +113,8 @@ router.post('/', (req, res) => {
   const { firstName, middleName, lastName, ssn, address, city, state, zip, workState,
     filingStatus, step2Checkbox, step3Children, step3Other, step4a, step4b, step4c, fitExempt,
     payType, hourlyRate, annualSalary, payFrequency, hireDate,
-    firstPayPeriodStart, firstPayPeriodEnd, payGroupId } = req.body;
+    firstPayPeriodStart, firstPayPeriodEnd, payGroupId,
+    pensionPlan, ttoc1, ttoc2, sickHours, vacationHours } = req.body;
 
   // For client-role users, force their own clientId regardless of what was passed
   const clientId = req.user.role === 'client' ? req.user.clientId : req.body.clientId;
@@ -123,8 +127,9 @@ router.post('/', (req, res) => {
     INSERT INTO employees (client_id, first_name, middle_name, last_name, ssn_encrypted, address, city, state, zip, work_state,
       filing_status, step2_checkbox, step3_children, step3_other, step4a, step4b, step4c, fit_exempt,
       pay_type, hourly_rate, annual_salary, pay_frequency, hire_date,
-      first_pay_period_start, first_pay_period_end, pay_group_id)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      first_pay_period_start, first_pay_period_end, pay_group_id,
+      pension_plan, ttoc1, ttoc2, sick_hours, vacation_hours)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
   `).run(
     clientId, firstName.trim(), middleName ? middleName.trim() : null, lastName.trim(), encrypt(ssn),
     address || null, city || null, state || 'TX', zip || null,
@@ -136,6 +141,9 @@ router.post('/', (req, res) => {
     payFrequency || 'biweekly', hireDate || null,
     firstPayPeriodStart || null, firstPayPeriodEnd || null,
     payGroupId ? parseInt(payGroupId) : null,
+    pensionPlan ? 1 : 0, ttoc1 || null, ttoc2 || null,
+    sickHours != null && sickHours !== '' ? parseFloat(sickHours) : null,
+    vacationHours != null && vacationHours !== '' ? parseFloat(vacationHours) : null,
   );
   const emp = db.prepare(`
     SELECT e.*, pg.name AS pay_group_name, pg.frequency AS pay_group_frequency,
@@ -156,7 +164,8 @@ router.put('/:id', (req, res) => {
   const { firstName, middleName, lastName, ssn, address, city, state, zip, workState,
     filingStatus, step2Checkbox, step3Children, step3Other, step4a, step4b, step4c, fitExempt,
     payType, hourlyRate, annualSalary, payFrequency, hireDate, isActive,
-    firstPayPeriodStart, firstPayPeriodEnd, payGroupId } = req.body;
+    firstPayPeriodStart, firstPayPeriodEnd, payGroupId,
+    pensionPlan, ttoc1, ttoc2, sickHours, vacationHours } = req.body;
 
   db.prepare(`
     UPDATE employees SET
@@ -165,7 +174,8 @@ router.put('/:id', (req, res) => {
       step4a=?, step4b=?, step4c=?, fit_exempt=?,
       pay_type=?, hourly_rate=?, annual_salary=?, pay_frequency=?,
       hire_date=?, is_active=?,
-      first_pay_period_start=?, first_pay_period_end=?, pay_group_id=?
+      first_pay_period_start=?, first_pay_period_end=?, pay_group_id=?,
+      pension_plan=?, ttoc1=?, ttoc2=?, sick_hours=?, vacation_hours=?
     WHERE id = ?
   `).run(
     firstName  || e.first_name, middleName !== undefined ? (middleName || null) : e.middle_name, lastName || e.last_name,
@@ -187,6 +197,11 @@ router.put('/:id', (req, res) => {
     firstPayPeriodStart !== undefined ? (firstPayPeriodStart || null) : e.first_pay_period_start,
     firstPayPeriodEnd   !== undefined ? (firstPayPeriodEnd   || null) : e.first_pay_period_end,
     payGroupId !== undefined ? (payGroupId ? parseInt(payGroupId) : null) : e.pay_group_id,
+    pensionPlan !== undefined ? (pensionPlan ? 1 : 0) : e.pension_plan,
+    ttoc1 !== undefined ? (ttoc1 || null) : e.ttoc1,
+    ttoc2 !== undefined ? (ttoc2 || null) : e.ttoc2,
+    sickHours !== undefined ? (sickHours == null || sickHours === '' ? null : parseFloat(sickHours)) : e.sick_hours,
+    vacationHours !== undefined ? (vacationHours == null || vacationHours === '' ? null : parseFloat(vacationHours)) : e.vacation_hours,
     req.params.id,
   );
   const updated = db.prepare(`
