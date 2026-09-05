@@ -855,13 +855,26 @@ function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
 
               <p className="form-section-title">Earning Rates</p>
               {erErr && <div className="alert alert-error" role="alert" style={{ marginBottom: 10, fontSize: '0.8rem' }}><span>⚠</span>{erErr}</div>}
+              {/* The Base row edits the SAME field as Pay Settings above — one
+                  source of truth, editable in either place. */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid var(--border)', marginBottom: 6, background: 'var(--bg-secondary)' }}>
-                <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: '0.8667rem' }}>Base</div>
-                <span className="mono" style={{ fontSize: '0.8667rem' }}>
-                  {form.payType === 'salary'
-                    ? `${form.annualSalary ? fmt(parseFloat(form.annualSalary)) : '—'}/yr salary`
-                    : `${form.hourlyRate ? fmt(parseFloat(form.hourlyRate)) : '—'}/hr`}
-                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: '0.8667rem' }}>Base</div>
+                  <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{form.payType === 'salary' ? 'Annual salary' : 'Same as Hourly Rate above'}</div>
+                </div>
+                <div style={{ position: 'relative' }}>
+                  <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: '0.8667rem' }}>$</span>
+                  {form.payType === 'salary' ? (
+                    <input className="form-input mono" type="number" min="0" step="1000" value={form.annualSalary}
+                      onChange={set('annualSalary')} aria-label="Base annual salary"
+                      style={{ paddingLeft: 24, width: 140, ...(errField === 'annualSalary' ? { borderColor: 'var(--error)' } : {}) }} />
+                  ) : (
+                    <input className="form-input mono" type="number" min="0" step="0.25" value={form.hourlyRate}
+                      onChange={set('hourlyRate')} aria-label="Base hourly rate"
+                      style={{ paddingLeft: 24, width: 120, ...(errField === 'hourlyRate' ? { borderColor: 'var(--error)' } : {}) }} />
+                  )}
+                </div>
+                <span className="mono" style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>{form.payType === 'salary' ? '/yr' : '/hr'}</span>
               </div>
               {earnRates.map(r => (
                 <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px', border: '1px solid var(--border)', marginBottom: 6, background: '#fff' }}>
