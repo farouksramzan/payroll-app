@@ -257,26 +257,27 @@ body { font-size: 1rem; }
 .ws-tabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 0;
+  gap: 8px;
   margin-top: 16px;
+  padding-bottom: 14px;
 }
+/* Button "bricks" — each section is a clearly bounded button, and the active
+   one is unmistakable (solid green), instead of underlined text labels. */
 .ws-tab {
-  padding: 11px 22px;
+  padding: 10px 20px;
   font-size: 1rem;
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   cursor: pointer;
-  border-bottom: 3px solid transparent;
+  background: var(--bg-secondary);
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
   transition: all 0.15s;
-  background: none;
-  border-top: none;
-  border-left: none;
-  border-right: none;
   user-select: none;
   white-space: nowrap;
 }
-.ws-tab:hover:not(.active) { color: var(--text-secondary); border-bottom-color: var(--border); }
-.ws-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.ws-tab:hover:not(.active) { color: var(--accent); border-color: var(--accent); background: var(--bg); }
+.ws-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 .workspace-body {
   flex: 1;

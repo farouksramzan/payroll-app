@@ -254,6 +254,21 @@ function StatusBadge({ status }) {
   const cfg = STATUS_CFG[status] || { label: status, cls: 'badge-neutral' };
   return <span className={`badge ${cfg.cls}`} style={{ fontWeight: 700, textTransform: 'uppercase', fontSize: '0.8rem' }}>{cfg.label}</span>;
 }
+// Clickable variant: the pill itself is the button (badge colors + inline chevron)
+// instead of a badge nested inside a second bordered box, which read as one big
+// half-empty button on long labels like DEPOSITED.
+function StatusPillButton({ status, onClick, ariaLabel, expanded, title }) {
+  const cfg = STATUS_CFG[status] || { label: status, cls: 'badge-neutral' };
+  return (
+    <button type="button" title={title || 'Click to change status'} aria-label={ariaLabel} aria-expanded={expanded}
+      className={`badge ${cfg.cls}`}
+      onClick={onClick}
+      style={{ fontWeight: 700, textTransform: 'uppercase', fontSize: '0.8rem', border: '1px solid rgba(15,23,42,0.18)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, minHeight: 32, padding: '4px 10px' }}>
+      {cfg.label}
+      <span aria-hidden="true" style={{ fontSize: '0.6rem', opacity: 0.75 }}>▾</span>
+    </button>
+  );
+}
 
 // ── Employee Drawer ───────────────────────────────────────────────────────────
 function EmployeeDrawer({ clientId, empId, onClose, onSaved, onDeleted }) {
@@ -4328,14 +4343,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                         <span className="spinner spinner-dark" style={{ width: 12, height: 12 }} /> Creating check…
                       </span>
                     ) : (
-                    <button type="button" title="Click to change status"
-                      aria-label={`Change status for ${emp.firstName} ${emp.lastName}`}
-                      aria-expanded={!!(empStatusDrop?.period?.end === period.end && empStatusDrop?.emp?.id === emp.id)}
-                      style={{ background: 'none', border: 'none', padding: '6px 4px', minHeight: 32, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}
-                      onClick={e => { e.stopPropagation(); empStatusTriggerRef.current = e.currentTarget; const r = e.currentTarget.getBoundingClientRect(); const openUp = r.bottom + 200 > window.innerHeight; setEmpStatusDrop(empStatusDrop?.period?.end === period.end && empStatusDrop?.emp?.id === emp.id ? null : { period, emp, ...(openUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }), right: window.innerWidth - r.right }); }}>
-                      <StatusBadge status={status} />
-                      <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>▾</span>
-                    </button>
+                    <StatusPillButton status={status}
+                      ariaLabel={`Change status for ${emp.firstName} ${emp.lastName}`}
+                      expanded={!!(empStatusDrop?.period?.end === period.end && empStatusDrop?.emp?.id === emp.id)}
+                      onClick={e => { e.stopPropagation(); empStatusTriggerRef.current = e.currentTarget; const r = e.currentTarget.getBoundingClientRect(); const openUp = r.bottom + 200 > window.innerHeight; setEmpStatusDrop(empStatusDrop?.period?.end === period.end && empStatusDrop?.emp?.id === emp.id ? null : { period, emp, ...(openUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }), right: window.innerWidth - r.right }); }} />
                     )}
                   </td>
                 </tr>
@@ -4458,14 +4469,10 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
                         <span className="spinner spinner-dark" style={{ width: 12, height: 12 }} /> Updating…
                       </span>
                     ) : !isVoided ? (
-                      <button type="button" title="Click to change status"
-                        aria-label={`Change status for ${stub.employee_name}`}
-                        aria-expanded={!!(empStatusDrop?.stub?.id === stub.id)}
-                        style={{ background: 'var(--bg-primary, #fff)', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 8px', minHeight: 32, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}
-                        onClick={e => { e.stopPropagation(); empStatusTriggerRef.current = e.currentTarget; const r = e.currentTarget.getBoundingClientRect(); const openUp = r.bottom + 200 > window.innerHeight; setEmpStatusDrop(empStatusDrop?.stub?.id === stub.id ? null : { stub, ...(openUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }), right: window.innerWidth - r.right }); }}>
-                        <StatusBadge status={displayStatus} />
-                        <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)' }}>▾</span>
-                      </button>
+                      <StatusPillButton status={displayStatus}
+                        ariaLabel={`Change status for ${stub.employee_name}`}
+                        expanded={!!(empStatusDrop?.stub?.id === stub.id)}
+                        onClick={e => { e.stopPropagation(); empStatusTriggerRef.current = e.currentTarget; const r = e.currentTarget.getBoundingClientRect(); const openUp = r.bottom + 200 > window.innerHeight; setEmpStatusDrop(empStatusDrop?.stub?.id === stub.id ? null : { stub, ...(openUp ? { bottom: window.innerHeight - r.top + 4 } : { top: r.bottom + 4 }), right: window.innerWidth - r.right }); }} />
                     ) : (
                       <StatusBadge status={displayStatus} />
                     )}
@@ -4692,8 +4699,11 @@ function PayEmployeesTab({ clientId, client, employees, onRefresh, refreshEmploy
           });
         }
 
+        // Fixed to the viewport bottom so it's visible no matter which table
+        // (pending up top or Printed & Deposited far below) the selection came
+        // from — it used to render only at the top of the tab.
         return (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#15803d', color: '#fff', padding: '9px 16px', borderRadius: 10, marginBottom: 12, flexWrap: 'wrap', boxShadow: '0 2px 12px rgba(21,128,61,0.25)' }}>
+          <div style={{ position: 'fixed', bottom: 18, left: '50%', transform: 'translateX(-50%)', zIndex: 600, maxWidth: '96vw', display: 'flex', alignItems: 'center', gap: 8, background: '#15803d', color: '#fff', padding: '10px 18px', borderRadius: 12, flexWrap: 'wrap', boxShadow: '0 6px 24px rgba(15,23,42,0.35)' }}>
             <span style={{ fontWeight: 700, fontSize: '0.8667rem' }}>✓ {totalSel} check{totalSel !== 1 ? 's' : ''} selected · est. net {fmt(selEstNet)}</span>
             <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.3)' }} />
 
@@ -7479,7 +7489,7 @@ export default function CompanyWorkspace({ clientMode = false }) {
           {[['employees','Employees'],['company','Company'],['payroll','Payroll'],['accountants','Accountants'],...(!clientMode && user?.username === 'admin' ? [['users','Users']] : [])].map(([k, label]) => (
             <button key={k} role="tab" aria-selected={activeTab === k} className={`ws-tab${activeTab === k ? ' active' : ''}`} onClick={() => handleTabClick(k)} data-tour-id={k === 'payroll' ? 'tour-payroll-tab-btn' : k === 'employees' ? 'tour-employees-tab-btn' : undefined}>
               {label}
-              {k === 'employees' && employees.length > 0 && <span style={{ marginLeft: 6, background: activeTab === k ? 'var(--accent)' : 'var(--bg-tertiary)', color: activeTab === k ? '#fff' : 'var(--text-muted)', borderRadius: 20, fontSize: '0.6667rem', fontWeight: 700, padding: '1px 6px' }}>{employees.length}</span>}
+              {k === 'employees' && employees.length > 0 && <span style={{ marginLeft: 6, background: activeTab === k ? '#fff' : 'var(--bg-tertiary)', color: activeTab === k ? 'var(--accent)' : 'var(--text-muted)', borderRadius: 20, fontSize: '0.6667rem', fontWeight: 700, padding: '1px 6px' }}>{employees.length}</span>}
             </button>
           ))}
         </div>
